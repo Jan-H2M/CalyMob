@@ -37,7 +37,8 @@ class TeamChatScreen extends StatefulWidget {
   State<TeamChatScreen> createState() => _TeamChatScreenState();
 }
 
-class _TeamChatScreenState extends State<TeamChatScreen> {
+class _TeamChatScreenState extends State<TeamChatScreen>
+    with WidgetsBindingObserver {
   final TeamChannelService _channelService = TeamChannelService();
   final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
@@ -56,6 +57,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _markMessagesAsRead();
     if (widget.openPollComposer) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -66,6 +68,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -107,6 +110,11 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   }
 
   Future<void> _markMessagesAsRead() async {
+    final unreadProvider = context.read<UnreadCountProvider>();
+    if (unreadProvider.usesCursorReadState) {
+      await unreadProvider.markTeamChannelSeen(widget.channel.id);
+      return;
+    }
     if (_hasMarkedAsRead) return;
     _hasMarkedAsRead = true;
 
@@ -119,6 +127,13 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
       if (!mounted) return;
       unawaited(context.read<UnreadCountProvider>().refresh());
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      unawaited(_markMessagesAsRead());
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -529,6 +544,14 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                     }
 
                     final messages = snapshot.data ?? [];
+                    // A successful stream emission (including an empty
+                    // channel) is the visibility acknowledgement point. The
+                    // cursor service coalesces rapid new-message emissions.
+                    if (snapshot.hasData) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) unawaited(_markMessagesAsRead());
+                      });
+                    }
 
                     if (messages.isEmpty) {
                       return Center(

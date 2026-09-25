@@ -10,6 +10,7 @@ import '../services/cursor_unread_count_service.dart';
 import '../services/read_state_service.dart';
 import '../services/feature_flag_service.dart';
 import '../models/unread_cursor_feature_flag.dart';
+import '../models/read_state.dart';
 
 /// Provider die ongelezen tellingen berekent via lokale timestamps
 /// + Firestore count() queries. Periodic refresh elke 60 seconden.
@@ -65,6 +66,69 @@ class UnreadCountProvider extends ChangeNotifier {
   int get communication => _announcements + _teamMessages + _sessionMessages;
   UnreadCursorV1Mode get cursorMode => _cursorMode;
   bool get isListening => _isListening;
+
+  /// Cursor acknowledgements are intentionally available only in ON mode.
+  /// Legacy LocalReadTracker calls remain the sole behaviour in OFF/shadow.
+  bool get usesCursorReadState => _cursorMode == UnreadCursorV1Mode.on;
+
+  Future<void> markAnnouncementSeen() => _acknowledge(
+        (clubId, userId) => _readState.markAnnouncementSeen(clubId, userId),
+      );
+
+  Future<void> markEventsSeen() => _acknowledge(
+        (clubId, userId) => _readState.markSectionSeen(
+          clubId,
+          userId,
+          ReadStateSection.events,
+        ),
+      );
+
+  Future<void> markCommunicationSeen() async {
+    await markAnnouncementsSeen();
+    await markTeamsSeen();
+    await markSessionsSeen();
+  }
+
+  Future<void> markAnnouncementsSeen() => markAnnouncementSeen();
+
+  Future<void> markTeamsSeen() => _acknowledge(
+        (clubId, userId) => _readState.markSectionSeen(
+          clubId,
+          userId,
+          ReadStateSection.teams,
+        ),
+      );
+
+  Future<void> markSessionsSeen() => _acknowledge(
+        (clubId, userId) => _readState.markSectionSeen(
+          clubId,
+          userId,
+          ReadStateSection.sessions,
+        ),
+      );
+
+  Future<void> markEventConversationSeen(String operationId) => _acknowledge(
+        (clubId, userId) =>
+            _readState.markEventConversationSeen(clubId, userId, operationId),
+      );
+
+  Future<void> markTeamChannelSeen(String channelId) => _acknowledge(
+        (clubId, userId) =>
+            _readState.markTeamChannelSeen(clubId, userId, channelId),
+      );
+
+  Future<void> markSessionChatSeen(String scopeId) => _acknowledge(
+        (clubId, userId) =>
+            _readState.markSessionChatSeen(clubId, userId, scopeId),
+      );
+
+  Future<void> _acknowledge(
+    Future<void> Function(String clubId, String userId) action,
+  ) async {
+    if (!usesCursorReadState || _clubId == null || _userId == null) return;
+    await action(_clubId!, _userId!);
+    await refresh();
+  }
 
   /// Start periodic refresh voor alle berichttypes.
   /// [roles] zijn de clubStatuten van de user (bijv. ['accueil', 'encadrant']).
@@ -304,8 +368,9 @@ class UnreadCountProvider extends ChangeNotifier {
         eventMessages == _eventMessages &&
         teamMessages == _teamMessages &&
         sessionMessages == _sessionMessages) {
-      // Cursor mode still must clear an already-stale OS badge at zero.
-      if (source == 'cursor' && total == 0) _updateBadge(0);
+      // Cursor mode owns the OS icon, including an unchanged zero after a
+      // cold start or foreground push.
+      if (source == 'cursor') _updateBadge(total);
       return;
     }
     _announcements = announcements;

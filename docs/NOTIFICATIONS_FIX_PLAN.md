@@ -370,3 +370,10 @@ ignored by the new model until a minimum-version cutover. Phase 1 only provides
 inert models/rules/indexes/tests, is on `feat/unread-cursor-v1-phase1`, and is
 not deployed. Product decisions and the Phases 2–7 ticket plan are recorded in
 `../../outputs/calymob-unread-definitive-plan_2026-09-24.md` in the parent repo.
+
+### Design decisions (Phase 3)
+
+Implemented locally behind `on`: scoped conversation acks, explicit confirmed
+section actions, no list-open mark-all, and the complete Communication formula.
+Announcement acknowledgement happens from a detail, not its list. OFF retains
+LocalReadTracker and mutable-counter behaviour unchanged; no rollout occurred.

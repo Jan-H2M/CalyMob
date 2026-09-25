@@ -171,6 +171,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   /// Marque les annonces comme lues et rafraîchit le badge
   Future<void> _markAnnouncementsAsRead() async {
+    // Cursor v1 deliberately does not acknowledge a whole section merely by
+    // navigating to its list. An individual announcement detail (or explicit
+    // "Tout marquer comme lu") is the acknowledgement action.
+    if (context.read<UnreadCountProvider>().usesCursorReadState) return;
     final tracker = LocalReadTracker();
     await tracker.markAsRead('announcements');
     // Refresh unread counts so badge disappears

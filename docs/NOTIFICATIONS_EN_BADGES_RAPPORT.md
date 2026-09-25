@@ -613,3 +613,11 @@ Old clients coexist temporarily and their `unread_counts` writes are ignored by
 cursor v1 until the minimum-version cutover. The feature flag defaults OFF in
 `settings/feature_flags`; Phase 1 is local only, not deployed. See the parent
 repo plan: `../../outputs/calymob-unread-definitive-plan_2026-09-24.md`.
+
+### Design decisions (Phase 3)
+
+Screen-level cursor acknowledgement is ON-only. List/tile navigation never
+acknowledges a section; event, team and session discussions do after successful
+load, while an announcement detail advances its one section cursor. The landing
+Communication tile adds sessions only in cursor mode and the provider refreshes
+the OS badge on every cursor refresh, including zero. This phase is local only.

@@ -74,6 +74,14 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   }
 
   Future<void> _markAsRead() async {
+    final unreadProvider =
+        Provider.of<UnreadCountProvider>(context, listen: false);
+    if (unreadProvider.usesCursorReadState) {
+      // Announcements use one section cursor. Opening the detail is an
+      // intentional acknowledgement; opening the list is not.
+      await unreadProvider.markAnnouncementSeen();
+      return;
+    }
     // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
     // pour pouvoir afficher le divider "Nouveaux messages"
     final tracker = LocalReadTracker();
@@ -84,8 +92,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     await tracker.markAsRead('announcements');
 
     if (mounted) {
-      final unreadProvider =
-          Provider.of<UnreadCountProvider>(context, listen: false);
       await unreadProvider.refresh();
     }
   }

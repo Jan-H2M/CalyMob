@@ -24,6 +24,17 @@ import '../profile/who_is_who_screen.dart';
 import '../training/parcours_hub_screen.dart';
 import '../../services/boutique/boutique_access_service.dart';
 
+@visibleForTesting
+int landingCommunicationBadgeCount({
+  required bool cursorMode,
+  required int announcements,
+  required int teamMessages,
+  required int sessionMessages,
+}) =>
+    cursorMode
+        ? announcements + teamMessages + sessionMessages
+        : announcements + teamMessages;
+
 /// Landing page avec thème maritime animé et boutons ronds
 class LandingScreen extends StatefulWidget {
   const LandingScreen({Key? key}) : super(key: key);
@@ -32,7 +43,8 @@ class LandingScreen extends StatefulWidget {
   State<LandingScreen> createState() => _LandingScreenState();
 }
 
-class _LandingScreenState extends State<LandingScreen> {
+class _LandingScreenState extends State<LandingScreen>
+    with WidgetsBindingObserver {
   final SensitiveInfoService _sensitiveInfoService = SensitiveInfoService();
   String _versionString = '';
   OceanParams? _oceanParams;
@@ -41,6 +53,7 @@ class _LandingScreenState extends State<LandingScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadVersionInfo();
     _loadOceanParams();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -53,6 +66,21 @@ class _LandingScreenState extends State<LandingScreen> {
     _initFromMemberProvider();
     await _checkForAppUpdate();
     await _checkAvatarNudge();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // In cursor mode this is the canonical foreground badge refresh; it
+      // updates AppBadgePlus even when the derived total is zero.
+      context.read<UnreadCountProvider>().refresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadVersionInfo() async {
@@ -323,8 +351,15 @@ class _LandingScreenState extends State<LandingScreen> {
                         ProfileTile.large(
                           title: 'Communication',
                           icon: Icons.campaign,
-                          badgeCount: unreadProvider.announcements +
-                              unreadProvider.teamMessages,
+                          // Cursor v1's Communication badge includes session
+                          // chat so it matches the app-icon total. Keep the
+                          // historical formula untouched while the flag is off.
+                          badgeCount: landingCommunicationBadgeCount(
+                            cursorMode: unreadProvider.usesCursorReadState,
+                            announcements: unreadProvider.announcements,
+                            teamMessages: unreadProvider.teamMessages,
+                            sessionMessages: unreadProvider.sessionMessages,
+                          ),
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(

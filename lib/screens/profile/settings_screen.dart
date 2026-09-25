@@ -856,6 +856,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildNotificationsSection(MemberProfile profile) {
+    final cursorReadState =
+        context.watch<UnreadCountProvider>().usesCursorReadState;
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -869,7 +871,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Text('Recevoir des notifications sur les événements'),
             secondary: const Icon(Icons.notifications, color: Colors.orange),
           ),
-          if (_notificationsEnabled) ...[
+          if (_notificationsEnabled || cursorReadState) ...[
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.tune, color: AppColors.middenblauw),
@@ -986,6 +988,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final unreadProvider = context.read<UnreadCountProvider>();
+      if (unreadProvider.usesCursorReadState) {
+        // Cursor v1 has no mutable unread_counts reset. One acknowledgement
+        // per root section is shared by all the member's devices.
+        await unreadProvider.markEventsSeen();
+        await unreadProvider.markCommunicationSeen();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Tous les messages marqués comme lus'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) {
         throw Exception('Utilisateur non connecté');
@@ -1020,7 +1038,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // 4. Refresh de UnreadCountProvider zodat de UI direct bijwerkt
       if (mounted) {
-        await context.read<UnreadCountProvider>().refresh();
+        await unreadProvider.refresh();
       }
 
       if (mounted) {
