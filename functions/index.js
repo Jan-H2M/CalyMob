@@ -93,6 +93,9 @@ exports.birthdayNotification = birthdayNotification;
 // Push notifications for announcement replies
 const { onNewAnnouncementReply } = require('./src/notifications/onNewAnnouncementReply');
 exports.onNewAnnouncementReply = onNewAnnouncementReply;
+const { onReadStateWritten, onReadStateScopeWritten } = require('./src/notifications/onReadStateWritten');
+exports.onReadStateWritten = onReadStateWritten;
+exports.onReadStateScopeWritten = onReadStateScopeWritten;
 
 // =============================================================================
 // EXPENSE EMAIL NOTIFICATIONS (Gen2)

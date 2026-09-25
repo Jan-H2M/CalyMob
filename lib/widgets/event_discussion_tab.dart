@@ -183,6 +183,11 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         attachments: attachments,
         poll: _pendingPoll,
       );
+      if (mounted) {
+        await context
+            .read<UnreadCountProvider>()
+            .markEventConversationSeen(widget.operationId);
+      }
 
       _messageController.clear();
       setState(() {

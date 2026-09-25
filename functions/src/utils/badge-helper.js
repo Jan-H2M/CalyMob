@@ -11,6 +11,8 @@ const admin = require('firebase-admin');
 const { FIRESTORE_BATCH_LIMIT } = require('./constants');
 const { memberDisplayName } = require('./memberName');
 const { persistNotificationHistory } = require('./notificationHistory');
+const { getUnreadCursorV1Mode } = require('../notifications/unreadCursorFeatureFlag');
+const { getCanonicalUnreadBreakdown } = require('../notifications/canonicalUnreadBadge');
 
 /**
  * Increment de unread counter voor een lijst van ontvangers
@@ -68,6 +70,14 @@ const UNREAD_CATEGORIES = [
   'session_messages',
   'medical_certificates',
 ];
+
+async function bounded(items, work, limit = 10) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await work(items[next++]);
+  });
+  await Promise.all(workers);
+}
 
 /**
  * Haal het huidige badge-getal op voor een member.
@@ -292,6 +302,65 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
 }
 
 /**
+ * Coexistence bridge for cursor-v1. OFF preserves the historical sender byte
+ * path. SHADOW sends that same payload and emits a comparison. ON still keeps
+ * legacy increments for released clients, but derives only the iOS APNs badge
+ * number from the member's server-owned cursor state.
+ */
+async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, category) {
+  const db = admin.firestore();
+  const mode = await getUnreadCursorV1Mode(db, clubId);
+  if (mode === 'off') return sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category);
+  if (mode === 'shadow') {
+    const result = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category);
+    await Promise.all([...memberTokenGroups.keys()].slice(0, 20).map(async (memberId) => {
+      const [legacy, canonical] = await Promise.all([
+        getBadgeCount(clubId, memberId),
+        getCanonicalUnreadBreakdown({ db, clubId, memberId }),
+      ]);
+      console.log(JSON.stringify({ event: 'unread_cursor_shadow_diff', clubId, memberId, category, legacy, canonical: canonical.total }));
+    }));
+    return result;
+  }
+
+  let successCount = 0;
+  let failureCount = 0;
+  await bounded([...memberTokenGroups.entries()], async ([memberId, tokens]) => {
+    const breakdown = await getCanonicalUnreadBreakdown({ db, clubId, memberId });
+    const payload = {
+      ...basePayload,
+      apns: {
+        ...(basePayload.apns || {}),
+        payload: { aps: { ...(basePayload.apns?.payload?.aps || {}), badge: breakdown.total } },
+      },
+    };
+    const result = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
+    successCount += result.successCount;
+    failureCount += result.failureCount;
+    if (result.successCount > 0) await persistNotificationHistory(clubId, memberId, basePayload, category);
+  });
+  return { successCount, failureCount };
+}
+
+async function sendSilentCursorBadge({ clubId, memberId, tokens, total }) {
+  if (!tokens.length) return { successCount: 0, failureCount: 0 };
+  const result = await admin.messaging().sendEachForMulticast({
+    tokens,
+    apns: { headers: { 'apns-push-type': 'background', 'apns-priority': '5' }, payload: { aps: { badge: total, 'content-available': 1 } } },
+    data: { type: 'unread_cursor_badge_sync', club_id: clubId },
+  });
+  result.responses.forEach((response, index) => {
+    const code = response.error?.code;
+    if (!response.success && ['messaging/invalid-registration-token', 'messaging/registration-token-not-registered'].includes(code)) {
+      admin.firestore().collection('clubs').doc(clubId).collection('members').doc(memberId)
+        .update({ fcm_tokens: admin.firestore.FieldValue.arrayRemove(tokens[index]) })
+        .catch((error) => console.error(`Failed to remove token: ${error.message}`));
+    }
+  });
+  return result;
+}
+
+/**
  * Decrement de unread counter voor één member
  *
  * @param {string} clubId - Club ID
@@ -362,5 +431,7 @@ module.exports = {
   getBadgeCount,
   collectTokensAndMembers,
   sendNotificationsWithBadge,
+  sendNotificationsWithUnreadCursorMode,
+  sendSilentCursorBadge,
   filterByPreference,
 };

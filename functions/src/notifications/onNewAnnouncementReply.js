@@ -8,7 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new announcement replies (Gen2)
@@ -181,7 +181,7 @@ exports.onNewAnnouncementReply = onDocumentCreated(
       await incrementUnreadCounts(clubId, recipientIds, 'announcements');
 
       // 6. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'announcements');
+      const { successCount, failureCount } = await sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, 'announcements');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

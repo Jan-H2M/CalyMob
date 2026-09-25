@@ -377,3 +377,13 @@ Implemented locally behind `on`: scoped conversation acks, explicit confirmed
 section actions, no list-open mark-all, and the complete Communication formula.
 Announcement acknowledgement happens from a detail, not its list. OFF retains
 LocalReadTracker and mutable-counter behaviour unchanged; no rollout occurred.
+
+### Design decisions (Phase 4)
+
+Local Functions now contain canonical cursor/APNs plumbing behind the shared
+flag with a 60-second cache. The seven-day event grace is calendar-based in
+Europe/Brussels in the Node and Dart contract fixture. Nothing is deployed.
+
+Review follow-up: Node uses aggregation counts and the same published-session,
+role and registration predicates as Dart; trailing-edge reconciliation preserves
+the last cursor state in a burst.

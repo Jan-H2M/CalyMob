@@ -4,7 +4,7 @@
 
 module.exports = {
   /** Aantal dagen na date_fin waarbinnen event-berichten nog unread counts incrementeren */
-  EVENT_EXPIRY_GRACE_DAYS: 5,
+  EVENT_EXPIRY_GRACE_DAYS: 7,
 
   /** Retentieperioden voor chat cleanup */
   TEAM_MESSAGE_RETENTION_DAYS: 365,

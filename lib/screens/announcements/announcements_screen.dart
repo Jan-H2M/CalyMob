@@ -136,6 +136,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         message: message,
         type: type,
       );
+      if (mounted) {
+        await context.read<UnreadCountProvider>().markAnnouncementSeen();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

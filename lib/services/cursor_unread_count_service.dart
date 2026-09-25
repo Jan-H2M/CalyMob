@@ -361,5 +361,7 @@ bool isUnreadEligibleEvent(Map<String, dynamic> operation, DateTime now) {
 
 bool isCursorCountableRegistration(Map<String, dynamic> data) {
   final status = data['registration_status'];
-  return status != 'canceled' && status != 'waitlisted';
+  return status != 'canceled' &&
+      status != 'waitlisted' &&
+      status != 'withdrawn';
 }
