@@ -22,6 +22,18 @@ bool shouldRegisterNotificationToken({
   return explicitEnable || storedPreference != false;
 }
 
+/// Data-only cursor reconciliation must refresh the unread authority without
+/// presenting a duplicate foreground notification.
+@visibleForTesting
+({bool showVisibleNotification, bool requestUnreadRefresh})
+    foregroundNotificationDecision(Map<String, dynamic> data) {
+  final isCursorSync = data['type'] == 'unread_cursor_badge_sync';
+  return (
+    showVisibleNotification: !isCursorSync,
+    requestUnreadRefresh: isCursorSync,
+  );
+}
+
 /// Service de gestion des notifications push
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -42,6 +54,7 @@ class NotificationService {
 
   /// Callback pour quand l'utilisateur tape sur une notification locale
   void Function(String? payload)? onLocalNotificationTap;
+  void Function()? onUnreadCursorBadgeSync;
 
   /// Initialiser les notifications
   Future<void> initialize(
@@ -178,7 +191,11 @@ class NotificationService {
 
     // Cursor-v1 reconciliation is data-only: the provider's normal lifecycle
     // refresh owns counts/badge, and this must never surface a local alert.
-    if (message.data['type'] == 'unread_cursor_badge_sync') return;
+    final decision = foregroundNotificationDecision(message.data);
+    if (decision.requestUnreadRefresh) {
+      onUnreadCursorBadgeSync?.call();
+    }
+    if (!decision.showVisibleNotification) return;
 
     final notification = message.notification;
     if (notification == null) return;

@@ -404,3 +404,24 @@ The default backup directory is gitignored `tmp/`. The tool intentionally has
 no service-account discovery: future production execution requires external ADC
 plus `--project` and an exactly matching `--confirm-production`; tests ran only
 against the `demo-calymob-migration` Firestore emulator.
+
+### Design decisions (Phase 6)
+
+Field maintenance is authoritative on Functions, with client writes only as a
+fast path. The explicit normalization migration, device checklist and approval
+gated rollout runbook complete the local Phase-6 handoff; no deployment ran.
+
+### Design decisions (Phase 6c)
+
+Testing seams are constructor-only and retain production defaults. They cover
+aggregation emulation in fake Firestore, feature-flag streams, legacy writes
+and platform-badge effects without changing OFF behaviour.
+
+### Design decisions (Phase 6d)
+
+Functions contract coverage runs the production canonical calculator through a
+minimal in-memory Firestore-shaped query/aggregation adapter.
+
+### Status (Phase 6 final)
+Phases 1–6 done locally, not deployed; Phase 7 runbook and device checklist
+are written, not executed.

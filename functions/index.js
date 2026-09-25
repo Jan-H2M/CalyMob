@@ -96,6 +96,8 @@ exports.onNewAnnouncementReply = onNewAnnouncementReply;
 const { onReadStateWritten, onReadStateScopeWritten } = require('./src/notifications/onReadStateWritten');
 exports.onReadStateWritten = onReadStateWritten;
 exports.onReadStateScopeWritten = onReadStateScopeWritten;
+const { onAnnouncementWritten } = require('./src/notifications/announcementFieldMaintenance');
+exports.onAnnouncementWritten = onAnnouncementWritten;
 
 // =============================================================================
 // EXPENSE EMAIL NOTIFICATIONS (Gen2)

@@ -1210,3 +1210,47 @@ independent backup/diff review and explicit production authorization may an
 operator use `--apply --project <project> --confirm-production <project>`;
 `--member <uid>` (repeatable) and `--limit N` support a pilot cohort. These are
 instructions for a future approved operator, not commands run by Phase 5.
+
+### Design decisions (Phase 6)
+
+Announcement field maintenance is server-side for every writer: it normalizes
+`visibility` and monotonic `last_activity_at` irrespective of the feature flag.
+The client is only a belt-and-braces writer and fallback counts tolerate trigger
+delay. Phase 6 adds normalization-only migration support, cursor sender token
+cleanup, the [device checklist](testing/UNREAD_CURSOR_V1_DEVICE_CHECKLIST.md),
+and an approval-gated [Phase-7 rollout runbook](runbooks/UNREAD_CURSOR_V1_ROLLOUT.md).
+Phases 1–6 are local-only; Phase 7 is written, not executed.
+
+### Phase 6 review corrections
+
+Announcement activity remains Function-owned: client members cannot write
+`visibility` or `last_activity_at`. Shadow mode now supports the explicit
+`unreadCursorV1PilotMemberIds` cohort: only listed UIDs have effective ON,
+including canonical APNs and read-state reconciliation; other members retain
+the legacy shadow payload. The rollout runbook records the exact global
+`settings/app_version.minSupportedVersion` cutover mechanism.
+
+### Design decisions (Phase 6c)
+
+Cursor tests now seed and query real Firestore-shaped documents through
+`FakeFirebaseFirestore`; no expected count is a constructed constant. Provider
+tests inject only I/O seams and verify OFF/shadow/ON ownership. A data-only
+`unread_cursor_badge_sync` requests provider refresh without a visible alert.
+
+### Design decisions (Phase 6d)
+
+The Node canonical calculator now executes the same timestamp-tagged
+two-member fixture as Dart using an in-memory Firestore-shaped fake. Parent
+team-channel documents are explicit, as collection enumeration cannot infer
+them from subcollections. Focused Jest: 4 suites / 9 behavioural tests.
+
+### Phase 6 final local verification
+
+Phases 1–6 are done locally on `feat/unread-cursor-v1-phase1`, not deployed.
+Phase 7 runbook `docs/runbooks/UNREAD_CURSOR_V1_ROLLOUT.md` and device checklist
+`docs/testing/UNREAD_CURSOR_V1_DEVICE_CHECKLIST.md` are written, not executed.
+Test inventory: canonical 14; announcement maintenance 5; feature flag 4;
+read-state reconciliation 7; cursor-mode badge helper 7. Final checks: Jest
+46 suites passed/1 skipped (422 passed/5 skipped); Flutter 686 passed/1
+skipped; analyzer 942 known-baseline issues, none new in touched files; all
+three isolated Firestore Emulator suites passed.

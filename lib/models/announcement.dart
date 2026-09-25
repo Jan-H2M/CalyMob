@@ -82,6 +82,8 @@ class Announcement {
       'sender_name': senderName,
       'type': type.name,
       'created_at': Timestamp.fromDate(createdAt),
+      'visibility': 'published',
+      'last_activity_at': Timestamp.fromDate(createdAt),
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
       'reply_count': replyCount,

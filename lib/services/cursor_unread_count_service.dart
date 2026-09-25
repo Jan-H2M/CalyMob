@@ -15,13 +15,16 @@ class CursorUnreadCountService {
     FirebaseFirestore? firestore,
     ReadStateService? readStateService,
     DateTime Function()? clock,
+    Future<int> Function(Query<Map<String, dynamic>> query)? countQuery,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _readState = readStateService ?? ReadStateService(firestore: firestore),
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _countQuery = countQuery ?? _aggregateCount;
 
   final FirebaseFirestore _firestore;
   final ReadStateService _readState;
   final DateTime Function() _clock;
+  final Future<int> Function(Query<Map<String, dynamic>> query) _countQuery;
   final Map<String, int> _lastKnown = <String, int>{};
 
   static const Duration queryTimeout = Duration(seconds: 8);
@@ -90,12 +93,9 @@ class CursorUnreadCountService {
     final timestamp = Timestamp.fromDate(cursor);
     final collection = _firestore.collection('clubs/$clubId/announcements');
 
-    final canonical = await collection
+    final canonical = await _countQuery(collection
         .where('visibility', isEqualTo: 'published')
-        .where('last_activity_at', isGreaterThan: timestamp)
-        .count()
-        .get()
-        .timeout(queryTimeout);
+        .where('last_activity_at', isGreaterThan: timestamp)).timeout(queryTimeout);
 
     // Temporary compatibility for documents that predate visibility/activity
     // normalization. These are deliberately filtered client-side by id and
@@ -108,12 +108,23 @@ class CursorUnreadCountService {
     for (final snapshot in legacy) {
       for (final document in snapshot.docs) {
         final data = document.data();
-        if (data['visibility'] == null && data['deleted_at'] == null) {
+        final indexedActivity = data['last_activity_at'];
+        final indexedDate = indexedActivity is Timestamp
+            ? indexedActivity.toDate()
+            : indexedActivity is DateTime
+                ? indexedActivity
+                : null;
+        // Field-maintenance triggers are asynchronous. A published document
+        // whose indexed activity is still at/before the cursor must use this
+        // compatibility path; otherwise the canonical aggregate already has it.
+        if (data['deleted_at'] == null && data['visibility'] != 'deleted' &&
+            (data['visibility'] == null || indexedDate == null ||
+                !indexedDate.isAfter(cursor))) {
           legacyIds.add(document.id);
         }
       }
     }
-    return (canonical.count ?? 0) + legacyIds.length;
+    return canonical + legacyIds.length;
   }
 
   Future<int> countEventMessages(String clubId, String userId) async {
@@ -152,14 +163,10 @@ class CursorUnreadCountService {
                     scopeId: operationId,
                   ) ??
                   _clock();
-              final aggregate = await _firestore
+              return _countQuery(_firestore
                   .collection('clubs/$clubId/operations/$operationId/messages')
                   .where('created_at',
-                      isGreaterThan: Timestamp.fromDate(cursor))
-                  .count()
-                  .get()
-                  .timeout(queryTimeout);
-              return aggregate.count ?? 0;
+                      isGreaterThan: Timestamp.fromDate(cursor))).timeout(queryTimeout);
             })
         .toList();
     return _sumBounded(tasks);
@@ -190,14 +197,10 @@ class CursorUnreadCountService {
                     scopeId: channelId,
                   ) ??
                   _clock();
-              final aggregate = await _firestore
+              return _countQuery(_firestore
                   .collection('clubs/$clubId/team_channels/$channelId/messages')
                   .where('created_at',
-                      isGreaterThan: Timestamp.fromDate(cursor))
-                  .count()
-                  .get()
-                  .timeout(queryTimeout);
-              return aggregate.count ?? 0;
+                      isGreaterThan: Timestamp.fromDate(cursor))).timeout(queryTimeout);
             })
         .toList());
   }
@@ -270,8 +273,7 @@ class CursorUnreadCountService {
     if (groupLevel != null) {
       query = query.where('group_level', isEqualTo: groupLevel);
     }
-    final aggregate = await query.count().get().timeout(queryTimeout);
-    return aggregate.count ?? 0;
+    return _countQuery(query).timeout(queryTimeout);
   }
 
   Future<int> _sumBounded(List<Future<int> Function()> tasks) async {
@@ -297,6 +299,11 @@ class CursorUnreadCountService {
     ));
     return total;
   }
+}
+
+Future<int> _aggregateCount(Query<Map<String, dynamic>> query) async {
+  final aggregate = await query.count().get();
+  return aggregate.count ?? 0;
 }
 
 class CursorUnreadBreakdown {

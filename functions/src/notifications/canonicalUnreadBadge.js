@@ -136,7 +136,14 @@ async function getCanonicalUnreadBreakdown({ db, clubId, memberId, now = new Dat
     const legacyIds = new Set();
     legacySnapshots.forEach((snapshot) => snapshot.docs.forEach((doc) => {
       const data = doc.data() || {};
-      if (data.visibility == null && data.deleted_at == null) legacyIds.add(doc.id);
+      const activity = newest(data.last_activity_at);
+      // During coexistence, field maintenance may lag a writer. Include
+      // legacy docs and published documents whose indexed activity is still
+      // at/before the cursor, without double-counting canonical results.
+      if (data.deleted_at == null && data.visibility !== 'deleted'
+        && (data.visibility == null || !activity || activity <= announcementLastSeen)) {
+        legacyIds.add(doc.id);
+      }
     }));
     announcements = (canonical.data().count || 0) + legacyIds.size;
   }

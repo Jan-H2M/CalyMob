@@ -118,6 +118,22 @@ async function main() {
     ));
     await assertFails(deleteDoc(ownCursor));
 
+    // Cursor-v1 must not widen announcement writes: field maintenance is
+    // server-only so old/new clients cannot forge visibility/activity.
+    await env.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), `${clubPath}/announcements/announcement-a`), {
+        title: 'Existing announcement', created_at: new Date(), reply_count: 0,
+      });
+    });
+    await assertFails(updateDoc(
+      doc(ownDb, `${clubPath}/announcements/announcement-a`),
+      { last_activity_at: serverTimestamp() },
+    ));
+    await assertFails(updateDoc(
+      doc(ownDb, `${clubPath}/announcements/announcement-a`),
+      { visibility: 'published' },
+    ));
+
     const flags = doc(ownDb, `${clubPath}/settings/feature_flags`);
     await assertSucceeds(getDoc(flags));
     await assertFails(updateDoc(flags, {unreadCursorV1Enabled: true}));

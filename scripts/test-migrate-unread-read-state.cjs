@@ -39,6 +39,7 @@ async function main() {
   admin.initializeApp({ projectId });
   const db = admin.firestore();
   const members = db.collection('clubs').doc(club).collection('members');
+  const announcements = db.collection('clubs').doc(club).collection('announcements');
   await Promise.all([
     members.doc('active-a').set({ member_status: 'active', unread_counts: { announcements: 12 } }),
     members.doc('active-b').set({ isActive: true, unread_counts: { team_messages: 4 } }),
@@ -51,6 +52,8 @@ async function main() {
     last_seen_at: oldTimestamp,
     updated_at: oldTimestamp,
   });
+  await announcements.doc('legacy').set({ created_at: oldTimestamp });
+  await announcements.doc('deleted').set({ created_at: oldTimestamp, deleted_at: oldTimestamp });
 
   const dryRun = await migration.run(options({ mode: 'dry-run' }), { firestore: db });
   assert.equal(dryRun, 0);
@@ -90,6 +93,13 @@ async function main() {
   assert.equal(await migration.run(options({ mode: 'apply', force: true }), { firestore: db }), 0, '--force repairs schema-v1 roots');
   assert.equal(await migration.run(options({ mode: 'apply' }), { firestore: db }), 0, 'repeat apply is idempotent');
   assert.equal(await migration.run(options({ mode: 'apply', force: true }), { firestore: db }), 0, '--force can reset schema-v1 roots');
+  assert.equal(await migration.run(options({ mode: 'dry-run', normalizeAnnouncements: true }), { firestore: db }), 0);
+  assert.equal((await announcements.doc('legacy').get()).data().visibility, undefined, 'normalization dry-run writes nothing');
+  assert.equal(await migration.run(options({ mode: 'apply', normalizeAnnouncements: true }), { firestore: db }), 0);
+  assert.deepEqual((await announcements.doc('legacy').get()).data().visibility, 'published');
+  assert.deepEqual((await announcements.doc('deleted').get()).data().visibility, 'deleted');
+  assert.ok((await announcements.doc('legacy').get()).data().last_activity_at.isEqual(oldTimestamp));
+  assert.equal(await migration.run(options({ mode: 'verify', normalizeAnnouncements: true }), { firestore: db }), 0);
   console.log('PASS unread read_state migration: guard, dry run, batching, backup, active-only, idempotency, verify, and force');
 }
 

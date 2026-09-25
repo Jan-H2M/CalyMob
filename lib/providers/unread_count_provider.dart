@@ -23,11 +23,42 @@ import '../models/read_state.dart';
 /// Na elke refresh worden de counts teruggeschreven naar het member document
 /// zodat de Cloud Functions het correcte badge-aantal gebruiken bij push notifications.
 class UnreadCountProvider extends ChangeNotifier {
-  final UnreadCountService _service = UnreadCountService();
-  final LocalReadTracker _tracker = LocalReadTracker();
-  final ReadStateService _readState = ReadStateService();
-  final CursorUnreadCountService _cursorService = CursorUnreadCountService();
-  final FeatureFlagService _featureFlags = FeatureFlagService();
+  UnreadCountProvider({
+    UnreadCountService? service,
+    LocalReadTracker? tracker,
+    ReadStateService? readState,
+    CursorUnreadCountService? cursorService,
+    FeatureFlagService? featureFlags,
+    Future<Map<String, int>> Function()? legacyRefresh,
+    Future<CursorUnreadBreakdown> Function()? cursorRefresh,
+    Future<void> Function(int, int, int, int)? legacySync,
+    void Function(int)? badgeUpdater,
+    Stream<UnreadCursorFeatureFlag> Function(String clubId)? flagStream,
+  })  : _service =
+            service ?? (legacyRefresh == null ? UnreadCountService() : null),
+        _tracker = tracker ?? LocalReadTracker(),
+        _readState =
+            readState ?? (cursorRefresh == null ? ReadStateService() : null),
+        _cursorService = cursorService ??
+            (cursorRefresh == null ? CursorUnreadCountService() : null),
+        _featureFlags =
+            featureFlags ?? (flagStream == null ? FeatureFlagService() : null),
+        _legacyRefresh = legacyRefresh,
+        _cursorRefresh = cursorRefresh,
+        _legacySync = legacySync,
+        _badgeUpdater = badgeUpdater,
+        _flagStream = flagStream;
+
+  final UnreadCountService? _service;
+  final LocalReadTracker _tracker;
+  final ReadStateService? _readState;
+  final CursorUnreadCountService? _cursorService;
+  final FeatureFlagService? _featureFlags;
+  final Future<Map<String, int>> Function()? _legacyRefresh;
+  final Future<CursorUnreadBreakdown> Function()? _cursorRefresh;
+  final Future<void> Function(int, int, int, int)? _legacySync;
+  final void Function(int)? _badgeUpdater;
+  final Stream<UnreadCursorFeatureFlag> Function(String clubId)? _flagStream;
 
   int _announcements = 0;
   int _eventMessages = 0;
@@ -72,11 +103,11 @@ class UnreadCountProvider extends ChangeNotifier {
   bool get usesCursorReadState => _cursorMode == UnreadCursorV1Mode.on;
 
   Future<void> markAnnouncementSeen() => _acknowledge(
-        (clubId, userId) => _readState.markAnnouncementSeen(clubId, userId),
+        (clubId, userId) => _readState!.markAnnouncementSeen(clubId, userId),
       );
 
   Future<void> markEventsSeen() => _acknowledge(
-        (clubId, userId) => _readState.markSectionSeen(
+        (clubId, userId) => _readState!.markSectionSeen(
           clubId,
           userId,
           ReadStateSection.events,
@@ -92,7 +123,7 @@ class UnreadCountProvider extends ChangeNotifier {
   Future<void> markAnnouncementsSeen() => markAnnouncementSeen();
 
   Future<void> markTeamsSeen() => _acknowledge(
-        (clubId, userId) => _readState.markSectionSeen(
+        (clubId, userId) => _readState!.markSectionSeen(
           clubId,
           userId,
           ReadStateSection.teams,
@@ -100,7 +131,7 @@ class UnreadCountProvider extends ChangeNotifier {
       );
 
   Future<void> markSessionsSeen() => _acknowledge(
-        (clubId, userId) => _readState.markSectionSeen(
+        (clubId, userId) => _readState!.markSectionSeen(
           clubId,
           userId,
           ReadStateSection.sessions,
@@ -109,17 +140,17 @@ class UnreadCountProvider extends ChangeNotifier {
 
   Future<void> markEventConversationSeen(String operationId) => _acknowledge(
         (clubId, userId) =>
-            _readState.markEventConversationSeen(clubId, userId, operationId),
+            _readState!.markEventConversationSeen(clubId, userId, operationId),
       );
 
   Future<void> markTeamChannelSeen(String channelId) => _acknowledge(
         (clubId, userId) =>
-            _readState.markTeamChannelSeen(clubId, userId, channelId),
+            _readState!.markTeamChannelSeen(clubId, userId, channelId),
       );
 
   Future<void> markSessionChatSeen(String scopeId) => _acknowledge(
         (clubId, userId) =>
-            _readState.markSessionChatSeen(clubId, userId, scopeId),
+            _readState!.markSessionChatSeen(clubId, userId, scopeId),
       );
 
   Future<void> _acknowledge(
@@ -194,7 +225,9 @@ class UnreadCountProvider extends ChangeNotifier {
 
   void _listenToCursorFlag(String clubId) {
     _flagSubscription?.cancel();
-    _flagSubscription = _featureFlags.unreadCursorV1(clubId).listen(
+    final stream =
+        _flagStream?.call(clubId) ?? _featureFlags!.unreadCursorV1(clubId);
+    _flagSubscription = stream.listen(
       _onCursorFlag,
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('⚠️ unread cursor feature flag stream failed: $error');
@@ -204,7 +237,7 @@ class UnreadCountProvider extends ChangeNotifier {
   }
 
   void _onCursorFlag(UnreadCursorFeatureFlag flag) {
-    final next = flag.enabled ? flag.mode : UnreadCursorV1Mode.off;
+    final next = flag.effectiveModeFor(_userId);
     if (next == _cursorMode) return;
     _cursorMode = next;
     debugPrint('🔀 unread cursor v1 mode=$_cursorMode');
@@ -274,14 +307,15 @@ class UnreadCountProvider extends ChangeNotifier {
         return;
       }
 
-      final counts = await _service.refreshAllCounts(
-        _clubId!,
-        _roles,
-        includeAllTeamChannels: _includeAllTeamChannels,
-        plongeurCode: _plongeurCode,
-        targetFormationLevel: _targetFormationLevel,
-        formationActive: _formationActive,
-      );
+      final counts = await (_legacyRefresh?.call() ??
+          _service!.refreshAllCounts(
+            _clubId!,
+            _roles,
+            includeAllTeamChannels: _includeAllTeamChannels,
+            plongeurCode: _plongeurCode,
+            targetFormationLevel: _targetFormationLevel,
+            formationActive: _formationActive,
+          ));
       final newAnnouncements = counts['announcements'] ?? 0;
       final newEventMessages = counts['event_messages'] ?? 0;
       final newTeamMessages = counts['team_messages'] ?? 0;
@@ -309,12 +343,18 @@ class UnreadCountProvider extends ChangeNotifier {
 
       // Sync counts terug naar Firestore member document
       // zodat Cloud Functions het correcte badge-aantal gebruiken
-      await _syncCountsToFirestore(
-        newAnnouncements,
-        newEventMessages,
-        newTeamMessages,
-        newSessionMessages,
-      );
+      await (_legacySync?.call(
+            newAnnouncements,
+            newEventMessages,
+            newTeamMessages,
+            newSessionMessages,
+          ) ??
+          _syncCountsToFirestore(
+            newAnnouncements,
+            newEventMessages,
+            newTeamMessages,
+            newSessionMessages,
+          ));
 
       if (_cursorMode == UnreadCursorV1Mode.shadow) {
         unawaited(_refreshCursorCounts(applyToUi: false));
@@ -330,16 +370,19 @@ class UnreadCountProvider extends ChangeNotifier {
     if (_clubId == null || _userId == null) return;
     // The root baseline is server-timestamped and only created after a non-OFF
     // flag. It avoids both a 2024 fallback and a client-device baseline.
-    await _readState.ensureRootCursors(_clubId!, _userId!);
-    final cursor = await _cursorService.refreshAllCounts(
-      clubId: _clubId!,
-      userId: _userId!,
-      roles: _roles,
-      includeAllTeamChannels: _includeAllTeamChannels,
-      plongeurCode: _plongeurCode,
-      targetFormationLevel: _targetFormationLevel,
-      formationActive: _formationActive,
-    );
+    final cursor = await (_cursorRefresh?.call() ??
+        () async {
+          await _readState!.ensureRootCursors(_clubId!, _userId!);
+          return _cursorService!.refreshAllCounts(
+            clubId: _clubId!,
+            userId: _userId!,
+            roles: _roles,
+            includeAllTeamChannels: _includeAllTeamChannels,
+            plongeurCode: _plongeurCode,
+            targetFormationLevel: _targetFormationLevel,
+            formationActive: _formationActive,
+          );
+        }());
     if (!applyToUi) {
       debugPrint(
         '🔎 unread cursor shadow legacy='
@@ -427,6 +470,10 @@ class UnreadCountProvider extends ChangeNotifier {
   /// Deferred via addPostFrameCallback om de main thread niet te blokkeren
   /// tijdens zware Firestore refresh operaties (voorkomt ANR).
   void _updateBadge(int count) {
+    if (_badgeUpdater != null) {
+      _badgeUpdater!(count);
+      return;
+    }
     // app_badge_plus has no web implementation — skip on web (fixes CALYMOB-F)
     if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {

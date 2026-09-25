@@ -90,6 +90,7 @@ class AnnouncementService {
           .update({
         'deleted_at': FieldValue.delete(),
         'deleted_by': FieldValue.delete(),
+        'visibility': 'published',
       });
 
       debugPrint('✅ Annonce restaurée: $announcementId');
