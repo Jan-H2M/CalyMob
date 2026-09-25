@@ -46,6 +46,41 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   bool _stableFormationActive = false;
   bool _hasStableMemberContext = false;
 
+  Future<void> _markCommunicationSectionAsRead(String section) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tout marquer comme lu ?'),
+        content: Text('Marquer $section comme lu sur tous vos appareils ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final unread = context.read<UnreadCountProvider>();
+    switch (section) {
+      case 'les annonces':
+        await unread.markAnnouncementsSeen();
+        return;
+      case 'les équipes':
+        await unread.markTeamsSeen();
+        return;
+      case 'les séances piscine':
+        await unread.markSessionsSeen();
+        return;
+      default:
+        await unread.markCommunicationSeen();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,6 +135,9 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                     _searchQuery = value;
                   });
                 },
+                onMarkAllTap: unreadProvider.usesCursorReadState
+                    ? _showMarkAllMenu
+                    : null,
               ),
               _CommunicationFilterBar(
                 selectedFilter: _selectedFilter,
@@ -126,6 +164,39 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showMarkAllMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.campaign_outlined),
+              title: const Text('Tout marquer comme lu'),
+              onTap: () => Navigator.pop(context, 'toute la communication'),
+            ),
+            ListTile(
+              title: const Text('Annonces'),
+              onTap: () => Navigator.pop(context, 'les annonces'),
+            ),
+            ListTile(
+              title: const Text('Équipes'),
+              onTap: () => Navigator.pop(context, 'les équipes'),
+            ),
+            ListTile(
+              title: const Text('Séances piscine'),
+              onTap: () => Navigator.pop(context, 'les séances piscine'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice != null && mounted) {
+      await _markCommunicationSectionAsRead(choice);
+    }
   }
 }
 
@@ -206,11 +277,13 @@ class _CommunicationHeader extends StatefulWidget {
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback? onNotificationsTap;
+  final VoidCallback? onMarkAllTap;
 
   const _CommunicationHeader({
     required this.searchQuery,
     required this.onSearchChanged,
     this.onNotificationsTap,
+    this.onMarkAllTap,
   });
 
   @override
@@ -306,6 +379,16 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
                     Icons.notifications_none_rounded,
                     color: Colors.white,
                     size: 27,
+                  ),
+                ),
+              if (widget.onMarkAllTap != null)
+                IconButton(
+                  tooltip: 'Tout marquer comme lu',
+                  onPressed: widget.onMarkAllTap,
+                  icon: const Icon(
+                    Icons.done_all_outlined,
+                    color: Colors.white,
+                    size: 25,
                   ),
                 ),
             ],

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +9,7 @@ import '../../config/firebase_config.dart';
 import '../../models/piscine_session.dart';
 import '../../models/poll.dart';
 import '../../models/session_message.dart';
+import '../../models/read_state.dart';
 import '../../widgets/message_hover_caret.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -67,7 +69,11 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   @override
   void initState() {
     super.initState();
-    _markMessagesAsRead();
+    // Cursor mode acknowledges only after the message stream successfully
+    // yields; preserve the legacy eager local acknowledgement when OFF.
+    if (!context.read<UnreadCountProvider>().usesCursorReadState) {
+      _markMessagesAsRead();
+    }
   }
 
   @override
@@ -79,6 +85,15 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   }
 
   Future<void> _markMessagesAsRead() async {
+    final unreadProvider = context.read<UnreadCountProvider>();
+    if (unreadProvider.usesCursorReadState) {
+      await unreadProvider.markSessionChatSeen(readStateSessionScopeId(
+        widget.session.id,
+        widget.chatGroup.type.value,
+        widget.chatGroup.level,
+      ));
+      return;
+    }
     final tracker = LocalReadTracker();
     await tracker.init();
     await tracker.markAsRead(unreadSessionReadKey(
@@ -88,7 +103,7 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
     ));
 
     if (!mounted) return;
-    await context.read<UnreadCountProvider>().refresh();
+    await unreadProvider.refresh();
   }
 
   Future<void> _sendMessage() async {
@@ -249,9 +264,8 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
         newUploaded.add(uploaded);
       }
 
-      final keptIds = result.keptAttachments
-          .map((a) => a.storagePath ?? a.url)
-          .toSet();
+      final keptIds =
+          result.keptAttachments.map((a) => a.storagePath ?? a.url).toSet();
       final removed = message.attachments
           .where((a) => !keptIds.contains(a.storagePath ?? a.url))
           .toList();
@@ -465,6 +479,14 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
                     }
 
                     final messages = snapshot.data ?? [];
+                    if (snapshot.hasData &&
+                        context
+                            .read<UnreadCountProvider>()
+                            .usesCursorReadState) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) unawaited(_markMessagesAsRead());
+                      });
+                    }
                     if (messages.isEmpty) {
                       return Center(
                         child: Column(
@@ -513,7 +535,9 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
                             if (showDateHeader)
                               _DateHeader(date: message.createdAt),
                             FutureBuilder<String?>(
-                              future: isOwn ? Future.value(null) : _getPhotoUrl(message.senderId),
+                              future: isOwn
+                                  ? Future.value(null)
+                                  : _getPhotoUrl(message.senderId),
                               builder: (context, snapshot) {
                                 return _MessageBubble(
                                   message: message,
@@ -735,112 +759,112 @@ class _MessageBubble extends StatelessWidget {
           child: Row(
             mainAxisAlignment:
                 isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isOwn) ...[
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.middenblauw,
-                backgroundImage: senderPhotoUrl != null
-                    ? CachedNetworkImageProvider(senderPhotoUrl!)
-                    : null,
-                child: senderPhotoUrl == null
-                    ? Text(
-                        message.senderName.isEmpty
-                            ? '?'
-                            : message.senderName[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.78,
-                ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: bubbleColor,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(16),
-                    topRight: const Radius.circular(16),
-                    bottomLeft: Radius.circular(isOwn ? 16 : 4),
-                    bottomRight: Radius.circular(isOwn ? 4 : 16),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (!isOwn)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          message.senderName,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isOwn) ...[
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppColors.middenblauw,
+                  backgroundImage: senderPhotoUrl != null
+                      ? CachedNetworkImageProvider(senderPhotoUrl!)
+                      : null,
+                  child: senderPhotoUrl == null
+                      ? Text(
+                          message.senderName.isEmpty
+                              ? '?'
+                              : message.senderName[0].toUpperCase(),
                           style: const TextStyle(
-                            fontSize: 12,
+                            color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.middenblauw,
+                            fontSize: 12,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.78,
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isOwn ? 16 : 4),
+                      bottomRight: Radius.circular(isOwn ? 4 : 16),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isOwn)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            message.senderName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.middenblauw,
+                            ),
                           ),
                         ),
+                      if (message.message.isNotEmpty)
+                        LinkifiedMessageText(
+                          text: message.message,
+                          style: TextStyle(color: textColor, fontSize: 15),
+                          linkColor: isOwn ? Colors.white : Colors.blue,
+                        ),
+                      if (message.hasAttachments)
+                        AttachmentDisplay(
+                          attachments: message.attachments,
+                          compact: true,
+                        ),
+                      if (message.hasPoll)
+                        ChatPollWidget(
+                          poll: message.poll!,
+                          currentUserId: currentUserId,
+                          onVote: onVote,
+                          onClose: onClosePoll,
+                          canClose: onClosePoll != null,
+                        ),
+                      if (message.reactions.isNotEmpty)
+                        MessageReactions(
+                          reactions: message.reactions,
+                          currentUserId: currentUserId,
+                          clubId: FirebaseConfig.defaultClubId,
+                          onToggleReaction: onToggleReaction,
+                          compact: true,
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message.formattedDateTime,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isOwn
+                              ? Colors.white.withValues(alpha: 0.72)
+                              : Colors.grey.shade500,
+                        ),
                       ),
-                    if (message.message.isNotEmpty)
-                      LinkifiedMessageText(
-                        text: message.message,
-                        style: TextStyle(color: textColor, fontSize: 15),
-                        linkColor: isOwn ? Colors.white : Colors.blue,
-                      ),
-                    if (message.hasAttachments)
-                      AttachmentDisplay(
-                        attachments: message.attachments,
-                        compact: true,
-                      ),
-                    if (message.hasPoll)
-                      ChatPollWidget(
-                        poll: message.poll!,
-                        currentUserId: currentUserId,
-                        onVote: onVote,
-                        onClose: onClosePoll,
-                        canClose: onClosePoll != null,
-                      ),
-                    if (message.reactions.isNotEmpty)
-                      MessageReactions(
-                        reactions: message.reactions,
-                        currentUserId: currentUserId,
-                        clubId: FirebaseConfig.defaultClubId,
-                        onToggleReaction: onToggleReaction,
-                        compact: true,
-                      ),
-                    const SizedBox(height: 4),
-                    Text(
-                      message.formattedDateTime,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isOwn
-                            ? Colors.white.withValues(alpha: 0.72)
-                            : Colors.grey.shade500,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

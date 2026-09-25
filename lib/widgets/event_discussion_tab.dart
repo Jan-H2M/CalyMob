@@ -83,7 +83,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   void initState() {
     super.initState();
     _checkParticipation();
-    _markMessagesAsRead();
   }
 
   @override
@@ -106,6 +105,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
     if (!mounted) return;
     setState(() => _hasCheckedParticipation = true);
+    // The discussion is now visible with a successful participant check.  Do
+    // not acknowledge a cursor while the initial load failed or is pending.
+    await _markMessagesAsRead();
   }
 
   Future<void> _markMessagesAsRead() async {
@@ -117,10 +119,14 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
     if (!mounted) return;
     final unreadProvider = context.read<UnreadCountProvider>();
-    await context.read<EventMessageProvider>().markAsRead(
-          operationId: widget.operationId,
-          unreadProvider: unreadProvider,
-        );
+    if (unreadProvider.usesCursorReadState) {
+      await unreadProvider.markEventConversationSeen(widget.operationId);
+    } else {
+      await context.read<EventMessageProvider>().markAsRead(
+            operationId: widget.operationId,
+            unreadProvider: unreadProvider,
+          );
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -300,9 +306,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         newUploaded.add(uploaded);
       }
 
-      final keptIds = result.keptAttachments
-          .map((a) => a.storagePath ?? a.url)
-          .toSet();
+      final keptIds =
+          result.keptAttachments.map((a) => a.storagePath ?? a.url).toSet();
       final removed = message.attachments
           .where((a) => !keptIds.contains(a.storagePath ?? a.url))
           .toList();
@@ -651,118 +656,131 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         child: Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(
-            mainAxisAlignment: isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isOwnMessage) ...[
-              FutureBuilder<String?>(
-                future: _getPhotoUrl(message.senderId),
-                builder: (context, snapshot) {
-                  return CircleAvatar(
-                    radius: 16,
-                    backgroundColor: AppColors.middenblauw,
-                    backgroundImage: snapshot.data != null
-                        ? CachedNetworkImageProvider(snapshot.data!)
-                        : null,
-                    child: snapshot.data == null
-                        ? Text(
-                            message.senderName.isEmpty
-                                ? '?'
-                                : message.senderName[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          )
-                        : null,
-                  );
-                },
-              ),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          decoration: BoxDecoration(
-            color: isOwnMessage ? Colors.blue[100] : Colors.grey[200],
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment:
+                isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (!isOwnMessage)
-                Text(
-                  message.senderName,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              if (!isOwnMessage) const SizedBox(height: 4),
-              if (message.isReply && message.replyToPreview != null)
-                _buildReplyPreview(message.replyToPreview!),
-              if (message.message.isNotEmpty)
-                MarkdownBody(
-                  data: message.message,
-                  selectable: true,
-                  onTapLink: (text, href, title) async {
-                    final uri = eventMessageLinkUri(href);
-                    if (uri != null) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
+              if (!isOwnMessage) ...[
+                FutureBuilder<String?>(
+                  future: _getPhotoUrl(message.senderId),
+                  builder: (context, snapshot) {
+                    return CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AppColors.middenblauw,
+                      backgroundImage: snapshot.data != null
+                          ? CachedNetworkImageProvider(snapshot.data!)
+                          : null,
+                      child: snapshot.data == null
+                          ? Text(
+                              message.senderName.isEmpty
+                                  ? '?'
+                                  : message.senderName[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                    );
                   },
-                  styleSheet: MarkdownStyleSheet(
-                    p: const TextStyle(fontSize: 15, color: Colors.black87),
-                    strong: const TextStyle(fontSize: 15, color: Colors.black87, fontWeight: FontWeight.w700),
-                    em: const TextStyle(fontSize: 15, color: Colors.black87, fontStyle: FontStyle.italic),
-                    listBullet: const TextStyle(fontSize: 15, color: Colors.black87),
-                    blockSpacing: 4,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isOwnMessage ? Colors.blue[100] : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isOwnMessage)
+                        Text(
+                          message.senderName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      if (!isOwnMessage) const SizedBox(height: 4),
+                      if (message.isReply && message.replyToPreview != null)
+                        _buildReplyPreview(message.replyToPreview!),
+                      if (message.message.isNotEmpty)
+                        MarkdownBody(
+                          data: message.message,
+                          selectable: true,
+                          onTapLink: (text, href, title) async {
+                            final uri = eventMessageLinkUri(href);
+                            if (uri != null) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            }
+                          },
+                          styleSheet: MarkdownStyleSheet(
+                            p: const TextStyle(
+                                fontSize: 15, color: Colors.black87),
+                            strong: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w700),
+                            em: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black87,
+                                fontStyle: FontStyle.italic),
+                            listBullet: const TextStyle(
+                                fontSize: 15, color: Colors.black87),
+                            blockSpacing: 4,
+                          ),
+                        ),
+                      if (message.hasAttachments)
+                        AttachmentDisplay(
+                          attachments: message.attachments,
+                          compact: true,
+                        ),
+                      if (message.hasPoll)
+                        ChatPollWidget(
+                          poll: message.poll!,
+                          currentUserId: currentUserId,
+                          onVote: (optionId) =>
+                              _togglePollVote(message.id, optionId),
+                          onClose: isOwnMessage
+                              ? () => _closePoll(message.id)
+                              : null,
+                          canClose: isOwnMessage,
+                        ),
+                      if (message.reactions.isNotEmpty)
+                        MessageReactions(
+                          reactions: message.reactions,
+                          currentUserId: currentUserId,
+                          clubId: widget.clubId,
+                          onToggleReaction: (emoji) =>
+                              _toggleReaction(message.id, emoji),
+                          compact: true,
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormatter.formatDayMonthTime(message.createdAt),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
+                    ],
                   ),
                 ),
-              if (message.hasAttachments)
-                AttachmentDisplay(
-                  attachments: message.attachments,
-                  compact: true,
-                ),
-              if (message.hasPoll)
-                ChatPollWidget(
-                  poll: message.poll!,
-                  currentUserId: currentUserId,
-                  onVote: (optionId) => _togglePollVote(message.id, optionId),
-                  onClose: isOwnMessage ? () => _closePoll(message.id) : null,
-                  canClose: isOwnMessage,
-                ),
-              if (message.reactions.isNotEmpty)
-                MessageReactions(
-                  reactions: message.reactions,
-                  currentUserId: currentUserId,
-                  clubId: widget.clubId,
-                  onToggleReaction: (emoji) =>
-                      _toggleReaction(message.id, emoji),
-                  compact: true,
-                ),
-              const SizedBox(height: 4),
-              Text(
-                DateFormatter.formatDayMonthTime(message.createdAt),
-                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-              ),
+              ), // Flexible
             ],
           ),
-        ),
-            ), // Flexible
-          ],
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildReplyPreview(ReplyPreview preview) {

@@ -100,7 +100,28 @@ class MockUnreadCountProvider extends ChangeNotifier
   @override
   UnreadCursorV1Mode get cursorMode => UnreadCursorV1Mode.off;
   @override
+  bool get usesCursorReadState => false;
+  @override
   bool get isListening => false;
+
+  @override
+  Future<void> markAnnouncementSeen() async {}
+  @override
+  Future<void> markAnnouncementsSeen() async {}
+  @override
+  Future<void> markCommunicationSeen() async {}
+  @override
+  Future<void> markEventConversationSeen(String operationId) async {}
+  @override
+  Future<void> markEventsSeen() async {}
+  @override
+  Future<void> markSessionChatSeen(String scopeId) async {}
+  @override
+  Future<void> markSessionsSeen() async {}
+  @override
+  Future<void> markTeamChannelSeen(String channelId) async {}
+  @override
+  Future<void> markTeamsSeen() async {}
 
   void setCounts({
     int total = 0,

@@ -1158,3 +1158,13 @@ rules, the announcement index and emulator tests on
 `clubs/{clubId}/settings/feature_flags` as `unreadCursorV1Enabled: false` and
 `unreadCursorV1Mode: 'off' | 'shadow' | 'on'`. Phases 2–7 remain planned in
 `../../outputs/calymob-unread-definitive-plan_2026-09-24.md` (parent Calypso repo).
+
+### Design decisions (Phase 3)
+
+Phase 3 wires screen acknowledgements only while `unreadCursorV1Mode == on`.
+Opening a tile or list remains read-only; opening an event/team/session
+conversation acknowledges its scoped cursor after successful content load.
+Opening an announcement detail acknowledges the single announcements cursor;
+the list does not. Explicit confirmed French *Tout marquer comme lu* controls
+write only root cursor sections. Cursor-mode Communication now includes session
+messages and refreshes the app-icon badge, including zero.
