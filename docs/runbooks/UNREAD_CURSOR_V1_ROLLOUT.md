@@ -77,6 +77,16 @@ store build/upload/release, minimum-version change, restore, and legacy cleanup.
 
 ## Execution log 2026-09-25
 
+- **Superseded (2026-09-25):** canonical team unread counting now includes the
+  same fallback channel IDs exposed by `TeamChannelService` when a
+  `team_channels/{id}` parent document is absent, and formation access mirrors
+  Flutter's explicit-target / `plongeur_code` rules. This correction is local
+  on PR #85 only; it has not been deployed.
+- **Superseded (2026-09-25):** `onAnnouncementWritten` now skips hard-delete
+  events safely. Production still has the old function: each hard delete can
+  produce one failed invocation, with no retry configured. It requires Jan's
+  explicit approval before a Functions deployment.
+
 - CalyMob Firestore rules were **not** deployed. CalyCompta remains the source
   of truth; [CalyCompta PR #96](https://github.com/Jan-H2M/CalyCompta/pull/96)
   is reserved for the shadow gate after comparison with the retained live

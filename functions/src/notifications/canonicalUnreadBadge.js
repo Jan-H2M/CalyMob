@@ -75,13 +75,68 @@ function hasTeamAccess(member = {}, channel = {}) {
   if (type === 'gonflage') return roles.has('gonflage');
   if (type.startsWith('formation_')) {
     if (roles.has('encadrant')) return true;
-    const target = String(member.target_formation_level || '').replace('★', '*').toUpperCase();
-    return member.formation_active === true && (
-      (type.includes('1') && target.includes('1')) || (type.includes('2') && target.includes('2')) ||
-      (type.includes('3') && target.includes('3')) || (type.includes('4') && target.includes('4')) ||
-      (type.includes('am') && target.includes('AM')));
+    // Keep server counts aligned with Flutter ClubRoleUtils: an explicit
+    // target grants formation-channel access even when formation_active is
+    // false; otherwise derive the target from plongeur_code.
+    // See lib/utils/club_role_utils.dart#getVisibleTeamChannelTypes.
+    const target = formationTargetForMember(member);
+    return (type.includes('1') && target === '1*') || (type.includes('2') && target === '2*') ||
+      (type.includes('3') && target === '3*') || (type.includes('4') && target === '4*') ||
+      (type.includes('am') && target === 'AM');
   }
   return roles.has('encadrant');
+}
+
+function normalizeFormationTarget(value) {
+  const raw = String(value || '').trim().toUpperCase().replace(/★/g, '*').replace(/_/g, ' ');
+  if (!raw) return null;
+  if (raw.includes('AM') || raw === 'AIDE MONITEUR') return 'AM';
+  if (raw.includes('1') || raw.includes('P1')) return '1*';
+  if (raw.includes('2') || raw.includes('P2')) return '2*';
+  if (raw.includes('3') || raw.includes('P3')) return '3*';
+  if (raw.includes('4') || raw.includes('P4')) return '4*';
+  return null;
+}
+
+function formationTargetForMember(member = {}) {
+  const explicit = normalizeFormationTarget(member.target_formation_level);
+  if (explicit) return explicit;
+  const code = String(member.plongeur_code || '').trim().toUpperCase().replace(/★/g, '*')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (code === 'NB' || code.includes('NON BREVETE') || code.includes('SANS BREVET')
+    || code.includes('DEBUTANT') || code.includes('BAPTEME') || code.includes('INITIATION')) return '1*';
+  if (code === 'P1' || code === '1' || code === '1*' || code.includes('PLONGEUR 1')) return '2*';
+  if (code === 'P2' || code === '2' || code === '2*' || code.includes('PLONGEUR 2')) return '3*';
+  if (code === 'P3' || code === '3' || code === '3*' || code.includes('PLONGEUR 3')) return '4*';
+  if (code === 'P4' || code === '4' || code === '4*' || code.includes('PLONGEUR 4')) return 'AM';
+  return null;
+}
+
+const TEAM_CHANNEL_DEFAULTS = [
+  ['general', 'general'], ['equipe_ca', 'ca'], ['equipe_accueil', 'accueil'],
+  ['equipe_encadrants', 'encadrants'], ['equipe_gonflage', 'gonflage'], ['bureau', 'bureau'],
+  ['formation_1_etoile', 'formation_1_etoile'], ['formation_2_etoiles', 'formation_2_etoiles'],
+  ['formation_3_etoiles', 'formation_3_etoiles'], ['formation_4_etoiles', 'formation_4_etoiles'],
+  ['formation_AM', 'formation_AM'],
+];
+
+function visibleTeamChannelDefaults(member = {}) {
+  return TEAM_CHANNEL_DEFAULTS.filter(([, type]) => hasTeamAccess(member, { type }));
+}
+
+async function teamChannelsForMember(club, member) {
+  const collection = club.collection('team_channels');
+  const stored = await collection.get();
+  const channels = new Map(stored.docs
+    .filter((channel) => hasTeamAccess(member, { ...channel.data(), id: channel.id }))
+    .map((channel) => [channel.id, { id: channel.id, ref: channel.ref }]));
+  // TeamChannelService emits default/fallback channels before the parent docs
+  // exist. Firestore permits messages in those subcollections, so include the
+  // same IDs for canonical counting (onNewTeamMessage uses the same fallback).
+  visibleTeamChannelDefaults(member).forEach(([id]) => {
+    if (!channels.has(id)) channels.set(id, { id, ref: collection.doc(id) });
+  });
+  return [...channels.values()];
 }
 
 function sessionScopesForMember(member = {}) {
@@ -159,8 +214,8 @@ async function getCanonicalUnreadBreakdown({ db, clubId, memberId, now = new Dat
   });
   const events = eventItems.reduce((sum, count) => sum + count, 0);
 
-  const channels = await club.collection('team_channels').get();
-  const teamItems = await bounded(channels.docs.filter((channel) => hasTeamAccess(member, { ...channel.data(), id: channel.id })), async (channel) => {
+  const channels = await teamChannelsForMember(club, member);
+  const teamItems = await bounded(channels, async (channel) => {
     const scoped = await teamsRoot.ref.collection('channels').doc(channel.id).get();
     return countMessages(channel.ref.collection('messages'), newest(rootCursor(teamsRoot), scoped.data()?.last_seen_at));
   });
@@ -180,4 +235,4 @@ async function getCanonicalUnreadBreakdown({ db, clubId, memberId, now = new Dat
   return { events, announcements, teams, sessions, communication, total: events + communication };
 }
 
-module.exports = { getCanonicalUnreadBreakdown, eventUnreadUntil, isUnreadEligibleEvent, isCountableRegistration, readStateSessionScopeId, newest, hasTeamAccess, sessionScopesForMember };
+module.exports = { getCanonicalUnreadBreakdown, eventUnreadUntil, isUnreadEligibleEvent, isCountableRegistration, readStateSessionScopeId, newest, hasTeamAccess, formationTargetForMember, visibleTeamChannelDefaults, sessionScopesForMember };
