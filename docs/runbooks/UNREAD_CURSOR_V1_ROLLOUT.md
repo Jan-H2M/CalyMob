@@ -77,15 +77,14 @@ store build/upload/release, minimum-version change, restore, and legacy cleanup.
 
 ## Execution log 2026-09-25
 
-- **Superseded (2026-09-25):** canonical team unread counting now includes the
-  same fallback channel IDs exposed by `TeamChannelService` when a
-  `team_channels/{id}` parent document is absent, and formation access mirrors
-  Flutter's explicit-target / `plongeur_code` rules. This correction is local
-  on PR #85 only; it has not been deployed.
-- **Superseded (2026-09-25):** `onAnnouncementWritten` now skips hard-delete
-  events safely. Production still has the old function: each hard delete can
-  produce one failed invocation, with no retry configured. It requires Jan's
-  explicit approval before a Functions deployment.
+- **Superseded (2026-09-25 12:35):** canonical team unread counting now
+  includes the same fallback channel IDs exposed by `TeamChannelService` when
+  a `team_channels/{id}` parent document is absent, and formation access
+  mirrors Flutter's explicit-target / `plongeur_code` rules. Jan approved and
+  deployed this correction to production with the scoped Functions below.
+- **Superseded (2026-09-25 12:35):** `onAnnouncementWritten` now skips
+  hard-delete events safely. The production hard-delete correction was deployed
+  with Jan's approval; the prior one-failed-invocation risk is superseded.
 
 - CalyMob Firestore rules were **not** deployed. CalyCompta remains the source
   of truth; [CalyCompta PR #96](https://github.com/Jan-H2M/CalyCompta/pull/96)
@@ -113,7 +112,25 @@ store build/upload/release, minimum-version change, restore, and legacy cleanup.
   Evidence: `/tmp/calymob-android-internal-213.log`. The internal track remains
   version code **184**. Do not retry until Jan grants the Play service account
   the necessary release permission in Play Console.
-- The `onAnnouncementWritten` hard-delete P2 correction remains local only and
-  is **not deployed to production**; a Functions deployment needs Jan's
-  explicit approval. There is no CalyMob `dev` branch and no DEV Firebase
-  project, so there has been no DEV deployment.
+- **Production server review fixes — 12:33–12:35 Brussels:** Jan approved the
+  targeted deployment after PR #85 `payment-integrity` passed. The checkout
+  was PR tip `0124ec3`; Functions code was unchanged from `e547dd9`. Deployed
+  Functions: `onAnnouncementWritten`, `onNewAnnouncement`,
+  `onNewAnnouncementReply`, `onNewEventMessage`, `onNewOperation`,
+  `onNewSessionMessage`, `onNewTeamMessage`, `onReadStateWritten`, and
+  `onReadStateScopeWritten`. All nine are ACTIVE Firestore v2 triggers in
+  `europe-west1`.
+- **Verification and log limitation:** isolated `smoke-1` and `smoke-2`
+  announcements under `clubs/zz-smoke-unread-20260925` were hard-deleted; the
+  collection ended with zero documents. `smoke-2` received the expected
+  `visibility: published` and `last_activity_at` normalization, proving
+  `onAnnouncementWritten` ran. Firebase CLI logs were stale for every Function
+  (including that proven invocation) and Cloud Logging read was denied for
+  `jan.andriessens@gmail.com`, so CLI logs could not independently show the
+  `onNewAnnouncement` invocation. `Empty Authorization header` warnings
+  immediately after Cloud Run startup probes are benign rollout noise.
+- **Rollback record:** pre-deploy inventory is
+  `tmp/unread-v1-rollout-2026-09-25/prod-functions-before-fixes.txt`; rollback
+  is `git checkout 0886b17 && firebase deploy --only` the same nine Functions
+  with `--project calycompta`. No feature flags, Firestore rules, or indexes
+  changed. There is no CalyMob `dev` branch and no DEV Firebase project.
