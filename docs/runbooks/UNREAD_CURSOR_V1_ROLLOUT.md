@@ -104,5 +104,16 @@ store build/upload/release, minimum-version change, restore, and legacy cleanup.
 - Migration applied and verified: 27 announcement normalizations and 364 root
   cursors for 91 active members. Backups are retained at
   `../outputs/unread-v1-rollout-2026-09-25-backups/`.
-- iOS release preparation targets **1.23.0+213**. IPA build status: pending;
-  TestFlight upload is pending Jan's external release-manifest approval.
+- iOS **1.23.0 (213)** was uploaded from commit `e547dd9` to TestFlight and is
+  `VALID` / `IN_BETA_TESTING`. It is available to the internal **CalyMob
+  Testing team** group, which has automatic access to all builds and contains
+  `jan@andriessens.be`. No App Store or beta-review submission was made.
+- Android **1.23.0 (213)** internal-track upload from commit `e547dd9` failed:
+  `Google Api Error: Invalid request - The caller does not have permission`.
+  Evidence: `/tmp/calymob-android-internal-213.log`. The internal track remains
+  version code **184**. Do not retry until Jan grants the Play service account
+  the necessary release permission in Play Console.
+- The `onAnnouncementWritten` hard-delete P2 correction remains local only and
+  is **not deployed to production**; a Functions deployment needs Jan's
+  explicit approval. There is no CalyMob `dev` branch and no DEV Firebase
+  project, so there has been no DEV deployment.
