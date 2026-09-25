@@ -175,6 +175,11 @@ class _TeamChatScreenState extends State<TeamChatScreen>
         attachments: attachments,
         poll: _pendingPoll,
       );
+      if (mounted) {
+        await context
+            .read<UnreadCountProvider>()
+            .markTeamChannelSeen(widget.channel.id);
+      }
 
       _messageController.clear();
       setState(() {

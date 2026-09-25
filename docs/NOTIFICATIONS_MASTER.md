@@ -1168,3 +1168,19 @@ Opening an announcement detail acknowledges the single announcements cursor;
 the list does not. Explicit confirmed French *Tout marquer comme lu* controls
 write only root cursor sections. Cursor-mode Communication now includes session
 messages and refreshes the app-icon badge, including zero.
+
+### Design decisions (Phase 4)
+
+Functions now have the same OFF/shadow/ON gate. OFF preserves legacy delivery;
+shadow keeps its payload and logs a bounded legacy-versus-canonical comparison;
+ON retains legacy category increments for old released apps but derives APNs
+badge values from cursors. Cursor writes send a silent exact badge (including
+zero) only after an actual advance, with an in-memory four-second coalescer.
+The legacy event increment window also changes to the confirmed seven Brussels
+calendar days so coexistence does not produce two policies. Local only.
+
+**Phase 4 review fixes.** Node now mirrors Dart's `statut == publie` pool
+session and role-scoped visibility predicates and uses aggregation counts.
+Successful self-sends advance the sender cursor in ON mode. Read-state badge
+coalescing is trailing-edge: later cursor writes supersede an earlier pending
+send, so the final exact value (including zero) is retained.

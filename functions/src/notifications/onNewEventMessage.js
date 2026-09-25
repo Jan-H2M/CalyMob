@@ -8,7 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
 const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
 const { isEligibleEventMessageRegistration, shouldNotifyForOperation } = require('./eventMessageAudience');
 
@@ -205,7 +205,7 @@ exports.onNewEventMessage = onDocumentCreated(
       }
 
       // 6. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'event_messages');
+      const { successCount, failureCount } = await sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, 'event_messages');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

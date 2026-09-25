@@ -139,6 +139,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
         replyToPreview: replyPreview,
         attachments: attachments,
       );
+      if (mounted) {
+        await context.read<UnreadCountProvider>().markAnnouncementSeen();
+      }
 
       _messageController.clear();
       setState(() {

@@ -147,6 +147,15 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
         attachments: attachments,
         poll: _pendingPoll,
       );
+      if (mounted) {
+        await context
+            .read<UnreadCountProvider>()
+            .markSessionChatSeen(readStateSessionScopeId(
+              widget.session.id,
+              widget.chatGroup.type.value,
+              widget.chatGroup.level,
+            ));
+      }
 
       _messageController.clear();
       setState(() {

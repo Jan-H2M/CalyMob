@@ -621,3 +621,14 @@ acknowledges a section; event, team and session discussions do after successful
 load, while an announcement detail advances its one section cursor. The landing
 Communication tile adds sessions only in cursor mode and the provider refreshes
 the OS badge on every cursor refresh, including zero. This phase is local only.
+
+### Design decisions (Phase 4)
+
+The Functions path now computes canonical cursor totals for APNs only in `on`
+mode. Existing unread-category writes deliberately remain during coexistence
+for old applications; they are no longer the APNs authority for cursor mode.
+Read-state advances trigger a coalesced silent exact badge, including zero.
+
+Phase-4 review parity fixes align Node with Dart session/team policy and make
+coalescing trailing-edge so a final zero cannot be dropped. Sender self-reads
+are acknowledged after successful sends in cursor mode.
