@@ -1,8 +1,9 @@
 # Unread cursor v1 rollout runbook
 
-Status: Part 1 executed on 2026-09-25 with Jan's explicit approval; the cursor
-feature remains disabled/off. Do not advance the flag or deploy rules without a
-separate rollout approval.
+> **Superseded — 2026-09-25 15:09 CEST.** The flag-off-only status below was
+> superseded by Jan's explicit approval for a single-member pilot. The current
+> production state is recorded in the deployment log; do not broaden the pilot
+> or change mode without a separate approval.
 
 ## Preconditions and approvals
 
@@ -74,6 +75,42 @@ backup through a separately reviewed Admin script—never manually by bulk UI.
 
 `firebase deploy`, any real-project migration command, production flag write,
 store build/upload/release, minimum-version change, restore, and legacy cleanup.
+
+## Production pilot deployment log — 2026-09-25
+
+- **15:09 CEST:** The live Firestore rules source was backed up before release.
+  It exactly matched CalyCompta `deb99ad` (the main revision before PR #96), so
+  there was no unexplained production drift. Backup files are retained at
+  `tmp/unread-v1-rollout-2026-09-25/`.
+- **15:09 CEST:** Only `firestore:rules` was released from clean CalyCompta
+  commit `93a6fe7` (PR #96). No Functions, indexes, Storage rules, or client
+  build were deployed. Ruleset before: `b9769eeb-eba3-41e5-a0fd-2418b52303da`;
+  ruleset after: `08763aba-5bfb-4718-a88f-55381caadc26`.
+- **15:09 CEST:** `clubs/calypso/settings/feature_flags` was backed up, then
+  updated with a field mask affecting only `unreadCursorV1Enabled: true` and
+  `unreadCursorV1Mode: "shadow"`. The pilot list remains exactly
+  `["nvDVlhglO1eGXPBVRd7NbJ2Uevn2"]`; only that member resolves shadow to
+  cursor mode. All other members retain the visible legacy path.
+- Verification: Jan's four root cursor documents exist. With their unset
+  timestamps, the client falls back to the current instant, so the initial
+  cursor calculation is expected to be approximately `0` total / `0`
+  Communication (unless a new message arrives concurrently). The available
+  Cloud Logging query returned no `unread cursor` / `unreadCursorV1` server
+  entries; the shadow diagnostic is emitted on the client device.
+
+### Rollback for this pilot
+
+1. Field-mask only `unreadCursorV1Enabled=false` and
+   `unreadCursorV1Mode="off"`; do not alter the approved pilot list or delete
+   cursor documents.
+2. If rules rollback is required, re-release the retained pre-PR #96 ruleset
+   `b9769eeb-eba3-41e5-a0fd-2418b52303da` through the Firebase Rules REST API
+   by PATCHing `projects/calycompta/releases/cloud.firestore` to that ruleset.
+   Use the backed-up release and ruleset JSON files as the source of truth.
+
+Known limitation: under the new cursor counter, team messages and announcements
+can be marked read slightly too early. Keep this rollout limited to the single
+pilot until that behaviour has been evaluated and separately approved.
 
 ## Execution log 2026-09-25
 
