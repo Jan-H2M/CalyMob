@@ -21,6 +21,7 @@ function parseArgs(argv) {
     else if (value === '--batch-size') options.batchSize = Number(argv[++i]);
     else if (value === '--member') options.members.push(argv[++i]);
     else if (value === '--force') options.force = true;
+    else if (value === '--normalize-announcements') options.normalizeAnnouncements = true;
     else throw new Error(`Unknown option: ${value}`);
   }
   if (!options.club) throw new Error('--club requires a value');
@@ -89,6 +90,33 @@ async function buildPlan(db, options, timestamp) {
   return { members: limited.map((doc) => doc.id), changes };
 }
 
+function timestampMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.toDate === 'function') return value.toDate().getTime();
+  return value instanceof Date ? value.getTime() : 0;
+}
+
+function announcementNormalization(data = {}) {
+  const visibility = data.deleted_at != null ? 'deleted' : 'published';
+  const activity = data.last_reply_at || data.created_at || null;
+  const after = { visibility };
+  if (activity) after.last_activity_at = activity;
+  return after;
+}
+
+async function buildAnnouncementNormalizationPlan(db, options) {
+  const announcements = await db.collection('clubs').doc(options.club).collection('announcements').get();
+  const changes = [];
+  announcements.docs.sort((a, b) => a.id.localeCompare(b.id)).forEach((doc) => {
+    const before = doc.data() || {};
+    const after = announcementNormalization(before);
+    if (before.visibility === after.visibility && timestampMillis(before.last_activity_at) === timestampMillis(after.last_activity_at)) return;
+    changes.push({ ref: doc.ref, path: doc.ref.path, before, after, merge: true });
+  });
+  return changes;
+}
+
 function writeBackup(options, changes) {
   fs.mkdirSync(options.backupDir, { recursive: true });
   const file = path.resolve(options.backupDir, `unread-read-state-v1-backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
@@ -99,12 +127,17 @@ function writeBackup(options, changes) {
 async function applyPlan(db, changes, batchSize) {
   for (let offset = 0; offset < changes.length; offset += batchSize) {
     const batch = db.batch();
-    changes.slice(offset, offset + batchSize).forEach((change) => batch.set(change.ref, change.after));
+    changes.slice(offset, offset + batchSize).forEach((change) => batch.set(change.ref, change.after, { merge: change.merge === true }));
     await batch.commit();
   }
 }
 
 async function verify(db, options) {
+  if (options.normalizeAnnouncements) {
+    const changes = await buildAnnouncementNormalizationPlan(db, options);
+    console.log(JSON.stringify({ mode: 'verify-normalize-announcements', pending: changes.map((change) => change.path) }, null, 2));
+    return changes.length ? 1 : 0;
+  }
   const club = db.collection('clubs').doc(options.club);
   const members = (await club.collection('members').get()).docs
     .filter((doc) => isActiveMember(doc.data()))
@@ -128,7 +161,12 @@ async function run(options, { firestore, onBackupWritten } = {}) {
   const db = firestore || admin.firestore();
   if (options.mode === 'verify') return verify(db, options);
   const timestamp = admin.firestore.Timestamp.now(); // one consistent migration baseline
-  const { members, changes } = await buildPlan(db, options, timestamp);
+  const { members, changes: rootChanges } = options.normalizeAnnouncements
+    ? { members: [], changes: [] }
+    : await buildPlan(db, options, timestamp);
+  const changes = options.normalizeAnnouncements
+    ? await buildAnnouncementNormalizationPlan(db, options)
+    : rootChanges;
   changes.forEach((change) => console.log(`${options.mode.toUpperCase()} ${change.path} ${JSON.stringify(serialise(change.before))} -> ${JSON.stringify(serialise(change.after))}`));
   console.log(JSON.stringify({ mode: options.mode, activeMembers: members.length, writes: changes.length }, null, 2));
   if (options.mode !== 'apply') return 0;

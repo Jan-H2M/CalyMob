@@ -649,3 +649,26 @@ verify reports missing or invalid root shapes. The script never loads a service
 account itself: a future operator must supply ADC and, outside an emulator,
 must name a project; apply additionally requires a matching explicit production
 confirmation. Only `demo-calymob-migration` emulator coverage has run.
+
+### Design decisions (Phase 6)
+
+Server-side announcement maintenance covers CalyMob, CalyCompta and old writers
+before cursor flag-on. Local-only device validation and future rollout steps are
+documented in `docs/testing/UNREAD_CURSOR_V1_DEVICE_CHECKLIST.md` and
+`docs/runbooks/UNREAD_CURSOR_V1_ROLLOUT.md`; neither has changed production.
+
+### Design decisions (Phase 6c)
+
+The cursor contract fixture is executable: timestamp-tagged full document paths
+are loaded into a fake Firestore and each member's result is calculated by the
+production cursor service. Cursor-sync FCM is intentionally silent and only
+requests a count refresh.
+
+### Design decisions (Phase 6d)
+
+The shared fixture is now verified by both Dart and Functions code locally;
+no production Firebase access or notification delivery occurred.
+
+### Status (Phase 6 final)
+Phases 1–6 done locally on `feat/unread-cursor-v1-phase1`, not deployed; the
+Phase 7 runbook and device checklist are written, not executed.

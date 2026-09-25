@@ -2,6 +2,14 @@ import 'package:calymob/services/notification_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('cursor badge sync requests unread refresh without visible notification',
+      () {
+    final decision = foregroundNotificationDecision(
+      const {'type': 'unread_cursor_badge_sync'},
+    );
+    expect(decision.showVisibleNotification, isFalse);
+    expect(decision.requestUnreadRefresh, isTrue);
+  });
   group('shouldRegisterNotificationToken', () {
     test('preserves an explicit opt-out during login or app resume', () {
       expect(shouldRegisterNotificationToken(storedPreference: false), isFalse);

@@ -8,10 +8,23 @@ class UnreadCursorFeatureFlag {
   const UnreadCursorFeatureFlag({
     this.enabled = false,
     this.mode = UnreadCursorV1Mode.off,
+    this.pilotMemberIds = const <String>[],
   });
 
   final bool enabled;
   final UnreadCursorV1Mode mode;
+  final List<String> pilotMemberIds;
+
+  UnreadCursorV1Mode effectiveModeFor(String? memberId) {
+    if (!enabled) return UnreadCursorV1Mode.off;
+    if (mode == UnreadCursorV1Mode.on) return UnreadCursorV1Mode.on;
+    if (mode == UnreadCursorV1Mode.shadow &&
+        memberId != null &&
+        pilotMemberIds.contains(memberId)) {
+      return UnreadCursorV1Mode.on;
+    }
+    return mode;
+  }
 
   static const defaults = UnreadCursorFeatureFlag();
 
@@ -25,11 +38,17 @@ class UnreadCursorFeatureFlag {
     return UnreadCursorFeatureFlag(
       enabled: data?['unreadCursorV1Enabled'] == true,
       mode: mode,
+      pilotMemberIds: (data?['unreadCursorV1PilotMemberIds'] as List?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const <String>[],
     );
   }
 
   Map<String, Object> toFirestore() => <String, Object>{
         'unreadCursorV1Enabled': enabled,
         'unreadCursorV1Mode': mode.name,
+        if (pilotMemberIds.isNotEmpty)
+          'unreadCursorV1PilotMemberIds': pilotMemberIds,
       };
 }

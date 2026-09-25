@@ -11,7 +11,7 @@ const admin = require('firebase-admin');
 const { FIRESTORE_BATCH_LIMIT } = require('./constants');
 const { memberDisplayName } = require('./memberName');
 const { persistNotificationHistory } = require('./notificationHistory');
-const { getUnreadCursorV1Mode } = require('../notifications/unreadCursorFeatureFlag');
+const { getUnreadCursorV1Mode, getUnreadCursorV1ModeForMember } = require('../notifications/unreadCursorFeatureFlag');
 const { getCanonicalUnreadBreakdown } = require('../notifications/canonicalUnreadBadge');
 
 /**
@@ -77,6 +77,18 @@ async function bounded(items, work, limit = 10) {
     while (next < items.length) await work(items[next++]);
   });
   await Promise.all(workers);
+}
+
+function removeInvalidTokens(clubId, memberId, tokens, responses) {
+  responses.forEach((response, index) => {
+    const code = response.error?.code;
+    if (!response.success && ['messaging/invalid-registration-token', 'messaging/registration-token-not-registered'].includes(code)) {
+      const failedToken = tokens[index];
+      admin.firestore().collection('clubs').doc(clubId).collection('members').doc(memberId)
+        .update({ fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken) })
+        .catch((error) => console.error(`Failed to remove token: ${error.message}`));
+    }
+  });
 }
 
 /**
@@ -259,25 +271,7 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
           }
 
           // Verwijder ongeldige tokens
-          result.responses.forEach((response, index) => {
-            if (!response.success) {
-              const error = response.error;
-              if (error.code === 'messaging/invalid-registration-token' ||
-                  error.code === 'messaging/registration-token-not-registered') {
-                const failedToken = memberTokens[index];
-                console.log(`Removing invalid token from member ${memberId}: ${failedToken?.substring(0, 20)}...`);
-                admin.firestore()
-                  .collection('clubs')
-                  .doc(clubId)
-                  .collection('members')
-                  .doc(memberId)
-                  .update({
-                    fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken)
-                  })
-                  .catch(err => console.error(`Failed to remove token: ${err.message}`));
-              }
-            }
-          });
+          removeInvalidTokens(clubId, memberId, memberTokens, result.responses);
         } catch (error) {
           console.error(`Error sending to member ${memberId}: ${error.message}`);
           totalFailure += memberTokens.length;
@@ -312,7 +306,13 @@ async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, 
   const mode = await getUnreadCursorV1Mode(db, clubId);
   if (mode === 'off') return sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category);
   if (mode === 'shadow') {
-    const result = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category);
+    const legacyGroups = new Map();
+    const pilotGroups = new Map();
+    await Promise.all([...memberTokenGroups.entries()].map(async ([memberId, tokens]) => {
+      (await getUnreadCursorV1ModeForMember(db, clubId, memberId) === 'on' ? pilotGroups : legacyGroups).set(memberId, tokens);
+    }));
+    const result = await sendNotificationsWithBadge(clubId, legacyGroups, basePayload, category);
+    const pilotResult = await sendCanonicalCursorNotifications(db, clubId, pilotGroups, basePayload, category);
     await Promise.all([...memberTokenGroups.keys()].slice(0, 20).map(async (memberId) => {
       const [legacy, canonical] = await Promise.all([
         getBadgeCount(clubId, memberId),
@@ -320,9 +320,12 @@ async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, 
       ]);
       console.log(JSON.stringify({ event: 'unread_cursor_shadow_diff', clubId, memberId, category, legacy, canonical: canonical.total }));
     }));
-    return result;
+    return { successCount: result.successCount + pilotResult.successCount, failureCount: result.failureCount + pilotResult.failureCount };
   }
+  return sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, basePayload, category);
+}
 
+async function sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, basePayload, category) {
   let successCount = 0;
   let failureCount = 0;
   await bounded([...memberTokenGroups.entries()], async ([memberId, tokens]) => {
@@ -338,6 +341,7 @@ async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, 
     successCount += result.successCount;
     failureCount += result.failureCount;
     if (result.successCount > 0) await persistNotificationHistory(clubId, memberId, basePayload, category);
+    removeInvalidTokens(clubId, memberId, tokens, result.responses);
   });
   return { successCount, failureCount };
 }
@@ -349,14 +353,7 @@ async function sendSilentCursorBadge({ clubId, memberId, tokens, total }) {
     apns: { headers: { 'apns-push-type': 'background', 'apns-priority': '5' }, payload: { aps: { badge: total, 'content-available': 1 } } },
     data: { type: 'unread_cursor_badge_sync', club_id: clubId },
   });
-  result.responses.forEach((response, index) => {
-    const code = response.error?.code;
-    if (!response.success && ['messaging/invalid-registration-token', 'messaging/registration-token-not-registered'].includes(code)) {
-      admin.firestore().collection('clubs').doc(clubId).collection('members').doc(memberId)
-        .update({ fcm_tokens: admin.firestore.FieldValue.arrayRemove(tokens[index]) })
-        .catch((error) => console.error(`Failed to remove token: ${error.message}`));
-    }
-  });
+  removeInvalidTokens(clubId, memberId, tokens, result.responses);
   return result;
 }
 
@@ -433,5 +430,6 @@ module.exports = {
   sendNotificationsWithBadge,
   sendNotificationsWithUnreadCursorMode,
   sendSilentCursorBadge,
+  removeInvalidTokens,
   filterByPreference,
 };

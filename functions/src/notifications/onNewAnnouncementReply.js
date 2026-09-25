@@ -9,6 +9,7 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
+const { advanceAnnouncementActivity } = require('./announcementFieldMaintenance');
 
 /**
  * Firestore trigger for new announcement replies (Gen2)
@@ -43,14 +44,12 @@ exports.onNewAnnouncementReply = onDocumentCreated(
       const announcementTitle = announcement.title || 'Annonce';
       const announcementSenderId = announcement.sender_id;
 
-      // Update last_reply_at on the announcement doc so client-side
-      // unread count queries can detect new replies (not just new announcements)
-      await admin.firestore()
-        .collection('clubs')
-        .doc(clubId)
-        .collection('announcements')
-        .doc(announcementId)
-        .update({ last_reply_at: admin.firestore.FieldValue.serverTimestamp() });
+      // Keep the legacy reply marker and the cursor-v1 activity field. The
+      // transaction only advances activity, so out-of-order trigger delivery
+      // cannot move an announcement backwards.
+      await admin.firestore().collection('clubs').doc(clubId).collection('announcements')
+        .doc(announcementId).update({ last_reply_at: reply.created_at || admin.firestore.FieldValue.serverTimestamp() });
+      await advanceAnnouncementActivity({ db: admin.firestore(), clubId, announcementId, reply });
 
       // 2. Build list of thread participants (announcement author + all who replied)
       const threadParticipantIds = new Set();

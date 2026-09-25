@@ -1,6 +1,6 @@
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { getUnreadCursorV1Mode } = require('./unreadCursorFeatureFlag');
+const { getUnreadCursorV1ModeForMember } = require('./unreadCursorFeatureFlag');
 const { getCanonicalUnreadBreakdown } = require('./canonicalUnreadBadge');
 const { sendSilentCursorBadge } = require('../utils/badge-helper');
 
@@ -21,7 +21,7 @@ function cursorAdvanced(before = {}, after = {}) {
 
 async function reconcileReadStateBadge({ db, clubId, memberId, before, after, now = Date.now() }) {
   if (!cursorAdvanced(before, after)) return { skipped: 'not_advanced' };
-  if (await getUnreadCursorV1Mode(db, clubId, now) !== 'on') return { skipped: 'flag_off' };
+  if (await getUnreadCursorV1ModeForMember(db, clubId, memberId, now) !== 'on') return { skipped: 'flag_off' };
   const key = `${clubId}/${memberId}`;
   // Trailing edge, not leading-edge dropping: a burst of cursor writes waits
   // briefly and only the final invocation recomputes/sends (including zero).

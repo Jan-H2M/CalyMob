@@ -1501,7 +1501,8 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
         // Create: Admin/Superadmin with valid session
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
-        // Update: Members can only update read_by and reply_count, admins can update all
+        // Read state/activity is server-maintained; do not widen announcement
+        // writes for cursor-v1 compatibility.
         allow update: if isMember(clubId) && (
           isAdmin(clubId) ||
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reply_count'])

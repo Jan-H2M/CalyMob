@@ -223,6 +223,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _notificationService.onUnreadCursorBadgeSync = () {
+      final context = _navigatorKey.currentContext;
+      if (context == null) return;
+      Provider.of<UnreadCountProvider>(context, listen: false).refresh();
+    };
     _notificationNavigatorObserver = _NotificationNavigatorObserver(
       onNavigationChanged: _scheduleNotificationDrain,
     );
