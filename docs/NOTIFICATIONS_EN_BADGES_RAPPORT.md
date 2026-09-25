@@ -632,3 +632,20 @@ Read-state advances trigger a coalesced silent exact badge, including zero.
 Phase-4 review parity fixes align Node with Dart session/team policy and make
 coalescing trailing-edge so a final zero cannot be dropped. Sender self-reads
 are acknowledged after successful sends in cursor mode.
+
+### Design decisions (Phase 5)
+
+The local-only Admin migration is `scripts/migrate-unread-read-state-v1.cjs` in
+CalyMob, so it stays reviewed with the cursor client and Function changes. It
+uses the canonical active-member resolver, deterministic UID order and one
+captured Admin timestamp to create only the four root documents:
+`announcements.last_seen_at` and `events|teams|sessions.global_last_seen_at`.
+It deliberately seeds no conversation/channel/chat cursor and never changes a
+legacy counter, message, `read_by`, token or membership field.
+
+Dry-run is the default and reports exact before/after paths. Apply first writes
+a JSON backup to gitignored `tmp/`, then uses batches below Firestore's limit;
+verify reports missing or invalid root shapes. The script never loads a service
+account itself: a future operator must supply ADC and, outside an emulator,
+must name a project; apply additionally requires a matching explicit production
+confirmation. Only `demo-calymob-migration` emulator coverage has run.

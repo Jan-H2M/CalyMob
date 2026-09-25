@@ -387,3 +387,20 @@ Europe/Brussels in the Node and Dart contract fixture. Nothing is deployed.
 Review follow-up: Node uses aggregation counts and the same published-session,
 role and registration predicates as Dart; trailing-edge reconciliation preserves
 the last cursor state in a burst.
+
+### Design decisions (Phase 5)
+
+Migration is now a separately reviewed, local-only CalyMob operator tool:
+`scripts/migrate-unread-read-state-v1.cjs`. It is dry-run by default and uses
+the canonical status resolver to select only active members, deterministically.
+For every selected UID it creates missing root schema-v1 cursors only, sharing
+one captured Admin timestamp across the run. Existing schema-v1 roots are left
+unchanged unless `--force`; `--verify` detects both missing and malformed
+shapes. No scoped cursor, legacy counter, message, read-by array, token or
+member field is touched.
+
+`--apply` cannot commit before its JSON backup exists and uses sub-500 batches.
+The default backup directory is gitignored `tmp/`. The tool intentionally has
+no service-account discovery: future production execution requires external ADC
+plus `--project` and an exactly matching `--confirm-production`; tests ran only
+against the `demo-calymob-migration` Firestore emulator.
