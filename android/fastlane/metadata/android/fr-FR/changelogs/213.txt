@@ -1,0 +1,2 @@
+Amélioration du suivi des messages non lus et des badges (activation progressive).
+Corrections diverses.

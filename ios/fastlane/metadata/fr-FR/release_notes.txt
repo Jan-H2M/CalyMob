@@ -1,3 +1,2 @@
-Nouveau groupe « Encadrants et assistants » pour la piscine et la théorie.
-Les encadrants officiels y sont inclus automatiquement.
-Correction des disponibilités dans le planning piscine.
+Amélioration du suivi des messages non lus et des badges (activation progressive).
+Corrections diverses.
