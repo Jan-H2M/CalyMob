@@ -1184,3 +1184,29 @@ session and role-scoped visibility predicates and uses aggregation counts.
 Successful self-sends advance the sender cursor in ON mode. Read-state badge
 coalescing is trailing-edge: later cursor writes supersede an earlier pending
 send, so the final exact value (including zero) is retained.
+
+### Design decisions (Phase 5)
+
+`scripts/migrate-unread-read-state-v1.cjs` is deliberately in CalyMob (rather
+than CalyCompta) because it ships with and initializes this branch's cursor-v1
+schema. It selects only canonically active members in deterministic UID order;
+it does not use installation/tokens as a membership proxy. Default dry-run
+prints every root-document diff and changes nothing. `--apply` writes a
+timestamped JSON pre-write backup to the gitignored `tmp/` directory before
+batched (at most 450) writes, while `--verify` reports missing or malformed
+roots. A single captured Admin `Timestamp.now()` gives every root in one run the
+same migration baseline; it never creates scoped conversation cursors or
+changes messages, `read_by`, `unread_counts`, FCM tokens or member data.
+
+The script obtains credentials only through operator-provided ADC / `GOOGLE_APPLICATION_CREDENTIALS`; it never discovers or reads a service account. Outside
+the Firestore emulator, every mode requires `--project`, and `--apply` also
+requires an exactly matching `--confirm-production`. It has only been tested
+against the `demo-calymob-migration` emulator project and is not deployed or run
+against club data.
+
+**Future operator usage (separate approval required).** From `CalyMob`, review
+`node scripts/migrate-unread-read-state-v1.cjs --dry-run --project <project> --club calypso`, then run `--verify` with the same project. Only after an
+independent backup/diff review and explicit production authorization may an
+operator use `--apply --project <project> --confirm-production <project>`;
+`--member <uid>` (repeatable) and `--limit N` support a pilot cohort. These are
+instructions for a future approved operator, not commands run by Phase 5.
