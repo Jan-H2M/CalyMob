@@ -344,6 +344,17 @@ Na alle fixes:
 
 ## Addendum — cursor-v1 implementation direction (2026-09-25)
 
+### Design decisions (Phase 2)
+
+The first client implementation is intentionally gated. `off` runs this
+document's legacy behavior unchanged; `shadow` records cursor-vs-legacy deltas;
+`on` derives announcements, events, teams and sessions from read cursors and
+does not synchronize `unread_counts`. Cursor writes are direct, self-owned
+Firestore writes with server timestamps and a ten-second acknowledgement
+coalescer. Cursor query failures retain a last-known category value rather than
+falling back to mutable counters. This phase does not wire screen open actions,
+alter Functions, or change a production flag.
+
 Do not extend this plan's counter resets, `read_by` updates, or
 `LocalReadTracker` baseline strategy. Cursor v1 persists member-owned
 `read_state` documents with `serverTimestamp`, using one section write for

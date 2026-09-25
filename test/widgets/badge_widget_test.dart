@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:calymob/providers/unread_count_provider.dart';
+import 'package:calymob/models/unread_cursor_feature_flag.dart';
 
 /// A standalone badge widget that mirrors the badge display logic
 /// used in LandingScreen's _GlossyButton and OperationsListScreen.
@@ -62,8 +63,8 @@ class TestLandingBadges extends StatelessWidget {
           children: [
             const Text('Piscine'),
             TestBadgeWidget(
-              count: unreadProvider.sessionMessages +
-                  unreadProvider.teamMessages,
+              count:
+                  unreadProvider.sessionMessages + unreadProvider.teamMessages,
             ),
           ],
         ),
@@ -94,6 +95,10 @@ class MockUnreadCountProvider extends ChangeNotifier
   int get sessionMessages => _sessionMessages;
   @override
   int get medicalCertificates => _medicalCertificates;
+  @override
+  int get communication => _announcements + _teamMessages + _sessionMessages;
+  @override
+  UnreadCursorV1Mode get cursorMode => UnreadCursorV1Mode.off;
   @override
   bool get isListening => false;
 
@@ -322,7 +327,8 @@ void main() {
     /// Tests the StreamBuilder pattern used in OperationsListScreen
     /// for per-operation unread counts
     testWidgets('StreamBuilder shows badge from stream data', (tester) async {
-      final controller = Stream<int>.fromIterable([0, 3, 5]).asBroadcastStream();
+      final controller =
+          Stream<int>.fromIterable([0, 3, 5]).asBroadcastStream();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -344,7 +350,7 @@ void main() {
 
     testWidgets('StreamBuilder shows nothing while waiting', (tester) async {
       // Stream that never emits
-      final controller = Stream<int>.empty();
+      const controller = Stream<int>.empty();
 
       await tester.pumpWidget(
         MaterialApp(

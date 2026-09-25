@@ -6,6 +6,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import '../services/unread_count_service.dart';
 import '../services/local_read_tracker.dart';
+import '../services/cursor_unread_count_service.dart';
+import '../services/read_state_service.dart';
+import '../services/feature_flag_service.dart';
+import '../models/unread_cursor_feature_flag.dart';
 
 /// Provider die ongelezen tellingen berekent via lokale timestamps
 /// + Firestore count() queries. Periodic refresh elke 60 seconden.
@@ -20,6 +24,9 @@ import '../services/local_read_tracker.dart';
 class UnreadCountProvider extends ChangeNotifier {
   final UnreadCountService _service = UnreadCountService();
   final LocalReadTracker _tracker = LocalReadTracker();
+  final ReadStateService _readState = ReadStateService();
+  final CursorUnreadCountService _cursorService = CursorUnreadCountService();
+  final FeatureFlagService _featureFlags = FeatureFlagService();
 
   int _announcements = 0;
   int _eventMessages = 0;
@@ -29,6 +36,8 @@ class UnreadCountProvider extends ChangeNotifier {
   bool _isRefreshing = false;
 
   Timer? _refreshTimer;
+  StreamSubscription<UnreadCursorFeatureFlag>? _flagSubscription;
+  UnreadCursorV1Mode _cursorMode = UnreadCursorV1Mode.off;
   String? _clubId;
   String? _userId;
   List<String> _roles = const [];
@@ -53,6 +62,8 @@ class UnreadCountProvider extends ChangeNotifier {
   int get teamMessages => _teamMessages;
   int get sessionMessages => _sessionMessages;
   int get medicalCertificates => 0;
+  int get communication => _announcements + _teamMessages + _sessionMessages;
+  UnreadCursorV1Mode get cursorMode => _cursorMode;
   bool get isListening => _isListening;
 
   /// Start periodic refresh voor alle berichttypes.
@@ -87,6 +98,7 @@ class UnreadCountProvider extends ChangeNotifier {
       _formationActive = formationActive;
 
       await _tracker.init();
+      _listenToCursorFlag(clubId);
       unawaited(refresh());
       return;
     }
@@ -102,19 +114,46 @@ class UnreadCountProvider extends ChangeNotifier {
     _formationActive = formationActive;
     _isListening = true;
 
-    // Initialiseer LocalReadTracker
+    // The legacy tracker remains initialized for OFF/shadow coexistence. ON
+    // never writes it; Phase 3 moves the screen-level acknowledgements.
     await _tracker.init();
 
     // Laad cached counts direct (geen netwerk nodig, instant)
     await _loadCachedCounts();
 
+    _listenToCursorFlag(clubId);
+
     // Refresh in achtergrond (niet blocking)
     unawaited(refresh());
+    _configureRefreshTimer();
+  }
 
-    // Periodic refresh elke 60 seconden
-    _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      refresh();
-    });
+  void _listenToCursorFlag(String clubId) {
+    _flagSubscription?.cancel();
+    _flagSubscription = _featureFlags.unreadCursorV1(clubId).listen(
+      _onCursorFlag,
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('⚠️ unread cursor feature flag stream failed: $error');
+        _onCursorFlag(UnreadCursorFeatureFlag.defaults);
+      },
+    );
+  }
+
+  void _onCursorFlag(UnreadCursorFeatureFlag flag) {
+    final next = flag.enabled ? flag.mode : UnreadCursorV1Mode.off;
+    if (next == _cursorMode) return;
+    _cursorMode = next;
+    debugPrint('🔀 unread cursor v1 mode=$_cursorMode');
+    _configureRefreshTimer();
+    unawaited(refresh());
+  }
+
+  void _configureRefreshTimer() {
+    _refreshTimer?.cancel();
+    final interval = _cursorMode == UnreadCursorV1Mode.on
+        ? const Duration(minutes: 5)
+        : const Duration(seconds: 60);
+    _refreshTimer = Timer.periodic(interval, (_) => refresh());
   }
 
   /// Laad cached counts uit SharedPreferences (instant, geen netwerk)
@@ -166,6 +205,11 @@ class UnreadCountProvider extends ChangeNotifier {
 
     _isRefreshing = true;
     try {
+      if (_cursorMode == UnreadCursorV1Mode.on) {
+        await _refreshCursorCounts(applyToUi: true);
+        return;
+      }
+
       final counts = await _service.refreshAllCounts(
         _clubId!,
         _roles,
@@ -207,11 +251,73 @@ class UnreadCountProvider extends ChangeNotifier {
         newTeamMessages,
         newSessionMessages,
       );
+
+      if (_cursorMode == UnreadCursorV1Mode.shadow) {
+        unawaited(_refreshCursorCounts(applyToUi: false));
+      }
     } catch (e) {
       debugPrint('❌ UnreadCountProvider refresh error: $e');
     } finally {
       _isRefreshing = false;
     }
+  }
+
+  Future<void> _refreshCursorCounts({required bool applyToUi}) async {
+    if (_clubId == null || _userId == null) return;
+    // The root baseline is server-timestamped and only created after a non-OFF
+    // flag. It avoids both a 2024 fallback and a client-device baseline.
+    await _readState.ensureRootCursors(_clubId!, _userId!);
+    final cursor = await _cursorService.refreshAllCounts(
+      clubId: _clubId!,
+      userId: _userId!,
+      roles: _roles,
+      includeAllTeamChannels: _includeAllTeamChannels,
+      plongeurCode: _plongeurCode,
+      targetFormationLevel: _targetFormationLevel,
+      formationActive: _formationActive,
+    );
+    if (!applyToUi) {
+      debugPrint(
+        '🔎 unread cursor shadow legacy='
+        '{ann=$_announcements,event=$_eventMessages,team=$_teamMessages,session=$_sessionMessages} '
+        'cursor=${cursor.toLegacyMap()} total=${cursor.total}',
+      );
+      return;
+    }
+    _applyCounts(
+      cursor.announcements,
+      cursor.events,
+      cursor.teams,
+      cursor.sessions,
+      source: 'cursor',
+    );
+  }
+
+  void _applyCounts(
+    int announcements,
+    int eventMessages,
+    int teamMessages,
+    int sessionMessages, {
+    required String source,
+  }) {
+    if (announcements == _announcements &&
+        eventMessages == _eventMessages &&
+        teamMessages == _teamMessages &&
+        sessionMessages == _sessionMessages) {
+      // Cursor mode still must clear an already-stale OS badge at zero.
+      if (source == 'cursor' && total == 0) _updateBadge(0);
+      return;
+    }
+    _announcements = announcements;
+    _eventMessages = eventMessages;
+    _teamMessages = teamMessages;
+    _sessionMessages = sessionMessages;
+    debugPrint('📊 $source unread counts: ann=$_announcements '
+        'evt=$_eventMessages team=$_teamMessages sess=$_sessionMessages '
+        '(communication=$communication total=$total)');
+    notifyListeners();
+    _updateBadge(total);
+    unawaited(_saveCachedCounts());
   }
 
   /// Schrijf de lokaal berekende counts terug naar het Firestore member document.
@@ -273,6 +379,8 @@ class UnreadCountProvider extends ChangeNotifier {
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _isListening = false;
+    _flagSubscription?.cancel();
+    _flagSubscription = null;
     debugPrint('🔕 UnreadCountProvider: periodic refresh gestopt');
   }
 
@@ -286,6 +394,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _plongeurCode = null;
     _targetFormationLevel = null;
     _formationActive = false;
+    _cursorMode = UnreadCursorV1Mode.off;
     _announcements = 0;
     _eventMessages = 0;
     _teamMessages = 0;

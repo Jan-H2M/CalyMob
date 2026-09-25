@@ -1114,6 +1114,19 @@ Dit master document is een consolidatie van de volgende bestaande docs in `CalyM
 
 ## 15. Unread cursor v1 (confirmed 2026-09-25)
 
+### Design decisions (Phase 2)
+
+`FeatureFlagService` reads `settings/feature_flags` into the OFF-by-default
+`UnreadCursorV1FeatureFlag`. In `off`, the existing LocalReadTracker and
+`unread_counts` sync remain exactly active. In `shadow`, legacy values still
+drive UI/badge while cursor values are logged as a structured comparison. In
+`on`, `ReadStateService` creates missing server-timestamp root cursors and
+`CursorUnreadCountService` drives the UI/app icon without writing
+`unread_counts`. Queries are capped at eight concurrent operations with an
+eight-second timeout and retain the last successful category count on a partial
+failure. The temporary announcement fallback counts only non-deleted documents
+without normalized `visibility`/`last_activity_at`; the migration removes it.
+
 The definitive replacement is a server-owned cursor document per member under
 `clubs/{clubId}/members/{uid}/read_state`. `announcements` stores one
 `last_seen_at`; `events`, `teams`, and `sessions` store a section-wide
