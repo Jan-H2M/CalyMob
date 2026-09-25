@@ -30,6 +30,7 @@ def verify_ios_store_release(action, options = {})
   require 'json'
   script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
   args = ['node', script, '--platform', 'ios', '--action', action]
+  args += ['--channel', 'internal'] if options[:channel] == 'internal'
   if action == 'submit'
     UI.user_error!('Explicit version and build are required') unless options[:version] && options[:build]
     args += ['--version', options[:version].to_s, '--build', options[:build].to_s]
@@ -40,7 +41,7 @@ end
 platform :ios do
   desc "Upload IPA to App Store Connect (TestFlight)"
   lane :deploy do
-    release = verify_ios_store_release('upload')
+    release = verify_ios_store_release('upload', channel: 'internal')
     api_key = calymob_app_store_connect_api_key
 
     upload_to_testflight(

@@ -1,8 +1,10 @@
 default_platform(:android)
 
-def verify_android_store_release(action = 'upload')
+def verify_android_store_release(action = 'upload', channel: 'public')
   script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
-  sh('node', script, '--platform', 'android', '--action', action)
+  args = ['node', script, '--platform', 'android', '--action', action]
+  args += ['--channel', 'internal'] if channel == 'internal'
+  sh(*args)
 end
 
 platform :android do
@@ -36,7 +38,7 @@ platform :android do
 
   desc "Upload AAB to internal testing track"
   lane :internal do
-    verify_android_store_release('upload-and-submit')
+    verify_android_store_release('upload-and-submit', channel: 'internal')
     upload_to_play_store(
       track: 'internal',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
