@@ -583,6 +583,18 @@ In `notification_service.dart` → `setupForegroundNotifications()` wordt `_hand
 
 ## Addendum — unread cursor v1 replaces the historical badge model (2026-09-25)
 
+### Design decisions (Phase 2)
+
+Phase 2 adds the inert-at-default client plumbing. The feature flag has three
+modes: OFF preserves the historical client/counter path, shadow computes and
+logs a cursor comparison only, and ON uses cursor counts for the UI/app badge
+without an `unread_counts` write. Root and scoped acknowledgements are always
+server timestamps, coalesced for ten seconds, and cursor count queries use an
+eight-operation concurrency limit plus per-query timeout. Event eligibility is
+`date_fin + 7` *Brussels calendar* days; legacy events without an end date stay
+visible until data normalization. No runtime flag was changed and nothing was
+deployed.
+
 The new source of truth is server-owned `read_state` cursor documents at
 `clubs/{clubId}/members/{uid}/read_state`, written with `serverTimestamp`.
 Announcements use one cursor; event conversations, team channels, and session
