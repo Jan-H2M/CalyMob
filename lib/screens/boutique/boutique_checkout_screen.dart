@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_order_confirmation_screen.dart';
 
@@ -387,7 +388,9 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
 
       if (!context.mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
+        boutiqueAccessGuardedRoute(
+          sourceContext: context,
+          requiredSection: 'commandes',
           builder: (_) => BoutiqueOrderConfirmationScreen(
             orderId: data['orderId']?.toString(),
             orderNumber: data['orderNumber']?.toString() ?? '',

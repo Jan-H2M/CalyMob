@@ -266,6 +266,9 @@ exports.cancelBoutiqueOrder = cancelBoutiqueOrder;
 const { expireBoutiqueOrders } = require('./src/boutique/expireOrders');
 exports.expireBoutiqueOrders = expireBoutiqueOrders;
 
+const { setBoutiqueGlobalAccess } = require('./src/boutique/setGlobalAccess');
+exports.setBoutiqueGlobalAccess = setBoutiqueGlobalAccess;
+
 const { createCotisationPayment } = require('./src/cotisations/createPayment');
 exports.createCotisationPayment = createCotisationPayment;
 
