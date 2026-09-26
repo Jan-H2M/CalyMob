@@ -24,7 +24,9 @@ When the user asks to check the store status ("vérifie l'état des stores", "ch
 ### Step 2: Google Play Console
 1. Navigate to `https://play.google.com/console/u/0/developers/4868133097597517725/app/4975215339505656603/tracks/production`
 2. Read the page to check: active version, draft releases, installs, review status
-3. **CRITICAL: If there is a Draft release, ask the user if it should be submitted for review!** Don't leave drafts unsubmitted.
+3. If there is a draft release, report it as pending. Submission is allowed only
+   through the manifest-gated Fastlane lane after exact approval and uploaded-build
+   evidence exist.
 
 ### Step 3: Compare with local version
 ```bash
@@ -39,18 +41,13 @@ Always list pending actions:
 - License agreements that need accepting
 - Versions that are mismatched between stores
 
-## IMPORTANT: After uploading to Play Store, ALWAYS submit for review!
+## IMPORTANT: submission is a separately gated mutation
 
-**NEVER leave a draft release unsubmitted.** After fastlane uploads, ALWAYS complete the full submission flow:
-1. Go to Production → Releases tab → click **Edit release** on the draft
-2. Click **Next** (Step 1 → Step 2)
-3. Click **Save** (confirms the release)
-4. In the "Go to Publishing overview?" dialog → click **Go to overview**
-5. Click **"Send 1 change for review"**
-6. Confirm with **"Send changes for review"**
-7. Verify status shows **"Changes in review"**
-
-If you skip this, the release stays as a draft and never gets published!
+Never submit a draft through Play Console or App Store Connect. After upload,
+record the real uploaded-build evidence in the external schema-v2 manifest and
+obtain Jan's exact approval for `submit`. Then run the platform's `submit` lane.
+If that evidence or approval is absent, leaving the release as a draft is the
+required safe state.
 
 This skill automates the CalyMob Flutter app build and deployment to both Google Play Console (Android) and Apple App Store (iOS). **Both platforms are fully automated via CLI — no browser interaction required for uploads.**
 
@@ -59,16 +56,16 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 ### Android Workflow (fully automated)
 1. **Environment Check** - Verify Android SDK, Java, Flutter are ready
 2. **Version Bump** (optional) - Increment version in `pubspec.yaml`, review and commit it
-3. **Build AAB** - Run `flutter build appbundle --release`
+3. **Build AAB** - Run the hardened `scripts/build_release_aab.sh`
 4. **Upload to Play Store** - `fastlane supply` uploads AAB via Google Play Developer API
-5. **Submit for Review** - Browser automation in Play Console: Edit draft → Next → Save → Send for review
+5. **Submit for Review** - the manifest-gated `android submit` Fastlane lane
 
 ### iOS Workflow (fully automated)
 1. **Environment Check** - Verify Xcode, Flutter, CocoaPods are ready
 2. **Version Bump** (shared with Android) - Same `bump_version.sh` script
-3. **Build IPA** - Run `flutter build ipa --release`
+3. **Build IPA** - Run the hardened `scripts/build_release_ipa.sh`
 4. **Upload to App Store Connect** - the gated Fastlane lane uploads the IPA
-5. **Submit for Review** - Browser automation in App Store Connect (only step needing Chrome)
+5. **Submit for Review** - the manifest-gated `ios submit` Fastlane lane
 
 ## Prerequisites
 
@@ -82,7 +79,9 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
   - `ndk/27.0.12077973`
   - `cmake/3.22.1`
 - **Java** bundled with Android Studio (JBR)
-- **fastlane** via `scripts/run_fastlane.sh`, using the Bundler version pinned in `android/Gemfile.lock`
+- **fastlane** only via `scripts/run_fastlane.sh`, which uses a working locked
+  Bundler install when available and otherwise the supported self-contained
+  Homebrew Fastlane launcher
 - **Google Play service account key** at `~/.private_keys/google-play-deploy.json`
   - Service account: `google-play-deploy@calycompta.iam.gserviceaccount.com`
   - Linked to CalyMob (club.caly.calymob) in Play Console with release permissions
@@ -268,15 +267,12 @@ fi
 EXPECTED_VERSION="${BASH_REMATCH[1]}"
 EXPECTED_BUILD="${BASH_REMATCH[2]}"
 
-bash scripts/verify_payment_release.sh
-require_source_unchanged "release checks"
-
 # A failed command must not leave an older/partial AAB that looks successful.
 rm -f -- "$AAB_PATH" "$BUNDLE_MANIFEST"
 BUILD_START_MARKER=$(mktemp "${TMPDIR:-/tmp}/calymob-aab-build.XXXXXX")
 
 set +e
-flutter build appbundle --release 2>&1 | tee "$LOG_PATH"
+bash scripts/build_release_aab.sh 2>&1 | tee "$LOG_PATH"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
 flutter_status="${pipeline_status[0]:-1}"
@@ -356,7 +352,7 @@ tail -10 /tmp/build_calymob.log
 
 Fastlane is configured in `CalyMob/android/fastlane/` with:
 - `Appfile` - package name + JSON key path
-- `Fastfile` - upload lanes (deploy, internal, validate)
+- `Fastfile` - separately gated lanes (`deploy`, `submit`, `validate`)
 
 The upload lane runs the fail-closed store gate. It requires a clean checkout
 and external approval/artifact evidence bound to both the exact Git commit and
@@ -418,8 +414,9 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 
 This will:
 - Upload the AAB to the Production track as a **draft** release
-- Skip metadata/screenshots/images (managed in Play Console)
-- The draft can then be reviewed and rolled out in Play Console
+- Skip metadata/screenshots/images
+- Leave submission blocked until the external manifest contains real
+  uploaded-build evidence and exact `submit` approval
 
 ### Option B: Background script (recommended for reliability)
 
@@ -499,9 +496,10 @@ echo "Améliorations de stabilité et corrections de bugs." > "/Users/jan/Dev/Gi
 
 ### Verifying the upload
 
-After fastlane succeeds, verify in Play Console:
-- The new version should appear in Production > Releases as a draft
-- Review the release and click "Start rollout to Production" to submit for review
+After Fastlane succeeds, use read-only Play status/API access to verify that the
+new version appears as a production draft. Record the real version/build and
+artifact SHA-256 in `uploadedBuilds.android`; do not click any submission or
+rollout control in Play Console.
 
 ### Fastlane validate (test connection only)
 
@@ -511,49 +509,25 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 ./scripts/run_fastlane.sh android validate
 ```
 
-## Phase 5: Submit for Google Play Review (Browser automation)
+## Phase 5: Submit for Google Play Review (gated Fastlane lane)
 
-After fastlane uploads the AAB as a draft, submit it for review via Chrome browser automation.
+After a read-only check confirms the draft, record matching
+`uploadedBuilds.android` evidence and exact Jan approval for `submit` in the
+external manifest. Deliberately set `draft: false`, then submit the already
+uploaded draft through the verifier-backed lane:
 
-### Play Console gegevens
-- Developer ID: `4868133097597517725`
-- App ID: `4975215339505656603`
-- Production URL: `https://play.google.com/console/u/0/developers/4868133097597517725/app/4975215339505656603/tracks/production`
-- Managed publishing: **Uit** (auto-publish na goedkeuring)
-
-### Step 1: Find Play Console tab
-
+```bash
+VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+VERSION_NAME="${VERSION_LINE%%+*}"
+BUILD_NUMBER="${VERSION_LINE##*+}"
+./scripts/run_fastlane.sh android submit \
+  version:"$VERSION_NAME" build:"$BUILD_NUMBER"
 ```
-mcp__Claude_in_Chrome__tabs_context_mcp → look for "play.google.com/console" tab
-```
 
-If not open, navigate to the Production URL above.
-
-### Step 2: Go to Production → Releases tab
-
-Look for the **Draft** release created by fastlane. Click **"Edit release"**.
-
-### Step 3: Complete the release wizard
-
-**Page 1 — Create release:**
-- Verify app bundle is uploaded (version visible in table)
-- Verify release name is filled in
-- Verify release notes are present (in `<fr-FR>...</fr-FR>` tags)
-- Click **"Next"** button
-
-**Page 2 — Preview and confirm:**
-- Review delivery info (size, download time)
-- Click **"Save"** button
-
-### Step 4: Send for review
-
-After Save, the **Publishing overview** page loads showing:
-"Changes not yet sent for review"
-
-Click the blue **"Send 1 change for review"** button.
-
-Status changes to **"Changes in review"** — Google runs quick checks (~15 min),
-then auto-publishes since managed publishing is off.
+This lane validates `submit` and `notes`, selects the exact draft version code,
+and changes it to completed. Do not submit, roll out, edit, or confirm the draft
+manually in Play Console. Use read-only Play status afterwards to verify the
+expected review state.
 
 ## Android Important Notes
 
@@ -561,7 +535,8 @@ then auto-publishes since managed publishing is off.
 - **Deobfuscation warning**: A warning about missing deobfuscation file is normal for Flutter apps
 - **Review time**: Google typically reviews within hours to a few days
 - **Build number**: Must be unique and higher than any previously uploaded version. The bump script handles this automatically.
-- **Release status**: Fastlane creates a `draft` release by default. You can change `release_status` in the Fastfile to `'completed'` to auto-submit for review (not recommended without manual check).
+- **Release status**: upload creates a draft; only the gated `android submit`
+  lane may transition the exact uploaded build to completed.
 
 ## Android Troubleshooting
 
@@ -708,22 +683,11 @@ fi
 EXPECTED_VERSION="${BASH_REMATCH[1]}"
 EXPECTED_BUILD="${BASH_REMATCH[2]}"
 
-echo "=== Flutter Clean ==="
-flutter clean 2>&1
-
-echo "=== Flutter Pub Get ==="
-flutter pub get --enforce-lockfile 2>&1
-
-echo "=== Pod Install ==="
-cd ios && pod install --deployment 2>&1
-cd ..
-require_source_unchanged "dependency setup"
-
 echo "=== Flutter Build IPA ==="
 rm -f -- "$IPA_PATH"
 BUILD_START_MARKER=$(mktemp "${TMPDIR:-/tmp}/calymob-ipa-build.XXXXXX")
 set +e
-flutter build ipa --release 2>&1 | tee "$LOG_PATH"
+bash scripts/build_release_ipa.sh 2>&1 | tee "$LOG_PATH"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
 flutter_status="${pipeline_status[0]:-1}"
@@ -865,41 +829,23 @@ Require verifier success, Fastlane upload success, and final `EXIT_CODE=0`.
 
 **Important**: After upload, Apple needs 5-30 minutes to process the build before it appears in App Store Connect.
 
-## iOS Phase 5: Submit for Apple Review (Browser automation)
+## iOS Phase 5: Submit for Apple Review (gated Fastlane lane)
 
-This is the only step that requires browser automation (Chrome). Everything else is CLI.
+Wait for App Store Connect processing and verify the uploaded build read-only.
+Record the matching `uploadedBuilds.ios` evidence and exact Jan approval for
+`notes` and `submit` in the external manifest. Then use only:
 
-### Step 1: Navigate to App Store Connect
+```bash
+VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+VERSION_NAME="${VERSION_LINE%%+*}"
+BUILD_NUMBER="${VERSION_LINE##*+}"
+./scripts/run_fastlane.sh ios submit \
+  version:"$VERSION_NAME" build:"$BUILD_NUMBER"
+```
 
-- URL: `https://appstoreconnect.apple.com/apps/6755293289/distribution/ios/version/inflight`
-- App: CalyMob (App ID: `6755293289`)
-- Bundle ID: `be.calypsodc.calymob`
-
-### Step 2: Create New Version (if needed)
-
-If the version doesn't exist yet:
-- Click the "+" button next to iOS App in the sidebar
-- Enter the version number (e.g., "1.0.25")
-- Click "Create"
-
-### Step 3: Fill Version Details
-
-- **What's New**: Add French release notes (e.g., "Améliorations de stabilité et corrections de bugs.")
-- **Release mode**: "Manually release this version" (default)
-
-### Step 4: Add Build
-
-- Scroll to "Build" section
-- Click "Add Build" (blue button)
-- Wait for the build to appear (may take 5-30 minutes after upload)
-- Select the build number (e.g., 87) and click "Done"
-- Click "Save"
-
-### Step 5: Submit for Review
-
-- Click "Add for Review" (top-right blue button)
-- A "Draft Submissions" panel appears — click "Submit to App Review"
-- Wait for confirmation: "1 Item Submitted"
+The lane validates the manifest, applies the approved French notes and submits
+the exact uploaded build. Do not use App Store Connect buttons, Xcode Organizer,
+Transporter, or `xcrun altool` as an alternate mutation path.
 
 ### App Review Information (pre-filled)
 
@@ -966,15 +912,30 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 
 # 2. Review and commit the bump; verify `git status --porcelain` is empty
 
-# 3. Build Android AAB (in Terminal via AppleScript, wait for completion)
-# 4. Upload Android to Play Store
+# 3. Build the Android AAB with scripts/build_release_aab.sh as documented
+#    above. Scaffold an Android-only schema-v2 manifest, then let Jan and the
+#    actual reviewers complete its real approval/review/test/artifact evidence.
+#    Set draft:false and export CALYMOB_RELEASE_MANIFEST only after it validates.
+
+# 4. Upload the Android draft
 ./scripts/run_fastlane.sh android deploy
 
-# 5. Build iOS IPA (in Terminal via AppleScript, wait for completion)
+# 5. Build the iOS IPA with scripts/build_release_ipa.sh as documented above.
+#    Because Flutter clean removes the other platform's build directory, use a
+#    separate clean worktree or finish the Android upload first. Scaffold and
+#    genuinely complete an iOS-only schema-v2 manifest, then export its path.
+
 # 6. Upload iOS to App Store Connect
 ./scripts/run_fastlane.sh ios release
 
-# 7. Submit iOS for review (browser automation in App Store Connect)
+# 7. For each platform, select its matching manifest, record real
+#    uploaded-build evidence, obtain exact submit approval and only then use the
+#    gated submit lane. Never infer these fields from a successful command.
+VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+VERSION_NAME="${VERSION_LINE%%+*}"
+BUILD_NUMBER="${VERSION_LINE##*+}"
+./scripts/run_fastlane.sh android submit version:"$VERSION_NAME" build:"$BUILD_NUMBER"
+./scripts/run_fastlane.sh ios submit version:"$VERSION_NAME" build:"$BUILD_NUMBER"
 ```
 
 **Android**: Build, upload and review submission are automated via Fastlane.

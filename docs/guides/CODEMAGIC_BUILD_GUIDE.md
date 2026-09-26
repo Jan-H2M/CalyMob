@@ -409,7 +409,7 @@ compares its certificate with the pinned public CalyMob upload certificate.
 ### Build release APK:
 ```yaml
 - name: Build Release APK
-  script: flutter build apk --release
+  script: bash scripts/build_release.sh
 ```
 
 ---
@@ -439,11 +439,11 @@ flutter build apk --debug
 
 # Build release APK
 # Requires the external signing files and the three path/alias variables above.
-flutter build apk --release
+./scripts/build_release.sh
 
 # Build App Bundle (for Play Store)
 # Requires the same external signing configuration.
-flutter build appbundle --release
+./scripts/build_release_aab.sh
 
 # Clean build
 flutter clean && flutter pub get
@@ -451,6 +451,10 @@ flutter clean && flutter pub get
 # Analyze project
 flutter analyze
 ```
+
+Codemagic is artifact-build-only. Do not add `publishing.app_store_connect` or
+`publishing.google_play`. Store uploads require the external schema-v2 manifest
+and the local repository Fastlane wrapper.
 
 ---
 

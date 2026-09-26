@@ -287,28 +287,30 @@ User Access: Full Access
 
 ### 2.3 iOS App Builden
 
-#### Via Xcode (Handmatig)
+Gebruik uitsluitend het geharde buildscript vanuit een volledig schone,
+gereviewde commit:
+
 ```bash
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob
-
-# Dependencies ophalen
-flutter pub get
-
-# iOS dependencies
-cd ios && pod install && cd ..
-
-# Build voor App Store
-flutter build ipa --release
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob
+./scripts/build_release_ipa.sh
 ```
 
-**Output**: `build/ios/ipa/CalyMob.ipa`
+Het script controleert tests, lockfiles, een onveranderde commit/tree, een vers
+artifact, versie/build en SHA-256. Rechtstreeks bouwen of archiveren via Xcode
+is geen releasebewijs.
 
-#### Via Codemagic (Automatisch)
-De `codemagic.yaml` is al geconfigureerd. Activeer de `ios-manual-build` workflow:
+**Output**: `build/ios/ipa/calymob.ipa`
+
+#### Via Codemagic (alleen artifact)
+De `ios-manual-build` workflow mag uitsluitend een artifact bouwen:
 1. Login op https://codemagic.io
 2. Verbind de GitHub repo
-3. Configureer App Store Connect API key in Team Settings
+3. Configureer code-signingmateriaal in Team Settings
 4. Start manual build
+
+Codemagic publiceert nooit naar TestFlight of App Store Connect. Downloaden of
+kopiëren van het artifact verleent geen uploadtoestemming; na native review moet
+het schema-v2-manifest aan dezelfde commit/tree en artifacthash worden gebonden.
 
 ---
 
@@ -347,20 +349,22 @@ deze gate en zijn daarom niet toegestaan voor de CalyMob-productieworkflow.
 5. Test grondig voordat je submitten
 
 #### Submit for Review
-1. **App Store** tab > Selecteer versie
-2. Vul alle velden in:
+1. Vul alle metadata in App Store Connect in:
    - Version Information
    - Screenshots (alle device sizes)
    - Description
    - Keywords
    - Support URL
    - Marketing URL (optioneel)
-3. **What's New**: "Eerste release van CalyMob voor Calypso Diving Club leden."
-4. **Review Information:**
+2. **What's New**: "Eerste release van CalyMob voor Calypso Diving Club leden."
+3. **Review Information:**
    - Demo Account: [test account credentials voor reviewer]
    - Contact Info: jan.andriessens@gmail.com
    - Notes: "This app is for members of Calypso Diving Club only."
-5. Klik **Submit for Review**
+4. Vul echte `uploadedBuilds`-evidence in het externe manifest in en autoriseer
+   de actie `submit` expliciet.
+5. Dien uitsluitend in via de geverifieerde lane:
+   `./scripts/run_fastlane.sh ios submit version:<versie> build:<build>`.
 
 #### Review Timeline
 - Gemiddeld: 24-48 uur
@@ -418,10 +422,7 @@ uitsluitend de upload key.
 
 #### Build commando
 ```bash
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob
-
-# Dependencies
-flutter pub get
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 
 # Externe upload-signing
 chmod 600 ~/.private_keys/android-upload-2026-09-26.jks \
@@ -430,8 +431,8 @@ export CALYMOB_UPLOAD_STORE_FILE="$HOME/.private_keys/android-upload-2026-09-26.
 export CALYMOB_UPLOAD_PASSWORD_FILE="$HOME/.private_keys/android-upload-2026-09-26.password"
 export CALYMOB_UPLOAD_KEY_ALIAS="upload-2026-09-26"
 
-# Build App Bundle (NIET APK voor Play Store)
-flutter build appbundle --release
+# Gehard AAB-buildscript
+./scripts/build_release_aab.sh
 unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
 ```
 
@@ -440,21 +441,35 @@ private-key-entry of het vastgepinde publieke uploadcertificaat niet kloppen.
 
 **Output**: `build/app/outputs/bundle/release/app-release.aab`
 
-#### Via bestaand script (moet aangepast worden)
-Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB zijn.
+`scripts/build_release_aab.sh` is het ondersteunde Play-artifactpad;
+`scripts/build_release.sh` bouwt alleen een apart APK-artifact.
 
 ---
 
 ### 3.3 Android App Bundle Uploaden
 
-1. **Play Console** > **Release** > **Production**
-2. **Create new release**
-3. **App signing**:
-   - Kies: "Use Google Play App Signing" (aanbevolen)
-   - Of: "Manage your own signing key"
-4. Upload de `.aab` file
-5. **Release name**: 1.0.22 (83)
-6. **Release notes** (Frans):
+Upload nooit handmatig in Play Console. Voltooi eerst het externe schema-v2
+manifest met echte goedkeuring, reviews, tests en artifactprovenance, exporteer
+`CALYMOB_RELEASE_MANIFEST` en gebruik uitsluitend:
+
+```bash
+./scripts/run_fastlane.sh android deploy
+```
+
+Controleer de Fastlane-draft daarna alleen read-only. Leg echte
+`uploadedBuilds.android`-evidence vast en zorg dat Jan `submit` voor exact deze
+commit, versie, build en notities heeft goedgekeurd. Dien vervolgens uitsluitend
+in via de geverifieerde lane:
+
+```bash
+./scripts/run_fastlane.sh android submit version:<versie> build:<build>
+```
+
+Gebruik geen Play Console-knoppen als alternatieve mutatieroute. App signing
+blijft Google Play App Signing; wijzig of reset uploadautoriteit niet als
+onderdeel van een gewone release.
+
+**Release notes** (Frans):
    ```
    Première version de CalyMob pour les membres du Calypso Diving Club.
 
@@ -470,18 +485,16 @@ Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB z
 
 ### 3.4 Google Play Review
 
-#### Closed Testing (Eerst Testen!)
-1. **Testing** > **Closed testing** > **Create track**
-2. Voeg testers toe (email addresses)
-3. Upload build
-4. Roll out to testers
-5. Testers krijgen opt-in link
+#### Testen en productie
 
-#### Production Release
-1. Nadat closed testing OK is
-2. **Production** > **Create release**
-3. Upload zelfde AAB (of nieuwe)
-4. **Review release** > **Start rollout to Production**
+Test de exact gebouwde artifact vóór submission en leg het echte testresultaat
+vast in het externe schema-v2 manifest. Upload geen AAB via Play Console. De
+productie-upload loopt alleen via `android deploy`; nadat de echte
+uploaded-build evidence en exacte `submit`-goedkeuring zijn toegevoegd, loopt
+de reviewsubmission alleen via `android submit` zoals hierboven beschreven.
+
+Play Console mag voor deze release uitsluitend read-only worden gebruikt om de
+draft-, review- en publicatiestatus te controleren.
 
 #### Review Timeline
 - Eerste app: 7+ dagen (strenge checks)
@@ -550,12 +563,17 @@ Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB z
 | Apple Developer credentials | Apple ID | Ja |
 | iOS Distribution Certificate | Keychain + .p12 export | **KRITIEK** |
 | iOS Provisioning Profile | Xcode/Developer Portal | Ja |
-| App Store Connect API Key | Team Settings | Ja |
+| App Store Connect API Key | Extern: `~/.private_keys/AuthKey_RH75BJ54V4.p8` (mode `0600`), uitsluitend via `ios/fastlane/Fastfile` | Ja |
 | Android upload-keystore | Extern: `~/.private_keys/android-upload-2026-09-26.jks` | **KRITIEK** |
 | Android upload-wachtwoordbestand | Extern: `~/.private_keys/android-upload-2026-09-26.password` | **KRITIEK** |
 | Android publiek uploadcertificaat | Extern: `~/.private_keys/android-upload-2026-09-26.pem` | Ja |
-| Google Play Service Account | JSON file | Ja |
+| Google Play Service Account | Extern: `~/.private_keys/google-play-deploy.json` (mode `0600`), uitsluitend via Android Fastlane | Ja |
 | Firebase configs | Repo (al aanwezig) | Git |
+
+De Codemagic Team-integratie mag alleen certificaten/provisioning voor een
+getekende artifact-build leveren. Zij is nooit een storepublisher en vervangt
+de canonieke RH75-/Google Play-credentialbronnen van de lokale Fastlane-lanes
+niet.
 
 ### Backup Commando's
 ```bash
@@ -831,7 +849,7 @@ ACCESS INFORMATION:
 
 DEMO ACCOUNT FOR TESTING:
 Email: demo.reviewer@calypsodc.be
-Password: CalyMob2025!
+Password: retrieve the current value from the approved external secret manager/keychain
 
 KEY FEATURES TO TEST:
 1. Login with demo account
@@ -1403,7 +1421,7 @@ App Access: Sign-in required
 
 Demo Account:
 Email: demo.reviewer@calypsodc.be
-Password: CalyMob2025!
+Password: retrieve the current value from the approved external secret manager/keychain
 
 Notes: This is a private club management app for members of Calypso Diving Club (Belgium). Access is restricted to registered club members only. The demo account above can be used to test all features. New user registration is not available through the app - members are added by club administrators.
 ```
@@ -1419,7 +1437,7 @@ Access Type: Login credentials required
 
 Instructions for testers:
 Email: demo.reviewer@calypsodc.be
-Password: CalyMob2025!
+Password: retrieve the current value from the approved external secret manager/keychain
 
 Reason for restricted access: This app is exclusively for members of Calypso Diving Club ASBL (Belgium). Only pre-registered club members can access the app. Member accounts are created by club administrators.
 ```
@@ -1623,6 +1641,13 @@ De privacy policy moet online staan op `https://caly.club/privacy`. Hier is de v
 
 Apple en Google reviewers moeten je app kunnen testen. Aangezien CalyMob alleen toegankelijk is voor clubleden, moet je een demo account aanmaken.
 
+> **Beveiliging:** een vroeger reviewerwachtwoord stond letterlijk in Git. De
+> werkende checkout bevat die waarde niet meer, maar de Git-geschiedenis blijft
+> onveranderd. Als dit Firebase Auth-account bestaat, moet een bevoegde beheerder
+> het wachtwoord vóór verder gebruik roteren en de nieuwe waarde uitsluitend in
+> de goedgekeurde externe secret manager/keychain bewaren. Deze documentwijziging
+> voert die afzonderlijke accountmutatie niet uit.
+
 ### 9.1 Demo Account Aanmaken
 
 **Stap 1: Maak een nieuw lid aan in Firestore** (via CalyCompta of Firebase Console)
@@ -1639,12 +1664,12 @@ app_role: null (geen admin)
 **Stap 2: Maak Firebase Auth account**
 1. Ga naar Firebase Console > Authentication
 2. Add user met hetzelfde email
-3. Stel een eenvoudig wachtwoord in (reviewers typen dit handmatig)
+3. Gebruik het actuele reviewerwachtwoord uit de goedgekeurde externe secret manager/keychain
 
 **Aanbevolen credentials**:
 ```
 Email: demo.reviewer@calypsodc.be
-Password: CalyMob2025!
+Password: retrieve the current value from the approved external secret manager/keychain
 ```
 
 **Stap 3: Test het account**
@@ -1659,7 +1684,7 @@ Password: CalyMob2025!
 ```
 DEMO ACCOUNT FOR TESTING:
 Email: demo.reviewer@calypsodc.be
-Password: CalyMob2025!
+Password: retrieve the current value from the approved external secret manager/keychain
 
 WHAT THE REVIEWER CAN TEST:
 1. Login with demo credentials
@@ -1725,7 +1750,7 @@ feature is for actual club activity fees only.
 4. [ ] App Store Connect: App aanmaken
 5. [ ] Alle metadata invullen (kopieer uit sectie 7)
 6. [ ] App Privacy labels invullen (sectie 7.8)
-7. [ ] Build maken: `flutter build ipa --release`
+7. [ ] Build maken met `./scripts/build_release_ipa.sh`
 8. [ ] Extern schema-v2 manifest met echte goedkeuring/review/testbewijzen voltooien
 9. [ ] Upload via de geverifieerde Fastlane-lane (`./scripts/run_fastlane.sh ios deploy`)
 10. [ ] TestFlight: Test met demo account
@@ -1737,11 +1762,11 @@ feature is for actual club activity fees only.
 2. [ ] Store listing invullen (kopieer uit sectie 7)
 3. [ ] Data Safety form invullen (sectie 7.7)
 4. [ ] Content rating questionnaire (sectie 7.9)
-5. [ ] Externe upload-signing instellen volgens sectie 3.2 en build maken: `flutter build appbundle --release`
-6. [ ] Upload naar Internal Testing track
+5. [ ] Externe upload-signing instellen en bouwen met `./scripts/build_release_aab.sh`
+6. [ ] Upload uitsluitend via `./scripts/run_fastlane.sh android deploy` met het goedgekeurde schema-v2-manifest
 7. [ ] Test met demo account
-8. [ ] Promote naar Production
-9. [ ] Submit for Review
+8. [ ] Echte `uploadedBuilds.android`-evidence en exacte `submit`-goedkeuring vastleggen
+9. [ ] Submit via `./scripts/run_fastlane.sh android submit version:<versie> build:<build>`
 
 ### Na goedkeuring
 
@@ -1767,7 +1792,7 @@ Na analyse van de CalyMob codebase zijn de volgende **blokkerende issues** gevon
 | **Account Deletion Feature** | ✅ GEÏMPLEMENTEERD | - | Aanwezig in Settings → "Supprimer mon compte" |
 | **Privacy Manifest (iOS)** | ✅ OPGELOST | - | `PrivacyInfo.xcprivacy` aangemaakt en toegevoegd |
 | **Privacy Policy URL** | ✅ ONLINE | - | `https://caly.club/privacy` is online |
-| **Demo Account** | ✅ AANGEMAAKT | - | demo.reviewer@calypsodc.be / CalyMob2025! |
+| **Demo Account** | ⚠️ ROTATIE VEREIST | Credential stond historisch in Git | Bewaar de nieuwe waarde alleen in de goedgekeurde externe secret manager/keychain |
 | **EU Trader Status** | ⚠️ NIET INGEVULD | KAN BLOKKEREN EU | Moet in beide store consoles worden ingevuld |
 
 **Geschatte extra werk:**

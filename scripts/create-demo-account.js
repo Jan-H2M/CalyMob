@@ -5,33 +5,79 @@
  * METHODE 1: Via dit script (vereist service account key)
  *   1. Download service account key van Firebase Console:
  *      Firebase Console > Project Settings > Service Accounts > Generate new private key
- *   2. Sla op als: CalyMob/functions/certs/serviceAccountKey.json
- *   3. Voer uit:
+ *   2. Bewaar die uitsluitend in de goedgekeurde externe secret manager en
+ *      exporteer GOOGLE_APPLICATION_CREDENTIALS als het absolute pad naar een
+ *      regulier mode-0600 bestand buiten alle repositories.
+ *   3. Exporteer CALYMOB_REVIEWER_PASSWORD_FILE als een absoluut extern
+ *      mode-0600 bestand dat vanuit de goedgekeurde secret manager/keychain is
+ *      aangemaakt. De inhoud mag nooit in Git, argv, logs of env-vars staan.
+ *   4. Voer uit:
  *      cd CalyMob && npm install firebase-admin && node scripts/create-demo-account.js
  *
  * METHODE 2: Via Firebase Console (handmatig, geen script nodig)
  *   Zie de instructies onderaan dit bestand.
  */
 
-// Check of firebase-admin beschikbaar is
-let admin;
-try {
-  admin = require('firebase-admin');
-} catch (e) {
-  console.log('\n⚠️  firebase-admin niet geïnstalleerd.');
-  console.log('   Installeer met: npm install firebase-admin\n');
-  console.log('   Of volg de handmatige instructies onderaan dit bestand.\n');
-  showManualInstructions();
-  process.exit(1);
-}
-
 const path = require('path');
 const fs = require('fs');
+
+function resolveExternalSecretPath(variableName, label) {
+  const configuredPath = process.env[variableName];
+  if (!configuredPath || !path.isAbsolute(configuredPath)) {
+    throw new Error(`${variableName} must be an external absolute path`);
+  }
+  const repositoryRoot = fs.realpathSync(path.join(__dirname, '..'));
+  const fileStats = fs.lstatSync(configuredPath);
+  if (!fileStats.isFile() || fileStats.isSymbolicLink()) {
+    throw new Error(`${label} path must be a regular non-symlink file`);
+  }
+  if ((fileStats.mode & 0o777) !== 0o600) {
+    throw new Error(`${label} file must have mode 0600`);
+  }
+  const resolvedPath = fs.realpathSync(configuredPath);
+  const relativePath = path.relative(repositoryRoot, resolvedPath);
+  if (!relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath)) {
+    throw new Error(`${label} file must live outside the repository`);
+  }
+  return resolvedPath;
+}
+
+function loadReviewerPassword() {
+  const resolvedPath = resolveExternalSecretPath(
+    'CALYMOB_REVIEWER_PASSWORD_FILE',
+    'Reviewer password',
+  );
+  const password = fs.readFileSync(resolvedPath, 'utf8').trim();
+  if (password.length < 12) {
+    throw new Error('Reviewer password file is empty or too short');
+  }
+  return password;
+}
+
+function loadServiceAccount() {
+  const resolvedPath = resolveExternalSecretPath(
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'Firebase service account',
+  );
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+  } catch {
+    throw new Error('Firebase service account file must contain valid JSON');
+  }
+  if (serviceAccount?.type !== 'service_account'
+    || typeof serviceAccount.project_id !== 'string'
+    || typeof serviceAccount.client_email !== 'string'
+    || typeof serviceAccount.private_key !== 'string') {
+    throw new Error('Firebase service account JSON is missing required fields');
+  }
+  return serviceAccount;
+}
 
 // Configuratie
 const CONFIG = {
   email: 'demo.reviewer@calypsodc.be',
-  password: 'CalyMob2025!',
+  password: loadReviewerPassword(),
   clubId: 'calypso',
   member: {
     nom: 'App Store Reviewer',
@@ -50,6 +96,18 @@ const CONFIG = {
   }
 };
 
+// Check of firebase-admin beschikbaar is
+let admin;
+try {
+  admin = require('firebase-admin');
+} catch (e) {
+  console.log('\n⚠️  firebase-admin niet geïnstalleerd.');
+  console.log('   Installeer met: npm install firebase-admin\n');
+  console.log('   Of volg de handmatige instructies onderaan dit bestand.\n');
+  showManualInstructions();
+  process.exit(1);
+}
+
 function showManualInstructions() {
   console.log('=' .repeat(60));
   console.log('📋 HANDMATIGE INSTRUCTIES VOOR DEMO ACCOUNT\n');
@@ -58,7 +116,7 @@ function showManualInstructions() {
   console.log('1. Ga naar: https://console.firebase.google.com/project/calycompta/authentication/users');
   console.log('2. Klik "Add user"');
   console.log(`3. Email: ${CONFIG.email}`);
-  console.log(`4. Password: ${CONFIG.password}`);
+  console.log('4. Password: retrieve it from the approved external secret manager/keychain');
   console.log('5. Klik "Add user" en noteer de User UID\n');
 
   console.log('STAP 2: Firestore Database');
@@ -80,40 +138,26 @@ function showManualInstructions() {
   console.log('STAP 3: Test het account');
   console.log('------------------------');
   console.log('1. Open CalyMob app');
-  console.log(`2. Log in met: ${CONFIG.email} / ${CONFIG.password}`);
+  console.log(`2. Log in als ${CONFIG.email} met het externe reviewerwachtwoord`);
   console.log('3. Controleer dat alle schermen werken\n');
   console.log('=' .repeat(60));
 }
 
 async function initializeFirebase() {
-  const possiblePaths = [
-    path.join(__dirname, '../functions/certs/serviceAccountKey.json'),
-    path.join(__dirname, '../functions/certs/calycompta-firebase-adminsdk.json'),
-    path.join(__dirname, '../serviceAccountKey.json'),
-  ];
-
-  let serviceAccountPath = null;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      serviceAccountPath = p;
-      break;
-    }
-  }
-
-  if (!serviceAccountPath) {
-    console.log('\n❌ Geen service account key gevonden!\n');
-    console.log('Download een service account key van Firebase Console:');
-    console.log('1. Ga naar: https://console.firebase.google.com/project/calycompta/settings/serviceaccounts/adminsdk');
-    console.log('2. Klik "Generate new private key"');
-    console.log('3. Sla op als: CalyMob/functions/certs/serviceAccountKey.json');
-    console.log('4. Voer dit script opnieuw uit\n');
+  let serviceAccount;
+  try {
+    serviceAccount = loadServiceAccount();
+  } catch (error) {
+    console.error(`\n❌ ${error.message}\n`);
+    console.error('Bewaar de Firebase Admin JSON buiten alle repositories in de');
+    console.error('goedgekeurde secret manager en exporteer alleen het absolute');
+    console.error('mode-0600 pad als GOOGLE_APPLICATION_CREDENTIALS.\n');
     console.log('Of volg de handmatige instructies:\n');
     showManualInstructions();
     process.exit(1);
   }
 
-  console.log(`📁 Service account: ${path.basename(serviceAccountPath)}`);
-  const serviceAccount = require(serviceAccountPath);
+  console.log('🔐 Externe Firebase service-accountcredential gevalideerd.');
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     projectId: 'calycompta',
@@ -187,9 +231,9 @@ async function createDemoAccount() {
   // Resultaat
   console.log('\n' + '=' .repeat(50));
   console.log('✅ DEMO ACCOUNT KLAAR!\n');
-  console.log('📋 Credentials voor App Store/Play Store review:\n');
+  console.log('📋 Revieweraccount aangemaakt; wachtwoord wordt nooit gelogd.\n');
   console.log(`   Email:    ${CONFIG.email}`);
-  console.log(`   Password: ${CONFIG.password}`);
+  console.log('   Password: retrieve from the approved external secret manager/keychain');
   console.log(`   User ID:  ${userId}`);
   console.log('\n' + '=' .repeat(50));
   console.log('\n📝 Kopieer naar:');

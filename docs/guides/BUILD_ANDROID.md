@@ -107,9 +107,13 @@ export CALYMOB_UPLOAD_KEY_ALIAS='upload-alias'
 Then run:
 
 ```bash
-flutter build appbundle --release
+./scripts/build_release_aab.sh
 unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
 ```
+
+The resulting AAB may be uploaded only by
+`./scripts/run_fastlane.sh android deploy` after the external schema-v2 release
+manifest passes the verifier. Never upload it manually in Play Console.
 
 Release and signing-report tasks fail closed if a variable or file is missing,
 relative, inside the repository, unreadable, too broadly accessible, or empty.

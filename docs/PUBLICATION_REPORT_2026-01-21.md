@@ -57,7 +57,7 @@ Voor indiening geverifieerd:
 | Keywords | ✅ French keywords set |
 | Support URL | ✅ https://calypsodiving.be/ |
 | Copyright | ✅ 2026 Calypso Diving Club ASBL |
-| Demo Account | ✅ demo.reviewer@calypsodc.be / CalyMob2025! |
+| Demo Account | ⚠️ E-mailadres geconfigureerd; wachtwoord uit Git verwijderd en rotatie vereist indien het account nog bestaat. Gebruik uitsluitend de goedgekeurde externe secret manager/keychain. |
 | Build | ✅ 83 (1.0.22) selected |
 | Age Rating | ✅ 4+ (all content frequency steps: NONE) |
 | Pricing | ✅ FREE across 175 countries |

@@ -23,8 +23,8 @@ function validateManifest(manifest, context) {
   const { platform, action, head, tree, clean, version, build, artifactPath, artifactHash, notes,
     requestedVersion, requestedBuild } = context;
   requireThat(Object.hasOwn(ARTIFACTS, platform), 'unknown platform');
-  requireThat(['upload', 'submit', 'upload-and-submit', 'notes'].includes(action), 'unknown action');
-  const requiredActions = action === 'upload-and-submit' ? ['upload', 'submit'] : [action];
+  requireThat(['upload', 'submit', 'notes'].includes(action), 'unknown action');
+  const requiredActions = [action];
   requireThat(manifest?.schemaVersion === 2, 'missing/unsupported manifest');
   requireThat(manifest.draft === false, 'manifest is still a draft');
   requireThat(clean, 'source checkout is dirty');

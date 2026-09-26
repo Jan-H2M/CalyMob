@@ -1,4 +1,5 @@
 default_platform(:ios)
+skip_docs
 
 def calymob_app_store_connect_config
   # Single reviewed CalyMob credential source. Do not duplicate/override these
@@ -65,7 +66,7 @@ platform :ios do
     )
   end
 
-  desc "Upload IPA directly to App Store for review"
+  desc "Upload IPA to the editable App Store version without submitting"
   lane :release do
     verify_ios_store_release('upload')
     api_key = calymob_app_store_connect_api_key
@@ -101,7 +102,6 @@ platform :ios do
       submit_for_review: true,
       automatic_release: true,
       force: true,
-      reject_if_possible: true,
       precheck_include_in_app_purchases: false,
       run_precheck_before_submit: false,
       submission_information: {

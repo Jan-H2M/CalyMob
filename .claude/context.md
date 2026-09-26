@@ -161,26 +161,33 @@ flutter run -d chrome
 
 #### iOS
 ```bash
-flutter build ios
-# Then open Xcode to archive and upload to App Store
+./scripts/build_release_ipa.sh
 ```
+
+Upload only through `./scripts/run_fastlane.sh ios deploy` or `ios release`
+after the external schema-v2 manifest contains real approval, review, test and
+artifact evidence. Xcode, Transporter and direct upload tools are not release
+paths.
 
 #### Android
 ```bash
-# First configure the external upload-keystore path, password-file path and
-# alias as documented in docs/guides/BUILD_ANDROID.md.
-flutter build appbundle
-# Upload to Google Play Console
+# First configure the external upload-keystore/password-file paths and alias.
+./scripts/build_release_aab.sh
 ```
+
+Upload only through `./scripts/run_fastlane.sh android deploy` with the same
+external schema-v2 release manifest; never upload an AAB manually.
 
 ## CI/CD with Codemagic
 
 Configuration in `codemagic.yaml`:
-- Automatic builds on push to `main`
-- iOS builds with code signing
-- Android app bundle generation
+- Manual artifact builds only
+- iOS build with code signing and no store publishing block
+- Android debug artifact generation
 - Automated testing
-- Distribution to TestFlight and Play Store (when configured)
+
+Codemagic must never distribute to TestFlight, App Store Connect or Google
+Play. Store uploads remain local Fastlane operations behind the manifest gate.
 
 **Note**: Requires credentials setup in Codemagic dashboard:
 - iOS certificates and provisioning profiles
@@ -323,28 +330,28 @@ flutter test --coverage       # With coverage
 
 ### iOS App Store
 1. Update version in `pubspec.yaml`
-2. Run `flutter build ios`
-3. Open Xcode project
-4. Archive and upload to App Store Connect
-5. Submit for review
+2. Commit and independently review the exact clean source
+3. Run `./scripts/build_release_ipa.sh`
+4. Complete and validate the external schema-v2 release manifest
+5. Upload and submit only through `./scripts/run_fastlane.sh ios ...`
 
 See `IOS_DEPLOYMENT_GUIDE.md` for complete checklist.
 
 ### Google Play Store
 1. Update version in `pubspec.yaml`
 2. Configure external upload signing per `docs/guides/BUILD_ANDROID.md`
-3. Run `flutter build appbundle`
-4. Upload to Play Console
-5. Fill release notes
-6. Submit for review
+3. Run `./scripts/build_release_aab.sh`
+4. Complete and validate the external schema-v2 release manifest
+5. Upload only through `./scripts/run_fastlane.sh android deploy`
+6. Verify the Fastlane-created draft read-only, record real uploaded-build
+   evidence, then submit only through `./scripts/run_fastlane.sh android submit`
 
 See `DEPLOYMENT_GUIDE.md` for complete checklist.
 
 ### CI/CD (Codemagic)
-- Push to `main` branch triggers build
+- Manual artifact build only
 - Automatic testing
-- Distribution to TestFlight (iOS)
-- Distribution to internal testing (Android)
+- No store publishing or distribution
 
 See `CODEMAGIC_SETUP.md` for configuration.
 
@@ -391,9 +398,9 @@ See `CODEMAGIC_SETUP.md` for configuration.
 
 - **Run iOS**: `flutter run -d ios`
 - **Run Android**: `flutter run -d android`
-- **Build iOS**: `flutter build ios`
+- **Build iOS release artifact**: `./scripts/build_release_ipa.sh`
 - **Build Android**: configure external upload signing per
-  `docs/guides/BUILD_ANDROID.md`, then run `flutter build appbundle`
+  `docs/guides/BUILD_ANDROID.md`, then run `./scripts/build_release_aab.sh`
 - **Sibling Project**: `/Users/jan/Documents/GitHub/CalyCompta`
 - **Architecture Doc**: `/Users/jan/Documents/GitHub/ARCHITECTURE.md`
 - **Firebase Console**: https://console.firebase.google.com/project/calycompta

@@ -45,14 +45,17 @@ to the checkout and never place the password itself in an environment variable.
 flutter pub get                      # Install dependencies
 flutter run -d ios                   # Run on iOS simulator
 flutter run -d android               # Run on Android emulator
-flutter build ios                    # Build iOS release (then archive in Xcode)
-flutter build appbundle              # Build Android release
 flutter analyze                      # Run static analysis
 
-# Release APK/AAB met versienummer (GEBRUIK DEZE SCRIPTS!)
+# Release artifacts (gebruik uitsluitend deze geharde scripts)
+./scripts/build_release_ipa.sh       # Bouw de gecontroleerde iOS IPA
 ./scripts/build_release.sh           # Bouw APK met versienummer in bestandsnaam
 ./scripts/build_release_aab.sh       # Bouw AAB (Android App Bundle) voor Play Store
 ./scripts/bump_version.sh patch      # Versie verhogen; daarna reviewen en committen
+
+# Store-uploads vereisen daarnaast het externe schema-v2 manifest en lopen
+# uitsluitend via ./scripts/run_fastlane.sh; nooit via Xcode/Transporter of
+# een handmatige Play Console-upload.
 
 # Versie synchronisatie
 # bump_version.sh update alleen de versie in:

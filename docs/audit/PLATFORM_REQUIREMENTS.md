@@ -285,13 +285,13 @@ flutter build apk --debug
 ```bash
 # Requires CALYMOB_UPLOAD_STORE_FILE, CALYMOB_UPLOAD_PASSWORD_FILE and
 # CALYMOB_UPLOAD_KEY_ALIAS as described above.
-flutter build apk --release
+./scripts/build_release.sh
 ```
 
 **App Bundle (Android - recommended):**
 ```bash
 # Uses the same external signing environment; never enable configuration cache.
-flutter build appbundle --release
+./scripts/build_release_aab.sh
 ```
 
 **Debug iOS (Simulator):**
@@ -301,13 +301,16 @@ flutter build ios --debug --simulator
 
 **Release iOS:**
 ```bash
-flutter build ios --release
+./scripts/build_release_ipa.sh
 ```
 
 **IPA for App Store:**
 ```bash
-flutter build ipa --release --export-options-plist=ExportOptions.plist
+./scripts/build_release_ipa.sh
 ```
+
+These are artifact builds only. Upload exclusively through
+`scripts/run_fastlane.sh` after the schema-v2 manifest passes.
 
 ---
 

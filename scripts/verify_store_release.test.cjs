@@ -80,13 +80,8 @@ test('submit has no historical defaults and requires matching uploaded artifact 
   assert.throws(() => validateManifest(manifest, submit));
 });
 
-test('Android combined release requires separately authorized upload and submission', () => {
+test('combined upload and submission is never accepted', () => {
   const { manifest, context } = fixture('android');
   const combined = { ...context, action: 'upload-and-submit' };
-  assert.equal(validateManifest(manifest, combined).platform, 'android');
-  manifest.allowedActions.android = ['upload'];
-  assert.throws(() => validateManifest(manifest, combined));
-  manifest.allowedActions.android = ['upload', 'submit'];
-  manifest.janApproval.allowedActions.android = ['upload'];
   assert.throws(() => validateManifest(manifest, combined));
 });
