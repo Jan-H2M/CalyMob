@@ -1,9 +1,11 @@
 function isEligibleEventMessageRegistration(registration = {}) {
-  return registration.registration_status !== 'canceled';
+  const status = String(registration.registration_status || '').trim().toLowerCase();
+  return !['canceled', 'waitlisted', 'withdrawn'].includes(status);
 }
 
-function shouldNotifyForOperation(operation = {}) {
-  return operation.statut !== 'supprime';
+function shouldNotifyForOperation(operation = {}, now = new Date()) {
+  return isUnreadEligibleEvent(operation, now);
 }
 
 module.exports = { isEligibleEventMessageRegistration, shouldNotifyForOperation };
+const { isUnreadEligibleEvent } = require('./eventUnreadPolicy');

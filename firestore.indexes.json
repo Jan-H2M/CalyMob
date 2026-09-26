@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "announcements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "visibility",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "last_activity_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "inscriptions",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -158,6 +172,20 @@
         },
         {
           "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "group_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "unread_created_at",
           "order": "ASCENDING"
         }
       ]
@@ -776,6 +804,24 @@
         },
         {
           "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "group_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "group_level",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "unread_created_at",
           "order": "ASCENDING"
         }
       ]

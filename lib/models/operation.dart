@@ -165,7 +165,7 @@ class Operation {
     return Operation(
       id: doc.id,
       type: data['type'] ?? 'evenement',
-      categorie: data['event_category'],
+      categorie: data['event_category'] ?? data['categorie'],
       titre: data['titre'] ?? '',
       description: data['description'],
       montantPrevu: (data['montant_prevu'] ?? 0).toDouble(),

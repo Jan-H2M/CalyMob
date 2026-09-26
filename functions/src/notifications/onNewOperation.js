@@ -9,7 +9,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
+const { collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new operations/events (Gen2)
@@ -92,7 +92,7 @@ exports.onNewOperation = onDocumentCreated(
       const memberDocs = filterByPreference(membersSnapshot.docs, 'new_events');
 
       // Collect tokens and members (exclude creator)
-      const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, senderId);
+      const { tokens, memberTokenGroups } = collectTokensAndMembers(memberDocs, senderId);
 
       if (tokens.length === 0) {
         console.log('No FCM tokens found, skipping notification');
@@ -146,11 +146,16 @@ exports.onNewOperation = onDocumentCreated(
         },
       };
 
-      // 6. Increment unread counts
-      await incrementUnreadCounts(clubId, recipientIds, 'event_messages');
-
-      // 7. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'event_messages');
+      // A new-event alert is not an unread discussion item: recipients are
+      // not registered yet and there is no conversation cursor to clear.
+      // Send it without incrementing event_messages; the mode-aware helper
+      // preserves the existing badge authority (legacy or canonical).
+      const { successCount, failureCount } = await sendNotificationsWithBadge(
+        clubId,
+        memberTokenGroups,
+        basePayload,
+        'new_events',
+      );
 
       console.log(`New event notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

@@ -967,6 +967,10 @@ Dit zijn de Firebase/APNs limieten die in de code-basis zelf NIET zichtbaar zijn
 
 ### 11.2 Onze design choices, expliciet gemaakt
 
+> **SUPERSEDED (2026-09-25) by unread cursor v1 — see §15.** The historical
+> LocalReadTracker/unread_counts choices below are retained as incident context;
+> they are not the architecture for new unread work.
+
 Een paar architectuurkeuzes lijken raar als je ze niet kent. Hier de rationale:
 
 1. **`FirebaseAppDelegateProxyEnabled = false` op iOS.** We willen volledige controle over `apnsToken` (nodig voor sandbox/production switching, deep link routing). Manual hook in `AppDelegate.swift` is verplicht.
@@ -1105,3 +1109,148 @@ Dit master document is een consolidatie van de volgende bestaande docs in `CalyM
 4. **Build & release** via `./scripts/build_release.sh --bump patch` zodra alles op `develop` getest is.
 
 *Einde master document. Bestanden en regelnummers verwijzen naar de working tree op 8 april 2026 (CalyMob 1.4.2+124).*
+
+---
+
+## 15. Unread cursor v1 (confirmed 2026-09-25)
+
+### Design decisions (Phase 2)
+
+`FeatureFlagService` reads `settings/feature_flags` into the OFF-by-default
+`UnreadCursorV1FeatureFlag`. In `off`, the existing LocalReadTracker and
+`unread_counts` sync remain exactly active. In `shadow`, legacy values still
+drive UI/badge while cursor values are logged as a structured comparison. In
+`on`, `ReadStateService` creates missing server-timestamp root cursors and
+`CursorUnreadCountService` drives the UI/app icon without writing
+`unread_counts`. Queries are capped at eight concurrent operations with an
+eight-second timeout and retain the last successful category count on a partial
+failure. The temporary announcement fallback counts only non-deleted documents
+without normalized `visibility`/`last_activity_at`; the migration removes it.
+
+The definitive replacement is a server-owned cursor document per member under
+`clubs/{clubId}/members/{uid}/read_state`. `announcements` stores one
+`last_seen_at`; `events`, `teams`, and `sessions` store a section-wide
+`global_last_seen_at` plus scoped `conversations`, `channels`, and `chats`
+subdocuments. Every acknowledgement uses Firestore `serverTimestamp`; a scoped
+effective cursor is `max(global, scope)`. This is one write per acknowledgement,
+not a write to every message.
+
+**Why this supersedes the historical model.** `LocalReadTracker` is per device,
+does not survive reinstall coherently, and uses a device-clock baseline. The old
+per-message `read_by` arrays cause write amplification and require broad message
+write rules. Mutable `unread_counts` increment/decrement counters race with
+client resyncs. Cursor-derived counts become the single source for both landing
+tiles and the app icon; Functions calculate and send the exact APNs badge,
+including explicit zero.
+
+**Confirmed product rules.** The icon is `Événements + Communication`;
+Communication is announcements + team + session messages and Événements is event
+messages. Event messages expire at `date_fin + 7` calendar days in
+Europe/Brussels. Opening a tile does not mark a whole section read; opening an
+individual conversation does, and each section gets an explicit *Tout marquer
+comme lu*. All non-soft-deleted announcements are visible to every member.
+Released old apps may keep writing legacy `unread_counts`, but that map is
+ignored by cursor v1 until a minimum-version cutover.
+
+**Phase status.** Phase 1 supplies inert schema models, self-only Firestore
+rules, the announcement index and emulator tests on
+`feat/unread-cursor-v1-phase1`; it is not deployed. The rollout flag lives in
+`clubs/{clubId}/settings/feature_flags` as `unreadCursorV1Enabled: false` and
+`unreadCursorV1Mode: 'off' | 'shadow' | 'on'`. Phases 2–7 remain planned in
+`../../outputs/calymob-unread-definitive-plan_2026-09-24.md` (parent Calypso repo).
+
+### Design decisions (Phase 3)
+
+Phase 3 wires screen acknowledgements only while `unreadCursorV1Mode == on`.
+Opening a tile or list remains read-only; opening an event/team/session
+conversation acknowledges its scoped cursor after successful content load.
+Opening an announcement detail acknowledges the single announcements cursor;
+the list does not. Explicit confirmed French *Tout marquer comme lu* controls
+write only root cursor sections. Cursor-mode Communication now includes session
+messages and refreshes the app-icon badge, including zero.
+
+### Design decisions (Phase 4)
+
+Functions now have the same OFF/shadow/ON gate. OFF preserves legacy delivery;
+shadow keeps its payload and logs a bounded legacy-versus-canonical comparison;
+ON retains legacy category increments for old released apps but derives APNs
+badge values from cursors. Cursor writes send a silent exact badge (including
+zero) only after an actual advance, with an in-memory four-second coalescer.
+The legacy event increment window also changes to the confirmed seven Brussels
+calendar days so coexistence does not produce two policies. Local only.
+
+**Phase 4 review fixes.** Node now mirrors Dart's `statut == publie` pool
+session and role-scoped visibility predicates and uses aggregation counts.
+Successful self-sends advance the sender cursor in ON mode. Read-state badge
+coalescing is trailing-edge: later cursor writes supersede an earlier pending
+send, so the final exact value (including zero) is retained.
+
+### Design decisions (Phase 5)
+
+`scripts/migrate-unread-read-state-v1.cjs` is deliberately in CalyMob (rather
+than CalyCompta) because it ships with and initializes this branch's cursor-v1
+schema. It selects only canonically active members in deterministic UID order;
+it does not use installation/tokens as a membership proxy. Default dry-run
+prints every root-document diff and changes nothing. `--apply` writes a
+timestamped JSON pre-write backup to the gitignored `tmp/` directory before
+batched (at most 450) writes, while `--verify` reports missing or malformed
+roots. A single captured Admin `Timestamp.now()` gives every root in one run the
+same migration baseline; it never creates scoped conversation cursors or
+changes messages, `read_by`, `unread_counts`, FCM tokens or member data.
+
+The script obtains credentials only through operator-provided ADC / `GOOGLE_APPLICATION_CREDENTIALS`; it never discovers or reads a service account. Outside
+the Firestore emulator, every mode requires `--project`, and `--apply` also
+requires an exactly matching `--confirm-production`. It has only been tested
+against the `demo-calymob-migration` emulator project and is not deployed or run
+against club data.
+
+**Future operator usage (separate approval required).** From `CalyMob`, review
+`node scripts/migrate-unread-read-state-v1.cjs --dry-run --project <project> --club calypso`, then run `--verify` with the same project. Only after an
+independent backup/diff review and explicit production authorization may an
+operator use `--apply --project <project> --confirm-production <project>`;
+`--member <uid>` (repeatable) and `--limit N` support a pilot cohort. These are
+instructions for a future approved operator, not commands run by Phase 5.
+
+### Design decisions (Phase 6)
+
+Announcement field maintenance is server-side for every writer: it normalizes
+`visibility` and monotonic `last_activity_at` irrespective of the feature flag.
+The client is only a belt-and-braces writer and fallback counts tolerate trigger
+delay. Phase 6 adds normalization-only migration support, cursor sender token
+cleanup, the [device checklist](testing/UNREAD_CURSOR_V1_DEVICE_CHECKLIST.md),
+and an approval-gated [Phase-7 rollout runbook](runbooks/UNREAD_CURSOR_V1_ROLLOUT.md).
+Phases 1–6 are local-only; Phase 7 is written, not executed.
+
+### Phase 6 review corrections
+
+Announcement activity remains Function-owned: client members cannot write
+`visibility` or `last_activity_at`. Shadow mode now supports the explicit
+`unreadCursorV1PilotMemberIds` cohort: only listed UIDs have effective ON,
+including canonical APNs and read-state reconciliation; other members retain
+the legacy shadow payload. The rollout runbook records the exact global
+`settings/app_version.minSupportedVersion` cutover mechanism.
+
+### Design decisions (Phase 6c)
+
+Cursor tests now seed and query real Firestore-shaped documents through
+`FakeFirebaseFirestore`; no expected count is a constructed constant. Provider
+tests inject only I/O seams and verify OFF/shadow/ON ownership. A data-only
+`unread_cursor_badge_sync` requests provider refresh without a visible alert.
+
+### Design decisions (Phase 6d)
+
+The Node canonical calculator now executes the same timestamp-tagged
+two-member fixture as Dart using an in-memory Firestore-shaped fake. Parent
+team-channel documents are explicit, as collection enumeration cannot infer
+them from subcollections. Focused Jest: 4 suites / 9 behavioural tests.
+
+### Phase 6 final local verification
+
+Phases 1–6 are done locally on `feat/unread-cursor-v1-phase1`, not deployed.
+Phase 7 runbook `docs/runbooks/UNREAD_CURSOR_V1_ROLLOUT.md` and device checklist
+`docs/testing/UNREAD_CURSOR_V1_DEVICE_CHECKLIST.md` are written, not executed.
+Test inventory: canonical 14; announcement maintenance 5; feature flag 4;
+read-state reconciliation 7; cursor-mode badge helper 7. Final checks: Jest
+46 suites passed/1 skipped (422 passed/5 skipped); Flutter 686 passed/1
+skipped; analyzer 942 known-baseline issues, none new in touched files; all
+three isolated Firestore Emulator suites passed.

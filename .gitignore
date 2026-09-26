@@ -56,9 +56,14 @@ ios/.symlinks/
 # Android
 android/.gradle/
 android/.kotlin/
-android/local.properties
+/android/local.properties
 android/app/src/debug/
 android/app/src/profile/
+
+# Android release signing material must live outside the repository.
+**/key.properties
+**/*.jks
+**/*.keystore
 
 # ===================
 # Build outputs
@@ -103,6 +108,7 @@ coverage/
 # ===================
 # Misc
 # ===================
+/tmp/
 *.bak
 *.backup
 *.tmp

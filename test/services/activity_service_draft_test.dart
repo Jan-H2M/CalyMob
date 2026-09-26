@@ -86,7 +86,8 @@ void main() {
 
     final item = (await ActivityService(
       firestore: firestore,
-    ).getAllActivitiesStream(clubId, currentUserId: userId).first).single;
+    ).getAllActivitiesStream(clubId, currentUserId: userId).first)
+        .single;
 
     expect(item.isDraft, isTrue);
     expect(item.statusLabel, 'Brouillon');
@@ -108,8 +109,8 @@ void main() {
         firestore,
         'cancelled-past',
         statut: 'annule',
-        dateDebut: now.subtract(const Duration(days: 2)),
-        dateFin: now.subtract(const Duration(days: 1)),
+        dateDebut: now.subtract(const Duration(days: 9)),
+        dateFin: now.subtract(const Duration(days: 8)),
       );
       await addOperation(
         firestore,
@@ -133,4 +134,37 @@ void main() {
       );
     },
   );
+
+  test('closed and cancelled rows remain navigable for canonical grace window',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    final now = DateTime.now();
+    await addOperation(
+      firestore,
+      'closed-grace',
+      statut: 'ferme',
+      dateFin: now.subtract(const Duration(days: 6)),
+    );
+    await addOperation(
+      firestore,
+      'cancelled-grace',
+      statut: 'annule',
+      dateFin: now.subtract(const Duration(days: 6)),
+    );
+    await addOperation(
+      firestore,
+      'closed-expired',
+      statut: 'ferme',
+      dateFin: now.subtract(const Duration(days: 8)),
+    );
+
+    final ids = (await ActivityService(firestore: firestore)
+            .getAllActivitiesStream(clubId, currentUserId: userId)
+            .first)
+        .map((item) => item.id)
+        .toSet();
+
+    expect(ids, containsAll(['closed-grace', 'cancelled-grace']));
+    expect(ids, isNot(contains('closed-expired')));
+  });
 }

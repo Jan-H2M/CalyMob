@@ -22,6 +22,18 @@ bool shouldRegisterNotificationToken({
   return explicitEnable || storedPreference != false;
 }
 
+/// Data-only cursor reconciliation must refresh the unread authority without
+/// presenting a duplicate foreground notification.
+@visibleForTesting
+({bool showVisibleNotification, bool requestUnreadRefresh})
+    foregroundNotificationDecision(Map<String, dynamic> data) {
+  final isCursorSync = data['type'] == 'unread_cursor_badge_sync';
+  return (
+    showVisibleNotification: !isCursorSync,
+    requestUnreadRefresh: isCursorSync,
+  );
+}
+
 /// Service de gestion des notifications push
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -42,6 +54,7 @@ class NotificationService {
 
   /// Callback pour quand l'utilisateur tape sur une notification locale
   void Function(String? payload)? onLocalNotificationTap;
+  void Function()? onUnreadCursorBadgeSync;
 
   /// Initialiser les notifications
   Future<void> initialize(
@@ -146,8 +159,7 @@ class NotificationService {
             _firestore.collection('clubs/$clubId/members').doc(userId);
         final member = await memberRef.get();
         if (member.data()?['notifications_enabled'] == false) {
-          debugPrint(
-              'ℹ️ FCM token refresh ignoré: notifications désactivées');
+          debugPrint('ℹ️ FCM token refresh ignoré: notifications désactivées');
           return;
         }
         await memberRef.update({
@@ -176,6 +188,14 @@ class NotificationService {
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint(
         '📬 Message reçu en foreground (type=${message.data['type'] ?? 'unknown'})');
+
+    // Cursor-v1 reconciliation is data-only: the provider's normal lifecycle
+    // refresh owns counts/badge, and this must never surface a local alert.
+    final decision = foregroundNotificationDecision(message.data);
+    if (decision.requestUnreadRefresh) {
+      onUnreadCursorBadgeSync?.call();
+    }
+    if (!decision.showVisibleNotification) return;
 
     final notification = message.notification;
     if (notification == null) return;
@@ -465,19 +485,17 @@ class NotificationService {
       // CalyMob. Calling getToken() here can wait indefinitely for a missing
       // service worker/VAPID setup and keeps the login button spinning even
       // though Firebase Auth and the Firestore session already succeeded.
-      final token = kIsWeb || !registerNotificationToken
-          ? null
-          : await getToken();
+      final token =
+          kIsWeb || !registerNotificationToken ? null : await getToken();
       if (token != null) {
         updateData['fcm_tokens'] = FieldValue.arrayUnion([token]);
         updateData['fcm_token'] = token; // Garder pour compatibilité
         updateData['fcm_token_updated_at'] = FieldValue.serverTimestamp();
         updateData['notifications_enabled'] = true;
       } else {
-        debugPrint(
-            registerNotificationToken
-                ? '⚠️  Aucun token FCM disponible — app_installed quand même mis à jour'
-                : 'ℹ️ FCM token niet geregistreerd: expliciete notificatie-opt-out behouden');
+        debugPrint(registerNotificationToken
+            ? '⚠️  Aucun token FCM disponible — app_installed quand même mis à jour'
+            : 'ℹ️ FCM token niet geregistreerd: expliciete notificatie-opt-out behouden');
       }
 
       await memberRef.update(updateData);

@@ -10,9 +10,9 @@ import '../../models/poll.dart';
 import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
-import '../../services/local_read_tracker.dart';
 import '../../services/profile_service.dart';
 import '../../services/team_channel_service.dart';
+import '../../services/visible_read_ack_gate.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/message_hover_caret.dart';
 import '../../widgets/attachment_picker.dart';
@@ -37,7 +37,8 @@ class TeamChatScreen extends StatefulWidget {
   State<TeamChatScreen> createState() => _TeamChatScreenState();
 }
 
-class _TeamChatScreenState extends State<TeamChatScreen> {
+class _TeamChatScreenState extends State<TeamChatScreen>
+    with WidgetsBindingObserver, RouteAware {
   final TeamChannelService _channelService = TeamChannelService();
   final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
@@ -49,14 +50,23 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   final Map<String, Future<String?>> _photoFutureCache = {};
 
   bool _isSending = false;
-  bool _hasMarkedAsRead = false;
+  bool _hasLoadedMessageSnapshot = false;
+  String? _latestVisibleMessageId;
+  DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
+  bool _appIsForeground = true;
+  final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
+  final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
+  ModalRoute<dynamic>? _subscribedRoute;
+  String? _acknowledgementUserId;
   Poll? _pendingPoll;
 
   @override
   void initState() {
     super.initState();
-    _markMessagesAsRead();
+    WidgetsBinding.instance.addObserver(this);
+    _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     if (widget.openPollComposer) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _createPoll();
@@ -66,11 +76,36 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _ackRetry.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (identical(route, _subscribedRoute)) return;
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _subscribedRoute = route;
+    if (route != null) {
+      readAcknowledgementRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() => _ackRetry.suspend();
+
+  @override
+  void didPopNext() => unawaited(_markMessagesAsRead());
 
   /// Haal de foto URL op voor een member (cached Future)
   Future<String?> _getPhotoUrl(String senderId) {
@@ -106,19 +141,67 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     }
   }
 
-  Future<void> _markMessagesAsRead() async {
-    if (_hasMarkedAsRead) return;
-    _hasMarkedAsRead = true;
+  Future<void> _markMessagesAsRead({
+    UnreadCountProvider? watchedUnreadProvider,
+  }) async {
+    if (!_appIsForeground || !isCurrentRouteForReadAcknowledgement(context)) {
+      return;
+    }
+    final unreadProvider =
+        watchedUnreadProvider ?? context.read<UnreadCountProvider>();
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null || currentUserId != _acknowledgementUserId) {
+      _ackRetry.suspend();
+      return;
+    }
+    final cursor = unreadProvider.usesCursorReadState;
+    final revision = _readAckGate.begin(
+      ready: _hasLoadedMessageSnapshot,
+      cursor: cursor,
+    );
+    if (revision == null) return;
+    var succeeded = false;
+    try {
+      final visibleMessageId = _latestVisibleMessageId;
+      if (visibleMessageId != null) {
+        await unreadProvider.markTeamChannelSeen(
+          widget.channel.id,
+          visibleMessageId: visibleMessageId,
+          visibleThroughAt: _latestVisibleMessageAt,
+        );
+      }
+      succeeded = true;
+      _ackRetry.reset();
+    } catch (error) {
+      debugPrint('⚠️ Team chat read acknowledgement failed: $error');
+      _ackRetry.schedule(() {
+        if (mounted) unawaited(_markMessagesAsRead());
+      });
+    } finally {
+      _readAckGate.finish(
+        revision: revision,
+        cursor: cursor,
+        succeeded: succeeded,
+      );
+    }
+    if (!mounted || !succeeded) return;
+    final currentCursorAuthority =
+        context.read<UnreadCountProvider>().usesCursorReadState;
+    if (_readAckGate.hasPending(cursor: currentCursorAuthority)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_markMessagesAsRead());
+      });
+    }
+  }
 
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    await tracker.markAsRead('team_${widget.channel.id}');
-
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(context.read<UnreadCountProvider>().refresh());
-    });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground && mounted && _hasLoadedMessageSnapshot) {
+      unawaited(_markMessagesAsRead());
+    } else if (!_appIsForeground) {
+      _ackRetry.suspend();
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -160,7 +243,6 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
         attachments: attachments,
         poll: _pendingPoll,
       );
-
       _messageController.clear();
       setState(() {
         _pendingAttachments.clear();
@@ -453,6 +535,8 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final unreadProvider = context.watch<UnreadCountProvider>();
+    final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
@@ -529,6 +613,36 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                     }
 
                     final messages = snapshot.data ?? [];
+                    // A successful stream emission (including an empty
+                    // channel) is the visibility acknowledgement point. The
+                    // cursor service coalesces rapid new-message emissions.
+                    if (snapshot.hasData) {
+                      _hasLoadedMessageSnapshot = true;
+                      final first = messages.isEmpty ? null : messages.first;
+                      final last = messages.isEmpty ? null : messages.last;
+                      _latestVisibleMessageId = last?.id;
+                      _latestVisibleMessageAt =
+                          last?.unreadCreatedAt ?? last?.createdAt;
+                      _acknowledgementUserId = userId;
+                      if (_readAckGate.recordContent(
+                        messages.isEmpty
+                            ? 'empty'
+                            : '${messages.length}:${first!.id}:${last!.id}:${last.createdAt.microsecondsSinceEpoch}',
+                      )) {
+                        _ackRetry.reset();
+                      }
+                      if (_appIsForeground && routeIsCurrent) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            unawaited(
+                              _markMessagesAsRead(
+                                watchedUnreadProvider: unreadProvider,
+                              ),
+                            );
+                          }
+                        });
+                      }
+                    }
 
                     if (messages.isEmpty) {
                       return Center(

@@ -10,7 +10,9 @@ import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../services/unread_count_service.dart';
+import '../../services/cursor_unread_count_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import 'operation_detail_screen.dart';
 import 'event_search_screen.dart';
 import 'event_type_selector.dart';
@@ -38,14 +40,38 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userId = context.read<AuthProvider>().currentUser?.uid;
       context.read<ActivityProvider>().listenToActivities(
-        _clubId,
-        currentUserId: userId,
-      );
+            _clubId,
+            currentUserId: userId,
+          );
     });
   }
 
   Future<void> _refreshActivities() async {
     await context.read<ActivityProvider>().refresh(_clubId);
+  }
+
+  Future<void> _markEventsAsRead() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tout marquer comme lu ?'),
+        content: const Text(
+          'Toutes les discussions d’événements seront marquées comme lues.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context.read<UnreadCountProvider>().markEventsSeen();
   }
 
   /// Open the activity creation flow (Stap 0: type selection)
@@ -138,6 +164,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   Widget build(BuildContext context) {
     final activityProvider = context.watch<ActivityProvider>();
     final memberProvider = context.watch<MemberProvider>();
+    final unreadProvider = context.watch<UnreadCountProvider>();
     final canCreateEvents = memberProvider.canCreateEvents;
 
     return Scaffold(
@@ -148,6 +175,13 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          if (unreadProvider.usesCursorReadState &&
+              unreadProvider.isCursorReady)
+            IconButton(
+              icon: const Icon(Icons.done_all_outlined),
+              tooltip: 'Tout marquer comme lu',
+              onPressed: _markEventsAsRead,
+            ),
           IconButton(
             icon: const Icon(Icons.search, size: 26),
             tooltip: 'Rechercher',
@@ -328,10 +362,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
               _selectedFilter == 'plongee'
                   ? Icons.scuba_diving
                   : _selectedFilter == 'piscine'
-                  ? Icons.pool
-                  : _selectedFilter == 'sortie'
-                  ? Icons.directions_boat
-                  : Icons.event_busy,
+                      ? Icons.pool
+                      : _selectedFilter == 'sortie'
+                          ? Icons.directions_boat
+                          : Icons.event_busy,
               size: 64,
               color: Colors.white.withOpacity(0.7),
             ),
@@ -475,13 +509,17 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                           colors: item.isDraft
                               ? const [Color(0xFFF59E0B), Color(0xFFB45309)]
                               : item.isCancelled
-                              ? const [Color(0xFFEF4444), Color(0xFF991B1B)]
-                              : item.isPiscine
-                              ? [
-                                  AppColors.piscineBlauwLight, // Piscine blauw
-                                  AppColors.piscineBlauw,
-                                ]
-                              : [AppColors.middenblauw, AppColors.donkerblauw],
+                                  ? const [Color(0xFFEF4444), Color(0xFF991B1B)]
+                                  : item.isPiscine
+                                      ? [
+                                          AppColors
+                                              .piscineBlauwLight, // Piscine blauw
+                                          AppColors.piscineBlauw,
+                                        ]
+                                      : [
+                                          AppColors.middenblauw,
+                                          AppColors.donkerblauw
+                                        ],
                         ),
                       ),
                       child: Column(
@@ -731,7 +769,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   }
 
   Widget _buildUnreadBadgeAndArrow(ActivityItem item) {
-    final userId = context.read<AuthProvider>().currentUser?.uid;
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    final unreadProvider = context.watch<UnreadCountProvider>();
 
     if (userId == null) {
       return Padding(
@@ -747,16 +786,21 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
     late final Stream<int> unreadStream;
 
-    // Skip unread badge voor verlopen events (date_fin + 5 dagen)
-    final eventEndDate = item.operation?.dateFin ?? item.date;
-    final isExpired = DateTime.now().difference(eventEndDate).inDays > 5;
-
     // Individuele unread count per operatie via UnreadCountService
     final clubId = FirebaseConfig.defaultClubId;
     final opId = item.operation?.id;
-
-    if (isExpired || opId == null) {
+    if (opId == null) {
       unreadStream = Stream.value(0);
+    } else if (unreadProvider.usesCursorReadState) {
+      unreadStream = unreadProvider.isCursorReady
+          ? Stream.fromFuture(
+              CursorUnreadCountService().countEligibleEventConversation(
+                clubId,
+                userId,
+                opId,
+              ),
+            )
+          : Stream.value(0);
     } else {
       unreadStream = Stream.fromFuture(
         UnreadCountService().countUnreadForOperation(clubId, opId),
@@ -766,13 +810,25 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     return StreamBuilder<int>(
       stream: unreadStream,
       builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
+        final unreadCount = snapshot.data;
+        final cursorError = unreadProvider.usesCursorReadState &&
+            unreadProvider.isCursorReady &&
+            snapshot.hasError;
         return Padding(
           padding: const EdgeInsets.only(right: 12),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (unreadCount > 0)
+              if (cursorError)
+                const Tooltip(
+                  message: 'Compteur temporairement indisponible',
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                )
+              else if (unreadCount != null && unreadCount > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -791,7 +847,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                     ),
                   ),
                 ),
-              if (unreadCount > 0) const SizedBox(width: 6),
+              if (cursorError || (unreadCount != null && unreadCount > 0))
+                const SizedBox(width: 6),
               Icon(
                 Icons.chevron_right,
                 color: item.isPiscine

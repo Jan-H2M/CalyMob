@@ -6,9 +6,10 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
-import '../../providers/member_provider.dart';
+import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
-import '../../services/feature_flag_service.dart';
+import '../../utils/club_role_utils.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -17,68 +18,49 @@ import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
-  const BoutiqueScreen({super.key});
+  final BoutiqueAccessService? accessService;
+  final String clubId;
+  @visibleForTesting
+  final String? testUserIdOverride;
+
+  const BoutiqueScreen({
+    super.key,
+    this.accessService,
+    this.clubId = FirebaseConfig.defaultClubId,
+    this.testUserIdOverride,
+  });
 
   @override
   State<BoutiqueScreen> createState() => _BoutiqueScreenState();
 }
 
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
-  final FeatureFlagService _flagService = FeatureFlagService();
-
-  bool _isTesterOrAdmin(MemberProvider memberProvider) {
-    final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin') return true;
-    final access = memberProvider.memberData?['feature_access'];
-    return access is Map && access['boutique'] == true;
-  }
-
-  bool _sectionVisible(
-    Map<String, String> visibility,
-    String key,
-    bool canSeeTesteurs,
-  ) {
-    switch (visibility[key]) {
-      case FeatureFlagService.modeTous:
-        return true;
-      case FeatureFlagService.modeTesteurs:
-        return canSeeTesteurs;
-      default:
-        return false;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final memberProvider = context.watch<MemberProvider>();
-    final canOpenReturns = _canOpenMaterialReturns(memberProvider);
-    final canSeeTesteurs = _isTesterOrAdmin(memberProvider);
+    return BoutiqueAccessGuard(
+      accessService: widget.accessService,
+      clubId: widget.clubId,
+      testUserIdOverride: widget.testUserIdOverride,
+      builder: (context, access) {
+        bool showSection(String key) => access.canAccessSection(key);
+        final showMaterialLoans = showSection('pretsMateriel');
+        final canOpenReturns = _canOpenMaterialReturns(access.member);
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text(
-          'Boutique',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: OceanGradientBackground(
-        creatures: CreatureSet.fishAndBubbles,
-        child: SafeArea(
-          child: StreamBuilder<Map<String, String>>(
-            stream:
-                _flagService.boutiqueVisibility(FirebaseConfig.defaultClubId),
-            initialData: FeatureFlagService.parseBoutiqueVisibility(null),
-            builder: (context, snapshot) {
-              final visibility = snapshot.data ??
-                  FeatureFlagService.parseBoutiqueVisibility(null);
-              bool showSection(String key) =>
-                  _sectionVisible(visibility, key, canSeeTesteurs);
-              final showMaterialLoans = showSection('pretsMateriel');
-              return ListView(
+        return Scaffold(
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            title: const Text(
+              'Boutique',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: OceanGradientBackground(
+            creatures: CreatureSet.fishAndBubbles,
+            child: SafeArea(
+              child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                 children: [
                   Text(
@@ -98,7 +80,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'produits',
                             builder: (_) => const BoutiqueProductsScreen(),
                           ),
                         );
@@ -114,7 +98,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'cotisation',
                             builder: (_) => const MaCotisationScreen(),
                           ),
                         );
@@ -134,7 +120,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'pretsMateriel',
                             builder: (_) => const MaterialReturnsScreen(),
                           ),
                         );
@@ -155,7 +143,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                           badge: cart.isEmpty ? null : '${cart.itemCount}',
                           onTap: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(
+                              boutiqueAccessGuardedRoute(
+                                sourceContext: context,
+                                requiredSection: 'panier',
                                 builder: (_) => const BoutiqueCartScreen(),
                               ),
                             );
@@ -173,23 +163,26 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                           'Suivre les commandes et retrouver les paiements.',
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'commandes',
                             builder: (_) => const MesCommandesScreen(),
                           ),
                         );
                       },
                     ),
                 ],
-              );
-            },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  bool _canOpenMaterialReturns(MemberProvider memberProvider) {
-    return memberProvider.isGonflage;
+  bool _canOpenMaterialReturns(Map<String, dynamic>? member) {
+    final statuten = member?['clubStatuten'];
+    return statuten is Iterable && ClubRoleUtils.hasGonflageRole(statuten);
   }
 }
 
@@ -226,7 +219,9 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                   tooltip: 'Panier',
                   icon: const Icon(Icons.shopping_cart_outlined),
                   onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
+                    boutiqueAccessGuardedRoute(
+                      sourceContext: context,
+                      requiredSection: 'panier',
                       builder: (_) => const BoutiqueCartScreen(),
                     ),
                   ),
@@ -321,7 +316,9 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                                 product: product,
                                 onTap: () {
                                   Navigator.of(context).push(
-                                    MaterialPageRoute(
+                                    boutiqueAccessGuardedRoute(
+                                      sourceContext: context,
+                                      requiredSection: 'produits',
                                       builder: (_) =>
                                           BoutiqueProductDetailScreen(
                                         product: product,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../providers/event_message_provider.dart';
 import '../providers/unread_count_provider.dart';
 import '../services/local_read_tracker.dart';
 import '../services/profile_service.dart';
+import '../services/visible_read_ack_gate.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
 import 'message_edit_sheet.dart';
@@ -48,7 +50,8 @@ class EventDiscussionTab extends StatefulWidget {
   State<EventDiscussionTab> createState() => _EventDiscussionTabState();
 }
 
-class _EventDiscussionTabState extends State<EventDiscussionTab> {
+class _EventDiscussionTabState extends State<EventDiscussionTab>
+    with WidgetsBindingObserver, RouteAware {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ProfileService _profileService = ProfileService();
@@ -63,6 +66,13 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   bool _isUploading = false;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+  final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
+  bool _appIsForeground = true;
+  String? _latestVisibleMessageId;
+  DateTime? _latestVisibleMessageAt;
+  String? _acknowledgementUserId;
+  final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
+  ModalRoute<dynamic>? _subscribedRoute;
 
   /// Key sur le divider "Nouveaux messages" — sert à scroller exactement
   /// jusqu'à la première ligne non-lue à l'ouverture du chat.
@@ -82,16 +92,44 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   @override
   void initState() {
     super.initState();
-    _checkParticipation();
-    _markMessagesAsRead();
+    WidgetsBinding.instance.addObserver(this);
+    _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_captureLastReadBeforeOpen());
+    unawaited(_checkParticipation());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _ackRetry.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (identical(route, _subscribedRoute)) return;
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _subscribedRoute = route;
+    if (route != null) {
+      readAcknowledgementRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() => _ackRetry.suspend();
+
+  @override
+  void didPopNext() => _scheduleVisibleMessagesAcknowledgement();
 
   Future<void> _checkParticipation() async {
     final authProvider = context.read<AuthProvider>();
@@ -106,21 +144,114 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
     if (!mounted) return;
     setState(() => _hasCheckedParticipation = true);
+    _scheduleVisibleMessagesAcknowledgement();
   }
 
-  Future<void> _markMessagesAsRead() async {
+  Future<void> _captureLastReadBeforeOpen() async {
     final tracker = LocalReadTracker();
     await tracker.init();
     final key = 'operation_${widget.operationId}';
-    _lastReadBeforeOpen =
+    final lastRead =
         tracker.getLastRead(key) ?? tracker.installBaseline ?? DateTime(2024);
-
     if (!mounted) return;
+    setState(() => _lastReadBeforeOpen = lastRead);
+    _scheduleVisibleMessagesAcknowledgement();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground) {
+      _scheduleVisibleMessagesAcknowledgement();
+    } else {
+      _ackRetry.suspend();
+    }
+  }
+
+  String _messageSnapshotToken(List<EventMessage> messages) {
+    if (messages.isEmpty) return 'empty';
+    final first = messages.first;
+    final last = messages.last;
+    return '${messages.length}:${first.id}:${first.createdAt.microsecondsSinceEpoch}:'
+        '${last.id}:${last.createdAt.microsecondsSinceEpoch}';
+  }
+
+  void _recordSuccessfulMessageSnapshot(
+    List<EventMessage> messages, {
+    required bool cursorAuthority,
+    required bool routeIsCurrent,
+  }) {
+    _latestVisibleMessageId = messages.isEmpty ? null : messages.last.id;
+    _latestVisibleMessageAt = messages.isEmpty
+        ? null
+        : messages.last.unreadCreatedAt ?? messages.last.createdAt;
+    _acknowledgementUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (_readAckGate.recordContent(_messageSnapshotToken(messages))) {
+      _ackRetry.reset();
+    }
+    if (_appIsForeground &&
+        routeIsCurrent &&
+        _readAckGate.hasPending(cursor: cursorAuthority)) {
+      _scheduleVisibleMessagesAcknowledgement();
+    }
+  }
+
+  void _scheduleVisibleMessagesAcknowledgement() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_acknowledgeVisibleMessages());
+    });
+  }
+
+  Future<void> _acknowledgeVisibleMessages() async {
+    if (!mounted ||
+        !_appIsForeground ||
+        !isCurrentRouteForReadAcknowledgement(context)) {
+      return;
+    }
     final unreadProvider = context.read<UnreadCountProvider>();
-    await context.read<EventMessageProvider>().markAsRead(
-          operationId: widget.operationId,
-          unreadProvider: unreadProvider,
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null || currentUserId != _acknowledgementUserId) {
+      _ackRetry.suspend();
+      return;
+    }
+    final useCursor = unreadProvider.usesCursorReadState;
+    final revision = _readAckGate.begin(
+      ready: _hasCheckedParticipation && _lastReadBeforeOpen != null,
+      cursor: useCursor,
+    );
+    if (revision == null) return;
+
+    var succeeded = false;
+    try {
+      final visibleMessageId = _latestVisibleMessageId;
+      if (visibleMessageId != null) {
+        await unreadProvider.markEventConversationSeen(
+          widget.operationId,
+          visibleMessageId: visibleMessageId,
+          visibleThroughAt: _latestVisibleMessageAt,
         );
+      }
+      succeeded = true;
+      _ackRetry.reset();
+    } catch (error) {
+      debugPrint('⚠️ Event discussion read acknowledgement failed: $error');
+      _ackRetry.schedule(() {
+        if (mounted) _scheduleVisibleMessagesAcknowledgement();
+      });
+    } finally {
+      _readAckGate.finish(
+        revision: revision,
+        cursor: useCursor,
+        succeeded: succeeded,
+      );
+    }
+
+    if (!mounted || !succeeded) return;
+    final currentCursorAuthority =
+        context.read<UnreadCountProvider>().usesCursorReadState;
+    if (_readAckGate.hasPending(cursor: currentCursorAuthority)) {
+      _scheduleVisibleMessagesAcknowledgement();
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -177,7 +308,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         attachments: attachments,
         poll: _pendingPoll,
       );
-
       _messageController.clear();
       setState(() {
         _replyingTo = null;
@@ -300,9 +430,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         newUploaded.add(uploaded);
       }
 
-      final keptIds = result.keptAttachments
-          .map((a) => a.storagePath ?? a.url)
-          .toSet();
+      final keptIds =
+          result.keptAttachments.map((a) => a.storagePath ?? a.url).toSet();
       final removed = message.attachments
           .where((a) => !keptIds.contains(a.storagePath ?? a.url))
           .toList();
@@ -507,6 +636,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final messageProvider = context.watch<EventMessageProvider>();
+    final usesCursorReadState =
+        context.watch<UnreadCountProvider>().usesCursorReadState;
+    final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final canWrite = _hasCheckedParticipation &&
         messageProvider.isParticipant(widget.operationId);
@@ -539,6 +671,13 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               }
 
               final messages = snapshot.data ?? [];
+              if (snapshot.hasData) {
+                _recordSuccessfulMessageSnapshot(
+                  messages,
+                  cursorAuthority: usesCursorReadState,
+                  routeIsCurrent: routeIsCurrent,
+                );
+              }
 
               if (messages.isEmpty) {
                 return Center(
@@ -651,118 +790,131 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         child: Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(
-            mainAxisAlignment: isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isOwnMessage) ...[
-              FutureBuilder<String?>(
-                future: _getPhotoUrl(message.senderId),
-                builder: (context, snapshot) {
-                  return CircleAvatar(
-                    radius: 16,
-                    backgroundColor: AppColors.middenblauw,
-                    backgroundImage: snapshot.data != null
-                        ? CachedNetworkImageProvider(snapshot.data!)
-                        : null,
-                    child: snapshot.data == null
-                        ? Text(
-                            message.senderName.isEmpty
-                                ? '?'
-                                : message.senderName[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          )
-                        : null,
-                  );
-                },
-              ),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          decoration: BoxDecoration(
-            color: isOwnMessage ? Colors.blue[100] : Colors.grey[200],
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment:
+                isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (!isOwnMessage)
-                Text(
-                  message.senderName,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              if (!isOwnMessage) const SizedBox(height: 4),
-              if (message.isReply && message.replyToPreview != null)
-                _buildReplyPreview(message.replyToPreview!),
-              if (message.message.isNotEmpty)
-                MarkdownBody(
-                  data: message.message,
-                  selectable: true,
-                  onTapLink: (text, href, title) async {
-                    final uri = eventMessageLinkUri(href);
-                    if (uri != null) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
+              if (!isOwnMessage) ...[
+                FutureBuilder<String?>(
+                  future: _getPhotoUrl(message.senderId),
+                  builder: (context, snapshot) {
+                    return CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AppColors.middenblauw,
+                      backgroundImage: snapshot.data != null
+                          ? CachedNetworkImageProvider(snapshot.data!)
+                          : null,
+                      child: snapshot.data == null
+                          ? Text(
+                              message.senderName.isEmpty
+                                  ? '?'
+                                  : message.senderName[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                    );
                   },
-                  styleSheet: MarkdownStyleSheet(
-                    p: const TextStyle(fontSize: 15, color: Colors.black87),
-                    strong: const TextStyle(fontSize: 15, color: Colors.black87, fontWeight: FontWeight.w700),
-                    em: const TextStyle(fontSize: 15, color: Colors.black87, fontStyle: FontStyle.italic),
-                    listBullet: const TextStyle(fontSize: 15, color: Colors.black87),
-                    blockSpacing: 4,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isOwnMessage ? Colors.blue[100] : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isOwnMessage)
+                        Text(
+                          message.senderName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      if (!isOwnMessage) const SizedBox(height: 4),
+                      if (message.isReply && message.replyToPreview != null)
+                        _buildReplyPreview(message.replyToPreview!),
+                      if (message.message.isNotEmpty)
+                        MarkdownBody(
+                          data: message.message,
+                          selectable: true,
+                          onTapLink: (text, href, title) async {
+                            final uri = eventMessageLinkUri(href);
+                            if (uri != null) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            }
+                          },
+                          styleSheet: MarkdownStyleSheet(
+                            p: const TextStyle(
+                                fontSize: 15, color: Colors.black87),
+                            strong: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w700),
+                            em: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black87,
+                                fontStyle: FontStyle.italic),
+                            listBullet: const TextStyle(
+                                fontSize: 15, color: Colors.black87),
+                            blockSpacing: 4,
+                          ),
+                        ),
+                      if (message.hasAttachments)
+                        AttachmentDisplay(
+                          attachments: message.attachments,
+                          compact: true,
+                        ),
+                      if (message.hasPoll)
+                        ChatPollWidget(
+                          poll: message.poll!,
+                          currentUserId: currentUserId,
+                          onVote: (optionId) =>
+                              _togglePollVote(message.id, optionId),
+                          onClose: isOwnMessage
+                              ? () => _closePoll(message.id)
+                              : null,
+                          canClose: isOwnMessage,
+                        ),
+                      if (message.reactions.isNotEmpty)
+                        MessageReactions(
+                          reactions: message.reactions,
+                          currentUserId: currentUserId,
+                          clubId: widget.clubId,
+                          onToggleReaction: (emoji) =>
+                              _toggleReaction(message.id, emoji),
+                          compact: true,
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormatter.formatDayMonthTime(message.createdAt),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
+                    ],
                   ),
                 ),
-              if (message.hasAttachments)
-                AttachmentDisplay(
-                  attachments: message.attachments,
-                  compact: true,
-                ),
-              if (message.hasPoll)
-                ChatPollWidget(
-                  poll: message.poll!,
-                  currentUserId: currentUserId,
-                  onVote: (optionId) => _togglePollVote(message.id, optionId),
-                  onClose: isOwnMessage ? () => _closePoll(message.id) : null,
-                  canClose: isOwnMessage,
-                ),
-              if (message.reactions.isNotEmpty)
-                MessageReactions(
-                  reactions: message.reactions,
-                  currentUserId: currentUserId,
-                  clubId: widget.clubId,
-                  onToggleReaction: (emoji) =>
-                      _toggleReaction(message.id, emoji),
-                  compact: true,
-                ),
-              const SizedBox(height: 4),
-              Text(
-                DateFormatter.formatDayMonthTime(message.createdAt),
-                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-              ),
+              ), // Flexible
             ],
           ),
-        ),
-            ), // Flexible
-          ],
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildReplyPreview(ReplyPreview preview) {

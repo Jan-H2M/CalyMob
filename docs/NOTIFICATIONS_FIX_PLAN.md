@@ -90,6 +90,9 @@ const unreadCount = messages.filter(msg => {
 
 ## 🎯 Doel-architectuur (TL;DR)
 
+> **SUPERSEDED (2026-09-25) by unread cursor v1 — see the addendum below.**
+> The counter-based plan remains preserved as historical context only.
+
 1. **Cloud Functions zijn de single source of truth voor `unread_counts.total`** (via `FieldValue.increment(1)`).
 2. **Client schrijft per-field met dot-notation, nooit een hele map.** Client schrijft `total` niet meer.
 3. **Token lifecycle is strict:** ophalen bij login, opslaan met `app_version`, verwijderen bij logout, force-refresh bij version mismatch.
@@ -336,3 +339,89 @@ Na alle fixes:
 * [Incrementing Values Atomically with Cloud Firestore — Firebase blog](https://firebase.blog/posts/2019/03/increment-server-side-cloud-firestore/)
 * [app_badge_plus pub.dev](https://pub.dev/packages/app_badge_plus) — Android badge support is launcher-afhankelijk.
 * [Lifecycle of FCM device tokens — Medium](https://medium.com/@chunilalkukreja/lifecycle-of-fcm-device-tokens-61681bb6fbcf)
+
+---
+
+## Addendum — cursor-v1 implementation direction (2026-09-25)
+
+### Design decisions (Phase 2)
+
+The first client implementation is intentionally gated. `off` runs this
+document's legacy behavior unchanged; `shadow` records cursor-vs-legacy deltas;
+`on` derives announcements, events, teams and sessions from read cursors and
+does not synchronize `unread_counts`. Cursor writes are direct, self-owned
+Firestore writes with server timestamps and a ten-second acknowledgement
+coalescer. Cursor query failures retain a last-known category value rather than
+falling back to mutable counters. This phase does not wire screen open actions,
+alter Functions, or change a production flag.
+
+Do not extend this plan's counter resets, `read_by` updates, or
+`LocalReadTracker` baseline strategy. Cursor v1 persists member-owned
+`read_state` documents with `serverTimestamp`, using one section write for
+*Tout marquer comme lu* and one scoped write on a conversation acknowledgement.
+The effective scoped cursor is `max(global, scope)`. Cursor-derived counts—not
+`unread_counts`—will drive landing tiles, the app icon, and the Functions' exact
+APNs payload (including zero). This avoids client/server counter races,
+per-message array writes, and reinstall/device-local state loss.
+
+Feature flag defaults are `unreadCursorV1Enabled: false` and
+`unreadCursorV1Mode: 'off'`; old-app `unread_counts` writes coexist but are
+ignored by the new model until a minimum-version cutover. Phase 1 only provides
+inert models/rules/indexes/tests, is on `feat/unread-cursor-v1-phase1`, and is
+not deployed. Product decisions and the Phases 2–7 ticket plan are recorded in
+`../../outputs/calymob-unread-definitive-plan_2026-09-24.md` in the parent repo.
+
+### Design decisions (Phase 3)
+
+Implemented locally behind `on`: scoped conversation acks, explicit confirmed
+section actions, no list-open mark-all, and the complete Communication formula.
+Announcement acknowledgement happens from a detail, not its list. OFF retains
+LocalReadTracker and mutable-counter behaviour unchanged; no rollout occurred.
+
+### Design decisions (Phase 4)
+
+Local Functions now contain canonical cursor/APNs plumbing behind the shared
+flag with a 60-second cache. The seven-day event grace is calendar-based in
+Europe/Brussels in the Node and Dart contract fixture. Nothing is deployed.
+
+Review follow-up: Node uses aggregation counts and the same published-session,
+role and registration predicates as Dart; trailing-edge reconciliation preserves
+the last cursor state in a burst.
+
+### Design decisions (Phase 5)
+
+Migration is now a separately reviewed, local-only CalyMob operator tool:
+`scripts/migrate-unread-read-state-v1.cjs`. It is dry-run by default and uses
+the canonical status resolver to select only active members, deterministically.
+For every selected UID it creates missing root schema-v1 cursors only, sharing
+one captured Admin timestamp across the run. Existing schema-v1 roots are left
+unchanged unless `--force`; `--verify` detects both missing and malformed
+shapes. No scoped cursor, legacy counter, message, read-by array, token or
+member field is touched.
+
+`--apply` cannot commit before its JSON backup exists and uses sub-500 batches.
+The default backup directory is gitignored `tmp/`. The tool intentionally has
+no service-account discovery: future production execution requires external ADC
+plus `--project` and an exactly matching `--confirm-production`; tests ran only
+against the `demo-calymob-migration` Firestore emulator.
+
+### Design decisions (Phase 6)
+
+Field maintenance is authoritative on Functions, with client writes only as a
+fast path. The explicit normalization migration, device checklist and approval
+gated rollout runbook complete the local Phase-6 handoff; no deployment ran.
+
+### Design decisions (Phase 6c)
+
+Testing seams are constructor-only and retain production defaults. They cover
+aggregation emulation in fake Firestore, feature-flag streams, legacy writes
+and platform-badge effects without changing OFF behaviour.
+
+### Design decisions (Phase 6d)
+
+Functions contract coverage runs the production canonical calculator through a
+minimal in-memory Firestore-shaped query/aggregation adapter.
+
+### Status (Phase 6 final)
+Phases 1–6 done locally, not deployed; Phase 7 runbook and device checklist
+are written, not executed.

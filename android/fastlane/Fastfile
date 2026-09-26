@@ -1,8 +1,15 @@
 default_platform(:android)
+skip_docs
 
-def verify_android_store_release(action = 'upload')
+def verify_android_store_release(action = 'upload', options = {})
+  require 'json'
   script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
-  sh('node', script, '--platform', 'android', '--action', action)
+  args = ['node', script, '--platform', 'android', '--action', action]
+  if action == 'submit'
+    UI.user_error!('Explicit version and build are required') unless options[:version] && options[:build]
+    args += ['--version', options[:version].to_s, '--build', options[:build].to_s]
+  end
+  JSON.parse(sh(*args, log: false))
 end
 
 platform :android do
@@ -20,30 +27,21 @@ platform :android do
     )
   end
 
-  desc "Upload AAB to Production and submit for review automatically (no Play Console needed)"
-  lane :release do
-    verify_android_store_release('upload-and-submit')
+  desc "Submit an existing draft production release after manifest verification"
+  lane :submit do |options|
+    release = verify_android_store_release('submit', options)
+    verify_android_store_release('notes')
     upload_to_play_store(
       track: 'production',
-      aab: '../build/app/outputs/bundle/release/app-release.aab',
+      version_code: release['build'].to_i,
+      skip_upload_apk: true,
+      skip_upload_aab: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
-      skip_upload_changelogs: false,
+      skip_upload_changelogs: true,
+      rollout: 1.0,
       release_status: 'completed'
-    )
-  end
-
-  desc "Upload AAB to internal testing track"
-  lane :internal do
-    verify_android_store_release('upload-and-submit')
-    upload_to_play_store(
-      track: 'internal',
-      aab: '../build/app/outputs/bundle/release/app-release.aab',
-      skip_upload_metadata: true,
-      skip_upload_images: true,
-      skip_upload_screenshots: true,
-      skip_upload_changelogs: true
     )
   end
 

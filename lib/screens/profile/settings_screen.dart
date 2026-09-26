@@ -12,7 +12,6 @@ import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/app_update_service.dart';
-import '../../services/local_read_tracker.dart';
 import '../../providers/unread_count_provider.dart';
 import '../auth/login_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -856,6 +855,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildNotificationsSection(MemberProfile profile) {
+    final cursorReadState =
+        context.watch<UnreadCountProvider>().usesCursorReadState;
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -869,7 +870,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Text('Recevoir des notifications sur les événements'),
             secondary: const Icon(Icons.notifications, color: Colors.orange),
           ),
-          if (_notificationsEnabled) ...[
+          if (_notificationsEnabled || cursorReadState) ...[
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.tune, color: AppColors.middenblauw),
@@ -986,29 +987,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
-        throw Exception('Utilisateur non connecté');
+      final unreadProvider = context.read<UnreadCountProvider>();
+      // Advance both active and rollback authority. OFF/shadow also mirrors
+      // these roots so re-enabling cursor mode cannot resurrect read content.
+      await unreadProvider.markEventsSeen();
+      await unreadProvider.markCommunicationSeen();
+      if (!unreadProvider.usesCursorReadState) {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId == null) {
+          throw Exception('Utilisateur non connecté');
+        }
+
+        // Reset legacy Firestore counters via dot-notation.
+        await FirebaseFirestore.instance
+            .collection('clubs')
+            .doc(_clubId)
+            .collection('members')
+            .doc(userId)
+            .update({
+          'unread_counts.announcements': 0,
+          'unread_counts.event_messages': 0,
+          'unread_counts.team_messages': 0,
+          'unread_counts.session_messages': 0,
+          'unread_counts.medical_certificates': 0,
+          'unread_counts.total': 0,
+          'unread_counts.last_updated': FieldValue.serverTimestamp(),
+        });
       }
-
-      // 1. Zet de globale "alles gelezen" baseline lokaal
-      await LocalReadTracker().markAllAsRead();
-
-      // 2. Reset Firestore counters via dot-notation
-      await FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(_clubId)
-          .collection('members')
-          .doc(userId)
-          .update({
-        'unread_counts.announcements': 0,
-        'unread_counts.event_messages': 0,
-        'unread_counts.team_messages': 0,
-        'unread_counts.session_messages': 0,
-        'unread_counts.medical_certificates': 0,
-        'unread_counts.total': 0,
-        'unread_counts.last_updated': FieldValue.serverTimestamp(),
-      });
 
       // 3. Wis badge + pending notificaties
       await _notificationService.clearBadge();
@@ -1020,7 +1025,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // 4. Refresh de UnreadCountProvider zodat de UI direct bijwerkt
       if (mounted) {
-        await context.read<UnreadCountProvider>().refresh();
+        await unreadProvider.refresh();
       }
 
       if (mounted) {
@@ -1425,7 +1430,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await context.read<AuthProvider>().logout();
     if (!mounted) return;
     context.read<MemberProvider>().clear();
-    context.read<UnreadCountProvider>().clear();
+    await context.read<UnreadCountProvider>().clear();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,

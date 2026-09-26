@@ -1,23 +1,37 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/member_name.dart';
+import '../utils/club_role_utils.dart';
 
 /// Provider voor member data caching
 /// Laadt en cached member data na login voor snelle toegang
 class MemberProvider with ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  MemberProvider({
+    FirebaseFirestore? firestore,
+    @visibleForTesting
+    Future<Map<String, dynamic>?> Function(String clubId, String userId)?
+        memberLoader,
+  })  : _firestore = firestore,
+        _memberLoader = memberLoader;
+
+  final FirebaseFirestore? _firestore;
+  final Future<Map<String, dynamic>?> Function(String clubId, String userId)?
+      _memberLoader;
 
   Map<String, dynamic>? _memberData;
   String? _clubId;
   String? _userId;
   bool _isLoading = false;
   String? _errorMessage;
+  int _loadGeneration = 0;
 
   // Getters
   Map<String, dynamic>? get memberData => _memberData;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isLoaded => _memberData != null;
+  bool isLoadedFor(String clubId, String userId) =>
+      _memberData != null && _clubId == clubId && _userId == userId;
 
   // Member data getters
   String? get odooId => _memberData?['odooId'] as String?;
@@ -100,8 +114,7 @@ class MemberProvider with ChangeNotifier {
       hasClubFunction('accueil') || hasClubFunction('Accueil');
 
   /// Check if user is gonflage
-  bool get isGonflage =>
-      hasClubFunction('gonflage') || hasClubFunction('Gonflage');
+  bool get isGonflage => ClubRoleUtils.hasGonflageRole(clubStatuten);
 
   /// Check if user can approve expenses (validateur, admin, or superadmin)
   bool get canApproveExpenses {
@@ -133,24 +146,33 @@ class MemberProvider with ChangeNotifier {
 
   /// Laad member data van Firestore
   Future<void> loadMemberData(String clubId, String userId) async {
-    if (_isLoading) return;
-
+    final generation = ++_loadGeneration;
+    final contextChanged = _clubId != clubId || _userId != userId;
+    _clubId = clubId;
+    _userId = userId;
+    if (contextChanged) _memberData = null;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final doc = await _firestore
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .doc(userId)
-          .get();
+      final loaded = _memberLoader != null
+          ? await _memberLoader!(clubId, userId)
+          : await (_firestore ?? FirebaseFirestore.instance)
+              .collection('clubs')
+              .doc(clubId)
+              .collection('members')
+              .doc(userId)
+              .get()
+              .then((doc) => doc.exists ? doc.data() : null);
+      if (generation != _loadGeneration ||
+          _clubId != clubId ||
+          _userId != userId) {
+        return;
+      }
 
-      if (doc.exists) {
-        _memberData = doc.data();
-        _clubId = clubId;
-        _userId = userId;
+      if (loaded != null) {
+        _memberData = loaded;
         debugPrint('✅ MemberProvider: Data geladen voor $userId');
         debugPrint('   - clubStatuten: $clubStatuten');
         debugPrint('   - appRole: $appRole');
@@ -159,11 +181,20 @@ class MemberProvider with ChangeNotifier {
         debugPrint('⚠️ MemberProvider: Member document niet gevonden');
       }
     } catch (e) {
+      if (generation != _loadGeneration ||
+          _clubId != clubId ||
+          _userId != userId) {
+        return;
+      }
       _errorMessage = e.toString();
       debugPrint('❌ MemberProvider: Fout bij laden - $e');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _loadGeneration &&
+          _clubId == clubId &&
+          _userId == userId) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -176,10 +207,12 @@ class MemberProvider with ChangeNotifier {
 
   /// Clear member data (bij logout)
   void clear() {
+    _loadGeneration++;
     _memberData = null;
     _clubId = null;
     _userId = null;
     _errorMessage = null;
+    _isLoading = false;
     debugPrint('🧹 MemberProvider: Data gewist');
     notifyListeners();
   }

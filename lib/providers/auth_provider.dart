@@ -34,7 +34,8 @@ class AuthProvider with ChangeNotifier {
   /// Flag om te voorkomen dat we de fresh-install reset meerdere keren
   /// aanroepen binnen dezelfde app-sessie (zowel auth-state listener als
   /// login() triggeren anders beide).
-  bool _freshInstallHandled = false;
+  final Set<String> _freshInstallHandledIdentities = <String>{};
+  int _authGeneration = 0;
 
   // Getters
   User? get currentUser => _currentUser;
@@ -46,9 +47,10 @@ class AuthProvider with ChangeNotifier {
   AuthProvider() {
     // Écouter les changements d'état d'authentification
     _authStateSubscription = _authService.authStateChanges.listen((user) {
+      final authGeneration = ++_authGeneration;
       _currentUser = user;
       if (user != null) {
-        _loadUserDisplayName(user.uid);
+        _loadUserDisplayName(user.uid, authGeneration);
         // Enregistrer/mettre à jour le token FCM et les infos appareil à chaque ouverture
         _notificationService.saveTokenToFirestore(
           FirebaseConfig.defaultClubId,
@@ -82,12 +84,13 @@ class AuthProvider with ChangeNotifier {
           _resetUnreadCountersIfFreshInstall(
             FirebaseConfig.defaultClubId,
             user.uid,
+            authGeneration,
           ),
         );
       } else {
         _displayName = null;
-        _freshInstallHandled = false;
         _notificationService.stopListeningForTokenRefresh();
+        unawaited(LocalReadTracker().deactivateContext());
       }
       notifyListeners();
     });
@@ -101,9 +104,9 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Fix #6: Reset Firestore unread_counts + badge + pending notificaties
-  /// als dit een verse installatie is. De `LocalReadTracker.installBaseline`
-  /// wordt enkel gezet op de allereerste run na (re)installatie — perfect
-  /// signaal om oude badge-state op te ruimen.
+  /// als dit een verse installatie is. De tracker bewaart de install-baseline
+  /// voor de unread-handover, maar geeft het reset-signaal slechts één keer
+  /// in de procesrun waarin die baseline werd aangemaakt.
   ///
   /// Zonder deze reset blijft `unread_counts.total` staan op wat de vorige
   /// installatie achterliet (bvb. 12) en toont de badge onmiddellijk 12
@@ -111,15 +114,24 @@ class AuthProvider with ChangeNotifier {
   Future<void> _resetUnreadCountersIfFreshInstall(
     String clubId,
     String userId,
+    int authGeneration,
   ) async {
-    if (_freshInstallHandled) return;
-    _freshInstallHandled = true;
+    final identity = '$clubId\u0000$userId';
+    if (!_freshInstallHandledIdentities.add(identity)) return;
+
+    bool isCurrent() =>
+        authGeneration == _authGeneration && _currentUser?.uid == userId;
 
     try {
       final tracker = LocalReadTracker();
       await tracker.init();
-      if (tracker.installBaseline == null) {
-        // Niet de eerste run na install → niets doen
+      await tracker.activateContext(clubId, userId);
+      if (!isCurrent() || !tracker.isActiveContext(clubId, userId)) {
+        _freshInstallHandledIdentities.remove(identity);
+        return;
+      }
+      if (!tracker.hasPendingFreshInstallResetFor(clubId, userId)) {
+        // Geen onafgewerkte reset voor deze identiteit → niets doen.
         return;
       }
 
@@ -140,7 +152,12 @@ class AuthProvider with ChangeNotifier {
         'unread_counts.total': 0,
         'unread_counts.last_updated': FieldValue.serverTimestamp(),
       });
+      await tracker.completeFreshInstallResetFor(clubId, userId);
 
+      // The member-scoped reset above remains harmless if an account switch
+      // happened while it was in flight. The device badge and notifications
+      // are global, so only the still-current identity may clear those.
+      if (!isCurrent()) return;
       await _notificationService.clearBadge();
       try {
         await FlutterLocalNotificationsPlugin().cancelAll();
@@ -150,12 +167,16 @@ class AuthProvider with ChangeNotifier {
 
       debugPrint('✅ Fresh install reset OK');
     } catch (e) {
+      // The durable pending marker remains. Allow a retry in this same
+      // process; a restart will also pick it up until the server write and
+      // local commit both succeed.
+      _freshInstallHandledIdentities.remove(identity);
       debugPrint('⚠️ _resetUnreadCountersIfFreshInstall failed: $e');
     }
   }
 
   /// Charger le nom d'affichage depuis Firestore
-  Future<void> _loadUserDisplayName(String userId) async {
+  Future<void> _loadUserDisplayName(String userId, int authGeneration) async {
     try {
       final doc = await _firestore
           .collection('clubs')
@@ -163,6 +184,10 @@ class AuthProvider with ChangeNotifier {
           .collection('members')
           .doc(userId)
           .get();
+
+      if (authGeneration != _authGeneration || _currentUser?.uid != userId) {
+        return;
+      }
 
       if (doc.exists) {
         final data = doc.data();
@@ -214,7 +239,8 @@ class AuthProvider with ChangeNotifier {
       // 5. Configurer BiometricService avec l'ID utilisateur pour les diagnostics Firestore
       _biometricService.setUserId(user.uid);
 
-      debugPrint('✅ Login OK (session + FCM token via listener, en arrière-plan)');
+      debugPrint(
+          '✅ Login OK (session + FCM token via listener, en arrière-plan)');
 
       _isLoading = false;
       notifyListeners();
@@ -277,7 +303,6 @@ class AuthProvider with ChangeNotifier {
       _currentUser = null;
       _isLoading = false;
       _errorMessage = null;
-      _freshInstallHandled = false;
       CrashlyticsService.clearUserContext();
       _biometricService.setUserId(null);
       notifyListeners();

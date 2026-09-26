@@ -93,6 +93,17 @@ exports.birthdayNotification = birthdayNotification;
 // Push notifications for announcement replies
 const { onNewAnnouncementReply } = require('./src/notifications/onNewAnnouncementReply');
 exports.onNewAnnouncementReply = onNewAnnouncementReply;
+const { onAnnouncementReplyDeleted } = require('./src/notifications/onAnnouncementReplyDeleted');
+exports.onAnnouncementReplyDeleted = onAnnouncementReplyDeleted;
+const { onReadStateWritten, onReadStateScopeWritten } = require('./src/notifications/onReadStateWritten');
+exports.onReadStateWritten = onReadStateWritten;
+exports.onReadStateScopeWritten = onReadStateScopeWritten;
+const { bootstrapUnreadCursorV1 } = require('./src/notifications/bootstrapUnreadCursor');
+exports.bootstrapUnreadCursorV1 = bootstrapUnreadCursorV1;
+const { acknowledgeVisibleUnreadCursorV1 } = require('./src/notifications/acknowledgeVisibleUnreadCursor');
+exports.acknowledgeVisibleUnreadCursorV1 = acknowledgeVisibleUnreadCursorV1;
+const { onAnnouncementWritten } = require('./src/notifications/announcementFieldMaintenance');
+exports.onAnnouncementWritten = onAnnouncementWritten;
 
 // =============================================================================
 // EXPENSE EMAIL NOTIFICATIONS (Gen2)
@@ -133,6 +144,22 @@ exports.onInscriptionChangeAudit = onInscriptionChangeAudit;
 // Push notifications for new piscine session messages
 const { onNewSessionMessage } = require('./src/notifications/onNewSessionMessage');
 exports.onNewSessionMessage = onNewSessionMessage;
+const { onPiscineSessionChatAclWritten } = require('./src/notifications/onPiscineSessionChatAclWritten');
+exports.onPiscineSessionChatAclWritten = onPiscineSessionChatAclWritten;
+const {
+  onAnnouncementUnreadTimestampCreated,
+  onAnnouncementReplyUnreadTimestampCreated,
+  onEventMessageUnreadTimestampCreated,
+  onTeamMessageUnreadTimestampCreated,
+  onSessionMessageUnreadTimestampCreated,
+} = require('./src/notifications/unreadTimestampReconciliationTriggers');
+exports.onAnnouncementUnreadTimestampCreated = onAnnouncementUnreadTimestampCreated;
+exports.onAnnouncementReplyUnreadTimestampCreated = onAnnouncementReplyUnreadTimestampCreated;
+exports.onEventMessageUnreadTimestampCreated = onEventMessageUnreadTimestampCreated;
+exports.onTeamMessageUnreadTimestampCreated = onTeamMessageUnreadTimestampCreated;
+exports.onSessionMessageUnreadTimestampCreated = onSessionMessageUnreadTimestampCreated;
+const { ensurePiscineSessionChatAcl } = require('./src/notifications/ensurePiscineSessionChatAcl');
+exports.ensurePiscineSessionChatAcl = ensurePiscineSessionChatAcl;
 
 // Push notifications for new team channel messages
 const { onNewTeamMessage } = require('./src/notifications/onNewTeamMessage');
@@ -258,6 +285,9 @@ exports.cancelBoutiqueOrder = cancelBoutiqueOrder;
 
 const { expireBoutiqueOrders } = require('./src/boutique/expireOrders');
 exports.expireBoutiqueOrders = expireBoutiqueOrders;
+
+const { setBoutiqueGlobalAccess } = require('./src/boutique/setGlobalAccess');
+exports.setBoutiqueGlobalAccess = setBoutiqueGlobalAccess;
 
 const { createCotisationPayment } = require('./src/cotisations/createPayment');
 exports.createCotisationPayment = createCotisationPayment;

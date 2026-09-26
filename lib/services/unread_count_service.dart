@@ -3,15 +3,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'local_read_tracker.dart';
 import '../utils/club_role_utils.dart';
+import '../utils/event_unread_policy.dart';
 
 @visibleForTesting
 bool isCountableRegistration(Map<String, dynamic> data) {
-  final status = data['registration_status'];
-  return status != 'canceled' && status != 'waitlisted';
+  return isCountableEventRegistration(data);
 }
 
-String unreadSessionReadKey(String sessionId, String groupType,
-    [String? groupLevel]) {
+String unreadSessionReadKey(
+  String sessionId,
+  String groupType, [
+  String? groupLevel,
+]) {
   if (groupLevel == null || groupLevel.isEmpty) {
     return 'session_${sessionId}_$groupType';
   }
@@ -42,40 +45,40 @@ class UnreadCountService {
   // ANNOUNCEMENTS
   // ============================================================
 
-  Future<int> countUnreadAnnouncements(String clubId) async {
-    // Als null (nooit geopend): tel alles sinds epoch als ongelezen
-    final lastRead = _tracker.getLastRead('announcements') ?? _epoch;
-    final ts = Timestamp.fromDate(lastRead);
-
+  Future<int> countUnreadAnnouncements(
+    String clubId, {
+    bool failOnError = false,
+  }) async {
     try {
-      // Twee queries: nieuwe aankondigingen + aankondigingen met nieuwe replies
-      // We halen doc IDs op (geen data) en dedupliceren
-      final results = await Future.wait([
-        // 1. Nieuwe aankondigingen (created_at > lastRead)
-        _firestore
-            .collection('clubs/$clubId/announcements')
-            .where('created_at', isGreaterThan: ts)
-            .get()
-            .timeout(_queryTimeout),
-        // 2. Aankondigingen met nieuwe replies (last_reply_at > lastRead)
-        _firestore
-            .collection('clubs/$clubId/announcements')
-            .where('last_reply_at', isGreaterThan: ts)
-            .get()
-            .timeout(_queryTimeout),
-      ]);
-
-      // Dedupliceer op doc ID (een nieuw announcement met reply telt maar 1x)
-      final unreadIds = <String>{};
-      for (final doc in results[0].docs) {
-        unreadIds.add(doc.id);
+      // Per-thread cursors keep rollback semantics aligned with cursor mode:
+      // opening announcement A must not clear a later/unseen announcement B.
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/announcements')
+          .get()
+          .timeout(_queryTimeout);
+      var unread = 0;
+      for (final document in snapshot.docs) {
+        final data = document.data();
+        if (data['deleted_at'] != null || data['visibility'] == 'deleted') {
+          continue;
+        }
+        final activity = _timestampDate(
+          data['unread_activity_at'] ??
+              data['last_activity_at'] ??
+              data['last_reply_at'] ??
+              data['unread_created_at'] ??
+              data['created_at'],
+        );
+        if (activity == null) continue;
+        final lastRead = _tracker.getLastRead('announcement_${document.id}') ??
+            _tracker.getLastRead('announcements') ??
+            _epoch;
+        if (activity.isAfter(lastRead)) unread++;
       }
-      for (final doc in results[1].docs) {
-        unreadIds.add(doc.id);
-      }
-      return unreadIds.length;
+      return unread;
     } catch (e) {
       debugPrint('❌ countUnreadAnnouncements error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -84,7 +87,10 @@ class UnreadCountService {
   // EVENT MESSAGES — over alle operaties waarvoor de user ingeschreven is
   // ============================================================
 
-  Future<int> countUnreadEventMessages(String clubId) async {
+  Future<int> countUnreadEventMessages(
+    String clubId, {
+    bool failOnError = false,
+  }) async {
     try {
       // Fix 2026-04-17: filter op events waar user daadwerkelijk is
       // ingeschreven. Zonder deze filter tellen berichten uit events mee
@@ -119,8 +125,19 @@ class UnreadCountService {
       }
       if (inscribedOpIds.isEmpty) return 0;
 
-      // Tel ongelezen berichten per operatie parallel (ook gesloten events).
+      // Aggregate and row counts share one exact Brussels-calendar policy.
+      // This prevents legacy OFF/shadow mode from counting discussions that
+      // have no navigable Events row.
       final futures = inscribedOpIds.map((operationId) async {
+        final operation = await _firestore
+            .doc('clubs/$clubId/operations/$operationId')
+            .get()
+            .timeout(_queryTimeout);
+        if (!operation.exists ||
+            !isUnreadEligibleEvent(
+                operation.data() ?? const {}, DateTime.now())) {
+          return 0;
+        }
         final lastRead =
             _tracker.getLastRead('operation_$operationId') ?? _epoch;
 
@@ -136,6 +153,7 @@ class UnreadCountService {
       return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadEventMessages error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -155,6 +173,16 @@ class UnreadCountService {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return 0;
+
+      final operation = await _firestore
+          .doc('clubs/$clubId/operations/$operationId')
+          .get()
+          .timeout(_queryTimeout);
+      if (!operation.exists ||
+          !isUnreadEligibleEvent(
+              operation.data() ?? const {}, DateTime.now())) {
+        return 0;
+      }
 
       // Check of user ingeschreven is in deze operatie
       final inscriptionCheck = await _firestore
@@ -194,6 +222,7 @@ class UnreadCountService {
     String? plongeurCode,
     String? targetFormationLevel,
     bool formationActive = false,
+    bool failOnError = false,
   }) async {
     final channelIds = ClubRoleUtils.getVisibleTeamChannelIds(
       roles,
@@ -220,6 +249,7 @@ class UnreadCountService {
       return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadTeamMessages error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -246,8 +276,9 @@ class UnreadCountService {
 
   Future<int> countUnreadSessionMessages(
     String clubId,
-    List<String> roles,
-  ) async {
+    List<String> roles, {
+    bool failOnError = false,
+  }) async {
     final normalizedRoles = ClubRoleUtils.normalizeRoles(roles);
     final hasAccueil = normalizedRoles.contains('accueil');
     final hasEncadrant = normalizedRoles.contains('encadrant');
@@ -276,7 +307,13 @@ class UnreadCountService {
         for (final groupType in groupTypes) {
           if (groupType != 'niveau') {
             futures.add(
-                _countUnreadForSessionGroup(clubId, sessionDoc.id, groupType));
+              _countUnreadForSessionGroup(
+                clubId,
+                sessionDoc.id,
+                groupType,
+                failOnError: failOnError,
+              ),
+            );
             continue;
           }
           final rawLevels = sessionDoc.data()['niveaux'];
@@ -284,8 +321,15 @@ class UnreadCountService {
               ? rawLevels.keys.map((level) => level.toString())
               : const <String>[];
           for (final level in levels) {
-            futures.add(_countUnreadForSessionGroup(
-                clubId, sessionDoc.id, groupType, level));
+            futures.add(
+              _countUnreadForSessionGroup(
+                clubId,
+                sessionDoc.id,
+                groupType,
+                groupLevel: level,
+                failOnError: failOnError,
+              ),
+            );
           }
         }
       }
@@ -294,14 +338,19 @@ class UnreadCountService {
       return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadSessionMessages error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
 
   /// Count each session group independently, including separate niveau keys.
   Future<int> _countUnreadForSessionGroup(
-      String clubId, String sessionId, String groupType,
-      [String? groupLevel]) async {
+    String clubId,
+    String sessionId,
+    String groupType, {
+    String? groupLevel,
+    bool failOnError = false,
+  }) async {
     try {
       final key = unreadSessionReadKey(sessionId, groupType, groupLevel);
       final lastRead = _tracker.getLastRead(key) ?? _epoch;
@@ -316,9 +365,29 @@ class UnreadCountService {
       final snapshot = await scopedQuery.count().get().timeout(_queryTimeout);
       return snapshot.count ?? 0;
     } catch (e) {
+      if (failOnError) rethrow;
       return 0;
     }
   }
+
+  /// Row-level legacy count for one concrete session conversation.
+  ///
+  /// Kept public so the Communication inbox and the aggregate tile derive
+  /// their values from the exact same cursor/key semantics.
+  Future<int> countUnreadForSessionChat(
+    String clubId,
+    String sessionId,
+    String groupType, {
+    String? groupLevel,
+    bool failOnError = false,
+  }) =>
+      _countUnreadForSessionGroup(
+        clubId,
+        sessionId,
+        groupType,
+        groupLevel: groupLevel,
+        failOnError: failOnError,
+      );
 
   // ============================================================
   // ALLES SAMEN — refresh alle counts
@@ -335,8 +404,8 @@ class UnreadCountService {
     bool formationActive = false,
   }) async {
     final results = await Future.wait([
-      countUnreadAnnouncements(clubId),
-      countUnreadEventMessages(clubId),
+      countUnreadAnnouncements(clubId, failOnError: true),
+      countUnreadEventMessages(clubId, failOnError: true),
       countUnreadTeamMessages(
         clubId,
         roles,
@@ -344,8 +413,9 @@ class UnreadCountService {
         plongeurCode: plongeurCode,
         targetFormationLevel: targetFormationLevel,
         formationActive: formationActive,
+        failOnError: true,
       ),
-      countUnreadSessionMessages(clubId, roles),
+      countUnreadSessionMessages(clubId, roles, failOnError: true),
     ]);
 
     return {
@@ -355,4 +425,10 @@ class UnreadCountService {
       'session_messages': results[3],
     };
   }
+}
+
+DateTime? _timestampDate(Object? value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  return null;
 }

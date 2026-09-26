@@ -146,6 +146,20 @@ class LevelAssignment {
         .expand((courses) => courses)
         .expand((course) => course.encadrants)
         .toList();
+    final mergedEncadrants = <String, SessionAssignment>{};
+    final unidentifiedEncadrants = <SessionAssignment>[];
+    for (final member in [
+      ...legacyEncadrants,
+      ...flattenedCourseEncadrants,
+    ]) {
+      if (member.membreId.isEmpty) {
+        unidentifiedEncadrants.add(member);
+      } else {
+        // Course-specific metadata wins for the same member, while legacy-only
+        // instructors remain visible during the mixed-schema rollout.
+        mergedEncadrants[member.membreId] = member;
+      }
+    }
     final firstTheme1 = coursesByHour['1ere_heure']
         ?.cast<LevelCourse?>()
         .firstWhere((course) => course?.theme?.isNotEmpty == true,
@@ -158,9 +172,10 @@ class LevelAssignment {
         ?.theme;
 
     return LevelAssignment(
-      encadrants: flattenedCourseEncadrants.isNotEmpty
-          ? flattenedCourseEncadrants
-          : legacyEncadrants,
+      encadrants: [
+        ...mergedEncadrants.values,
+        ...unidentifiedEncadrants,
+      ],
       theme: map['theme'] ?? firstTheme1 ?? firstTheme2,
       themeUpdatedBy: map['theme_updated_by'],
       themeUpdatedAt: (map['theme_updated_at'] as Timestamp?)?.toDate(),
@@ -216,6 +231,25 @@ class LevelAssignment {
   bool get hasParallelCourses {
     if (coursesByHour == null) return false;
     return coursesByHour!.values.any((courses) => courses.length > 1);
+  }
+
+  /// Every actual instructor assignment, including the newer per-course
+  /// planning shape. Keeping this canonical prevents a course-only instructor
+  /// from being notified by the backend but hidden from the mobile chat UI.
+  List<SessionAssignment> get allEncadrants {
+    final byId = <String, SessionAssignment>{};
+    for (final member in encadrants) {
+      if (member.membreId.isNotEmpty) byId[member.membreId] = member;
+    }
+    for (final courses
+        in coursesByHour?.values ?? const <List<LevelCourse>>[]) {
+      for (final course in courses) {
+        for (final member in course.encadrants) {
+          if (member.membreId.isNotEmpty) byId[member.membreId] = member;
+        }
+      }
+    }
+    return byId.values.toList(growable: false);
   }
 
   Map<String, dynamic> toMap() {
@@ -378,13 +412,21 @@ class PiscineSession {
     // Parser les niveaux
     final niveauxData = data['niveaux'] as Map<String, dynamic>? ?? {};
     final niveaux = <String, LevelAssignment>{};
-    for (final level in PiscineLevel.all) {
-      if (niveauxData.containsKey(level)) {
-        niveaux[level] =
-            LevelAssignment.fromMap(niveauxData[level] as Map<String, dynamic>);
-      } else {
-        niveaux[level] = LevelAssignment(encadrants: []);
+    for (final entry in niveauxData.entries) {
+      final value = entry.value;
+      if (value is Map<String, dynamic>) {
+        niveaux[entry.key] = LevelAssignment.fromMap(value);
+      } else if (value is Map) {
+        niveaux[entry.key] = LevelAssignment.fromMap(
+          value.map((key, item) => MapEntry(key.toString(), item)),
+        );
       }
+    }
+    // Keep the known planning levels available to existing editing screens,
+    // but never discard additional Firestore levels. Unread access/counting
+    // is based on the actual stored keys and must have a navigable row.
+    for (final level in PiscineLevel.all) {
+      niveaux.putIfAbsent(level, () => LevelAssignment(encadrants: []));
     }
 
     // Parser gonflage — rétrocompatible (ancien format: Array, nouveau: Map)
@@ -508,13 +550,13 @@ class PiscineSession {
   bool isEncadrantForLevel(String membreId, String level) {
     final levelAssignment = niveaux[level];
     if (levelAssignment == null) return false;
-    return levelAssignment.encadrants.any((e) => e.membreId == membreId);
+    return levelAssignment.allEncadrants.any((e) => e.membreId == membreId);
   }
 
   /// Obtenir le niveau qu'un encadrant encadre
   String? getEncadrantLevel(String membreId) {
     for (final entry in niveaux.entries) {
-      if (entry.value.encadrants.any((e) => e.membreId == membreId)) {
+      if (entry.value.allEncadrants.any((e) => e.membreId == membreId)) {
         return entry.key;
       }
     }
@@ -562,12 +604,16 @@ class PiscineSession {
 
   /// Obtenir tous les encadrants (tous niveaux confondus)
   List<SessionAssignment> get allEncadrants {
-    final all = <SessionAssignment>[];
+    final all = <String, SessionAssignment>{};
     for (final level in niveaux.values) {
-      all.addAll(level.encadrants);
+      for (final encadrant in level.allEncadrants) {
+        all[encadrant.membreId] = encadrant;
+      }
     }
-    all.addAll(baptemes);
-    return all;
+    for (final encadrant in baptemes) {
+      all[encadrant.membreId] = encadrant;
+    }
+    return all.values.toList(growable: false);
   }
 
   /// Vérifier si c'est une session de type théorie

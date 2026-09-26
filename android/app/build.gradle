@@ -22,6 +22,174 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0.4'
 }
 
+// This public fingerprint pins the replacement Google Play upload certificate.
+// Changing upload keys requires an intentional source change and Play-side reset.
+def expectedUploadCertificateSha256 =
+    '5478970180017BDD3B258E599DD7CC51B1BCCF4EBC28D2E621215B66DB7251AA'
+
+def signingEnvironment = [
+    CALYMOB_UPLOAD_STORE_FILE: System.getenv('CALYMOB_UPLOAD_STORE_FILE'),
+    CALYMOB_UPLOAD_PASSWORD_FILE: System.getenv('CALYMOB_UPLOAD_PASSWORD_FILE'),
+    CALYMOB_UPLOAD_KEY_ALIAS: System.getenv('CALYMOB_UPLOAD_KEY_ALIAS'),
+]
+
+def loadUploadSigning = {
+    def missingVariables = signingEnvironment.findAll { name, value ->
+        value == null || value.trim().isEmpty()
+    }.keySet().sort()
+    if (!missingVariables.isEmpty()) {
+        throw new GradleException(
+            "Android release signing requires: ${missingVariables.join(', ')}"
+        )
+    }
+
+    def repositoryRoot = rootProject.projectDir.parentFile.canonicalFile
+    def resolveExternalFile = { String variableName, String configuredPath ->
+        def candidate = new File(configuredPath)
+        if (!candidate.isAbsolute()) {
+            throw new GradleException("${variableName} must be an absolute path outside the repository.")
+        }
+        if (!candidate.isFile() || !candidate.canRead()) {
+            throw new GradleException("${variableName} must reference a readable regular file.")
+        }
+        def resolved = candidate.canonicalFile
+        def repositoryPrefix = repositoryRoot.path + File.separator
+        if (resolved == repositoryRoot || resolved.path.startsWith(repositoryPrefix)) {
+            throw new GradleException("${variableName} must resolve outside the repository.")
+        }
+        return resolved
+    }
+    def assertOwnerOnly = { String variableName, File candidate ->
+        if (candidate.toPath().fileSystem.supportedFileAttributeViews().contains('posix')) {
+            def permissions = java.nio.file.Files.getPosixFilePermissions(candidate.toPath())
+            def exposed = permissions.any {
+                it.name().startsWith('GROUP_') || it.name().startsWith('OTHERS_')
+            }
+            if (exposed) {
+                throw new GradleException("${variableName} must not grant group or other permissions.")
+            }
+        }
+    }
+
+    def uploadStoreFile = resolveExternalFile(
+        'CALYMOB_UPLOAD_STORE_FILE',
+        signingEnvironment.CALYMOB_UPLOAD_STORE_FILE,
+    )
+    def uploadPasswordFile = resolveExternalFile(
+        'CALYMOB_UPLOAD_PASSWORD_FILE',
+        signingEnvironment.CALYMOB_UPLOAD_PASSWORD_FILE,
+    )
+    assertOwnerOnly('CALYMOB_UPLOAD_STORE_FILE', uploadStoreFile)
+    assertOwnerOnly('CALYMOB_UPLOAD_PASSWORD_FILE', uploadPasswordFile)
+    if (uploadStoreFile.canonicalPath == uploadPasswordFile.canonicalPath) {
+        throw new GradleException('The upload keystore and password file must be different files.')
+    }
+    if (uploadPasswordFile.length() > 4096) {
+        throw new GradleException('CALYMOB_UPLOAD_PASSWORD_FILE is unexpectedly large.')
+    }
+
+    def uploadPassword = uploadPasswordFile.getText('UTF-8').trim()
+    def uploadKeyAlias = signingEnvironment.CALYMOB_UPLOAD_KEY_ALIAS
+    if (uploadPassword.length() < 16) {
+        throw new GradleException('CALYMOB_UPLOAD_PASSWORD_FILE must contain one strong password.')
+    }
+    if (uploadKeyAlias != uploadKeyAlias.trim()
+        || uploadKeyAlias.contains('\n')
+        || uploadKeyAlias.contains('\r')) {
+        throw new GradleException('CALYMOB_UPLOAD_KEY_ALIAS contains surrounding whitespace or a newline.')
+    }
+
+    def uploadPasswordChars = uploadPassword.toCharArray()
+    try {
+        def uploadKeyStore
+        try {
+            uploadKeyStore = java.security.KeyStore.getInstance(
+                uploadStoreFile,
+                uploadPasswordChars,
+            )
+        } catch (Exception ignored) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_PASSWORD_FILE could not unlock the upload keystore.'
+            )
+        }
+
+        if (!uploadKeyStore.containsAlias(uploadKeyAlias)) {
+            throw new GradleException('CALYMOB_UPLOAD_KEY_ALIAS is not present in the upload keystore.')
+        }
+        if (!uploadKeyStore.entryInstanceOf(
+            uploadKeyAlias,
+            java.security.KeyStore.PrivateKeyEntry,
+        )) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_KEY_ALIAS must identify a private-key entry.'
+            )
+        }
+
+        def uploadEntry
+        try {
+            uploadEntry = uploadKeyStore.getEntry(
+                uploadKeyAlias,
+                new java.security.KeyStore.PasswordProtection(uploadPasswordChars),
+            )
+        } catch (Exception ignored) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_PASSWORD_FILE could not unlock the configured upload key.'
+            )
+        }
+        if (!(uploadEntry instanceof java.security.KeyStore.PrivateKeyEntry)) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_KEY_ALIAS must identify a private-key entry.'
+            )
+        }
+
+        def uploadCertificate = uploadEntry.certificate
+        if (uploadCertificate == null) {
+            throw new GradleException('The configured upload key has no certificate.')
+        }
+        if (uploadCertificate instanceof java.security.cert.X509Certificate) {
+            try {
+                uploadCertificate.checkValidity()
+            } catch (Exception ignored) {
+                throw new GradleException('The configured upload certificate is not currently valid.')
+            }
+        }
+        def actualCertificateSha256 = java.security.MessageDigest
+            .getInstance('SHA-256')
+            .digest(uploadCertificate.encoded)
+            .encodeHex()
+            .toString()
+            .toUpperCase(java.util.Locale.ROOT)
+        if (actualCertificateSha256 != expectedUploadCertificateSha256) {
+            throw new GradleException(
+                'The configured upload certificate does not match the pinned CalyMob upload certificate.'
+            )
+        }
+    } finally {
+        java.util.Arrays.fill(uploadPasswordChars, (char) 0)
+    }
+
+    return [
+        keyAlias: uploadKeyAlias,
+        password: uploadPassword,
+        storeFile: uploadStoreFile,
+    ]
+}
+
+def uploadSigning = null
+def allSigningVariablesPresent = signingEnvironment.every { name, value ->
+    value != null && !value.trim().isEmpty()
+}
+if (allSigningVariablesPresent) {
+    if (gradle.startParameter.isConfigurationCacheRequested()) {
+        throw new GradleException(
+            'Android release signing refuses Gradle configuration cache because it can persist signing credentials.'
+        )
+    }
+    // A complete signing environment is an explicit release intent. Configure
+    // AGP during project evaluation; AGP locks these values before taskGraph is ready.
+    uploadSigning = loadUploadSigning()
+}
+
 android {
     namespace 'club.caly.calymob'
     compileSdk 36
@@ -48,14 +216,11 @@ android {
 
     signingConfigs {
         release {
-            def keystoreProperties = new Properties()
-            def keystorePropertiesFile = rootProject.file('key.properties')
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile rootProject.file('calymob-release.keystore')
-                storePassword keystoreProperties['storePassword']
+            if (uploadSigning != null) {
+                keyAlias uploadSigning.keyAlias
+                keyPassword uploadSigning.password
+                storeFile uploadSigning.storeFile
+                storePassword uploadSigning.password
                 enableV1Signing true
                 enableV2Signing true
             }
@@ -67,6 +232,31 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
+        }
+    }
+}
+
+// Inspect the resolved task graph instead of guessing from the command line.
+// This covers Gradle task abbreviations such as :app:aR and :app:bR as well as
+// aggregate tasks whose graph contains a release variant.
+gradle.taskGraph.whenReady { taskGraph ->
+    def releaseSigningRequired = taskGraph.allTasks.any { task ->
+        task.project == project && (
+            task.name.toLowerCase(java.util.Locale.ROOT).contains('release')
+                || task.name.equalsIgnoreCase('signingReport')
+        )
+    }
+    if (releaseSigningRequired) {
+        if (gradle.startParameter.isConfigurationCacheRequested()) {
+            throw new GradleException(
+                'Android release signing refuses Gradle configuration cache because it can persist signing credentials.'
+            )
+        }
+        if (uploadSigning == null) {
+            // This produces the precise missing/invalid-variable error. Signing
+            // values cannot be applied here because AGP has already locked them.
+            loadUploadSigning()
+            throw new GradleException('Android release signing was not configured during project evaluation.')
         }
     }
 }

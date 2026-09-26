@@ -3,6 +3,63 @@ import 'package:rxdart/rxdart.dart';
 
 import '../feature_flag_service.dart';
 
+/// Eén gedeelde clientpolicy voor de Boutique-module en haar vijf secties.
+class BoutiqueAccessPolicy {
+  static const Set<String> _boutiqueResponsibilityValues = {
+    'Responsable boutique',
+    'Responsable Boutique',
+    'responsable boutique',
+    'RESPONSABLE BOUTIQUE',
+    'RB',
+    'rb',
+    'Rb',
+    'rB',
+  };
+
+  static bool isActiveMember(Map<String, dynamic>? member) {
+    return member?['member_status'] == 'active';
+  }
+
+  static bool hasBoutiqueResponsibility(Map<String, dynamic>? member) {
+    final statuten = member?['clubStatuten'];
+    if (statuten is! Iterable) return false;
+
+    return statuten.any(_boutiqueResponsibilityValues.contains);
+  }
+
+  static bool canAccessMode(String? mode, Map<String, dynamic>? member) {
+    if (!isActiveMember(member)) return false;
+
+    switch (mode) {
+      case FeatureFlagService.modeTous:
+        return true;
+      case FeatureFlagService.modePreparation:
+        return hasBoutiqueResponsibility(member);
+      case FeatureFlagService.modeMasque:
+      default:
+        return false;
+    }
+  }
+}
+
+/// Live toegangscontext voor zowel de Boutique-ingang als haar vijf secties.
+class BoutiqueAccessState {
+  final bool canAccess;
+  final Map<String, String> visibility;
+  final Map<String, dynamic>? member;
+
+  const BoutiqueAccessState({
+    required this.canAccess,
+    required this.visibility,
+    required this.member,
+  });
+
+  bool canAccessSection(String key) {
+    return canAccess &&
+        BoutiqueAccessPolicy.canAccessMode(visibility[key], member);
+  }
+}
+
 class BoutiqueAccessService {
   final FirebaseFirestore _firestore;
 
@@ -10,6 +67,15 @@ class BoutiqueAccessService {
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   Stream<bool> watchCanAccessBoutique({
+    required String clubId,
+    required String userId,
+  }) {
+    return watchBoutiqueAccess(clubId: clubId, userId: userId)
+        .map((state) => state.canAccess)
+        .distinct();
+  }
+
+  Stream<BoutiqueAccessState> watchBoutiqueAccess({
     required String clubId,
     required String userId,
   }) {
@@ -27,36 +93,37 @@ class BoutiqueAccessService {
         .snapshots();
 
     return Rx.combineLatest2<DocumentSnapshot<Map<String, dynamic>>,
-        DocumentSnapshot<Map<String, dynamic>>, bool>(
+        DocumentSnapshot<Map<String, dynamic>>, BoutiqueAccessState>(
       flagsStream,
       memberStream,
-      (flagsDoc, memberDoc) => _canAccess(flagsDoc.data(), memberDoc.data()),
+      (flagsDoc, memberDoc) => stateFromData(
+        flags: flagsDoc.data(),
+        member: memberDoc.data(),
+      ),
     );
   }
 
-  bool _canAccess(
-    Map<String, dynamic>? flags,
-    Map<String, dynamic>? member,
-  ) {
-    if (member == null) return false;
+  static bool canAccessFromData({
+    required Map<String, dynamic>? flags,
+    required Map<String, dynamic>? member,
+  }) {
+    return stateFromData(flags: flags, member: member).canAccess;
+  }
 
-    final appRole = member['app_role']?.toString().toLowerCase();
-    final isAdmin = appRole == 'admin' || appRole == 'superadmin';
+  static BoutiqueAccessState stateFromData({
+    required Map<String, dynamic>? flags,
+    required Map<String, dynamic>? member,
+  }) {
+    final visibility = FeatureFlagService.parseBoutiqueVisibility(flags);
     final enabled = flags?['boutiqueEnabled'] == true ||
         flags?['boutiqueMobileEnabled'] == true;
-    final access = member['feature_access'];
-    final hasMemberAccess = access is Map && access['boutique'] == true;
+    final canAccess = enabled &&
+        BoutiqueAccessPolicy.canAccessMode(visibility['access'], member);
 
-    if (!enabled) return false;
-
-    final mode = FeatureFlagService.parseBoutiqueVisibility(flags)['access'];
-    switch (mode) {
-      case FeatureFlagService.modeMasque:
-        return false;
-      case FeatureFlagService.modeTous:
-        return true;
-      default:
-        return isAdmin || hasMemberAccess;
-    }
+    return BoutiqueAccessState(
+      canAccess: canAccess,
+      visibility: visibility,
+      member: member,
+    );
   }
 }

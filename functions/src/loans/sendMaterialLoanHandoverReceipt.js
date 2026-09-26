@@ -1,13 +1,14 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const PDFDocument = require('pdfkit');
+const { hasGonflageRole } = require('./materialLoanRoles');
 const { buildEmailRouting, logEmailHistoryAndCommunication } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
 const options = { region: 'europe-west1', memory: '256MiB', timeoutSeconds: 60, maxInstances: 10 };
 const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const memberEmail = (member = {}) => String(member.email || member.email_address || member.emailAddress || '').trim();
-const canManage = (member = {}) => (member.clubStatuten || []).map((r) => String(r).toLowerCase()).some((r) => r === 'g' || r === 'gonflage') || ['admin', 'superadmin'].includes(String(member.app_role || '').toLowerCase());
+const canManage = (member = {}) => hasGonflageRole(member) || ['admin', 'superadmin'].includes(String(member.app_role || '').toLowerCase());
 const pdfColor = '#17365D';
 
 function asDate(value) {

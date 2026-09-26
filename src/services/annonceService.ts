@@ -20,6 +20,7 @@ import {
   onSnapshot,
   arrayUnion,
   increment,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
@@ -138,7 +139,9 @@ export async function createAnnonce(
 
   const data = {
     ...annonceToDoc(annonce),
-    created_at: Timestamp.now(),
+    created_at: serverTimestamp(),
+    unread_created_at: serverTimestamp(),
+    unread_activity_at: serverTimestamp(),
   };
 
   const docRef = await addDoc(annoncesRef, data);
@@ -279,7 +282,8 @@ export async function sendAnnonceReply(
     sender_id: senderId,
     sender_name: senderName,
     message: message.trim(),
-    created_at: Timestamp.now(),
+    created_at: serverTimestamp(),
+    unread_created_at: serverTimestamp(),
     read_by: [senderId],
   };
 

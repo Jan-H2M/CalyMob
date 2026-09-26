@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,13 +9,13 @@ import '../../config/firebase_config.dart';
 import '../../models/piscine_session.dart';
 import '../../models/poll.dart';
 import '../../models/session_message.dart';
+import '../../models/read_state.dart';
 import '../../widgets/message_hover_caret.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
-import '../../services/local_read_tracker.dart';
-import '../../services/unread_count_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
+import '../../services/visible_read_ack_gate.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 import '../../widgets/message_edit_sheet.dart';
@@ -38,7 +39,8 @@ class SessionChatScreen extends StatefulWidget {
   State<SessionChatScreen> createState() => _SessionChatScreenState();
 }
 
-class _SessionChatScreenState extends State<SessionChatScreen> {
+class _SessionChatScreenState extends State<SessionChatScreen>
+    with WidgetsBindingObserver, RouteAware {
   final SessionMessageService _messageService = SessionMessageService();
   final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
@@ -50,7 +52,15 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   final Map<String, Future<String?>> _photoFutureCache = {};
 
   bool _isSending = false;
+  bool _hasLoadedMessageSnapshot = false;
+  String? _latestVisibleMessageId;
+  DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
+  bool _appIsForeground = true;
+  final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
+  final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
+  ModalRoute<dynamic>? _subscribedRoute;
+  String? _acknowledgementUserId;
   Poll? _pendingPoll;
 
   /// Haal de foto URL op voor een member (cached Future)
@@ -67,28 +77,112 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   @override
   void initState() {
     super.initState();
-    _markMessagesAsRead();
+    WidgetsBinding.instance.addObserver(this);
+    _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _ackRetry.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _markMessagesAsRead() async {
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    await tracker.markAsRead(unreadSessionReadKey(
-      widget.session.id,
-      widget.chatGroup.type.value,
-      widget.chatGroup.level,
-    ));
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (identical(route, _subscribedRoute)) return;
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _subscribedRoute = route;
+    if (route != null) {
+      readAcknowledgementRouteObserver.subscribe(this, route);
+    }
+  }
 
-    if (!mounted) return;
-    await context.read<UnreadCountProvider>().refresh();
+  @override
+  void didPushNext() => _ackRetry.suspend();
+
+  @override
+  void didPopNext() => unawaited(_markMessagesAsRead());
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground && mounted && _hasLoadedMessageSnapshot) {
+      unawaited(_markMessagesAsRead());
+    } else if (!_appIsForeground) {
+      _ackRetry.suspend();
+    }
+  }
+
+  Future<void> _markMessagesAsRead({
+    UnreadCountProvider? watchedUnreadProvider,
+  }) async {
+    if (!_appIsForeground || !isCurrentRouteForReadAcknowledgement(context)) {
+      return;
+    }
+    final unreadProvider =
+        watchedUnreadProvider ?? context.read<UnreadCountProvider>();
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null || currentUserId != _acknowledgementUserId) {
+      _ackRetry.suspend();
+      return;
+    }
+    final cursor = unreadProvider.usesCursorReadState;
+    final revision = _readAckGate.begin(
+      ready: _hasLoadedMessageSnapshot,
+      cursor: cursor,
+    );
+    if (revision == null) return;
+    var succeeded = false;
+    try {
+      final visibleMessageId = _latestVisibleMessageId;
+      if (visibleMessageId != null) {
+        await unreadProvider.markSessionChatSeen(
+          readStateSessionScopeId(
+            widget.session.id,
+            widget.chatGroup.type.value,
+            widget.chatGroup.level,
+          ),
+          visibleMessageId: visibleMessageId,
+          sessionId: widget.session.id,
+          groupType: widget.chatGroup.type.value,
+          groupLevel: widget.chatGroup.level,
+          visibleThroughAt: _latestVisibleMessageAt,
+        );
+      }
+      succeeded = true;
+      _ackRetry.reset();
+    } catch (error) {
+      debugPrint('⚠️ Session chat read acknowledgement failed: $error');
+      _ackRetry.schedule(() {
+        if (mounted) unawaited(_markMessagesAsRead());
+      });
+    } finally {
+      _readAckGate.finish(
+        revision: revision,
+        cursor: cursor,
+        succeeded: succeeded,
+      );
+    }
+    if (!mounted || !succeeded) return;
+    final currentCursorAuthority =
+        context.read<UnreadCountProvider>().usesCursorReadState;
+    if (_readAckGate.hasPending(cursor: currentCursorAuthority)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_markMessagesAsRead());
+      });
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -132,7 +226,6 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
         attachments: attachments,
         poll: _pendingPoll,
       );
-
       _messageController.clear();
       setState(() {
         _pendingAttachments.clear();
@@ -249,9 +342,8 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
         newUploaded.add(uploaded);
       }
 
-      final keptIds = result.keptAttachments
-          .map((a) => a.storagePath ?? a.url)
-          .toSet();
+      final keptIds =
+          result.keptAttachments.map((a) => a.storagePath ?? a.url).toSet();
       final removed = message.attachments
           .where((a) => !keptIds.contains(a.storagePath ?? a.url))
           .toList();
@@ -408,6 +500,8 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final unreadProvider = context.watch<UnreadCountProvider>();
+    final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
@@ -464,7 +558,65 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
                       );
                     }
 
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Container(
+                          key: const ValueKey('session-chat-load-error'),
+                          margin: const EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.94),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade700),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.sync_problem_rounded,
+                                color: Colors.orange.shade800,
+                                size: 36,
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Impossible de charger les messages. Réessayez dans un instant.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
                     final messages = snapshot.data ?? [];
+                    if (snapshot.hasData) {
+                      _hasLoadedMessageSnapshot = true;
+                      final first = messages.isEmpty ? null : messages.first;
+                      final last = messages.isEmpty ? null : messages.last;
+                      _latestVisibleMessageId = last?.id;
+                      _latestVisibleMessageAt =
+                          last?.unreadCreatedAt ?? last?.createdAt;
+                      _acknowledgementUserId = userId;
+                      if (_readAckGate.recordContent(
+                        messages.isEmpty
+                            ? 'empty'
+                            : '${messages.length}:${first!.id}:${last!.id}:${last.createdAt.microsecondsSinceEpoch}',
+                      )) {
+                        _ackRetry.reset();
+                      }
+                      if (_appIsForeground && routeIsCurrent) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            unawaited(
+                              _markMessagesAsRead(
+                                watchedUnreadProvider: unreadProvider,
+                              ),
+                            );
+                          }
+                        });
+                      }
+                    }
                     if (messages.isEmpty) {
                       return Center(
                         child: Column(
@@ -513,7 +665,9 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
                             if (showDateHeader)
                               _DateHeader(date: message.createdAt),
                             FutureBuilder<String?>(
-                              future: isOwn ? Future.value(null) : _getPhotoUrl(message.senderId),
+                              future: isOwn
+                                  ? Future.value(null)
+                                  : _getPhotoUrl(message.senderId),
                               builder: (context, snapshot) {
                                 return _MessageBubble(
                                   message: message,
@@ -735,112 +889,112 @@ class _MessageBubble extends StatelessWidget {
           child: Row(
             mainAxisAlignment:
                 isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isOwn) ...[
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.middenblauw,
-                backgroundImage: senderPhotoUrl != null
-                    ? CachedNetworkImageProvider(senderPhotoUrl!)
-                    : null,
-                child: senderPhotoUrl == null
-                    ? Text(
-                        message.senderName.isEmpty
-                            ? '?'
-                            : message.senderName[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.78,
-                ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: bubbleColor,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(16),
-                    topRight: const Radius.circular(16),
-                    bottomLeft: Radius.circular(isOwn ? 16 : 4),
-                    bottomRight: Radius.circular(isOwn ? 4 : 16),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (!isOwn)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          message.senderName,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isOwn) ...[
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppColors.middenblauw,
+                  backgroundImage: senderPhotoUrl != null
+                      ? CachedNetworkImageProvider(senderPhotoUrl!)
+                      : null,
+                  child: senderPhotoUrl == null
+                      ? Text(
+                          message.senderName.isEmpty
+                              ? '?'
+                              : message.senderName[0].toUpperCase(),
                           style: const TextStyle(
-                            fontSize: 12,
+                            color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.middenblauw,
+                            fontSize: 12,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.78,
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isOwn ? 16 : 4),
+                      bottomRight: Radius.circular(isOwn ? 4 : 16),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isOwn)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            message.senderName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.middenblauw,
+                            ),
                           ),
                         ),
+                      if (message.message.isNotEmpty)
+                        LinkifiedMessageText(
+                          text: message.message,
+                          style: TextStyle(color: textColor, fontSize: 15),
+                          linkColor: isOwn ? Colors.white : Colors.blue,
+                        ),
+                      if (message.hasAttachments)
+                        AttachmentDisplay(
+                          attachments: message.attachments,
+                          compact: true,
+                        ),
+                      if (message.hasPoll)
+                        ChatPollWidget(
+                          poll: message.poll!,
+                          currentUserId: currentUserId,
+                          onVote: onVote,
+                          onClose: onClosePoll,
+                          canClose: onClosePoll != null,
+                        ),
+                      if (message.reactions.isNotEmpty)
+                        MessageReactions(
+                          reactions: message.reactions,
+                          currentUserId: currentUserId,
+                          clubId: FirebaseConfig.defaultClubId,
+                          onToggleReaction: onToggleReaction,
+                          compact: true,
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message.formattedDateTime,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isOwn
+                              ? Colors.white.withValues(alpha: 0.72)
+                              : Colors.grey.shade500,
+                        ),
                       ),
-                    if (message.message.isNotEmpty)
-                      LinkifiedMessageText(
-                        text: message.message,
-                        style: TextStyle(color: textColor, fontSize: 15),
-                        linkColor: isOwn ? Colors.white : Colors.blue,
-                      ),
-                    if (message.hasAttachments)
-                      AttachmentDisplay(
-                        attachments: message.attachments,
-                        compact: true,
-                      ),
-                    if (message.hasPoll)
-                      ChatPollWidget(
-                        poll: message.poll!,
-                        currentUserId: currentUserId,
-                        onVote: onVote,
-                        onClose: onClosePoll,
-                        canClose: onClosePoll != null,
-                      ),
-                    if (message.reactions.isNotEmpty)
-                      MessageReactions(
-                        reactions: message.reactions,
-                        currentUserId: currentUserId,
-                        clubId: FirebaseConfig.defaultClubId,
-                        onToggleReaction: onToggleReaction,
-                        compact: true,
-                      ),
-                    const SizedBox(height: 4),
-                    Text(
-                      message.formattedDateTime,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isOwn
-                            ? Colors.white.withValues(alpha: 0.72)
-                            : Colors.grey.shade500,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

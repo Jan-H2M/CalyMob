@@ -127,6 +127,7 @@ class SessionMessage {
   final Map<String, List<String>> reactions;
   final Poll? poll;
   final DateTime createdAt;
+  final DateTime? unreadCreatedAt;
   final DateTime? editedAt;
 
   SessionMessage({
@@ -140,6 +141,7 @@ class SessionMessage {
     this.reactions = const {},
     this.poll,
     required this.createdAt,
+    this.unreadCreatedAt,
     this.editedAt,
   });
 
@@ -163,6 +165,7 @@ class SessionMessage {
           ? Poll.fromMap(data['poll'] as Map<String, dynamic>)
           : null,
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      unreadCreatedAt: (data['unread_created_at'] as Timestamp?)?.toDate(),
       editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
     );
   }
@@ -218,6 +221,7 @@ class SessionMessage {
       reactions: reactions ?? this.reactions,
       poll: clearPoll ? null : (poll ?? this.poll),
       createdAt: createdAt ?? this.createdAt,
+      unreadCreatedAt: unreadCreatedAt,
       editedAt: editedAt ?? this.editedAt,
     );
   }

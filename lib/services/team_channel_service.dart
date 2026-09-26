@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
+import 'package:rxdart/rxdart.dart';
 import '../models/poll.dart';
 import '../models/team_channel.dart';
 import '../services/local_read_tracker.dart';
@@ -66,19 +67,23 @@ class TeamChannelService {
       yield _sortChannels(fallbackChannels);
     }
 
-    final availableTypeValues = availableTypes.map((t) => t.value).toSet();
-    final query = availableTypes.length > 10
-        ? _channelsCollection(clubId)
-        : _channelsCollection(clubId)
-            .where('type', whereIn: availableTypeValues.toList());
-
     try {
-      await for (final snapshot in query.snapshots()) {
-        final channels = snapshot.docs
-            .map((doc) => TeamChannel.fromFirestore(doc))
-            .where(
-                (channel) => availableTypeValues.contains(channel.type.value))
-            .toList();
+      // Security rules authorize team channels by immutable document ID. A
+      // collection query filtered on the mutable `type` field cannot prove
+      // that access and may be rejected. Subscribe only to the exact IDs the
+      // rules authorize for this member.
+      final streams = availableTypes
+          .map((type) => _channelsCollection(clubId).doc(type.id).snapshots())
+          .toList();
+      await for (final documents in Rx.combineLatestList(streams)) {
+        final channels = <TeamChannel>[];
+        for (var index = 0; index < documents.length; index++) {
+          final document = documents[index];
+          final expectedType = availableTypes[index];
+          if (!document.exists) continue;
+          final channel = TeamChannel.fromFirestore(document);
+          if (channel.type == expectedType) channels.add(channel);
+        }
 
         // Ajouter les canaux manquants
         for (final type in availableTypes) {
@@ -167,8 +172,11 @@ class TeamChannelService {
       createdAt: DateTime.now(),
     );
 
-    final docRef = await _messagesCollection(clubId, channelId)
-        .add(messageData.toFirestore());
+    final docRef = await _messagesCollection(clubId, channelId).add({
+      ...messageData.toFirestore(),
+      'created_at': FieldValue.serverTimestamp(),
+      'unread_created_at': FieldValue.serverTimestamp(),
+    });
 
     return docRef.id;
   }

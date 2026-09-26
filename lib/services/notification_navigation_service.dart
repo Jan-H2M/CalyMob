@@ -25,7 +25,7 @@ class NotificationHistoryNavigationDispatcher {
 ///
 /// All entry points use the same parser and queue so foreground, background
 /// and cold-start behaviour cannot drift apart.
-enum NotificationTapOrigin { foreground, background, terminated }
+enum NotificationTapOrigin { history, foreground, background, terminated }
 
 enum NotificationRouteKind {
   operation,
@@ -79,6 +79,8 @@ class NotificationNavigationRequest {
 
   String? get type => _value('type');
   String? get clubId => _firstValue(const ['club_id', 'clubId']);
+  String? get recipientId => _firstValue(const ['recipient_id', 'recipientId']);
+  bool get requiresBoundRecipient => origin != NotificationTapOrigin.history;
   String? get operationId => _firstValue(const ['operation_id', 'operationId']);
   String? get announcementId =>
       _firstValue(const ['announcement_id', 'announcementId']);
@@ -192,6 +194,9 @@ class NotificationNavigationRequest {
       case NotificationRouteKind.teamChat:
         return channelId != null;
       case NotificationRouteKind.sessionChat:
+        return sessionId != null &&
+            const {'accueil', 'encadrants', 'niveau'}.contains(groupType) &&
+            (groupType != 'niveau' || groupLevel != null);
       case NotificationRouteKind.sessionDetail:
         return sessionId != null;
       case NotificationRouteKind.exerciseDeclaration:
@@ -265,6 +270,15 @@ class NotificationNavigationQueue {
 
   int get pendingCount => _pending.length;
 
+  /// Drop every destination bound to the previous authenticated identity.
+  /// In-flight requests are invalidated too; the app also guards eventual
+  /// navigation with an identity generation.
+  void clear() {
+    _pending.clear();
+    _inFlight.clear();
+    _recentlyHandled.clear();
+  }
+
   bool enqueue(NotificationNavigationRequest request, {DateTime? now}) {
     final timestamp = now ?? DateTime.now();
     _removeExpired(timestamp);
@@ -306,5 +320,52 @@ class NotificationNavigationQueue {
     _recentlyHandled.removeWhere(
       (_, handledAt) => now.difference(handledAt) > duplicateWindow,
     );
+  }
+}
+
+/// Holds the single OS-notification tap while Firebase restores the first
+/// authenticated identity. Once any non-null identity was resolved, later
+/// logout/account changes clear the buffer so an old account's destination
+/// can never leak into a new session.
+class StartupNotificationBuffer {
+  NotificationNavigationRequest? _pending;
+  String? _pendingUserId;
+  bool _hasResolvedAuthenticatedIdentity = false;
+
+  bool stageIfNeeded(
+    NotificationNavigationRequest request, {
+    required String? currentUserId,
+  }) {
+    if (request.origin == NotificationTapOrigin.history ||
+        currentUserId != null ||
+        _hasResolvedAuthenticatedIdentity) {
+      return false;
+    }
+    final intendedUserId = request.recipientId;
+    if (intendedUserId == null) {
+      return true;
+    }
+    if (_pending == null ||
+        _pending!.deduplicationKey == request.deduplicationKey) {
+      _pending = request;
+      _pendingUserId = intendedUserId;
+    }
+    return true;
+  }
+
+  NotificationNavigationRequest? synchronizeIdentity(String? userId) {
+    if (userId == null) {
+      if (_hasResolvedAuthenticatedIdentity) {
+        _pending = null;
+        _pendingUserId = null;
+      }
+      return null;
+    }
+    _hasResolvedAuthenticatedIdentity = true;
+    final pending = _pending;
+    final intendedUserId = _pendingUserId;
+    _pending = null;
+    _pendingUserId = null;
+    return intendedUserId == userId ? pending : null;
   }
 }

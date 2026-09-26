@@ -112,36 +112,83 @@ service cloud.firestore {
         && userData.clubStatuten.hasAny(statuten);
     }
 
+    // Additive rollout: 1.22.4 may omit the canonical unread timestamp until
+    // the server-only migration marker enters its explicit enforcement phase.
+    // At that point minSupportedVersion has already excluded legacy writers.
+    function unreadTimestampContractRequired(clubId) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId)/settings/unread_timestamp_v2_migration)
+        && get(/databases/$(database)/documents/clubs/$(clubId)/settings/unread_timestamp_v2_migration).data.get('writer_contract', '') == 'required'
+        && get(/databases/$(database)/documents/clubs/$(clubId)/settings/unread_timestamp_v2_migration).data.get('status', '') in ['enforcing', 'complete'];
+    }
+
+    function hasValidUnreadTimestamp(clubId, data) {
+      return ((!unreadTimestampContractRequired(clubId)
+          && !('unread_created_at' in data))
+        || data.unread_created_at == request.time);
+    }
+
+    function hasValidAnnouncementActivity(clubId, data) {
+      return ((!unreadTimestampContractRequired(clubId)
+            && !('unread_activity_at' in data))
+          || data.unread_activity_at == request.time)
+        && (!('unread_last_reply_at' in data)
+          || data.unread_last_reply_at == request.time);
+    }
+
     function hasAccueilRole(clubId) {
       return hasClubStatut(clubId, ['accueil', 'Accueil', 'A']);
     }
 
     function hasGonflageRole(clubId) {
-      return hasClubStatut(clubId, ['gonflage', 'Gonflage', 'G']);
+      let userData = getUserData(clubId);
+      let statuten = userData.get('clubStatuten', []);
+      let normalized = statuten is list
+        ? ('|' + statuten.join('|').lower() + '|')
+        : '';
+      return isMember(clubId)
+        && statuten is list
+        && normalized.matches('.*[|] *(g|gonflage) *[|].*');
     }
 
     function hasBureauRole(clubId) {
       return hasClubStatut(clubId, [
-        'BS', 'bs', 'Banque Signature', 'banque signature',
-        'bureau', 'Bureau', 'tresorier', 'trésorier', 'secretaire', 'secrétaire'
+        'BS', 'bs', 'Banque Signature', 'banque signature'
       ]);
     }
 
     function canAccessTeamChannel(clubId, channelId) {
-      return isAdmin(clubId) || (
+      return channelId == 'bureau'
+        ? isMember(clubId) && hasBureauRole(clubId)
+        : isAdmin(clubId) || (
         isMember(clubId) && (
           channelId == 'general' ||
           (channelId == 'equipe_ca' && hasCARole(clubId)) ||
           (channelId == 'equipe_accueil' && hasAccueilRole(clubId)) ||
           (channelId == 'equipe_encadrants' && isEncadrantForClub(clubId)) ||
           (channelId == 'equipe_gonflage' && hasGonflageRole(clubId)) ||
-          (channelId == 'bureau' && (hasBureauRole(clubId) || hasCARole(clubId))) ||
           (channelId == 'formation_1_etoile' && hasFormationTarget(clubId, '1*')) ||
           (channelId == 'formation_2_etoiles' && hasFormationTarget(clubId, '2*')) ||
           (channelId == 'formation_3_etoiles' && hasFormationTarget(clubId, '3*')) ||
           (channelId == 'formation_4_etoiles' && hasFormationTarget(clubId, '4*')) ||
           (channelId == 'formation_AM' && hasFormationTarget(clubId, 'AM'))
         )
+      );
+    }
+
+    function canAccessSessionChat(clubId, sessionId, message) {
+      let session = get(/databases/$(database)/documents/clubs/$(clubId)/piscine_sessions/$(sessionId)).data;
+      let acl = session.get('chat_acl', {});
+      let groupType = message.get('group_type', '');
+      let groupLevel = message.get('group_level', '');
+      return isMember(clubId) && (
+        (groupType == 'accueil'
+          && acl.get('accueil', []).hasAny([request.auth.uid])) ||
+        (groupType == 'encadrants'
+          && acl.get('encadrants', []).hasAny([request.auth.uid])) ||
+        (groupType == 'niveau'
+          && groupLevel is string
+          && groupLevel.size() > 0
+          && acl.get('niveaux', {}).get(groupLevel, []).hasAny([request.auth.uid]))
       );
     }
 
@@ -338,23 +385,57 @@ service cloud.firestore {
              (userRole == 'user' && request.auth.uid == ownerId);
     }
 
-    // Zichtbaarheidsstand Boutique (CalyCompta > Boutique > Réglages):
-    // 'tous' = elk lid, 'testeurs' = admins + feature_access.boutique (default,
-    // historisch gedrag), 'masque' = niemand. Zelfde semantiek als de Dart-client
-    // (FeatureFlagService) en functions/src/boutique/shared.js — bij wijziging
-    // alle drie aanpassen! (Fix audit 2026-07-19, BL2)
-    function canAccessBoutique(clubId) {
-      let userData = getUserData(clubId);
-      let flags = get(/databases/$(database)/documents/clubs/$(clubId)/settings/feature_flags).data;
-      let accessMode = flags.get('boutiqueAccess', 'testeurs');
+    function boutiqueAccessControlFields() {
+      return [
+        'boutiqueEnabled', 'boutiqueMobileEnabled', 'boutiqueAdminOnly',
+        'boutiqueAccess', 'boutiqueSections'
+      ];
+    }
 
+    function isBoutiqueAccessAudit(data) {
+      return data.get('action', '') in [
+        'boutique.access.opened_all',
+        'boutique.access.preparation_enabled'
+      ];
+    }
+
+    // Zichtbaarheidsstand Boutique (CalyCompta > Boutique > Réglages):
+    // 'testeurs' blijft de historische wire value voor voorbereiding: alleen
+    // actieve leden met de clubfunctie Responsable boutique. 'tous' = elk
+    // actief lid. 'masque' wordt alleen defensief gelezen voor bestaande data.
+    // Zelfde semantiek als de Dart-client en functions/src/boutique/shared.js.
+    function isActiveBoutiqueMember(clubId) {
+      let userData = getUserData(clubId);
       return isMember(clubId)
-        && (flags.boutiqueEnabled == true || flags.boutiqueMobileEnabled == true)
+        && ('member_status' in userData)
+        && userData.member_status == 'active';
+    }
+
+    function hasBoutiqueResponsibility(clubId) {
+      let userData = getUserData(clubId);
+      return ('clubStatuten' in userData)
+        && userData.clubStatuten is list
+        && userData.clubStatuten.hasAny([
+          'Responsable boutique', 'Responsable Boutique',
+          'responsable boutique', 'RESPONSABLE BOUTIQUE',
+          'RB', 'rb', 'Rb', 'rB'
+        ]);
+    }
+
+    function canAccessBoutique(clubId) {
+      let flags = get(/databases/$(database)/documents/clubs/$(clubId)/settings/feature_flags).data;
+      let rawAccessMode = flags.get('boutiqueAccess', 'testeurs');
+      let accessMode = rawAccessMode in ['tous', 'testeurs', 'masque']
+        ? rawAccessMode
+        : 'testeurs';
+
+      return isActiveBoutiqueMember(clubId)
+        && (flags.get('boutiqueEnabled', false) == true
+          || flags.get('boutiqueMobileEnabled', false) == true)
         && accessMode != 'masque'
         && (
           accessMode == 'tous' ||
-          userData.app_role in ['admin', 'superadmin'] ||
-          (('feature_access' in userData) && userData.feature_access.boutique == true)
+          (accessMode == 'testeurs' && hasBoutiqueResponsibility(clubId))
         );
     }
 
@@ -416,6 +497,9 @@ service cloud.firestore {
         // AI API keys: admin only
         // Google Mail, email config, automated jobs: admin + session
         // Other settings (bilan_codes, app_version, etc.): member check required
+        // `feature_flags` includes unreadCursorV1Enabled / unreadCursorV1Mode.
+        // Members may read it; existing admin+session-only write rule below keeps
+        // the rollout switch server/admin controlled.
         allow read: if settingId in ['security', 'permissions', 'ai_api_keys', 'compatibility']
           ? (settingId == 'security' || settingId == 'permissions' || settingId == 'compatibility' ? isMember(clubId) : isAdmin(clubId))
           : settingId in ['google_mail', 'email_config']
@@ -424,8 +508,35 @@ service cloud.firestore {
               ? (isAdmin(clubId) && hasValidSession(clubId))
               : isMember(clubId);
 
-        // Only admins can write, and they need a valid session
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        // Boutique access changes are one closed, transactional server command.
+        // Admins may still edit unrelated flags, but cannot bypass its version
+        // gate, five-section alignment or immutable audit. All migration
+        // markers are trusted server metadata; Admin SDK migration tools and
+        // Functions bypass these rules.
+        allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && !(settingId in [
+            'unread_cursor_v1_migration',
+            'unread_timestamp_v2_migration',
+            'session_chat_acl_v1_migration'
+          ])
+          && (settingId != 'feature_flags'
+            || !request.resource.data.keys().hasAny(boutiqueAccessControlFields()));
+        allow update: if isAdmin(clubId) && hasValidSession(clubId)
+          && !(settingId in [
+            'unread_cursor_v1_migration',
+            'unread_timestamp_v2_migration',
+            'session_chat_acl_v1_migration'
+          ])
+          && (settingId != 'feature_flags'
+            || !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(boutiqueAccessControlFields()));
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId)
+          && settingId != 'feature_flags'
+          && !(settingId in [
+            'unread_cursor_v1_migration',
+            'unread_timestamp_v2_migration',
+            'session_chat_acl_v1_migration'
+          ]);
       }
 
       // Email templates - admin management only
@@ -900,7 +1011,8 @@ service cloud.firestore {
 
           // Create: Club members can send messages (sender_id must match auth uid)
           allow create: if isMember(clubId)
-            && request.resource.data.sender_id == request.auth.uid;
+            && request.resource.data.sender_id == request.auth.uid
+            && hasValidUnreadTimestamp(clubId, request.resource.data);
 
           // Delete: Author can delete own messages, admins can delete any
           allow delete: if isMember(clubId)
@@ -1035,6 +1147,109 @@ service cloud.firestore {
 
         // Admins can update and delete members
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Unread cursor v1. These documents are intentionally self-owned only:
+        // administrators do not receive an exception here. Server-side migration
+        // and support tools use the Admin SDK and therefore do not require a
+        // client-rule exception. All timestamps must be server timestamps
+        // (request.time), which prevents device-clock cursors and guarantees
+        // monotonic acknowledgement writes.
+        match /read_state/{sectionId} {
+          allow read: if isMember(clubId) && request.auth.uid == memberId;
+
+          allow create: if isMember(clubId)
+            && request.auth.uid == memberId
+            && (
+              (
+                sectionId == 'announcements'
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+              ) || (
+                sectionId in ['events', 'teams', 'sessions']
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.global_last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+              )
+            );
+
+          allow update: if isMember(clubId)
+            && request.auth.uid == memberId
+            && (
+              (
+                sectionId == 'announcements'
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+                && request.resource.data.last_seen_at >= resource.data.last_seen_at
+              ) || (
+                sectionId in ['events', 'teams', 'sessions']
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.global_last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+                && request.resource.data.global_last_seen_at >= resource.data.global_last_seen_at
+              )
+            );
+
+          allow delete: if false;
+
+          match /{scopeCollection}/{scopeId} {
+            allow read: if isMember(clubId) && request.auth.uid == memberId;
+
+            allow create: if isMember(clubId)
+              && request.auth.uid == memberId
+              && (
+                (sectionId == 'announcements' && scopeCollection == 'items') ||
+                (sectionId == 'events' && scopeCollection == 'conversations') ||
+                (sectionId == 'teams' && scopeCollection == 'channels') ||
+                (sectionId == 'sessions' && scopeCollection == 'chats')
+              )
+              && request.resource.data.keys().hasAll(['last_seen_at', 'updated_at'])
+              && request.resource.data.keys().hasOnly(['last_seen_at', 'updated_at'])
+              && request.resource.data.last_seen_at == request.time
+              && request.resource.data.updated_at == request.time;
+
+            allow update: if isMember(clubId)
+              && request.auth.uid == memberId
+              && (
+                (sectionId == 'announcements' && scopeCollection == 'items') ||
+                (sectionId == 'events' && scopeCollection == 'conversations') ||
+                (sectionId == 'teams' && scopeCollection == 'channels') ||
+                (sectionId == 'sessions' && scopeCollection == 'chats')
+              )
+              && request.resource.data.keys().hasAll(['last_seen_at', 'updated_at'])
+              && request.resource.data.keys().hasOnly(['last_seen_at', 'updated_at'])
+              && request.resource.data.last_seen_at == request.time
+              && request.resource.data.updated_at == request.time
+              && request.resource.data.last_seen_at >= resource.data.last_seen_at;
+
+            allow delete: if false;
+          }
+        }
 
         // COM-136 — Personal push notification history. Records are written
         // only by trusted Cloud Functions. A member can read their own history
@@ -1201,10 +1416,12 @@ service cloud.firestore {
         }
       }
 
-      // Audit logs - admin can read, members can create
+      // Boutique access audits are server-only. Even an admin client cannot
+      // forge the actor or detach the record from its settings transaction.
       match /audit_logs/{auditId} {
         allow read: if isAdmin(clubId) && hasValidSession(clubId);
-        allow create: if isMember(clubId);
+        allow create: if isMember(clubId)
+          && !isBoutiqueAccessAudit(request.resource.data);
         allow update, delete: if false; // Audit logs are immutable
       }
 
@@ -1395,11 +1612,21 @@ service cloud.firestore {
         // Read: All authenticated club members
         allow read: if isAuthenticated() &&
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-        // Create: Admin/Superadmin with valid session
-        allow create: if isAdmin(clubId) && hasValidSession(clubId);
-        // Update: Members can only update read_by and reply_count, admins can update all
+        // Create: Admin/Superadmin with valid session. Bind the sender to the
+        // authenticated writer because server-side unread reconciliation uses
+        // sender_id to acknowledge the author's own announcement.
+        allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && request.resource.data.sender_id == request.auth.uid
+          && hasValidUnreadTimestamp(clubId, request.resource.data)
+          && hasValidAnnouncementActivity(clubId, request.resource.data);
+        // Read state/activity is server-maintained; do not widen announcement
+        // writes for cursor-v1 compatibility.
         allow update: if isMember(clubId) && (
-          isAdmin(clubId) ||
+          (isAdmin(clubId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'created_at', 'unread_created_at', 'last_reply_at',
+              'unread_last_reply_at', 'last_activity_at', 'unread_activity_at'
+            ])) ||
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reply_count'])
         );
         // Delete: Admin/Superadmin with valid session
@@ -1411,7 +1638,8 @@ service cloud.firestore {
           allow read: if isMember(clubId);
           // Create: Club members can send replies (sender_id must match)
           allow create: if isMember(clubId) &&
-            request.resource.data.sender_id == request.auth.uid;
+            request.resource.data.sender_id == request.auth.uid &&
+            hasValidUnreadTimestamp(clubId, request.resource.data);
           // Update:
           //  - Alle members mogen read_by updaten (bestaand gedrag).
           //  - De auteur mag zijn eigen reply editen (message/attachments/edited_at).
@@ -1468,7 +1696,8 @@ service cloud.firestore {
         allow create: if canAccessTeamChannel(clubId, channelId)
           && teamChannelTypeMatches(channelId, request.resource.data.type);
         // Update metadata: admin only.
-        allow update: if isAdmin(clubId);
+        allow update: if isAdmin(clubId)
+          && teamChannelTypeMatches(channelId, request.resource.data.type);
         // Delete: Admin only
         allow delete: if isAdmin(clubId);
 
@@ -1478,7 +1707,8 @@ service cloud.firestore {
           allow read: if canAccessTeamChannel(clubId, channelId);
           // Create: Club members can send messages (sender_id must match)
           allow create: if canAccessTeamChannel(clubId, channelId) &&
-            request.resource.data.sender_id == request.auth.uid;
+            request.resource.data.sender_id == request.auth.uid &&
+            hasValidUnreadTimestamp(clubId, request.resource.data);
           // Update:
           //  - Alle members mogen read_by, reactions of poll updaten.
           //  - De auteur mag zijn eigen bericht editen (message/attachments/edited_at).
@@ -1509,8 +1739,12 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
         // Write: Admin OR Piscine-editor (E or P badge) with valid session for web.
         // Validate: type must be 'piscine' or 'theorie' when present.
-        allow create, update: if isPiscineFormationEditor(clubId) &&
-          (!('type' in request.resource.data) || request.resource.data.type in ['piscine', 'theorie']);
+        allow create: if isPiscineFormationEditor(clubId) &&
+          (!('type' in request.resource.data) || request.resource.data.type in ['piscine', 'theorie']) &&
+          !request.resource.data.keys().hasAny(['chat_acl']);
+        allow update: if isPiscineFormationEditor(clubId) &&
+          (!('type' in request.resource.data) || request.resource.data.type in ['piscine', 'theorie']) &&
+          request.resource.data.get('chat_acl', null) == resource.data.get('chat_acl', null);
         allow delete: if isPiscineFormationEditor(clubId);
 
         // Attendees subcollection - scanner adds attendees here
@@ -1542,15 +1776,20 @@ service cloud.firestore {
 
         // Messages subcollection - discussion for piscine sessions (mobile app)
         match /messages/{messageId} {
-          // Read: Club members
-          allow read: if isMember(clubId);
-          // Create: Club members can send messages (sender_id must match)
-          allow create: if isMember(clubId) &&
-            request.resource.data.sender_id == request.auth.uid;
+          // Session discussions are assignment-scoped. There is deliberately
+          // no admin/global-role bypass.
+          allow read: if canAccessSessionChat(clubId, sessionId, resource.data);
+          allow create: if canAccessSessionChat(
+              clubId, sessionId, request.resource.data
+            ) &&
+            request.resource.data.sender_id == request.auth.uid &&
+            hasValidUnreadTimestamp(clubId, request.resource.data);
           // Update:
           //  - Alle members mogen read_by, reactions of poll updaten.
           //  - De auteur mag zijn eigen bericht editen (message/attachments/edited_at).
-          allow update: if isMember(clubId) && (
+          allow update: if canAccessSessionChat(
+              clubId, sessionId, resource.data
+            ) && (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll'])
@@ -1561,8 +1800,9 @@ service cloud.firestore {
             )
           );
           // Delete: Author or admin
-          allow delete: if isMember(clubId) &&
-            (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+          allow delete: if canAccessSessionChat(
+              clubId, sessionId, resource.data
+            ) && resource.data.sender_id == request.auth.uid;
         }
       }
 
@@ -2092,12 +2332,14 @@ service cloud.firestore {
     // Fix audit 2026-07-19 (H5): het dubbele products-blok is verwijderd.
     // De canonieke products-rule staat genest onder /clubs/{clubId} (rond r.1464)
     // en vereist canAccessBoutique voor leden — het blok hier OR'de daaroverheen
-    // en gaf élk web-lid met sessie leestoegang, wat de standen testeurs/masqué
+    // en gaf élk web-lid met sessie leestoegang, wat voorbereiding/masqué
     // uitholde.
 
     match /clubs/{clubId}/orders/{orderId} {
       allow read: if (isAdmin(clubId) && hasValidSession(clubId)) || (
-        isMember(clubId) && hasValidSession(clubId) && resource.data.buyer.userId == request.auth.uid
+        canAccessBoutique(clubId)
+          && hasValidSession(clubId)
+          && resource.data.buyer.userId == request.auth.uid
       );
       // Fix audit 2026-07-19 (K1): order-creatie verloopt UITSLUITEND via de
       // Cloud Function createBoutiqueOrder (Admin SDK, bypasst rules). De oude

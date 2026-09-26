@@ -8,7 +8,11 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
+const { stampUnreadCreatedAt } = require('./unreadTimestampAuthority');
+const { prepareNotificationUnreadTimestamp } = require('./notificationUnreadTimestamp');
+const { advanceSenderUnreadCursorIsolated } = require('./advanceSenderUnreadCursor');
+const { teamChannelTypeForId } = require('./canonicalUnreadBadge');
 
 function normalizeRoles(roles = []) {
   return roles
@@ -21,10 +25,13 @@ function normalizeRoles(roles = []) {
           return 'member';
         case 'ca':
         case 'conseil administration':
+        case 'comite':
+        case 'comité':
           return 'ca';
         case 'e':
         case 'encadrant':
         case 'encadrants':
+        case 'encadrant carrière':
           return 'encadrant';
         case 'a':
         case 'accueil':
@@ -34,7 +41,6 @@ function normalizeRoles(roles = []) {
           return 'gonflage';
         case 'bs':
         case 'banque signature':
-        case 'bureau':
           return 'bs';
         default:
           return role;
@@ -43,36 +49,35 @@ function normalizeRoles(roles = []) {
 }
 
 function inferChannelInfo(channelId, channelData = {}) {
-  if (channelData.type) {
-    return {
-      channelName: channelData.name || 'Équipe',
-      channelType: channelData.type,
-    };
-  }
-
+  const channelName = channelData.name;
   switch (channelId) {
     case 'general':
-      return { channelName: 'General', channelType: 'general' };
+      return { channelName: channelName || 'General', channelType: 'general' };
     case 'equipe_ca':
-      return { channelName: 'CA', channelType: 'ca' };
+      return { channelName: channelName || 'CA', channelType: 'ca' };
     case 'equipe_accueil':
-      return { channelName: 'Équipe Accueil', channelType: 'accueil' };
+      return { channelName: channelName || 'Équipe Accueil', channelType: 'accueil' };
     case 'equipe_gonflage':
-      return { channelName: 'Équipe Gonflage', channelType: 'gonflage' };
+      return { channelName: channelName || 'Équipe Gonflage', channelType: 'gonflage' };
     case 'bureau':
-      return { channelName: 'Bureau', channelType: 'bureau' };
+      return { channelName: channelName || 'Bureau', channelType: 'bureau' };
     case 'formation_1_etoile':
-      return { channelName: 'Formation 1*', channelType: 'formation_1_etoile' };
+      return { channelName: channelName || 'Formation 1*', channelType: 'formation_1_etoile' };
     case 'formation_2_etoiles':
-      return { channelName: 'Formation 2*', channelType: 'formation_2_etoiles' };
+      return { channelName: channelName || 'Formation 2*', channelType: 'formation_2_etoiles' };
     case 'formation_3_etoiles':
-      return { channelName: 'Formation 3*', channelType: 'formation_3_etoiles' };
+      return { channelName: channelName || 'Formation 3*', channelType: 'formation_3_etoiles' };
     case 'formation_4_etoiles':
-      return { channelName: 'Formation 4*', channelType: 'formation_4_etoiles' };
+      return { channelName: channelName || 'Formation 4*', channelType: 'formation_4_etoiles' };
     case 'formation_AM':
-      return { channelName: 'Formation AM', channelType: 'formation_AM' };
+      return { channelName: channelName || 'Formation AM', channelType: 'formation_AM' };
+    case 'equipe_encadrants':
+      return { channelName: channelName || 'Équipe Encadrants', channelType: 'encadrants' };
     default:
-      return { channelName: 'Équipe Encadrants', channelType: 'encadrants' };
+      return {
+        channelName: channelName || 'Équipe',
+        channelType: teamChannelTypeForId(channelId),
+      };
   }
 }
 
@@ -82,19 +87,11 @@ function hasAdminAccess(memberData = {}) {
 }
 
 function normalizeTargetFormationLevel(value) {
-  const raw = String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/★/g, '*')
-    .replace(/_/g, ' ');
-
-  if (!raw) return null;
-  if (raw.includes('AM') || raw === 'AIDE MONITEUR') return 'AM';
-  if (raw.includes('1') || raw.includes('P1')) return '1*';
-  if (raw.includes('2') || raw.includes('P2')) return '2*';
-  if (raw.includes('3') || raw.includes('P3')) return '3*';
-  if (raw.includes('4') || raw.includes('P4')) return '4*';
-  return null;
+  if (['1*', '1', 'P1'].includes(value)) return '1*';
+  if (['2*', '2', 'P2'].includes(value)) return '2*';
+  if (['3*', '3', 'P3'].includes(value)) return '3*';
+  if (['4*', '4', 'P4'].includes(value)) return '4*';
+  return value === 'AM' ? 'AM' : null;
 }
 
 function getMemberFormationTargetLevel(memberData = {}) {
@@ -103,31 +100,26 @@ function getMemberFormationTargetLevel(memberData = {}) {
   const explicitTarget = normalizeTargetFormationLevel(memberData.target_formation_level);
   if (explicitTarget) return explicitTarget;
 
-  const code = String(memberData.plongeur_code || memberData.plongeur_niveau || '')
-    .trim()
-    .toUpperCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/★/g, '*');
-
-  if (!code) return null;
-  if (code === 'NB' || code.includes('NON BREVETE') || code.includes('SANS BREVET') || code.includes('DEBUTANT') || code.includes('BAPTEME') || code.includes('INITIATION')) return '1*';
-  if (code === 'P1' || code === '1' || code === '1*' || code.includes('PLONGEUR 1')) return '2*';
-  if (code === 'P2' || code === '2' || code === '2*' || code.includes('PLONGEUR 2')) return '3*';
-  if (code === 'P3' || code === '3' || code === '3*' || code.includes('PLONGEUR 3')) return '4*';
-  if (code === 'P4' || code === '4' || code === '4*' || code.includes('PLONGEUR 4')) return 'AM';
+  const code = memberData.plongeur_code;
+  if (code === 'NB') return '1*';
+  if (['P1', '1', '1*'].includes(code)) return '2*';
+  if (['P2', '2', '2*'].includes(code)) return '3*';
+  if (['P3', '3', '3*'].includes(code)) return '4*';
+  if (['P4', '4', '4*'].includes(code)) return 'AM';
 
   return null;
 }
 
 function memberHasChannelAccess(memberData = {}, channelType) {
   const normalizedRoles = new Set(normalizeRoles(memberData.clubStatuten || []));
+  const rawRoles = new Set(Array.isArray(memberData.clubStatuten) ? memberData.clubStatuten : []);
 
   // Bureau is strikt confidentieel: enkel leden met 'Banque Signature' (BS)
   // krijgen dit kanaal. Admin-override telt hier NIET (zelfs app_role=admin
   // of superadmin krijgt geen Bureau-notificatie zonder BS).
   if (channelType === 'bureau') {
-    return normalizedRoles.has('bs');
+    return ['BS', 'bs', 'Banque Signature', 'banque signature']
+      .some(role => rawRoles.has(role));
   }
 
   if (hasAdminAccess(memberData)) return true;
@@ -136,24 +128,29 @@ function memberHasChannelAccess(memberData = {}, channelType) {
     case 'general':
       return true;
     case 'ca':
-      return normalizedRoles.has('ca');
+      return ['ca', 'CA', 'comite', 'Comite', 'comité', 'Comité']
+        .some(role => rawRoles.has(role));
     case 'accueil':
-      return normalizedRoles.has('accueil');
+      return ['accueil', 'Accueil', 'A'].some(role => rawRoles.has(role));
     case 'gonflage':
       return normalizedRoles.has('gonflage');
     case 'formation_1_etoile':
-      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '1*';
+      return getMemberFormationTargetLevel(memberData) === '1*';
     case 'formation_2_etoiles':
-      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '2*';
+      return getMemberFormationTargetLevel(memberData) === '2*';
     case 'formation_3_etoiles':
-      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '3*';
+      return getMemberFormationTargetLevel(memberData) === '3*';
     case 'formation_4_etoiles':
-      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '4*';
+      return getMemberFormationTargetLevel(memberData) === '4*';
     case 'formation_AM':
-      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === 'AM';
+      return getMemberFormationTargetLevel(memberData) === 'AM';
     case 'encadrants':
+      return [
+        'encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E',
+        'encadrant carrière', 'Encadrant Carrière',
+      ].some(role => rawRoles.has(role));
     default:
-      return normalizedRoles.has('encadrant');
+      return false;
   }
 }
 
@@ -188,7 +185,25 @@ exports.onNewTeamMessage = onDocumentCreated(
   },
   async (event) => {
     const { clubId, channelId, messageId } = event.params;
-    const message = event.data.data();
+    const authoritativeCreatedAt = await prepareNotificationUnreadTimestamp({
+      snapshot: event.data, eventTime: event.time, label: 'team_message',
+      stamp: () => stampUnreadCreatedAt({
+        snapshot: event.data,
+        eventTime: event.time,
+      }),
+    });
+    const message = {
+      ...event.data.data(),
+      created_at: authoritativeCreatedAt,
+      unread_created_at: authoritativeCreatedAt,
+    };
+    if (message.sender_id) {
+      await advanceSenderUnreadCursorIsolated({
+        db: admin.firestore(), clubId, senderId: message.sender_id,
+        section: 'teams', scopeId: channelId,
+        visibleAt: authoritativeCreatedAt,
+      });
+    }
 
     console.log(`New message in club/${clubId}/team_channels/${channelId}/messages/${messageId}`);
     console.log('Message data:', JSON.stringify(message));
@@ -278,7 +293,7 @@ exports.onNewTeamMessage = onDocumentCreated(
       await incrementUnreadCounts(clubId, recipientIds, 'team_messages');
 
       // 6. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'team_messages');
+      const { successCount, failureCount } = await sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, 'team_messages');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };
@@ -289,3 +304,8 @@ exports.onNewTeamMessage = onDocumentCreated(
     }
   }
 );
+
+// Pure audience helpers are exported for the cross-surface access contract.
+exports.normalizeRoles = normalizeRoles;
+exports.memberHasChannelAccess = memberHasChannelAccess;
+exports.getMemberFormationTargetLevel = getMemberFormationTargetLevel;

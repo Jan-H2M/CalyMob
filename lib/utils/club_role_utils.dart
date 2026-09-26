@@ -1,17 +1,29 @@
 import '../models/team_channel.dart';
-import 'permission_helper.dart';
 
 class ClubRoleUtils {
+  static String normalizeRole(Object? rawRole) =>
+      rawRole?.toString().trim().toLowerCase() ?? '';
+
+  static bool hasGonflageRole(Iterable<Object?> roles) {
+    return roles.any((rawRole) {
+      final role = normalizeRole(rawRole);
+      return role == 'g' || role == 'gonflage';
+    });
+  }
+
   static Set<String> normalizeRoles(List<String> roles) {
     final normalized = <String>{};
 
     for (final rawRole in roles) {
-      final role = rawRole.trim().toLowerCase();
+      final role = normalizeRole(rawRole);
       if (role.isEmpty) continue;
 
       if (role == 'm' || role == 'membre' || role == 'member') {
         normalized.add('member');
-      } else if (role == 'ca') {
+      } else if (role == 'ca' ||
+          role == 'conseil administration' ||
+          role == 'comite' ||
+          role == 'comité') {
         normalized.add('ca');
         // Career and pool encadrants deliberately normalize to different values:
         // the former shares career team/formation access; the latter must not.
@@ -56,9 +68,7 @@ class ClubRoleUtils {
 
   static bool hasAdminAccess(List<String> roles, {String? appRole}) {
     final normalizedAppRole = appRole?.trim().toLowerCase();
-    return normalizedAppRole == 'admin' ||
-        normalizedAppRole == 'superadmin' ||
-        PermissionHelper.isAdmin(roles);
+    return normalizedAppRole == 'admin' || normalizedAppRole == 'superadmin';
   }
 
   static List<TeamChannelType> getVisibleTeamChannelTypes(
@@ -69,7 +79,13 @@ class ClubRoleUtils {
     bool formationActive = false,
   }) {
     final normalized = normalizeRoles(roles);
-    final hasBS = normalized.contains('bs');
+    final rawRoles = roles.toSet();
+    final hasBS = rawRoles.intersection(const {
+      'BS',
+      'bs',
+      'Banque Signature',
+      'banque signature',
+    }).isNotEmpty;
 
     // Bureau is strikt confidentieel: enkel leden met 'Banque Signature' (BS).
     // Zelfs de admin-override (includeAllChannels=true) mag dit kanaal NIET
@@ -86,14 +102,28 @@ class ClubRoleUtils {
 
     final availableTypes = <TeamChannelType>[TeamChannelType.general];
 
-    if (normalized.contains('ca')) {
+    if (rawRoles.intersection(const {
+      'ca',
+      'CA',
+      'comite',
+      'Comite',
+      'comité',
+      'Comité',
+    }).isNotEmpty) {
       availableTypes.add(TeamChannelType.ca);
     }
-    if (normalized.contains('encadrant')) {
+    if (rawRoles.intersection(const {
+      'encadrant',
+      'Encadrant',
+      'encadrants',
+      'Encadrants',
+      'E',
+      'encadrant carrière',
+      'Encadrant Carrière',
+    }).isNotEmpty) {
       availableTypes.add(TeamChannelType.encadrants);
-      availableTypes.addAll(_formationChannelTypes);
     }
-    if (normalized.contains('accueil')) {
+    if (rawRoles.intersection(const {'accueil', 'Accueil', 'A'}).isNotEmpty) {
       availableTypes.add(TeamChannelType.accueil);
     }
     if (normalized.contains('gonflage')) {
@@ -103,10 +133,7 @@ class ClubRoleUtils {
       availableTypes.add(TeamChannelType.bureau);
     }
 
-    final hasExplicitFormationTarget =
-        _normalizeTargetFormationLevel(targetFormationLevel) != null;
-    if (!normalized.contains('encadrant') &&
-        (formationActive || hasExplicitFormationTarget)) {
+    if (formationActive) {
       final formationType = getFormationChannelType(
         plongeurCode: plongeurCode,
         targetFormationLevel: targetFormationLevel,
@@ -118,14 +145,6 @@ class ClubRoleUtils {
 
     return availableTypes;
   }
-
-  static const List<TeamChannelType> _formationChannelTypes = [
-    TeamChannelType.formation1,
-    TeamChannelType.formation2,
-    TeamChannelType.formation3,
-    TeamChannelType.formation4,
-    TeamChannelType.formationAM,
-  ];
 
   static TeamChannelType? getFormationChannelType({
     String? plongeurCode,
@@ -151,62 +170,28 @@ class ClubRoleUtils {
   }
 
   static String? _normalizeTargetFormationLevel(String? value) {
-    final raw = (value ?? '')
-        .trim()
-        .toUpperCase()
-        .replaceAll('★', '*')
-        .replaceAll('_', ' ');
-    if (raw.isEmpty) return null;
-    if (raw.contains('AM') || raw == 'AIDE MONITEUR') return 'AM';
-    if (raw.contains('1') || raw.contains('P1')) return '1*';
-    if (raw.contains('2') || raw.contains('P2')) return '2*';
-    if (raw.contains('3') || raw.contains('P3')) return '3*';
-    if (raw.contains('4') || raw.contains('P4')) return '4*';
-    return null;
+    // Keep this deliberately exact: it mirrors targetFormationLevel() in
+    // Firestore rules. A UI-only fuzzy match would advertise a channel that
+    // the member cannot actually read.
+    return switch (value) {
+      '1*' || '1' || 'P1' => '1*',
+      '2*' || '2' || 'P2' => '2*',
+      '3*' || '3' || 'P3' => '3*',
+      '4*' || '4' || 'P4' => '4*',
+      'AM' => 'AM',
+      _ => null,
+    };
   }
 
   static String? _targetFromPlongeurCode(String? value) {
-    final code = (value ?? '')
-        .trim()
-        .toUpperCase()
-        .replaceAll('★', '*')
-        .replaceAll(RegExp(r'[\u0300-\u036f]'), '');
-
-    if (code.isEmpty) return null;
-
-    if (code == 'NB' ||
-        code.contains('NON BREVETE') ||
-        code.contains('SANS BREVET') ||
-        code.contains('DEBUTANT') ||
-        code.contains('BAPTEME') ||
-        code.contains('INITIATION')) {
-      return '1*';
-    }
-    if (code == 'P1' ||
-        code == '1' ||
-        code == '1*' ||
-        code.contains('PLONGEUR 1')) {
-      return '2*';
-    }
-    if (code == 'P2' ||
-        code == '2' ||
-        code == '2*' ||
-        code.contains('PLONGEUR 2')) {
-      return '3*';
-    }
-    if (code == 'P3' ||
-        code == '3' ||
-        code == '3*' ||
-        code.contains('PLONGEUR 3')) {
-      return '4*';
-    }
-    if (code == 'P4' ||
-        code == '4' ||
-        code == '4*' ||
-        code.contains('PLONGEUR 4')) {
-      return 'AM';
-    }
-    return null;
+    return switch (value) {
+      'NB' => '1*',
+      'P1' || '1' || '1*' => '2*',
+      'P2' || '2' || '2*' => '3*',
+      'P3' || '3' || '3*' => '4*',
+      'P4' || '4' || '4*' => 'AM',
+      _ => null,
+    };
   }
 
   static List<String> getVisibleTeamChannelIds(
