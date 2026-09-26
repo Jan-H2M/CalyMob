@@ -7,6 +7,7 @@ const {
 } = require('./unreadTimestampAuthority');
 const { advanceSenderUnreadCursor } = require('./advanceSenderUnreadCursor');
 const { readStateSessionScopeId } = require('./canonicalUnreadBadge');
+const { isFirestoreNotFound } = require('./firestoreErrors');
 
 const OPTIONS = Object.freeze({ region: 'europe-west1', retry: true });
 
@@ -17,30 +18,55 @@ async function reconcileUnreadTimestampCreate({
   kind,
   announcementRef,
   senderCursor,
+  senderCursorFactory,
   advanceSender = advanceSenderUnreadCursor,
 }) {
   if (!snapshot?.exists) return { skipped: 'missing' };
+  let currentSnapshot;
   let authoritative;
-  if (kind === 'announcement') {
-    authoritative = await stampAnnouncementCreated({ db, snapshot, eventTime });
-  } else if (kind === 'announcement_reply') {
-    authoritative = await stampAnnouncementReplyCreated({
-      db,
-      snapshot,
-      eventTime,
-      announcementRef,
-    });
-  } else {
-    authoritative = await stampUnreadCreatedAt({ snapshot, eventTime });
+  try {
+    // A create event snapshot remains "existing" on every Eventarc retry even
+    // when the document has since been deleted or replaced. Always reconcile
+    // the current document so a late retry cannot write stale state.
+    currentSnapshot = await snapshot.ref.get();
+    if (!currentSnapshot?.exists) return { skipped: 'deleted' };
+
+    if (kind === 'announcement') {
+      authoritative = await stampAnnouncementCreated({
+        db,
+        snapshot: currentSnapshot,
+        eventTime,
+      });
+    } else if (kind === 'announcement_reply') {
+      authoritative = await stampAnnouncementReplyCreated({
+        db,
+        snapshot: currentSnapshot,
+        eventTime,
+        announcementRef,
+      });
+    } else {
+      authoritative = await stampUnreadCreatedAt({
+        snapshot: currentSnapshot,
+        eventTime,
+      });
+    }
+  } catch (error) {
+    // Deletion between the current read and update is a terminal outcome for
+    // this create event, not a transient failure to retry for seven days.
+    if (isFirestoreNotFound(error)) return { skipped: 'deleted' };
+    throw error;
   }
-  const senderId = snapshot.data()?.sender_id;
-  if (senderId && senderCursor) {
+
+  const senderId = currentSnapshot.data()?.sender_id;
+  const currentSenderCursor = senderCursorFactory?.(currentSnapshot)
+    || senderCursor;
+  if (senderId && currentSenderCursor) {
     await advanceSender({
       db,
-      clubId: senderCursor.clubId,
+      clubId: currentSenderCursor.clubId,
       senderId,
-      section: senderCursor.section,
-      scopeId: senderCursor.scopeId,
+      section: currentSenderCursor.section,
+      scopeId: currentSenderCursor.scopeId,
       visibleAt: authoritative,
     });
   }
@@ -56,7 +82,9 @@ function createTrigger(document, kind, parentFactory, senderCursorFactory) {
       eventTime: event.time,
       kind,
       announcementRef: parentFactory?.(event),
-      senderCursor: senderCursorFactory?.(event),
+      senderCursorFactory: senderCursorFactory
+        ? snapshot => senderCursorFactory(event, snapshot)
+        : null,
     }),
   );
 }
@@ -106,8 +134,8 @@ const onSessionMessageUnreadTimestampCreated = createTrigger(
   'clubs/{clubId}/piscine_sessions/{sessionId}/messages/{messageId}',
   'message',
   null,
-  event => {
-    const message = event.data.data() || {};
+  (event, snapshot) => {
+    const message = snapshot.data() || {};
     return {
       clubId: event.params.clubId,
       section: 'sessions',

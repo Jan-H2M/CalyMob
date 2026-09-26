@@ -51,17 +51,20 @@ test('a failed authority write is safe to retry and converges idempotently', asy
   db.docs.set(path, { created_at: new MockMemoryTimestamp('2099-01-01') });
   const ref = db.doc(path);
   let attempts = 0;
-  const snapshot = {
+  let snapshot;
+  const retryingRef = {
+    get: async () => snapshot,
+    update: async updates => {
+      attempts++;
+      if (attempts === 1) throw new Error('transient');
+      await ref.update(updates);
+    },
+  };
+  snapshot = {
     exists: true,
     createTime: trusted,
     data: () => db.docs.get(path),
-    ref: {
-      update: async updates => {
-        attempts++;
-        if (attempts === 1) throw new Error('transient');
-        await ref.update(updates);
-      },
-    },
+    ref: retryingRef,
   };
   const input = { db, snapshot, kind: 'message' };
   await expect(reconcileUnreadTimestampCreate(input)).rejects.toThrow('transient');
@@ -77,7 +80,7 @@ test('sender cursor failure keeps retry trigger pending until it converges', asy
   const db = new MemoryFirestore();
   const path = 'clubs/c/team_channels/general/messages/m';
   const trusted = new MockMemoryTimestamp(10, 123_000_900);
-  db.docs.set(path, { sender_id: 'sender' });
+  db.docs.set(path, { sender_id: 'sender', __test_create_time: trusted });
   const ref = db.doc(path);
   const snapshot = {
     exists: true,
@@ -105,3 +108,63 @@ test('sender cursor failure keeps retry trigger pending until it converges', asy
     .resolves.toEqual({ status: 'reconciled' });
   expect(attempts).toBe(2);
 });
+
+test('a delayed retry stops cleanly when its target was deleted', async () => {
+  const trusted = new MockMemoryTimestamp(10, 123_000_900);
+  const staleData = { sender_id: 'sender' };
+  const ref = {
+    get: jest.fn(async () => ({ exists: false, data: () => undefined, ref })),
+    update: jest.fn(),
+  };
+  const snapshot = {
+    exists: true,
+    createTime: trusted,
+    data: () => staleData,
+    ref,
+  };
+  const advanceSender = jest.fn();
+
+  await expect(reconcileUnreadTimestampCreate({
+    db: new MemoryFirestore(),
+    snapshot,
+    kind: 'message',
+    senderCursor: { clubId: 'c', section: 'teams', scopeId: 'general' },
+    advanceSender,
+  })).resolves.toEqual({ skipped: 'deleted' });
+
+  expect(ref.get).toHaveBeenCalledTimes(1);
+  expect(ref.update).not.toHaveBeenCalled();
+  expect(advanceSender).not.toHaveBeenCalled();
+});
+
+test.each([5, 'not-found'])(
+  'a target deleted after the current read makes NOT_FOUND terminal (%s)',
+  async code => {
+    const trusted = new MockMemoryTimestamp(10, 123_000_900);
+    const data = { sender_id: 'sender' };
+    const notFound = Object.assign(new Error('No document to update'), { code });
+    let current;
+    const ref = {
+      get: jest.fn(async () => current),
+      update: jest.fn(async () => { throw notFound; }),
+    };
+    current = {
+      exists: true,
+      createTime: trusted,
+      data: () => data,
+      ref,
+    };
+    const advanceSender = jest.fn();
+
+    await expect(reconcileUnreadTimestampCreate({
+      db: new MemoryFirestore(),
+      snapshot: current,
+      kind: 'message',
+      senderCursor: { clubId: 'c', section: 'teams', scopeId: 'general' },
+      advanceSender,
+    })).resolves.toEqual({ skipped: 'deleted' });
+
+    expect(ref.update).toHaveBeenCalledTimes(1);
+    expect(advanceSender).not.toHaveBeenCalled();
+  },
+);
