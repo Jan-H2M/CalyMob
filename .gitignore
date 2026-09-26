@@ -60,6 +60,11 @@ android/local.properties
 android/app/src/debug/
 android/app/src/profile/
 
+# Android release signing material must live outside the repository.
+/android/key.properties
+/android/*.jks
+/android/*.keystore
+
 # ===================
 # Build outputs
 # ===================

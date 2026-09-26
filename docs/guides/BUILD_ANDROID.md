@@ -88,18 +88,43 @@ pdfrx: ^1.0.0
 
 ## Release Build
 
-For release builds, ensure `android/key.properties` exists with:
-```properties
-storePassword=<password>
-keyPassword=<password>
-keyAlias=<alias>
-storeFile=<path-to-keystore>
+Release signing material must be stored outside the repository. Configure only
+absolute paths and the non-secret alias; never put the password itself in an
+environment variable, command, log, Gradle property, or tracked file.
+
+The password file must contain one strong password on a single line. Restrict
+both it and the keystore to the current user:
+
+```bash
+chmod 600 /absolute/private/path/upload.jks \
+  /absolute/private/path/upload.password
+
+export CALYMOB_UPLOAD_STORE_FILE='/absolute/private/path/upload.jks'
+export CALYMOB_UPLOAD_PASSWORD_FILE='/absolute/private/path/upload.password'
+export CALYMOB_UPLOAD_KEY_ALIAS='upload-alias'
 ```
 
 Then run:
+
 ```bash
-flutter build apk --release
+flutter build appbundle --release
+unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
 ```
+
+Release and signing-report tasks fail closed if a variable or file is missing,
+relative, inside the repository, unreadable, too broadly accessible, or empty.
+Do not enable Gradle configuration cache for signing tasks. Debug builds and IDE
+sync do not need these variables.
+
+To inspect the configured public certificate without printing the password:
+
+```bash
+cd android
+./gradlew :app:signingReport --no-daemon --no-configuration-cache
+```
+
+The exported PEM certificate is public and is used only when registering or
+resetting the upload certificate in Google Play; it is not a build input.
 
 ---
 
