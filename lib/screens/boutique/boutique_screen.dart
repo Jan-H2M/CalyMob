@@ -5,11 +5,10 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/boutique/boutique_product.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/boutique_cart_provider.dart';
-import '../../providers/member_provider.dart';
 import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
-import '../../services/feature_flag_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -18,27 +17,64 @@ import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
-  const BoutiqueScreen({super.key});
+  final BoutiqueAccessService? accessService;
+  final String clubId;
+  final String? userId;
+
+  const BoutiqueScreen({
+    super.key,
+    this.accessService,
+    this.clubId = FirebaseConfig.defaultClubId,
+    this.userId,
+  });
 
   @override
   State<BoutiqueScreen> createState() => _BoutiqueScreenState();
 }
 
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
-  final FeatureFlagService _flagService = FeatureFlagService();
+  late BoutiqueAccessService _accessService;
+  String? _accessStreamKey;
+  Stream<BoutiqueAccessState>? _accessStream;
 
-  bool _sectionVisible(
-    Map<String, String> visibility,
-    String key,
-    Map<String, dynamic>? member,
-  ) {
-    return BoutiqueAccessPolicy.canAccessMode(visibility[key], member);
+  @override
+  void initState() {
+    super.initState();
+    _accessService = widget.accessService ?? BoutiqueAccessService();
+  }
+
+  @override
+  void didUpdateWidget(covariant BoutiqueScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accessService != widget.accessService) {
+      _accessService = widget.accessService ?? BoutiqueAccessService();
+      _accessStreamKey = null;
+      _accessStream = null;
+    }
+  }
+
+  Stream<BoutiqueAccessState>? _watchAccess(String? userId) {
+    if (userId == null) {
+      _accessStreamKey = null;
+      _accessStream = null;
+      return null;
+    }
+
+    final streamKey = '${widget.clubId}/$userId';
+    if (_accessStreamKey != streamKey) {
+      _accessStreamKey = streamKey;
+      _accessStream = _accessService.watchBoutiqueAccess(
+        clubId: widget.clubId,
+        userId: userId,
+      );
+    }
+    return _accessStream;
   }
 
   @override
   Widget build(BuildContext context) {
-    final memberProvider = context.watch<MemberProvider>();
-    final canOpenReturns = _canOpenMaterialReturns(memberProvider);
+    final userId =
+        widget.userId ?? context.watch<AuthProvider>().currentUser?.uid;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -54,16 +90,29 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
       body: OceanGradientBackground(
         creatures: CreatureSet.fishAndBubbles,
         child: SafeArea(
-          child: StreamBuilder<Map<String, String>>(
-            stream:
-                _flagService.boutiqueVisibility(FirebaseConfig.defaultClubId),
-            initialData: FeatureFlagService.parseBoutiqueVisibility(null),
+          child: StreamBuilder<BoutiqueAccessState>(
+            key: ValueKey('${widget.clubId}/$userId'),
+            stream: _watchAccess(userId),
             builder: (context, snapshot) {
-              final visibility = snapshot.data ??
-                  FeatureFlagService.parseBoutiqueVisibility(null);
-              bool showSection(String key) =>
-                  _sectionVisible(visibility, key, memberProvider.memberData);
+              if (userId == null || snapshot.hasError) {
+                return const _BoutiqueAccessUnavailable();
+              }
+              if (!snapshot.hasData) {
+                return const Center(
+                  child: CircularProgressIndicator(
+                    key: Key('boutique-access-loading'),
+                  ),
+                );
+              }
+
+              final access = snapshot.requireData;
+              if (!access.canAccess) {
+                return const _BoutiqueAccessUnavailable();
+              }
+
+              bool showSection(String key) => access.canAccessSection(key);
               final showMaterialLoans = showSection('pretsMateriel');
+              final canOpenReturns = _canOpenMaterialReturns(access.member);
               return ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                 children: [
@@ -174,8 +223,32 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
     );
   }
 
-  bool _canOpenMaterialReturns(MemberProvider memberProvider) {
-    return memberProvider.isGonflage;
+  bool _canOpenMaterialReturns(Map<String, dynamic>? member) {
+    final statuten = member?['clubStatuten'];
+    return statuten is Iterable &&
+        statuten.any((value) => value == 'gonflage' || value == 'Gonflage');
+  }
+}
+
+class _BoutiqueAccessUnavailable extends StatelessWidget {
+  const _BoutiqueAccessUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      key: const Key('boutique-access-unavailable'),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'La Boutique n’est pas disponible pour le moment.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontSize: 16,
+          ),
+        ),
+      ),
+    );
   }
 }
 
