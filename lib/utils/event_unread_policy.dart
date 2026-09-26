@@ -10,7 +10,8 @@ DateTime? _operationEnd(Map<String, dynamic> operation) {
 }
 
 /// Exact end of the seven Brussels-calendar-day window in which an event
-/// discussion remains countable and must remain navigable from the event list.
+/// discussion remains countable. A past event stays reachable through the
+/// explicit Passés/Clôturés controls instead of polluting the default list.
 DateTime? eventUnreadUntil(Map<String, dynamic> operation) {
   final end = _operationEnd(operation);
   if (end == null) return null;
