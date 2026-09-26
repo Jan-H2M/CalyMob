@@ -17,6 +17,7 @@ import '../../services/local_read_tracker.dart';
 import '../../services/unread_count_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
+import '../../services/visible_read_ack_gate.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 import '../../widgets/message_edit_sheet.dart';
@@ -40,7 +41,8 @@ class SessionChatScreen extends StatefulWidget {
   State<SessionChatScreen> createState() => _SessionChatScreenState();
 }
 
-class _SessionChatScreenState extends State<SessionChatScreen> {
+class _SessionChatScreenState extends State<SessionChatScreen>
+    with WidgetsBindingObserver {
   final SessionMessageService _messageService = SessionMessageService();
   final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
@@ -52,6 +54,7 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   final Map<String, Future<String?>> _photoFutureCache = {};
 
   bool _isSending = false;
+  bool _hasLoadedMessageSnapshot = false;
   bool _initialScrollDone = false;
   Poll? _pendingPoll;
 
@@ -69,38 +72,62 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Cursor mode acknowledges only after the message stream successfully
     // yields; preserve the legacy eager local acknowledgement when OFF.
     if (!context.read<UnreadCountProvider>().usesCursorReadState) {
-      _markMessagesAsRead();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_markMessagesAsRead(forceLegacy: true));
+        }
+      });
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _markMessagesAsRead() async {
-    final unreadProvider = context.read<UnreadCountProvider>();
-    if (unreadProvider.usesCursorReadState) {
-      await unreadProvider.markSessionChatSeen(readStateSessionScopeId(
-        widget.session.id,
-        widget.chatGroup.type.value,
-        widget.chatGroup.level,
-      ));
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        mounted &&
+        _hasLoadedMessageSnapshot) {
+      unawaited(_markMessagesAsRead());
+    }
+  }
+
+  Future<void> _markMessagesAsRead({
+    UnreadCountProvider? watchedUnreadProvider,
+    bool forceLegacy = false,
+  }) async {
+    if (!isCurrentRouteForReadAcknowledgement(context)) return;
+    final unreadProvider =
+        watchedUnreadProvider ?? context.read<UnreadCountProvider>();
+    if (!forceLegacy && unreadProvider.usesCursorReadState) {
+      await unreadProvider.markSessionChatSeen(
+        readStateSessionScopeId(
+          widget.session.id,
+          widget.chatGroup.type.value,
+          widget.chatGroup.level,
+        ),
+      );
       return;
     }
     final tracker = LocalReadTracker();
     await tracker.init();
-    await tracker.markAsRead(unreadSessionReadKey(
-      widget.session.id,
-      widget.chatGroup.type.value,
-      widget.chatGroup.level,
-    ));
+    await tracker.markAsRead(
+      unreadSessionReadKey(
+        widget.session.id,
+        widget.chatGroup.type.value,
+        widget.chatGroup.level,
+      ),
+    );
 
     if (!mounted) return;
     await unreadProvider.refresh();
@@ -147,14 +174,14 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
         attachments: attachments,
         poll: _pendingPoll,
       );
-      if (mounted) {
-        await context
-            .read<UnreadCountProvider>()
-            .markSessionChatSeen(readStateSessionScopeId(
-              widget.session.id,
-              widget.chatGroup.type.value,
-              widget.chatGroup.level,
-            ));
+      if (mounted && isCurrentRouteForReadAcknowledgement(context)) {
+        await context.read<UnreadCountProvider>().markSessionChatSeen(
+          readStateSessionScopeId(
+            widget.session.id,
+            widget.chatGroup.type.value,
+            widget.chatGroup.level,
+          ),
+        );
       }
 
       _messageController.clear();
@@ -431,6 +458,8 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final unreadProvider = context.watch<UnreadCountProvider>();
+    final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
@@ -489,11 +518,17 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
 
                     final messages = snapshot.data ?? [];
                     if (snapshot.hasData &&
-                        context
-                            .read<UnreadCountProvider>()
-                            .usesCursorReadState) {
+                        routeIsCurrent &&
+                        unreadProvider.usesCursorReadState) {
+                      _hasLoadedMessageSnapshot = true;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) unawaited(_markMessagesAsRead());
+                        if (mounted) {
+                          unawaited(
+                            _markMessagesAsRead(
+                              watchedUnreadProvider: unreadProvider,
+                            ),
+                          );
+                        }
                       });
                     }
                     if (messages.isEmpty) {

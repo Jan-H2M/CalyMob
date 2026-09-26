@@ -79,15 +79,21 @@ async function buildPlan(db, options, timestamp) {
     .sort((a, b) => a.id.localeCompare(b.id));
   const limited = Number.isFinite(options.limit) ? selected.slice(0, options.limit) : selected;
   const changes = [];
+  const existingRootPaths = [];
   for (const member of limited) {
     for (const section of ['announcements', 'events', 'teams', 'sessions']) {
       const ref = member.ref.collection('read_state').doc(section);
       const before = await ref.get();
+      if (before.exists) existingRootPaths.push(ref.path);
       if (before.data()?.schema_version === 1 && !options.force) continue;
       changes.push({ ref, path: ref.path, before: before.exists ? before.data() : null, after: cursorPayload(section, timestamp) });
     }
   }
-  return { members: limited.map((doc) => doc.id), changes };
+  return {
+    members: limited.map((doc) => doc.id),
+    changes,
+    existingRootPaths,
+  };
 }
 
 function timestampMillis(value) {
@@ -95,6 +101,53 @@ function timestampMillis(value) {
   if (typeof value.toMillis === 'function') return value.toMillis();
   if (typeof value.toDate === 'function') return value.toDate().getTime();
   return value instanceof Date ? value.getTime() : 0;
+}
+
+function migrationMarkerRef(db, clubId) {
+  return db.doc(`clubs/${clubId}/settings/unread_cursor_v1_migration`);
+}
+
+function validMigrationMarker(data) {
+  return data?.schema_version === 1
+    && ['seeding', 'roots-seeded'].includes(data.status)
+    && isTimestamp(data.baseline_at);
+}
+
+function migrationMarkerPayload(timestamp, status) {
+  return {
+    schema_version: 1,
+    status,
+    baseline_at: timestamp,
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+async function prepareMigrationMarker(db, ref, timestamp) {
+  await db.runTransaction(async transaction => {
+    const current = await transaction.get(ref);
+    if (current.exists) {
+      if (!validMigrationMarker(current.data())
+        || timestampMillis(current.data().baseline_at) !== timestampMillis(timestamp)) {
+        throw new Error('Refusing to replace a different/invalid unread cursor migration marker');
+      }
+      return;
+    }
+    transaction.set(ref, migrationMarkerPayload(timestamp, 'seeding'));
+  });
+}
+
+async function finalizeMigrationMarker(db, ref, timestamp) {
+  await db.runTransaction(async transaction => {
+    const current = await transaction.get(ref);
+    if (!current.exists || !validMigrationMarker(current.data())
+      || timestampMillis(current.data().baseline_at) !== timestampMillis(timestamp)) {
+      throw new Error('Unread cursor migration marker changed during seeding');
+    }
+    transaction.set(ref, {
+      ...migrationMarkerPayload(timestamp, 'roots-seeded'),
+      completed_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
 }
 
 function announcementNormalization(data = {}) {
@@ -151,8 +204,17 @@ async function verify(db, options) {
       if (!isValidRoot(section, snapshot.data())) missingOrInvalidRoots.push(snapshot.ref.path);
     }
   }
-  console.log(JSON.stringify({ mode: 'verify', activeMembers: limited.length, missingOrInvalidRoots }, null, 2));
-  return missingOrInvalidRoots.length ? 1 : 0;
+  const marker = await migrationMarkerRef(db, options.club).get();
+  const markerValid = marker.exists
+    && validMigrationMarker(marker.data())
+    && marker.data().status === 'roots-seeded';
+  console.log(JSON.stringify({
+    mode: 'verify',
+    activeMembers: limited.length,
+    missingOrInvalidRoots,
+    migrationMarkerValid: markerValid,
+  }, null, 2));
+  return missingOrInvalidRoots.length || !markerValid ? 1 : 0;
 }
 
 async function run(options, { firestore, onBackupWritten } = {}) {
@@ -160,19 +222,58 @@ async function run(options, { firestore, onBackupWritten } = {}) {
   if (!admin.apps.length) admin.initializeApp(options.project ? { projectId: options.project } : undefined);
   const db = firestore || admin.firestore();
   if (options.mode === 'verify') return verify(db, options);
-  const timestamp = admin.firestore.Timestamp.now(); // one consistent migration baseline
-  const { members, changes: rootChanges } = options.normalizeAnnouncements
-    ? { members: [], changes: [] }
+  const markerRef = migrationMarkerRef(db, options.club);
+  const markerBefore = options.normalizeAnnouncements ? null : await markerRef.get();
+  if (markerBefore?.exists && !validMigrationMarker(markerBefore.data())) {
+    throw new Error('Existing unread cursor migration marker is invalid');
+  }
+  // A retry after a partial batch failure reuses the pending marker's exact
+  // baseline; no second synthetic seed can be introduced.
+  const timestamp = markerBefore?.exists
+    ? markerBefore.data().baseline_at
+    : admin.firestore.Timestamp.now();
+  const {
+    members,
+    changes: plannedRootChanges,
+    existingRootPaths,
+  } = options.normalizeAnnouncements
+    ? { members: [], changes: [], existingRootPaths: [] }
     : await buildPlan(db, options, timestamp);
-  const changes = options.normalizeAnnouncements
+  if (!options.normalizeAnnouncements && !markerBefore.exists) {
+    if (options.members.length > 0 || options.limit !== undefined) {
+      throw new Error(
+        'Refusing to create a club migration marker for a partial cohort',
+      );
+    }
+    if (existingRootPaths.length > 0) {
+      throw new Error(
+        'Existing read_state roots have no trusted migration marker; use '
+        + 'record-unread-cursor-v1-migration-baseline.cjs to prove/repair it',
+      );
+    }
+  }
+  const rootChanges = options.normalizeAnnouncements
     ? await buildAnnouncementNormalizationPlan(db, options)
-    : rootChanges;
+    : plannedRootChanges;
+  const markerChange = options.normalizeAnnouncements ? null : {
+    ref: markerRef,
+    path: markerRef.path,
+    before: markerBefore.exists ? markerBefore.data() : null,
+    after: migrationMarkerPayload(timestamp, 'roots-seeded'),
+  };
+  const changes = markerChange ? [...rootChanges, markerChange] : rootChanges;
   changes.forEach((change) => console.log(`${options.mode.toUpperCase()} ${change.path} ${JSON.stringify(serialise(change.before))} -> ${JSON.stringify(serialise(change.after))}`));
   console.log(JSON.stringify({ mode: options.mode, activeMembers: members.length, writes: changes.length }, null, 2));
   if (options.mode !== 'apply') return 0;
   const backup = writeBackup(options, changes); // must succeed before a batch commit
   if (onBackupWritten) await onBackupWritten({ backup, changes, db });
-  await applyPlan(db, changes, options.batchSize);
+  if (options.normalizeAnnouncements) {
+    await applyPlan(db, rootChanges, options.batchSize);
+  } else {
+    await prepareMigrationMarker(db, markerRef, timestamp);
+    await applyPlan(db, rootChanges, options.batchSize);
+    await finalizeMigrationMarker(db, markerRef, timestamp);
+  }
   console.log(`BACKUP ${backup}`);
   return 0;
 }
@@ -192,4 +293,14 @@ if (require.main === module) {
   }
 }
 
-module.exports = { parseArgs, assertSafety, cursorPayload, isValidRoot, buildPlan, run, serialise };
+module.exports = {
+  parseArgs,
+  assertSafety,
+  cursorPayload,
+  isValidRoot,
+  buildPlan,
+  run,
+  serialise,
+  validMigrationMarker,
+  migrationMarkerPayload,
+};

@@ -101,9 +101,9 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Fix #6: Reset Firestore unread_counts + badge + pending notificaties
-  /// als dit een verse installatie is. De `LocalReadTracker.installBaseline`
-  /// wordt enkel gezet op de allereerste run na (re)installatie — perfect
-  /// signaal om oude badge-state op te ruimen.
+  /// als dit een verse installatie is. De tracker bewaart de install-baseline
+  /// voor de unread-handover, maar geeft het reset-signaal slechts één keer
+  /// in de procesrun waarin die baseline werd aangemaakt.
   ///
   /// Zonder deze reset blijft `unread_counts.total` staan op wat de vorige
   /// installatie achterliet (bvb. 12) en toont de badge onmiddellijk 12
@@ -118,7 +118,7 @@ class AuthProvider with ChangeNotifier {
     try {
       final tracker = LocalReadTracker();
       await tracker.init();
-      if (tracker.installBaseline == null) {
+      if (!tracker.consumeFreshInstallSignal()) {
         // Niet de eerste run na install → niets doen
         return;
       }

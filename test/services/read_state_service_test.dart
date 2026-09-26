@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:calymob/models/read_state.dart';
 import 'package:calymob/models/unread_cursor_feature_flag.dart';
 import 'package:calymob/services/cursor_unread_count_service.dart';
 import 'package:calymob/services/read_state_service.dart';
+import 'package:calymob/services/local_read_tracker.dart';
 
 void main() {
   const clubId = 'demo-club';
@@ -72,17 +75,176 @@ void main() {
       expect(effective!.isAtSameMomentAs(scope), isTrue);
     });
 
-    test('coalesces repeated acknowledgements for ten seconds', () async {
+    test('coalesces a burst into one trailing acknowledgement', () async {
+      var writes = 0;
+      final delay = Completer<void>();
+      service = ReadStateService(
+        firestore: firestore,
+        clock: () => now,
+        acknowledgementWrite: (_, __) async {
+          writes += 1;
+        },
+        acknowledgementDelay: (duration) {
+          expect(duration, const Duration(seconds: 1));
+          return delay.future;
+        },
+      );
       await service.markTeamChannelSeen(clubId, userId, 'general');
-      const path =
-          'clubs/$clubId/members/$userId/read_state/teams/channels/general';
-      final first = await firestore.doc(path).get();
+      expect(writes, 1);
       now = now.add(const Duration(seconds: 9));
-      await service.markTeamChannelSeen(clubId, userId, 'general');
-      final second = await firestore.doc(path).get();
+      final second = service.markTeamChannelSeen(clubId, userId, 'general');
+      final concurrent = service.markTeamChannelSeen(clubId, userId, 'general');
+      expect(writes, 1);
+      delay.complete();
+      await Future.wait([second, concurrent]);
 
-      expect(second.data()!['updated_at'], first.data()!['updated_at']);
+      expect(writes, 2);
     });
+
+    test('failed acknowledgements are retryable and concurrent writes coalesce',
+        () async {
+      var attempts = 0;
+      final firstWrite = Completer<void>();
+      final retryService = ReadStateService(
+        firestore: firestore,
+        clock: () => now,
+        acknowledgementWrite: (_, __) {
+          attempts += 1;
+          if (attempts == 1) return firstWrite.future;
+          return Future<void>.value();
+        },
+      );
+
+      final first = retryService.markTeamChannelSeen(
+        clubId,
+        userId,
+        'general',
+      );
+      final concurrent = retryService.markTeamChannelSeen(
+        clubId,
+        userId,
+        'general',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(attempts, 1);
+      final firstFailure = expectLater(first, throwsStateError);
+      final concurrentFailure = expectLater(concurrent, throwsStateError);
+      firstWrite.completeError(StateError('temporary write failure'));
+      await firstFailure;
+      await concurrentFailure;
+
+      await retryService.markTeamChannelSeen(clubId, userId, 'general');
+      expect(attempts, 2);
+    });
+
+    test('content arriving during a write gets one trailing acknowledgement',
+        () async {
+      var writes = 0;
+      final firstWrite = Completer<void>();
+      final trailingDelay = Completer<void>();
+      final trailingService = ReadStateService(
+        firestore: firestore,
+        clock: () => now,
+        acknowledgementWrite: (_, __) {
+          writes += 1;
+          return writes == 1 ? firstWrite.future : Future<void>.value();
+        },
+        acknowledgementDelay: (duration) {
+          expect(
+            duration,
+            ReadStateService.acknowledgementCoalesceWindow,
+          );
+          return trailingDelay.future;
+        },
+      );
+
+      final first = trailingService.markTeamChannelSeen(
+        clubId,
+        userId,
+        'general',
+      );
+      await Future<void>.delayed(Duration.zero);
+      final arrivedDuringWrite = trailingService.markTeamChannelSeen(
+        clubId,
+        userId,
+        'general',
+      );
+      firstWrite.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(writes, 1);
+
+      trailingDelay.complete();
+      await Future.wait([first, arrivedDuringWrite]);
+      expect(writes, 2);
+    });
+
+    test(
+      'bootstrap sends the complete legacy mapping and requires confirmation',
+      () async {
+        Map<String, Object>? payload;
+        final bootstrapService = ReadStateService(
+          firestore: firestore,
+          bootstrapCall: (value) async {
+            payload = value;
+            return {'status': 'bootstrapped', 'schemaVersion': 1};
+          },
+        );
+        final fallback = DateTime.utc(2024, 1, 1);
+        await bootstrapService.bootstrapFromLegacy(
+          clubId,
+          LegacyReadStateSnapshot(
+            fallbackLastSeenAt: fallback,
+            announcementsLastSeenAt: DateTime.utc(2026, 9, 20),
+            eventConversations: {'event': DateTime.utc(2026, 9, 21)},
+            teamChannels: {'general': DateTime.utc(2026, 9, 22)},
+            sessionChats: {'session__accueil': DateTime.utc(2026, 9, 23)},
+          ),
+        );
+        expect(payload?['clubId'], clubId);
+        expect(payload?['schemaVersion'], 1);
+        expect(
+          payload?['fallbackLastSeenAtMs'],
+          fallback.millisecondsSinceEpoch,
+        );
+        expect(payload?['eventConversations'], isA<Map<String, int>>());
+
+        final mergeService = ReadStateService(
+          firestore: firestore,
+          bootstrapCall: (_) async => {'status': 'merged', 'schemaVersion': 1},
+        );
+        await expectLater(
+          mergeService.bootstrapFromLegacy(
+            clubId,
+            LegacyReadStateSnapshot(
+              fallbackLastSeenAt: fallback,
+              announcementsLastSeenAt: fallback,
+              eventConversations: const {},
+              teamChannels: const {},
+              sessionChats: const {},
+            ),
+          ),
+          completes,
+        );
+
+        final invalid = ReadStateService(
+          firestore: firestore,
+          bootstrapCall: (_) async => {'status': 'unknown', 'schemaVersion': 1},
+        );
+        await expectLater(
+          invalid.bootstrapFromLegacy(
+            clubId,
+            LegacyReadStateSnapshot(
+              fallbackLastSeenAt: fallback,
+              announcementsLastSeenAt: fallback,
+              eventConversations: const {},
+              teamChannels: const {},
+              sessionChats: const {},
+            ),
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
   });
 
   group('cursor unread policy', () {

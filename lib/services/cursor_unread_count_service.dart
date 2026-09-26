@@ -16,16 +16,15 @@ class CursorUnreadCountService {
     ReadStateService? readStateService,
     DateTime Function()? clock,
     Future<int> Function(Query<Map<String, dynamic>> query)? countQuery,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _readState = readStateService ?? ReadStateService(firestore: firestore),
-        _clock = clock ?? DateTime.now,
-        _countQuery = countQuery ?? _aggregateCount;
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _readState = readStateService ?? ReadStateService(firestore: firestore),
+       _clock = clock ?? DateTime.now,
+       _countQuery = countQuery ?? _aggregateCount;
 
   final FirebaseFirestore _firestore;
   final ReadStateService _readState;
   final DateTime Function() _clock;
   final Future<int> Function(Query<Map<String, dynamic>> query) _countQuery;
-  final Map<String, int> _lastKnown = <String, int>{};
 
   static const Duration queryTimeout = Duration(seconds: 8);
   static const int maxConcurrentQueries = 8;
@@ -41,61 +40,65 @@ class CursorUnreadCountService {
     String? targetFormationLevel,
     bool formationActive = false,
   }) async {
-    final values = await Future.wait<int?>([
-      _capture('announcements', () => countAnnouncements(clubId, userId)),
-      _capture('events', () => countEventMessages(clubId, userId)),
-      _capture(
-        'teams',
-        () => countTeamMessages(
-          clubId,
-          userId,
-          roles,
-          includeAllChannels: includeAllTeamChannels,
-          plongeurCode: plongeurCode,
-          targetFormationLevel: targetFormationLevel,
-          formationActive: formationActive,
-        ),
+    // This refresh is deliberately all-or-nothing. A partial canonical result
+    // is not a valid badge and must never replace a complete legacy/previous
+    // value in the UI.
+    final values = await Future.wait<int>([
+      countAnnouncements(clubId, userId),
+      countEventMessages(clubId, userId),
+      countTeamMessages(
+        clubId,
+        userId,
+        roles,
+        includeAllChannels: includeAllTeamChannels,
+        plongeurCode: plongeurCode,
+        targetFormationLevel: targetFormationLevel,
+        formationActive: formationActive,
       ),
-      _capture('sessions', () => countSessionMessages(clubId, userId, roles)),
+      countSessionMessages(clubId, userId, roles),
     ]);
     return CursorUnreadBreakdown(
-      announcements: _remember('announcements', values[0]),
-      events: _remember('events', values[1]),
-      teams: _remember('teams', values[2]),
-      sessions: _remember('sessions', values[3]),
+      announcements: values[0],
+      events: values[1],
+      teams: values[2],
+      sessions: values[3],
     );
   }
 
-  Future<int?> _capture(
-      String category, Future<int> Function() operation) async {
-    try {
-      return await operation();
-    } catch (error) {
-      debugPrint('⚠️ cursor unread $category count failed: $error');
-      return null;
+  Future<DateTime> _requiredCursor(
+    String clubId,
+    String userId,
+    ReadStateSection section, {
+    String? scopeId,
+  }) async {
+    final cursor = await _readState.getEffectiveCursor(
+      clubId,
+      userId,
+      section,
+      scopeId: scopeId,
+    );
+    if (cursor == null) {
+      throw StateError(
+        'Missing ${section.id} read cursor after confirmed bootstrap.',
+      );
     }
-  }
-
-  int _remember(String category, int? value) {
-    if (value != null) {
-      _lastKnown[category] = value;
-    }
-    return value ?? _lastKnown[category] ?? 0;
+    return cursor;
   }
 
   Future<int> countAnnouncements(String clubId, String userId) async {
-    final cursor = await _readState.getEffectiveCursor(
-          clubId,
-          userId,
-          ReadStateSection.announcements,
-        ) ??
-        _clock();
+    final cursor = await _requiredCursor(
+      clubId,
+      userId,
+      ReadStateSection.announcements,
+    );
     final timestamp = Timestamp.fromDate(cursor);
     final collection = _firestore.collection('clubs/$clubId/announcements');
 
-    final canonical = await _countQuery(collection
-        .where('visibility', isEqualTo: 'published')
-        .where('last_activity_at', isGreaterThan: timestamp)).timeout(queryTimeout);
+    final canonical = await _countQuery(
+      collection
+          .where('visibility', isEqualTo: 'published')
+          .where('last_activity_at', isGreaterThan: timestamp),
+    ).timeout(queryTimeout);
 
     // Temporary compatibility for documents that predate visibility/activity
     // normalization. These are deliberately filtered client-side by id and
@@ -112,13 +115,15 @@ class CursorUnreadCountService {
         final indexedDate = indexedActivity is Timestamp
             ? indexedActivity.toDate()
             : indexedActivity is DateTime
-                ? indexedActivity
-                : null;
+            ? indexedActivity
+            : null;
         // Field-maintenance triggers are asynchronous. A published document
         // whose indexed activity is still at/before the cursor must use this
         // compatibility path; otherwise the canonical aggregate already has it.
-        if (data['deleted_at'] == null && data['visibility'] != 'deleted' &&
-            (data['visibility'] == null || indexedDate == null ||
+        if (data['deleted_at'] == null &&
+            data['visibility'] != 'deleted' &&
+            (data['visibility'] == null ||
+                indexedDate == null ||
                 !indexedDate.isAfter(cursor))) {
           legacyIds.add(document.id);
         }
@@ -146,28 +151,35 @@ class CursorUnreadCountService {
       }
     }
     final tasks = operationIds
-        .map((operationId) => () async {
-              final operation = await _firestore
-                  .doc('clubs/$clubId/operations/$operationId')
-                  .get()
-                  .timeout(queryTimeout);
-              if (!operation.exists ||
-                  !isUnreadEligibleEvent(
-                      operation.data() ?? const {}, _clock())) {
-                return 0;
-              }
-              final cursor = await _readState.getEffectiveCursor(
-                    clubId,
-                    userId,
-                    ReadStateSection.events,
-                    scopeId: operationId,
-                  ) ??
-                  _clock();
-              return _countQuery(_firestore
+        .map(
+          (operationId) => () async {
+            final operation = await _firestore
+                .doc('clubs/$clubId/operations/$operationId')
+                .get()
+                .timeout(queryTimeout);
+            if (!operation.exists ||
+                !isUnreadEligibleEvent(
+                  operation.data() ?? const {},
+                  _clock(),
+                )) {
+              return 0;
+            }
+            final cursor = await _requiredCursor(
+              clubId,
+              userId,
+              ReadStateSection.events,
+              scopeId: operationId,
+            );
+            return _countQuery(
+              _firestore
                   .collection('clubs/$clubId/operations/$operationId/messages')
-                  .where('created_at',
-                      isGreaterThan: Timestamp.fromDate(cursor))).timeout(queryTimeout);
-            })
+                  .where(
+                    'created_at',
+                    isGreaterThan: Timestamp.fromDate(cursor),
+                  ),
+            ).timeout(queryTimeout);
+          },
+        )
         .toList();
     return _sumBounded(tasks);
   }
@@ -188,21 +200,30 @@ class CursorUnreadCountService {
       targetFormationLevel: targetFormationLevel,
       formationActive: formationActive,
     );
-    return _sumBounded(channels
-        .map((channelId) => () async {
-              final cursor = await _readState.getEffectiveCursor(
-                    clubId,
-                    userId,
-                    ReadStateSection.teams,
-                    scopeId: channelId,
-                  ) ??
-                  _clock();
-              return _countQuery(_firestore
-                  .collection('clubs/$clubId/team_channels/$channelId/messages')
-                  .where('created_at',
-                      isGreaterThan: Timestamp.fromDate(cursor))).timeout(queryTimeout);
-            })
-        .toList());
+    return _sumBounded(
+      channels
+          .map(
+            (channelId) => () async {
+              final cursor = await _requiredCursor(
+                clubId,
+                userId,
+                ReadStateSection.teams,
+                scopeId: channelId,
+              );
+              return _countQuery(
+                _firestore
+                    .collection(
+                      'clubs/$clubId/team_channels/$channelId/messages',
+                    )
+                    .where(
+                      'created_at',
+                      isGreaterThan: Timestamp.fromDate(cursor),
+                    ),
+              ).timeout(queryTimeout);
+            },
+          )
+          .toList(),
+    );
   }
 
   Future<int> countSessionMessages(
@@ -230,20 +251,23 @@ class CursorUnreadCountService {
     for (final session in sessions.docs) {
       for (final group in groups) {
         if (group != 'niveau') {
-          tasks
-              .add(() => _countSessionScope(clubId, userId, session.id, group));
+          tasks.add(
+            () => _countSessionScope(clubId, userId, session.id, group),
+          );
           continue;
         }
         final levels = session.data()['niveaux'];
         if (levels is Map) {
           for (final level in levels.keys) {
-            tasks.add(() => _countSessionScope(
-                  clubId,
-                  userId,
-                  session.id,
-                  group,
-                  level.toString(),
-                ));
+            tasks.add(
+              () => _countSessionScope(
+                clubId,
+                userId,
+                session.id,
+                group,
+                level.toString(),
+              ),
+            );
           }
         }
       }
@@ -259,13 +283,12 @@ class CursorUnreadCountService {
     String? groupLevel,
   ]) async {
     final scopeId = readStateSessionScopeId(sessionId, groupType, groupLevel);
-    final cursor = await _readState.getEffectiveCursor(
-          clubId,
-          userId,
-          ReadStateSection.sessions,
-          scopeId: scopeId,
-        ) ??
-        _clock();
+    final cursor = await _requiredCursor(
+      clubId,
+      userId,
+      ReadStateSection.sessions,
+      scopeId: scopeId,
+    );
     Query<Map<String, dynamic>> query = _firestore
         .collection('clubs/$clubId/piscine_sessions/$sessionId/messages')
         .where('group_type', isEqualTo: groupType)
@@ -282,21 +305,32 @@ class CursorUnreadCountService {
     }
     var next = 0;
     var total = 0;
+    Object? firstError;
+    StackTrace? firstStackTrace;
     Future<void> worker() async {
       while (next < tasks.length) {
         final index = next++;
         try {
           total += await tasks[index]();
-        } catch (error) {
+        } catch (error, stackTrace) {
+          firstError ??= error;
+          firstStackTrace ??= stackTrace;
           debugPrint('⚠️ cursor unread subquery failed: $error');
         }
       }
     }
 
-    await Future.wait(List<Future<void>>.generate(
-      tasks.length < maxConcurrentQueries ? tasks.length : maxConcurrentQueries,
-      (_) => worker(),
-    ));
+    await Future.wait(
+      List<Future<void>>.generate(
+        tasks.length < maxConcurrentQueries
+            ? tasks.length
+            : maxConcurrentQueries,
+        (_) => worker(),
+      ),
+    );
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    }
     return total;
   }
 }
@@ -323,11 +357,11 @@ class CursorUnreadBreakdown {
   int get total => events + communication;
 
   Map<String, int> toLegacyMap() => <String, int>{
-        'announcements': announcements,
-        'event_messages': events,
-        'team_messages': teams,
-        'session_messages': sessions,
-      };
+    'announcements': announcements,
+    'event_messages': events,
+    'team_messages': teams,
+    'session_messages': sessions,
+  };
 }
 
 DateTime? _operationEnd(Map<String, dynamic> operation) {

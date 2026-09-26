@@ -46,6 +46,30 @@ describe('read-state badge reconciliation', () => {
     expect(cursorAdvanced(before, before)).toBe(false);
   });
 
+  test('bootstrap scope burst is suppressed and sends no transient zero badge', async () => {
+    mockDb = seeded();
+    const committedAt = ts('2026-03-02T00:00:00Z');
+    await mockDb.doc(
+      'clubs/c/members/m/read_state_bootstraps/unread_cursor_v1',
+    ).set({
+      schema_version: 1,
+      status: 'complete',
+      bootstrapped_at: committedAt,
+    });
+    const writes = Array.from({ length: 25 }, () => reconcileReadStateBadge({
+      db: mockDb,
+      clubId: 'c',
+      memberId: 'm',
+      before: {},
+      after: { last_seen_at: committedAt, updated_at: committedAt },
+    }));
+
+    await expect(Promise.all(writes)).resolves.toEqual(
+      Array.from({ length: 25 }, () => ({ skipped: 'bootstrap_managed' })),
+    );
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
   test('ON advanced cursor sends canonical total from seeded documents', async () => {
     mockDb = seeded({ message: true });
     const task = reconcileReadStateBadge({ db: mockDb, clubId: 'c', memberId: 'm', before, after });

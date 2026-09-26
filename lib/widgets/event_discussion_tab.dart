@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../providers/event_message_provider.dart';
 import '../providers/unread_count_provider.dart';
 import '../services/local_read_tracker.dart';
 import '../services/profile_service.dart';
+import '../services/visible_read_ack_gate.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
 import 'message_edit_sheet.dart';
@@ -48,7 +50,8 @@ class EventDiscussionTab extends StatefulWidget {
   State<EventDiscussionTab> createState() => _EventDiscussionTabState();
 }
 
-class _EventDiscussionTabState extends State<EventDiscussionTab> {
+class _EventDiscussionTabState extends State<EventDiscussionTab>
+    with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ProfileService _profileService = ProfileService();
@@ -63,6 +66,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   bool _isUploading = false;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+  final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
 
   /// Key sur le divider "Nouveaux messages" — sert à scroller exactement
   /// jusqu'à la première ligne non-lue à l'ouverture du chat.
@@ -82,11 +86,14 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   @override
   void initState() {
     super.initState();
-    _checkParticipation();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_captureLastReadBeforeOpen());
+    unawaited(_checkParticipation());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -105,27 +112,88 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
     if (!mounted) return;
     setState(() => _hasCheckedParticipation = true);
-    // The discussion is now visible with a successful participant check.  Do
-    // not acknowledge a cursor while the initial load failed or is pending.
-    await _markMessagesAsRead();
+    _scheduleVisibleMessagesAcknowledgement();
   }
 
-  Future<void> _markMessagesAsRead() async {
+  Future<void> _captureLastReadBeforeOpen() async {
     final tracker = LocalReadTracker();
     await tracker.init();
     final key = 'operation_${widget.operationId}';
-    _lastReadBeforeOpen =
+    final lastRead =
         tracker.getLastRead(key) ?? tracker.installBaseline ?? DateTime(2024);
-
     if (!mounted) return;
+    setState(() => _lastReadBeforeOpen = lastRead);
+    _scheduleVisibleMessagesAcknowledgement();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _scheduleVisibleMessagesAcknowledgement();
+    }
+  }
+
+  String _messageSnapshotToken(List<EventMessage> messages) {
+    if (messages.isEmpty) return 'empty';
+    final first = messages.first;
+    final last = messages.last;
+    return '${messages.length}:${first.id}:${first.createdAt.microsecondsSinceEpoch}:'
+        '${last.id}:${last.createdAt.microsecondsSinceEpoch}';
+  }
+
+  void _recordSuccessfulMessageSnapshot(
+    List<EventMessage> messages, {
+    required bool cursorAuthority,
+    required bool routeIsCurrent,
+  }) {
+    _readAckGate.recordContent(_messageSnapshotToken(messages));
+    if (routeIsCurrent && _readAckGate.hasPending(cursor: cursorAuthority)) {
+      _scheduleVisibleMessagesAcknowledgement();
+    }
+  }
+
+  void _scheduleVisibleMessagesAcknowledgement() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_acknowledgeVisibleMessages());
+    });
+  }
+
+  Future<void> _acknowledgeVisibleMessages() async {
+    if (!mounted || !isCurrentRouteForReadAcknowledgement(context)) return;
     final unreadProvider = context.read<UnreadCountProvider>();
-    if (unreadProvider.usesCursorReadState) {
-      await unreadProvider.markEventConversationSeen(widget.operationId);
-    } else {
-      await context.read<EventMessageProvider>().markAsRead(
+    final useCursor = unreadProvider.usesCursorReadState;
+    final revision = _readAckGate.begin(
+      ready: _hasCheckedParticipation && _lastReadBeforeOpen != null,
+      cursor: useCursor,
+    );
+    if (revision == null) return;
+
+    var succeeded = false;
+    try {
+      if (useCursor) {
+        await unreadProvider.markEventConversationSeen(widget.operationId);
+      } else {
+        await context.read<EventMessageProvider>().markAsRead(
             operationId: widget.operationId,
             unreadProvider: unreadProvider,
           );
+      }
+      succeeded = true;
+    } catch (error) {
+      debugPrint('⚠️ Event discussion read acknowledgement failed: $error');
+    } finally {
+      _readAckGate.finish(
+        revision: revision,
+        cursor: useCursor,
+        succeeded: succeeded,
+      );
+    }
+
+    if (!mounted || !succeeded) return;
+    final currentCursorAuthority =
+        context.read<UnreadCountProvider>().usesCursorReadState;
+    if (_readAckGate.hasPending(cursor: currentCursorAuthority)) {
+      _scheduleVisibleMessagesAcknowledgement();
     }
   }
 
@@ -183,7 +251,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         attachments: attachments,
         poll: _pendingPoll,
       );
-      if (mounted) {
+      if (mounted && isCurrentRouteForReadAcknowledgement(context)) {
         await context
             .read<UnreadCountProvider>()
             .markEventConversationSeen(widget.operationId);
@@ -517,6 +585,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final messageProvider = context.watch<EventMessageProvider>();
+    final usesCursorReadState =
+        context.watch<UnreadCountProvider>().usesCursorReadState;
+    final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final canWrite = _hasCheckedParticipation &&
         messageProvider.isParticipant(widget.operationId);
@@ -549,6 +620,13 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               }
 
               final messages = snapshot.data ?? [];
+              if (snapshot.hasData) {
+                _recordSuccessfulMessageSnapshot(
+                  messages,
+                  cursorAuthority: usesCursorReadState,
+                  routeIsCurrent: routeIsCurrent,
+                );
+              }
 
               if (messages.isEmpty) {
                 return Center(

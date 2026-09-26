@@ -13,6 +13,7 @@ import '../../providers/unread_count_provider.dart';
 import '../../services/local_read_tracker.dart';
 import '../../services/profile_service.dart';
 import '../../services/team_channel_service.dart';
+import '../../services/visible_read_ack_gate.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/message_hover_caret.dart';
 import '../../widgets/attachment_picker.dart';
@@ -51,6 +52,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
 
   bool _isSending = false;
   bool _hasMarkedAsRead = false;
+  bool _hasLoadedMessageSnapshot = false;
   bool _initialScrollDone = false;
   Poll? _pendingPoll;
 
@@ -58,7 +60,15 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _markMessagesAsRead();
+    // Cursor mode acknowledges only after the message stream successfully
+    // yields. Legacy keeps its existing eager local acknowledgement.
+    if (!context.read<UnreadCountProvider>().usesCursorReadState) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_markMessagesAsRead(forceLegacy: true));
+        }
+      });
+    }
     if (widget.openPollComposer) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _createPoll();
@@ -109,9 +119,14 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     }
   }
 
-  Future<void> _markMessagesAsRead() async {
-    final unreadProvider = context.read<UnreadCountProvider>();
-    if (unreadProvider.usesCursorReadState) {
+  Future<void> _markMessagesAsRead({
+    UnreadCountProvider? watchedUnreadProvider,
+    bool forceLegacy = false,
+  }) async {
+    if (!isCurrentRouteForReadAcknowledgement(context)) return;
+    final unreadProvider =
+        watchedUnreadProvider ?? context.read<UnreadCountProvider>();
+    if (!forceLegacy && unreadProvider.usesCursorReadState) {
       await unreadProvider.markTeamChannelSeen(widget.channel.id);
       return;
     }
@@ -131,7 +146,9 @@ class _TeamChatScreenState extends State<TeamChatScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
+    if (state == AppLifecycleState.resumed &&
+        mounted &&
+        _hasLoadedMessageSnapshot) {
       unawaited(_markMessagesAsRead());
     }
   }
@@ -175,10 +192,10 @@ class _TeamChatScreenState extends State<TeamChatScreen>
         attachments: attachments,
         poll: _pendingPoll,
       );
-      if (mounted) {
-        await context
-            .read<UnreadCountProvider>()
-            .markTeamChannelSeen(widget.channel.id);
+      if (mounted && isCurrentRouteForReadAcknowledgement(context)) {
+        await context.read<UnreadCountProvider>().markTeamChannelSeen(
+          widget.channel.id,
+        );
       }
 
       _messageController.clear();
@@ -473,6 +490,8 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final unreadProvider = context.watch<UnreadCountProvider>();
+    final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
@@ -552,9 +571,16 @@ class _TeamChatScreenState extends State<TeamChatScreen>
                     // A successful stream emission (including an empty
                     // channel) is the visibility acknowledgement point. The
                     // cursor service coalesces rapid new-message emissions.
-                    if (snapshot.hasData) {
+                    if (snapshot.hasData && routeIsCurrent) {
+                      _hasLoadedMessageSnapshot = true;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) unawaited(_markMessagesAsRead());
+                        if (mounted) {
+                          unawaited(
+                            _markMessagesAsRead(
+                              watchedUnreadProvider: unreadProvider,
+                            ),
+                          );
+                        }
                       });
                     }
 

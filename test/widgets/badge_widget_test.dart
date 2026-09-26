@@ -100,6 +100,8 @@ class MockUnreadCountProvider extends ChangeNotifier
   @override
   UnreadCursorV1Mode get cursorMode => UnreadCursorV1Mode.off;
   @override
+  bool get isCursorReady => false;
+  @override
   bool get usesCursorReadState => false;
   @override
   bool get isListening => false;

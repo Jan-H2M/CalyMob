@@ -96,6 +96,8 @@ exports.onNewAnnouncementReply = onNewAnnouncementReply;
 const { onReadStateWritten, onReadStateScopeWritten } = require('./src/notifications/onReadStateWritten');
 exports.onReadStateWritten = onReadStateWritten;
 exports.onReadStateScopeWritten = onReadStateScopeWritten;
+const { bootstrapUnreadCursorV1 } = require('./src/notifications/bootstrapUnreadCursor');
+exports.bootstrapUnreadCursorV1 = bootstrapUnreadCursorV1;
 const { onAnnouncementWritten } = require('./src/notifications/announcementFieldMaintenance');
 exports.onAnnouncementWritten = onAnnouncementWritten;
 
