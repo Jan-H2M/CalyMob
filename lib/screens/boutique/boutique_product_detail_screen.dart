@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class BoutiqueProductDetailScreen extends StatefulWidget {
@@ -966,7 +967,9 @@ class _ProductImagesState extends State<_ProductImages> {
 
   Future<void> _openFullscreen(List<String> images) {
     return Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      boutiqueAccessGuardedRoute<void>(
+        sourceContext: context,
+        requiredSection: 'produits',
         fullscreenDialog: true,
         builder: (_) => _FullscreenProductGallery(
           images: images,

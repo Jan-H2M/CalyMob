@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/payment_communication_copy_button.dart';
 
@@ -208,7 +209,9 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'commandes',
                             builder: (_) => _OrderDetailScreen(
                               order: order,
                               paymentCommunication: paymentCommunication,

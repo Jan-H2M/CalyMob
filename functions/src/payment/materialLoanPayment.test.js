@@ -25,7 +25,9 @@ describe('material loan payment helpers', () => {
   test('allows only gonflage members to manage material loans', () => {
     expect(isMaterialLoanManager({ app_role: 'admin' })).toBe(false);
     expect(isMaterialLoanManager({ clubStatuten: ['Encadrant'] })).toBe(false);
-    expect(isMaterialLoanManager({ clubStatuten: ['gonflage'] })).toBe(true);
+    for (const role of ['G', 'g', 'Gonflage', 'gOnFlAgE', ' G ']) {
+      expect(isMaterialLoanManager({ clubStatuten: [role] })).toBe(true);
+    }
     expect(isMaterialLoanManager({ clubStatuten: ['membre'] })).toBe(false);
   });
 

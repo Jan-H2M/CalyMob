@@ -5,15 +5,36 @@ function getClubRef(db, clubId) {
 }
 
 const BOUTIQUE_ACCESS_MODES = ['tous', 'testeurs', 'masque'];
+const BOUTIQUE_RESPONSIBILITY_VALUES = new Set([
+  'Responsable boutique',
+  'Responsable Boutique',
+  'responsable boutique',
+  'RESPONSABLE BOUTIQUE',
+  'RB',
+  'rb',
+  'Rb',
+  'rB',
+]);
 
 // Zichtbaarheidsstand van de Boutique-module (CalyCompta > Boutique > Réglages).
-// 'tous' = elk lid, 'testeurs' = admins + feature_access.boutique (historisch
-// gedrag, tevens default), 'masque' = niemand. Zelfde semantiek als de Dart-
-// client (FeatureFlagService.parseBoutiqueVisibility) en firestore.rules
-// canAccessBoutique — bij wijziging alle drie aanpassen!
+// 'testeurs' blijft de historische wire value voor voorbereiding: alleen een
+// actief lid met de clubfunctie Responsable boutique. 'tous' = elk actief lid.
+// 'masque' wordt alleen defensief gelezen voor bestaande data. Zelfde semantiek
+// als de Dart-client en firestore.rules — bij wijziging alle drie aanpassen!
 function resolveBoutiqueAccessMode(flags) {
   const raw = flags && flags.boutiqueAccess;
   return BOUTIQUE_ACCESS_MODES.includes(raw) ? raw : 'testeurs';
+}
+
+function isActiveBoutiqueMember(member) {
+  return Boolean(member) && member.member_status === 'active';
+}
+
+function hasBoutiqueResponsibility(member) {
+  const statuten = member && member.clubStatuten;
+  if (!Array.isArray(statuten)) return false;
+
+  return statuten.some((value) => BOUTIQUE_RESPONSIBILITY_VALUES.has(value));
 }
 
 async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
@@ -25,25 +46,22 @@ async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
   const flags = flagsSnap.exists ? flagsSnap.data() : {};
   const enabled = flags.boutiqueEnabled === true || flags.boutiqueMobileEnabled === true;
   const member = memberSnap.exists ? memberSnap.data() : {};
-  const appRole = String(member.app_role || '').toLowerCase();
-  const isAdmin = appRole === 'admin' || appRole === 'superadmin';
-  const access = member.feature_access;
-  const hasMemberAccess = access && typeof access === 'object' && access.boutique === true;
-  const isMember = memberSnap.exists;
+  const isActiveMember = memberSnap.exists && isActiveBoutiqueMember(member);
+  const hasResponsibility = hasBoutiqueResponsibility(member);
 
   const accessMode = resolveBoutiqueAccessMode(flags);
   const modeAllows =
     accessMode === 'tous'
-      ? isMember
+      ? isActiveMember
       : accessMode === 'testeurs'
-        ? isAdmin || hasMemberAccess
+        ? isActiveMember && hasResponsibility
         : false; // 'masque' — niemand, ook admins niet (zelfde als de client)
 
   if (!enabled || !modeAllows) {
     throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
   }
 
-  return { isAdmin, hasMemberAccess };
+  return { isActiveMember, hasBoutiqueResponsibility: hasResponsibility };
 }
 
 function buildInvalidInputError(message, details = {}) {
@@ -170,6 +188,8 @@ function buildEpcQrPayload({ iban, beneficiary, amount, ogm, communication }) {
 module.exports = {
   REGION,
   assertBoutiqueAccess,
+  hasBoutiqueResponsibility,
+  isActiveBoutiqueMember,
   resolveBoutiqueAccessMode,
   buildDomainError,
   buildEpcQrPayload,
