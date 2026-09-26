@@ -1,6 +1,8 @@
 const { MemoryFirestore, MemoryTimestamp } = require('../../test-utils/memoryFirestore');
 const {
+  bootstrapUnreadCursorV1,
   bootstrapUnreadCursor,
+  bootstrapUnreadCursorV1Options,
   normalizeInput,
   MIN_TIMESTAMP_MS,
 } = require('./bootstrapUnreadCursor');
@@ -64,6 +66,15 @@ function database({ active = true, pilot = true } = {}) {
 const timestampFromMillis = value => ({ millis: value });
 const serverTimestamp = () => ({ serverTimestamp: true });
 const nowMs = Date.parse('2026-09-26T12:00:00Z');
+
+test('callable transport is public while handler authentication remains required', () => {
+  expect(bootstrapUnreadCursorV1Options.invoker).toBe('public');
+});
+
+test('callable handler still rejects a request without Firebase auth', async () => {
+  await expect(bootstrapUnreadCursorV1.run({ auth: null, data: {} }))
+    .rejects.toMatchObject({ code: 'unauthenticated' });
+});
 
 function run(db, payload = input(), overrides = {}) {
   return bootstrapUnreadCursor({

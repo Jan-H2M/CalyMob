@@ -1,6 +1,8 @@
 const { MemoryFirestore } = require('../../test-utils/memoryFirestore');
 const {
+  acknowledgeVisibleUnreadCursorV1,
   acknowledgeVisibleUnreadCursor,
+  acknowledgeVisibleUnreadCursorV1Options,
   visibleSourcePath,
 } = require('./acknowledgeVisibleUnreadCursor');
 
@@ -8,6 +10,15 @@ const clubId = 'calypso';
 const uid = 'member-a';
 const memberPath = `clubs/${clubId}/members/${uid}`;
 const timestamp = millis => ({ millis, toMillis: () => millis });
+
+test('callable transport is public while handler authentication remains required', () => {
+  expect(acknowledgeVisibleUnreadCursorV1Options.invoker).toBe('public');
+});
+
+test('callable handler still rejects a request without Firebase auth', async () => {
+  await expect(acknowledgeVisibleUnreadCursorV1.run({ auth: null, data: {} }))
+    .rejects.toMatchObject({ code: 'unauthenticated' });
+});
 
 function run(db, input) {
   return acknowledgeVisibleUnreadCursor({

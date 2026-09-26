@@ -436,8 +436,18 @@ async function bootstrapUnreadCursor({
   return result;
 }
 
+const bootstrapUnreadCursorV1Options = Object.freeze({
+  region: REGION,
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 20,
+  // Callable authentication happens after Cloud Run admits the HTTPS request.
+  // The handler below still requires a verified request.auth.uid.
+  invoker: 'public',
+});
+
 const bootstrapUnreadCursorV1 = onCall(
-  { region: REGION, timeoutSeconds: 30, memory: '256MiB', maxInstances: 20 },
+  bootstrapUnreadCursorV1Options,
   async request => {
     const uid = request.auth?.uid;
     if (!uid) fail('unauthenticated', 'Authentification requise.');
@@ -454,6 +464,7 @@ const bootstrapUnreadCursorV1 = onCall(
 module.exports = {
   bootstrapUnreadCursorV1,
   bootstrapUnreadCursor,
+  bootstrapUnreadCursorV1Options,
   normalizeInput,
   cursorEnabledForMember,
   isTrustedMigrationSeed,

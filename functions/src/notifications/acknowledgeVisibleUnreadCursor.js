@@ -173,8 +173,18 @@ async function acknowledgeVisibleUnreadCursor({
   });
 }
 
+const acknowledgeVisibleUnreadCursorV1Options = Object.freeze({
+  region: REGION,
+  timeoutSeconds: 15,
+  memory: '256MiB',
+  maxInstances: 40,
+  // Callable authentication happens after Cloud Run admits the HTTPS request.
+  // The handler below still requires a verified request.auth.uid.
+  invoker: 'public',
+});
+
 const acknowledgeVisibleUnreadCursorV1 = onCall(
-  { region: REGION, timeoutSeconds: 15, memory: '256MiB', maxInstances: 40 },
+  acknowledgeVisibleUnreadCursorV1Options,
   async request => {
     if (!request.auth?.uid) fail('unauthenticated', 'Authentification requise.');
     return acknowledgeVisibleUnreadCursor({
@@ -188,6 +198,7 @@ const acknowledgeVisibleUnreadCursorV1 = onCall(
 module.exports = {
   acknowledgeVisibleUnreadCursorV1,
   acknowledgeVisibleUnreadCursor,
+  acknowledgeVisibleUnreadCursorV1Options,
   visibleSourcePath,
   visibleCreateTime,
 };
