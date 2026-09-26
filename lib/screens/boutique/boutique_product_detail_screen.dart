@@ -1120,6 +1120,8 @@ class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
   final Map<int, TransformationController> _imageControllers = {};
   late int _selectedIndex;
   bool _isCurrentImageZoomed = false;
+  int? _swipePointer;
+  double? _swipeStartX;
 
   @override
   void initState() {
@@ -1161,6 +1163,35 @@ class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
     });
   }
 
+  void _startSwipe(PointerDownEvent event) {
+    if (_isCurrentImageZoomed || _swipePointer != null) return;
+    _swipePointer = event.pointer;
+    _swipeStartX = event.localPosition.dx;
+  }
+
+  void _finishSwipe(PointerEvent event) {
+    if (event.pointer != _swipePointer) return;
+    final startX = _swipeStartX;
+    _swipePointer = null;
+    _swipeStartX = null;
+    if (_isCurrentImageZoomed || startX == null) return;
+
+    const minimumSwipeDistance = 48.0;
+    final distance = event.localPosition.dx - startX;
+    if (distance <= -minimumSwipeDistance) {
+      _moveTo(_selectedIndex + 1);
+    } else if (distance >= minimumSwipeDistance) {
+      _moveTo(_selectedIndex - 1);
+    }
+  }
+
+  void _cancelSwipe(PointerEvent event) {
+    if (event.pointer == _swipePointer) {
+      _swipePointer = null;
+      _swipeStartX = null;
+    }
+  }
+
   void _moveTo(int index) {
     if (index < 0 || index >= widget.images.length) return;
     _pageController.animateToPage(
@@ -1177,35 +1208,40 @@ class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
       body: SafeArea(
         child: Stack(
           children: [
-            PageView.builder(
-              controller: _pageController,
-              physics: _isCurrentImageZoomed
-                  ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(),
-              itemCount: widget.images.length,
-              onPageChanged: _selectImage,
-              itemBuilder: (context, index) {
-                final controller = _controllerFor(index);
-                return InteractiveViewer(
-                  transformationController: controller,
-                  // A regular one-finger drag stays available for PageView.
-                  // Once pinched open, panning belongs to the enlarged image.
-                  panEnabled: index == _selectedIndex && _isCurrentImageZoomed,
-                  minScale: 1,
-                  maxScale: 4,
-                  child: Center(
-                    child: Image.network(
-                      widget.images[index],
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white,
-                        size: 64,
+            Listener(
+              // InteractiveViewer owns its scale gestures. Raw pointer events
+              // keep regular horizontal swipes reliable while the image is at
+              // its normal scale; once zoomed, all dragging belongs to it.
+              onPointerDown: _startSwipe,
+              onPointerUp: _finishSwipe,
+              onPointerCancel: _cancelSwipe,
+              child: PageView.builder(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: widget.images.length,
+                onPageChanged: _selectImage,
+                itemBuilder: (context, index) {
+                  final controller = _controllerFor(index);
+                  return InteractiveViewer(
+                    transformationController: controller,
+                    panEnabled:
+                        index == _selectedIndex && _isCurrentImageZoomed,
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Center(
+                      child: Image.network(
+                        widget.images[index],
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white,
+                          size: 64,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
             Positioned(
               top: 8,
