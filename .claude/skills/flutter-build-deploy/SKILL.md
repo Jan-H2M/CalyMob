@@ -28,7 +28,7 @@ When the user asks to check the store status ("vérifie l'état des stores", "ch
 
 ### Step 3: Compare with local version
 ```bash
-grep "^version:" /Users/jan/Documents/GitHub/Calypso/CalyMob/pubspec.yaml
+grep "^version:" /Users/jan/Dev/GitHub/Calypso/CalyMob/pubspec.yaml
 ```
 
 Present a summary table with both stores side by side.
@@ -160,7 +160,7 @@ Ask the user if they want to bump the version. If yes, ask which type (patch/min
 The project already has a bump script that handles both pubspec.yaml AND Firestore sync:
 
 ```bash
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 ./scripts/bump_version.sh patch   # or minor, or major
 ```
 
@@ -172,7 +172,7 @@ This script:
 
 If the user doesn't want to bump, read the current version:
 ```bash
-grep "^version:" /Users/jan/Documents/GitHub/Calypso/CalyMob/pubspec.yaml
+grep "^version:" /Users/jan/Dev/GitHub/Calypso/CalyMob/pubspec.yaml
 ```
 
 ## Phase 3: Build AAB
@@ -183,6 +183,30 @@ The build takes several minutes. Use a background script approach to avoid timeo
 # Create build script
 cat > /tmp/build_calymob.sh << 'SCRIPT'
 #!/bin/bash
+set -euo pipefail
+
+PROJECT_ROOT="/Users/jan/Dev/GitHub/Calypso/CalyMob"
+LOG_PATH="/tmp/build_calymob.log"
+AAB_PATH="$PROJECT_ROOT/build/app/outputs/bundle/release/app-release.aab"
+BUNDLE_MANIFEST="$PROJECT_ROOT/build/app/intermediates/bundle_manifest/release/processApplicationManifestReleaseForBundle/AndroidManifest.xml"
+BUILD_START_MARKER=""
+
+cleanup() {
+  local status=$?
+  set +e
+  unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
+  if [ "$status" -ne 0 ]; then
+    rm -f -- "$AAB_PATH" "$BUNDLE_MANIFEST"
+  fi
+  if [ -n "$BUILD_START_MARKER" ]; then
+    rm -f -- "$BUILD_START_MARKER"
+  fi
+  printf 'EXIT_CODE=%s\n' "$status" >> "$LOG_PATH"
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
@@ -191,10 +215,66 @@ export CALYMOB_UPLOAD_STORE_FILE="$HOME/.private_keys/android-upload-2026-09-26.
 export CALYMOB_UPLOAD_PASSWORD_FILE="$HOME/.private_keys/android-upload-2026-09-26.password"
 export CALYMOB_UPLOAD_KEY_ALIAS="upload-2026-09-26"
 
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob
-flutter build appbundle --release 2>&1 | tee /tmp/build_calymob.log
-echo "EXIT_CODE=$?" >> /tmp/build_calymob.log
-unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
+cd "$PROJECT_ROOT"
+SOURCE_COMMIT=$(git rev-parse --verify HEAD)
+VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+if [[ ! "$VERSION_LINE" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)$ ]]; then
+  echo "Invalid pubspec version: $VERSION_LINE" >&2
+  exit 1
+fi
+EXPECTED_VERSION="${BASH_REMATCH[1]}"
+EXPECTED_BUILD="${BASH_REMATCH[2]}"
+
+# A failed command must not leave an older/partial AAB that looks successful.
+rm -f -- "$AAB_PATH" "$BUNDLE_MANIFEST"
+BUILD_START_MARKER=$(mktemp "${TMPDIR:-/tmp}/calymob-aab-build.XXXXXX")
+
+set +e
+flutter build appbundle --release 2>&1 | tee "$LOG_PATH"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+flutter_status="${pipeline_status[0]:-1}"
+tee_status="${pipeline_status[1]:-1}"
+printf 'FLUTTER_EXIT_CODE=%s\nTEE_EXIT_CODE=%s\n' "$flutter_status" "$tee_status" >> "$LOG_PATH"
+if [ "$flutter_status" -ne 0 ]; then
+  exit "$flutter_status"
+fi
+if [ "$tee_status" -ne 0 ]; then
+  exit "$tee_status"
+fi
+
+if [ ! -s "$AAB_PATH" ] || [ "$AAB_PATH" -ot "$BUILD_START_MARKER" ]; then
+  echo "Build did not create a fresh non-empty AAB." >&2
+  exit 1
+fi
+if [ ! -s "$BUNDLE_MANIFEST" ] || [ "$BUNDLE_MANIFEST" -ot "$BUILD_START_MARKER" ]; then
+  echo "Build did not create a fresh bundle manifest." >&2
+  exit 1
+fi
+
+ARTIFACT_VERSION=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' "$BUNDLE_MANIFEST")
+ARTIFACT_BUILD=$(sed -n 's/.*android:versionCode="\([^"]*\)".*/\1/p' "$BUNDLE_MANIFEST")
+if [ "$ARTIFACT_VERSION" != "$EXPECTED_VERSION" ] || [ "$ARTIFACT_BUILD" != "$EXPECTED_BUILD" ]; then
+  echo "AAB version/build does not match pubspec.yaml." >&2
+  exit 1
+fi
+if [ "$(git rev-parse --verify HEAD)" != "$SOURCE_COMMIT" ]; then
+  echo "Git source commit changed during the build." >&2
+  exit 1
+fi
+if [ "$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)" != "$VERSION_LINE" ]; then
+  echo "pubspec version changed during the build." >&2
+  exit 1
+fi
+
+AAB_SHA256=$(shasum -a 256 "$AAB_PATH" | awk '{print $1}')
+if [[ ! "$AAB_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not calculate the AAB SHA-256." >&2
+  exit 1
+fi
+AAB_MTIME=$(stat -f '%m' "$AAB_PATH")
+printf 'SOURCE_COMMIT=%s\nVERSION=%s\nBUILD=%s\nAAB_MTIME_EPOCH=%s\nAAB_SHA256=%s\n' \
+  "$SOURCE_COMMIT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$AAB_MTIME" "$AAB_SHA256" >> "$LOG_PATH"
 SCRIPT
 chmod +x /tmp/build_calymob.sh
 ```
@@ -212,14 +292,18 @@ Monitor progress by checking the log:
 tail -20 /tmp/build_calymob.log 2>/dev/null
 ```
 
-Wait until you see either "BUILD SUCCESSFUL" or "BUILD FAILED" in the log. The AAB output will be at:
+Only `EXIT_CODE=0` together with matching `SOURCE_COMMIT`, `VERSION`, `BUILD`,
+`AAB_MTIME_EPOCH`, and `AAB_SHA256` lines is success. A Flutter or `tee` failure
+is propagated and removes the release AAB, so a stale artifact cannot pass. The
+AAB output will be at:
 ```
-/Users/jan/Documents/GitHub/Calypso/CalyMob/build/app/outputs/bundle/release/app-release.aab
+/Users/jan/Dev/GitHub/Calypso/CalyMob/build/app/outputs/bundle/release/app-release.aab
 ```
 
 Verify the build:
 ```bash
-ls -lh /Users/jan/Documents/GitHub/Calypso/CalyMob/build/app/outputs/bundle/release/app-release.aab
+test -s /Users/jan/Dev/GitHub/Calypso/CalyMob/build/app/outputs/bundle/release/app-release.aab
+tail -10 /tmp/build_calymob.log
 ```
 
 ## Phase 4: Upload to Google Play Store (Fully Automated via fastlane)
@@ -233,7 +317,7 @@ Fastlane is configured in `CalyMob/android/fastlane/` with:
 ### Option A: Quick upload (single command)
 
 ```bash
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob/android
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob/android
 /opt/homebrew/bin/fastlane deploy 2>&1
 ```
 
@@ -247,14 +331,36 @@ This will:
 ```bash
 cat > /tmp/upload_play_store.sh << 'SCRIPT'
 #!/bin/bash
+set -euo pipefail
+
+LOG_PATH="/tmp/upload_play_store.log"
+cleanup() {
+  local status=$?
+  set +e
+  printf 'EXIT_CODE=%s\n' "$status" >> "$LOG_PATH"
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
 export PATH="/opt/homebrew/bin:$PATH"
 
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob/android
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob/android
 
 echo "=== Uploading AAB to Google Play Store ==="
-fastlane deploy 2>&1 | tee /tmp/upload_play_store.log
-
-echo "EXIT_CODE=$?" >> /tmp/upload_play_store.log
+set +e
+fastlane deploy 2>&1 | tee "$LOG_PATH"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+fastlane_status="${pipeline_status[0]:-1}"
+tee_status="${pipeline_status[1]:-1}"
+printf 'FASTLANE_EXIT_CODE=%s\nTEE_EXIT_CODE=%s\n' "$fastlane_status" "$tee_status" >> "$LOG_PATH"
+if [ "$fastlane_status" -ne 0 ]; then
+  exit "$fastlane_status"
+fi
+if [ "$tee_status" -ne 0 ]; then
+  exit "$tee_status"
+fi
 echo "=== Done ==="
 SCRIPT
 chmod +x /tmp/upload_play_store.sh
@@ -273,7 +379,8 @@ Monitor:
 tail -20 /tmp/upload_play_store.log 2>/dev/null
 ```
 
-Wait for "fastlane.tools finished successfully" or check for errors.
+Require `FASTLANE_EXIT_CODE=0`, `TEE_EXIT_CODE=0`, and final `EXIT_CODE=0`;
+a success-looking Fastlane line alone is not sufficient.
 
 ### Option C: Upload with release notes
 
@@ -281,14 +388,14 @@ To include release notes (French), create the changelog file before uploading:
 
 ```bash
 # Get the current version code from pubspec.yaml
-VERSION_CODE=$(grep "^version:" /Users/jan/Documents/GitHub/Calypso/CalyMob/pubspec.yaml | sed 's/.*+//')
+VERSION_CODE=$(grep "^version:" /Users/jan/Dev/GitHub/Calypso/CalyMob/pubspec.yaml | sed 's/.*+//')
 
 # Create changelog file (fastlane looks for this automatically)
-mkdir -p /Users/jan/Documents/GitHub/Calypso/CalyMob/android/fastlane/metadata/android/fr-FR/changelogs
-echo "Améliorations de stabilité et corrections de bugs." > "/Users/jan/Documents/GitHub/Calypso/CalyMob/android/fastlane/metadata/android/fr-FR/changelogs/${VERSION_CODE}.txt"
+mkdir -p /Users/jan/Dev/GitHub/Calypso/CalyMob/android/fastlane/metadata/android/fr-FR/changelogs
+echo "Améliorations de stabilité et corrections de bugs." > "/Users/jan/Dev/GitHub/Calypso/CalyMob/android/fastlane/metadata/android/fr-FR/changelogs/${VERSION_CODE}.txt"
 
 # Then run deploy
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob/android
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob/android
 fastlane deploy
 ```
 
@@ -302,7 +409,7 @@ After fastlane succeeds, verify in Play Console:
 
 To test the service account connection without uploading:
 ```bash
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob/android
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob/android
 /opt/homebrew/bin/fastlane validate
 ```
 
@@ -429,11 +536,42 @@ The iOS build takes several minutes. Use a background script approach to avoid t
 # Create build script
 cat > /tmp/build_ios.sh << 'SCRIPT'
 #!/bin/bash
+set -euo pipefail
+
+PROJECT_ROOT="/Users/jan/Dev/GitHub/Calypso/CalyMob"
+LOG_PATH="/tmp/build_ios.log"
+IPA_PATH="$PROJECT_ROOT/build/ios/ipa/calymob.ipa"
+APP_INFO_PLIST="$PROJECT_ROOT/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Info.plist"
+BUILD_START_MARKER=""
+
+cleanup() {
+  local status=$?
+  set +e
+  if [ "$status" -ne 0 ]; then
+    rm -f -- "$IPA_PATH"
+  fi
+  if [ -n "$BUILD_START_MARKER" ]; then
+    rm -f -- "$BUILD_START_MARKER"
+  fi
+  printf 'EXIT_CODE=%s\n' "$status" >> "$LOG_PATH"
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="/Users/jan/flutter/bin:$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
 
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob
+cd "$PROJECT_ROOT"
+SOURCE_COMMIT=$(git rev-parse --verify HEAD)
+VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+if [[ ! "$VERSION_LINE" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)$ ]]; then
+  echo "Invalid pubspec version: $VERSION_LINE" >&2
+  exit 1
+fi
+EXPECTED_VERSION="${BASH_REMATCH[1]}"
+EXPECTED_BUILD="${BASH_REMATCH[2]}"
 
 echo "=== Flutter Clean ==="
 flutter clean 2>&1
@@ -446,9 +584,52 @@ cd ios && pod install --repo-update 2>&1
 cd ..
 
 echo "=== Flutter Build IPA ==="
-flutter build ipa --release 2>&1 | tee /tmp/build_ios.log
+rm -f -- "$IPA_PATH"
+BUILD_START_MARKER=$(mktemp "${TMPDIR:-/tmp}/calymob-ipa-build.XXXXXX")
+set +e
+flutter build ipa --release 2>&1 | tee "$LOG_PATH"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+flutter_status="${pipeline_status[0]:-1}"
+tee_status="${pipeline_status[1]:-1}"
+printf 'FLUTTER_EXIT_CODE=%s\nTEE_EXIT_CODE=%s\n' "$flutter_status" "$tee_status" >> "$LOG_PATH"
+if [ "$flutter_status" -ne 0 ]; then
+  exit "$flutter_status"
+fi
+if [ "$tee_status" -ne 0 ]; then
+  exit "$tee_status"
+fi
 
-echo "EXIT_CODE=$?" >> /tmp/build_ios.log
+if [ ! -s "$IPA_PATH" ] || [ "$IPA_PATH" -ot "$BUILD_START_MARKER" ]; then
+  echo "Build did not create a fresh non-empty IPA." >&2
+  exit 1
+fi
+if [ ! -s "$APP_INFO_PLIST" ] || [ "$APP_INFO_PLIST" -ot "$BUILD_START_MARKER" ]; then
+  echo "Build did not create a fresh app Info.plist." >&2
+  exit 1
+fi
+ARTIFACT_VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP_INFO_PLIST")
+ARTIFACT_BUILD=$(plutil -extract CFBundleVersion raw -o - "$APP_INFO_PLIST")
+if [ "$ARTIFACT_VERSION" != "$EXPECTED_VERSION" ] || [ "$ARTIFACT_BUILD" != "$EXPECTED_BUILD" ]; then
+  echo "IPA version/build does not match pubspec.yaml." >&2
+  exit 1
+fi
+if [ "$(git rev-parse --verify HEAD)" != "$SOURCE_COMMIT" ]; then
+  echo "Git source commit changed during the build." >&2
+  exit 1
+fi
+if [ "$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)" != "$VERSION_LINE" ]; then
+  echo "pubspec version changed during the build." >&2
+  exit 1
+fi
+IPA_SHA256=$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')
+if [[ ! "$IPA_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not calculate the IPA SHA-256." >&2
+  exit 1
+fi
+IPA_MTIME=$(stat -f '%m' "$IPA_PATH")
+printf 'SOURCE_COMMIT=%s\nVERSION=%s\nBUILD=%s\nIPA_MTIME_EPOCH=%s\nIPA_SHA256=%s\n' \
+  "$SOURCE_COMMIT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_MTIME" "$IPA_SHA256" >> "$LOG_PATH"
 SCRIPT
 chmod +x /tmp/build_ios.sh
 ```
@@ -466,13 +647,15 @@ Monitor progress:
 tail -20 /tmp/build_ios.log 2>/dev/null
 ```
 
-Wait until you see "Build Successful" or an error. Output files:
+Only final `EXIT_CODE=0` with matching source/version/build, fresh mtime and
+SHA-256 evidence is success. Output files:
 - **Archive**: `build/ios/archive/Runner.xcarchive` (~556MB)
 - **IPA**: `build/ios/ipa/calymob.ipa` (~62-67MB)
 
 Verify the build:
 ```bash
-ls -lh /Users/jan/Documents/GitHub/Calypso/CalyMob/build/ios/ipa/calymob.ipa
+test -s /Users/jan/Dev/GitHub/Calypso/CalyMob/build/ios/ipa/calymob.ipa
+tail -10 /tmp/build_ios.log
 ```
 
 ## iOS Phase 4: Upload to App Store Connect (Fully Automated)
@@ -493,15 +676,53 @@ ls -la ~/.private_keys/AuthKey_ZK62KYKA4T.p8
 ```bash
 cat > /tmp/upload_ios.sh << 'SCRIPT'
 #!/bin/bash
-IPA_PATH="/Users/jan/Documents/GitHub/Calypso/CalyMob/build/ios/ipa/calymob.ipa"
+set -euo pipefail
+
+IPA_PATH="/Users/jan/Dev/GitHub/Calypso/CalyMob/build/ios/ipa/calymob.ipa"
 KEY_ID="ZK62KYKA4T"
 ISSUER_ID="280e011a-f492-43fb-b0eb-727ddaa8c6c9"
+LOG_PATH="/tmp/upload_ios.log"
+
+cleanup() {
+  local status=$?
+  set +e
+  printf 'EXIT_CODE=%s\n' "$status" >> "$LOG_PATH"
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
+if [ ! -s "$IPA_PATH" ]; then
+  echo "Missing or empty IPA: $IPA_PATH" >&2
+  exit 1
+fi
+
+run_logged() {
+  local mode="$1"
+  shift
+  local pipeline_status
+  set +e
+  if [ "$mode" = "append" ]; then
+    "$@" 2>&1 | tee -a "$LOG_PATH"
+    pipeline_status=("${PIPESTATUS[@]}")
+  else
+    "$@" 2>&1 | tee "$LOG_PATH"
+    pipeline_status=("${PIPESTATUS[@]}")
+  fi
+  set -e
+  if [ "${pipeline_status[0]:-1}" -ne 0 ]; then
+    return "${pipeline_status[0]:-1}"
+  fi
+  if [ "${pipeline_status[1]:-1}" -ne 0 ]; then
+    return "${pipeline_status[1]:-1}"
+  fi
+}
 
 echo "=== Validating IPA ==="
-xcrun altool --validate-app -f "$IPA_PATH" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID" 2>&1 | tee /tmp/upload_ios.log
+run_logged overwrite xcrun altool --validate-app -f "$IPA_PATH" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
 
 echo "=== Uploading IPA ==="
-xcrun altool --upload-app -f "$IPA_PATH" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID" 2>&1 | tee -a /tmp/upload_ios.log
+run_logged append xcrun altool --upload-app -f "$IPA_PATH" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
 
 echo "=== Done ==="
 SCRIPT
@@ -521,7 +742,8 @@ Monitor:
 tail -20 /tmp/upload_ios.log 2>/dev/null
 ```
 
-Wait for "UPLOAD SUCCEEDED with no errors". Upload takes ~20-30 seconds for ~65MB.
+Require both "UPLOAD SUCCEEDED with no errors" and final `EXIT_CODE=0`. Upload
+takes ~20-30 seconds for ~65MB.
 
 **Important**: After upload, Apple needs 5-30 minutes to process the build before it appears in App Store Connect.
 
@@ -582,7 +804,7 @@ These are already saved in App Store Connect:
 ### CocoaPods Issues
 If `pod install` fails:
 ```bash
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob/ios
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob/ios
 pod repo update
 pod install --repo-update
 ```
@@ -594,7 +816,7 @@ If build fails with signing errors:
 security find-identity -v -p codesigning
 
 # Check Xcode settings
-open /Users/jan/Documents/GitHub/Calypso/CalyMob/ios/Runner.xcworkspace
+open /Users/jan/Dev/GitHub/Calypso/CalyMob/ios/Runner.xcworkspace
 ```
 
 ### Missing .p8 Key
@@ -618,7 +840,7 @@ For a complete deploy to both stores, run these steps in order:
 
 ```bash
 # 1. Bump version
-cd /Users/jan/Documents/GitHub/Calypso/CalyMob
+cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 ./scripts/bump_version.sh patch
 
 # 2. Build Android AAB (in Terminal via AppleScript, wait for completion)
