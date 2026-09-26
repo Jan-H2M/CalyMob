@@ -97,6 +97,14 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 
 **Android**:
 - Google Play manages app signing ("Releases signed by Google Play")
+- The upload keystore and one-line password file live outside every repository
+  with mode `0600`; never restore `key.properties` or a keystore into the checkout.
+- Before a release build, export only `CALYMOB_UPLOAD_STORE_FILE`,
+  `CALYMOB_UPLOAD_PASSWORD_FILE`, and `CALYMOB_UPLOAD_KEY_ALIAS`. The password
+  itself must never be placed in an environment variable, command, log, Gradle
+  property, or repository file.
+- Gradle opens the keystore, requires the alias to be a private-key entry, and
+  checks its certificate against the pinned public CalyMob upload certificate.
 - Service account: `google-play-deploy@calycompta.iam.gserviceaccount.com`
 - JSON key: `~/.private_keys/google-play-deploy.json`
 
@@ -179,10 +187,14 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
 export PATH="/Users/jan/flutter/bin:$PATH"
+export CALYMOB_UPLOAD_STORE_FILE="$HOME/.private_keys/android-upload-2026-09-26.jks"
+export CALYMOB_UPLOAD_PASSWORD_FILE="$HOME/.private_keys/android-upload-2026-09-26.password"
+export CALYMOB_UPLOAD_KEY_ALIAS="upload-2026-09-26"
 
 cd /Users/jan/Documents/GitHub/Calypso/CalyMob
 flutter build appbundle --release 2>&1 | tee /tmp/build_calymob.log
 echo "EXIT_CODE=$?" >> /tmp/build_calymob.log
+unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
 SCRIPT
 chmod +x /tmp/build_calymob.sh
 ```

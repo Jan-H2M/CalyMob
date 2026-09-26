@@ -403,11 +403,16 @@ Free or paid: Free
 
 ### 3.2 Android App Bundle Builden
 
-#### Signing Key (Al aanwezig)
-- Keystore: `CalyMob/android/app/calymob-release.keystore`
-- Key properties: `CalyMob/android/app/key.properties`
+#### Upload-signing (extern, aanwezig)
+- Keystore: `~/.private_keys/android-upload-2026-09-26.jks` (`0600`)
+- Wachtwoordbestand: `~/.private_keys/android-upload-2026-09-26.password` (`0600`)
+- Alias: `upload-2026-09-26`
 
-**BELANGRIJK**: Maak een backup van deze bestanden! Zonder keystore kun je geen updates pushen.
+De keystore en het wachtwoordbestand mogen nooit in Git of in de checkout staan.
+Zet alleen hun absolute paden en de niet-geheime alias in de omgeving; zet het
+wachtwoord zelf nooit in een omgevingsvariabele, commando, log of Gradle-property.
+Google Play App Signing bewaart de distributiesleutel; deze lokale sleutel is
+uitsluitend de upload key.
 
 #### Build commando
 ```bash
@@ -416,9 +421,20 @@ cd /Users/jan/Documents/GitHub/Calypso/CalyMob
 # Dependencies
 flutter pub get
 
+# Externe upload-signing
+chmod 600 ~/.private_keys/android-upload-2026-09-26.jks \
+  ~/.private_keys/android-upload-2026-09-26.password
+export CALYMOB_UPLOAD_STORE_FILE="$HOME/.private_keys/android-upload-2026-09-26.jks"
+export CALYMOB_UPLOAD_PASSWORD_FILE="$HOME/.private_keys/android-upload-2026-09-26.password"
+export CALYMOB_UPLOAD_KEY_ALIAS="upload-2026-09-26"
+
 # Build App Bundle (NIET APK voor Play Store)
 flutter build appbundle --release
+unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_ALIAS
 ```
+
+Gradle faalt vóór de build als bestanden, rechten, wachtwoord, alias,
+private-key-entry of het vastgepinde publieke uploadcertificaat niet kloppen.
 
 **Output**: `build/app/outputs/bundle/release/app-release.aab`
 
@@ -533,16 +549,19 @@ Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB z
 | iOS Distribution Certificate | Keychain + .p12 export | **KRITIEK** |
 | iOS Provisioning Profile | Xcode/Developer Portal | Ja |
 | App Store Connect API Key | Team Settings | Ja |
-| Android Keystore | `android/app/calymob-release.keystore` | **KRITIEK** |
-| Android Key Properties | `android/app/key.properties` | **KRITIEK** |
+| Android upload-keystore | Extern: `~/.private_keys/android-upload-2026-09-26.jks` | **KRITIEK** |
+| Android upload-wachtwoordbestand | Extern: `~/.private_keys/android-upload-2026-09-26.password` | **KRITIEK** |
+| Android publiek uploadcertificaat | Extern: `~/.private_keys/android-upload-2026-09-26.pem` | Ja |
 | Google Play Service Account | JSON file | Ja |
 | Firebase configs | Repo (al aanwezig) | Git |
 
 ### Backup Commando's
 ```bash
-# Backup Android signing
-cp CalyMob/android/app/calymob-release.keystore ~/Backup/
-cp CalyMob/android/app/key.properties ~/Backup/
+# Backup Android upload-signing naar een versleutelde/offline locatie.
+# Bewaar keystore en wachtwoord apart, met mode 0600; nooit in een repository.
+install -m 600 ~/.private_keys/android-upload-2026-09-26.jks ~/Backup/
+install -m 600 ~/.private_keys/android-upload-2026-09-26.password ~/Backup/
+install -m 644 ~/.private_keys/android-upload-2026-09-26.pem ~/Backup/
 
 # Export iOS certificate (via Keychain Access GUI)
 # Keychain Access > My Certificates > Export als .p12
@@ -1715,7 +1734,7 @@ feature is for actual club activity fees only.
 2. [ ] Store listing invullen (kopieer uit sectie 7)
 3. [ ] Data Safety form invullen (sectie 7.7)
 4. [ ] Content rating questionnaire (sectie 7.9)
-5. [ ] Build maken: `flutter build appbundle --release`
+5. [ ] Externe upload-signing instellen volgens sectie 3.2 en build maken: `flutter build appbundle --release`
 6. [ ] Upload naar Internal Testing track
 7. [ ] Test met demo account
 8. [ ] Promote naar Production

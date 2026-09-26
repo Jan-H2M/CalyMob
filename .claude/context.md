@@ -167,6 +167,8 @@ flutter build ios
 
 #### Android
 ```bash
+# First configure the external upload-keystore path, password-file path and
+# alias as documented in docs/guides/BUILD_ANDROID.md.
 flutter build appbundle
 # Upload to Google Play Console
 ```
@@ -182,7 +184,9 @@ Configuration in `codemagic.yaml`:
 
 **Note**: Requires credentials setup in Codemagic dashboard:
 - iOS certificates and provisioning profiles
-- Android keystore
+- Android release workflows stay disabled unless a trusted runner mounts the
+  external `0600` upload keystore and password file outside the checkout; only
+  their paths and the alias may be environment variables
 - See `CODEMAGIC_SETUP.md` for details
 
 ## Key Features
@@ -328,10 +332,11 @@ See `IOS_DEPLOYMENT_GUIDE.md` for complete checklist.
 
 ### Google Play Store
 1. Update version in `pubspec.yaml`
-2. Run `flutter build appbundle`
-3. Upload to Play Console
-4. Fill release notes
-5. Submit for review
+2. Configure external upload signing per `docs/guides/BUILD_ANDROID.md`
+3. Run `flutter build appbundle`
+4. Upload to Play Console
+5. Fill release notes
+6. Submit for review
 
 See `DEPLOYMENT_GUIDE.md` for complete checklist.
 
@@ -387,7 +392,8 @@ See `CODEMAGIC_SETUP.md` for configuration.
 - **Run iOS**: `flutter run -d ios`
 - **Run Android**: `flutter run -d android`
 - **Build iOS**: `flutter build ios`
-- **Build Android**: `flutter build appbundle`
+- **Build Android**: configure external upload signing per
+  `docs/guides/BUILD_ANDROID.md`, then run `flutter build appbundle`
 - **Sibling Project**: `/Users/jan/Documents/GitHub/CalyCompta`
 - **Architecture Doc**: `/Users/jan/Documents/GitHub/ARCHITECTURE.md`
 - **Firebase Console**: https://console.firebase.google.com/project/calycompta

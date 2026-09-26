@@ -113,6 +113,9 @@ unset CALYMOB_UPLOAD_STORE_FILE CALYMOB_UPLOAD_PASSWORD_FILE CALYMOB_UPLOAD_KEY_
 
 Release and signing-report tasks fail closed if a variable or file is missing,
 relative, inside the repository, unreadable, too broadly accessible, or empty.
+Before Gradle configures signing, it also opens the keystore, verifies that the
+alias is a private-key entry, checks certificate validity, and compares its
+SHA-256 fingerprint with the public certificate pin in `android/app/build.gradle`.
 Do not enable Gradle configuration cache for signing tasks. Debug builds and IDE
 sync do not need these variables.
 

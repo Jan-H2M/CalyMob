@@ -369,6 +369,12 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: 3.35.7
+      # The trusted runner must pre-provision these two 0600 files outside the
+      # checkout. These variables contain paths/alias only, never the password.
+      vars:
+        CALYMOB_UPLOAD_STORE_FILE: /absolute/runner-private/upload.jks
+        CALYMOB_UPLOAD_PASSWORD_FILE: /absolute/runner-private/upload.password
+        CALYMOB_UPLOAD_KEY_ALIAS: upload-alias
     scripts:
       - flutter pub get
       - flutter build apk --release

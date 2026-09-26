@@ -31,6 +31,12 @@ manually after both stores are available. Building is not uploading/submitting.
 
 ### Manual Commands (for reference)
 
+Android release commands require the external upload keystore and password file
+described in `docs/guides/BUILD_ANDROID.md`. Export only
+`CALYMOB_UPLOAD_STORE_FILE`, `CALYMOB_UPLOAD_PASSWORD_FILE`, and
+`CALYMOB_UPLOAD_KEY_ALIAS`; never add `key.properties`, `*.jks`, or `*.keystore`
+to the checkout and never place the password itself in an environment variable.
+
 ```bash
 # Flutter
 flutter pub get                      # Install dependencies

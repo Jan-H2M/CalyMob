@@ -5,6 +5,19 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+required_signing_vars=(
+  CALYMOB_UPLOAD_STORE_FILE
+  CALYMOB_UPLOAD_PASSWORD_FILE
+  CALYMOB_UPLOAD_KEY_ALIAS
+)
+for signing_var in "${required_signing_vars[@]}"; do
+  if [ -z "${!signing_var:-}" ]; then
+    echo "❌ Missing Android release-signing variable: $signing_var" >&2
+    echo "Set only the external keystore path, password-file path and key alias; never the password itself." >&2
+    exit 1
+  fi
+done
+
 # Optionally bump version first
 if [ "${1:-}" == "--bump" ]; then
   ./scripts/bump_version.sh "${2:-patch}"

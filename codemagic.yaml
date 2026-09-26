@@ -125,8 +125,8 @@ workflows:
   # ==========================================================================
   # ANDROID PRODUCTION WORKFLOW - Google Play Release
   # ==========================================================================
-  # DISABLED: Requires Google Play Service Account credentials
-  # Enable after configuring GCLOUD_SERVICE_ACCOUNT_CREDENTIALS in environment variables
+  # DISABLED: Requires Google Play Service Account credentials and a trusted
+  # runner that mounts the external upload keystore/password file outside the checkout.
   # See CODEMAGIC_SETUP.md for Google Play setup instructions
   #
   # android-production:
@@ -135,14 +135,13 @@ workflows:
   #   instance_type: mac_mini_m2
   #
   #   environment:
-  #     # Android Code Signing
-  #     android_signing:
-  #       - calycompta_keystore  # Name of keystore uploaded in Team Settings
-  #
   #     # Environment Variables
   #     vars:
   #       PACKAGE_NAME: "be.calypsodc.calymob"
   #       GOOGLE_PLAY_TRACK: "production"  # or "internal", "alpha", "beta"
+  #       CALYMOB_UPLOAD_STORE_FILE: /absolute/runner-private/upload.jks
+  #       CALYMOB_UPLOAD_PASSWORD_FILE: /absolute/runner-private/upload.password
+  #       CALYMOB_UPLOAD_KEY_ALIAS: upload-alias
   #
   #     # Flutter Version
   #     flutter: stable
@@ -182,6 +181,10 @@ workflows:
   #     - name: Build Android App Bundle
   #       script: |
   #         echo "🏗️ Building Android App Bundle (release mode)"
+  #         # Keep this workflow disabled until the runner pre-provisions a
+  #         # 0600 keystore and password file outside $CM_BUILD_DIR and sets
+  #         # only CALYMOB_UPLOAD_STORE_FILE, CALYMOB_UPLOAD_PASSWORD_FILE and
+  #         # CALYMOB_UPLOAD_KEY_ALIAS. Never inject the password as an env var.
   #         flutter build appbundle --release
   #
   #     - name: Verify build output
@@ -281,7 +284,8 @@ workflows:
   # ==========================================================================
   # ANDROID BETA WORKFLOW - Internal Testing
   # ==========================================================================
-  # DISABLED: Requires Google Play Service Account credentials
+  # DISABLED: Requires Google Play Service Account credentials and the same
+  # externally mounted upload-signing files as production.
   #
   # android-beta:
   #   name: Android Beta Build (Internal Testing)
@@ -289,12 +293,12 @@ workflows:
   #   instance_type: mac_mini_m2
   #
   #   environment:
-  #     android_signing:
-  #       - calycompta_keystore
-  #
   #     vars:
   #       PACKAGE_NAME: "com.example.calycompta_mobile"
   #       GOOGLE_PLAY_TRACK: "internal"  # Internal testing track
+  #       CALYMOB_UPLOAD_STORE_FILE: /absolute/runner-private/upload.jks
+  #       CALYMOB_UPLOAD_PASSWORD_FILE: /absolute/runner-private/upload.password
+  #       CALYMOB_UPLOAD_KEY_ALIAS: upload-alias
   #
   #     flutter: stable
   #
@@ -321,7 +325,9 @@ workflows:
   #       script: flutter pub get
   #
   #     - name: Build Android App Bundle
-  #       script: flutter build appbundle --release
+  #       script: |
+  #         # Same external signing contract as the production workflow above.
+  #         flutter build appbundle --release
   #
   #   artifacts:
   #     - build/app/outputs/bundle/release/*.aab
@@ -351,9 +357,6 @@ workflows:
       # ios_signing:
       #   distribution_type: app_store
       #   bundle_identifier: be.calypso.calycompta
-
-      android_signing:
-        - calycompta_keystore
 
       flutter: 3.38.9
       node: 22

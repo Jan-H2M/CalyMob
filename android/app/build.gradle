@@ -22,31 +22,18 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0.4'
 }
 
-// Release credentials are deliberately loaded only for release/signing tasks.
-// Debug builds and IDE sync therefore remain usable without production keys.
-def requestedTaskNames = gradle.startParameter.taskNames.collect {
-    it.toLowerCase(java.util.Locale.ROOT)
-}
-def uploadSigningRequested = requestedTaskNames.any {
-    def taskName = it.tokenize(':').last()
-    taskName.contains('release')
-        || taskName == 'signingreport'
-        || taskName in ['assemble', 'build', 'bundle']
-}
-def uploadSigning = null
+// This public fingerprint pins the replacement Google Play upload certificate.
+// Changing upload keys requires an intentional source change and Play-side reset.
+def expectedUploadCertificateSha256 =
+    '5478970180017BDD3B258E599DD7CC51B1BCCF4EBC28D2E621215B66DB7251AA'
 
-if (uploadSigningRequested) {
-    if (gradle.startParameter.isConfigurationCacheRequested()) {
-        throw new GradleException(
-            'Android release signing refuses Gradle configuration cache because it can persist signing credentials.'
-        )
-    }
+def signingEnvironment = [
+    CALYMOB_UPLOAD_STORE_FILE: System.getenv('CALYMOB_UPLOAD_STORE_FILE'),
+    CALYMOB_UPLOAD_PASSWORD_FILE: System.getenv('CALYMOB_UPLOAD_PASSWORD_FILE'),
+    CALYMOB_UPLOAD_KEY_ALIAS: System.getenv('CALYMOB_UPLOAD_KEY_ALIAS'),
+]
 
-    def signingEnvironment = [
-        CALYMOB_UPLOAD_STORE_FILE: System.getenv('CALYMOB_UPLOAD_STORE_FILE'),
-        CALYMOB_UPLOAD_PASSWORD_FILE: System.getenv('CALYMOB_UPLOAD_PASSWORD_FILE'),
-        CALYMOB_UPLOAD_KEY_ALIAS: System.getenv('CALYMOB_UPLOAD_KEY_ALIAS'),
-    ]
+def loadUploadSigning = {
     def missingVariables = signingEnvironment.findAll { name, value ->
         value == null || value.trim().isEmpty()
     }.keySet().sort()
@@ -112,11 +99,95 @@ if (uploadSigningRequested) {
         throw new GradleException('CALYMOB_UPLOAD_KEY_ALIAS contains surrounding whitespace or a newline.')
     }
 
-    uploadSigning = [
-        storeFile: uploadStoreFile,
-        password: uploadPassword,
+    def uploadPasswordChars = uploadPassword.toCharArray()
+    try {
+        def uploadKeyStore
+        try {
+            uploadKeyStore = java.security.KeyStore.getInstance(
+                uploadStoreFile,
+                uploadPasswordChars,
+            )
+        } catch (Exception ignored) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_PASSWORD_FILE could not unlock the upload keystore.'
+            )
+        }
+
+        if (!uploadKeyStore.containsAlias(uploadKeyAlias)) {
+            throw new GradleException('CALYMOB_UPLOAD_KEY_ALIAS is not present in the upload keystore.')
+        }
+        if (!uploadKeyStore.entryInstanceOf(
+            uploadKeyAlias,
+            java.security.KeyStore.PrivateKeyEntry,
+        )) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_KEY_ALIAS must identify a private-key entry.'
+            )
+        }
+
+        def uploadEntry
+        try {
+            uploadEntry = uploadKeyStore.getEntry(
+                uploadKeyAlias,
+                new java.security.KeyStore.PasswordProtection(uploadPasswordChars),
+            )
+        } catch (Exception ignored) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_PASSWORD_FILE could not unlock the configured upload key.'
+            )
+        }
+        if (!(uploadEntry instanceof java.security.KeyStore.PrivateKeyEntry)) {
+            throw new GradleException(
+                'CALYMOB_UPLOAD_KEY_ALIAS must identify a private-key entry.'
+            )
+        }
+
+        def uploadCertificate = uploadEntry.certificate
+        if (uploadCertificate == null) {
+            throw new GradleException('The configured upload key has no certificate.')
+        }
+        if (uploadCertificate instanceof java.security.cert.X509Certificate) {
+            try {
+                uploadCertificate.checkValidity()
+            } catch (Exception ignored) {
+                throw new GradleException('The configured upload certificate is not currently valid.')
+            }
+        }
+        def actualCertificateSha256 = java.security.MessageDigest
+            .getInstance('SHA-256')
+            .digest(uploadCertificate.encoded)
+            .encodeHex()
+            .toString()
+            .toUpperCase(java.util.Locale.ROOT)
+        if (actualCertificateSha256 != expectedUploadCertificateSha256) {
+            throw new GradleException(
+                'The configured upload certificate does not match the pinned CalyMob upload certificate.'
+            )
+        }
+    } finally {
+        java.util.Arrays.fill(uploadPasswordChars, (char) 0)
+    }
+
+    return [
         keyAlias: uploadKeyAlias,
+        password: uploadPassword,
+        storeFile: uploadStoreFile,
     ]
+}
+
+def uploadSigning = null
+def allSigningVariablesPresent = signingEnvironment.every { name, value ->
+    value != null && !value.trim().isEmpty()
+}
+if (allSigningVariablesPresent) {
+    if (gradle.startParameter.isConfigurationCacheRequested()) {
+        throw new GradleException(
+            'Android release signing refuses Gradle configuration cache because it can persist signing credentials.'
+        )
+    }
+    // A complete signing environment is an explicit release intent. Configure
+    // AGP during project evaluation; AGP locks these values before taskGraph is ready.
+    uploadSigning = loadUploadSigning()
 }
 
 android {
@@ -161,6 +232,31 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
+        }
+    }
+}
+
+// Inspect the resolved task graph instead of guessing from the command line.
+// This covers Gradle task abbreviations such as :app:aR and :app:bR as well as
+// aggregate tasks whose graph contains a release variant.
+gradle.taskGraph.whenReady { taskGraph ->
+    def releaseSigningRequired = taskGraph.allTasks.any { task ->
+        task.project == project && (
+            task.name.toLowerCase(java.util.Locale.ROOT).contains('release')
+                || task.name.equalsIgnoreCase('signingReport')
+        )
+    }
+    if (releaseSigningRequired) {
+        if (gradle.startParameter.isConfigurationCacheRequested()) {
+            throw new GradleException(
+                'Android release signing refuses Gradle configuration cache because it can persist signing credentials.'
+            )
+        }
+        if (uploadSigning == null) {
+            // This produces the precise missing/invalid-variable error. Signing
+            // values cannot be applied here because AGP has already locked them.
+            loadUploadSigning()
+            throw new GradleException('Android release signing was not configured during project evaluation.')
         }
     }
 }

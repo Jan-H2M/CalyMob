@@ -84,6 +84,12 @@ tasks.register("clean", Delete) {
 
 ### 2. `android/app/build.gradle`
 
+For CalyMob, the checked-in `android/app/build.gradle` is authoritative. Keep its
+fail-closed external upload-signing loader and certificate pin; do not replace it
+with a `key.properties` example or put a keystore in the checkout. The shortened
+scaffolding below deliberately omits release signing rather than duplicating the
+security-sensitive loader.
+
 ```gradle
 plugins {
     id "com.android.application"
@@ -131,27 +137,9 @@ android {
         multiDexEnabled true
     }
 
-    signingConfigs {
-        release {
-            def keystoreProperties = new Properties()
-            def keystorePropertiesFile = rootProject.file('key.properties')
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-                storePassword keystoreProperties['storePassword']
-            }
-        }
-    }
-
-    buildTypes {
-        release {
-            signingConfig signingConfigs.release
-            minifyEnabled false
-            shrinkResources false
-        }
-    }
+    // Keep the repository's existing signingConfigs/buildTypes implementation.
+    // It reads an external password file, validates the private-key entry and
+    // enforces the pinned public upload certificate before any release task.
 }
 
 flutter {
@@ -397,17 +385,26 @@ Add a fallback in codemagic.yaml for builds without the secret:
 
 ## Release Build Signing
 
-### Configure in Codemagic:
+Calypso's release contract does not accept `key.properties`, a repository
+keystore, a password in an environment variable, or Codemagic's generated
+password variables. The currently checked-in Codemagic Android release workflows
+therefore remain disabled.
 
-1. Go to **App Settings → Code Signing → Android**
-2. Upload your keystore file
-3. Enter credentials (keyAlias, keyPassword, storePassword)
-4. Reference in codemagic.yaml:
-   ```yaml
-   environment:
-     android_signing:
-       - your_keystore_reference
-   ```
+Only enable one on a trusted runner that can pre-provision the keystore and
+one-line password file outside `$CM_BUILD_DIR`, both as `0600`, without passing
+their contents through environment variables or logs. Configure only these
+non-secret path/alias values:
+
+```yaml
+environment:
+  vars:
+    CALYMOB_UPLOAD_STORE_FILE: /absolute/runner-private/upload.jks
+    CALYMOB_UPLOAD_PASSWORD_FILE: /absolute/runner-private/upload.password
+    CALYMOB_UPLOAD_KEY_ALIAS: upload-alias
+```
+
+Gradle then unlocks the keystore, verifies the alias is a private-key entry and
+compares its certificate with the pinned public CalyMob upload certificate.
 
 ### Build release APK:
 ```yaml
@@ -441,9 +438,11 @@ flutter pub get
 flutter build apk --debug
 
 # Build release APK
+# Requires the external signing files and the three path/alias variables above.
 flutter build apk --release
 
 # Build App Bundle (for Play Store)
+# Requires the same external signing configuration.
 flutter build appbundle --release
 
 # Clean build
