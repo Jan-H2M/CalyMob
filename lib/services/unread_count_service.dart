@@ -10,8 +10,11 @@ bool isCountableRegistration(Map<String, dynamic> data) {
   return status != 'canceled' && status != 'waitlisted';
 }
 
-String unreadSessionReadKey(String sessionId, String groupType,
-    [String? groupLevel]) {
+String unreadSessionReadKey(
+  String sessionId,
+  String groupType, [
+  String? groupLevel,
+]) {
   if (groupLevel == null || groupLevel.isEmpty) {
     return 'session_${sessionId}_$groupType';
   }
@@ -42,7 +45,10 @@ class UnreadCountService {
   // ANNOUNCEMENTS
   // ============================================================
 
-  Future<int> countUnreadAnnouncements(String clubId) async {
+  Future<int> countUnreadAnnouncements(
+    String clubId, {
+    bool failOnError = false,
+  }) async {
     // Als null (nooit geopend): tel alles sinds epoch als ongelezen
     final lastRead = _tracker.getLastRead('announcements') ?? _epoch;
     final ts = Timestamp.fromDate(lastRead);
@@ -76,6 +82,7 @@ class UnreadCountService {
       return unreadIds.length;
     } catch (e) {
       debugPrint('❌ countUnreadAnnouncements error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -84,7 +91,10 @@ class UnreadCountService {
   // EVENT MESSAGES — over alle operaties waarvoor de user ingeschreven is
   // ============================================================
 
-  Future<int> countUnreadEventMessages(String clubId) async {
+  Future<int> countUnreadEventMessages(
+    String clubId, {
+    bool failOnError = false,
+  }) async {
     try {
       // Fix 2026-04-17: filter op events waar user daadwerkelijk is
       // ingeschreven. Zonder deze filter tellen berichten uit events mee
@@ -136,6 +146,7 @@ class UnreadCountService {
       return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadEventMessages error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -194,6 +205,7 @@ class UnreadCountService {
     String? plongeurCode,
     String? targetFormationLevel,
     bool formationActive = false,
+    bool failOnError = false,
   }) async {
     final channelIds = ClubRoleUtils.getVisibleTeamChannelIds(
       roles,
@@ -220,6 +232,7 @@ class UnreadCountService {
       return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadTeamMessages error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -246,8 +259,9 @@ class UnreadCountService {
 
   Future<int> countUnreadSessionMessages(
     String clubId,
-    List<String> roles,
-  ) async {
+    List<String> roles, {
+    bool failOnError = false,
+  }) async {
     final normalizedRoles = ClubRoleUtils.normalizeRoles(roles);
     final hasAccueil = normalizedRoles.contains('accueil');
     final hasEncadrant = normalizedRoles.contains('encadrant');
@@ -276,7 +290,13 @@ class UnreadCountService {
         for (final groupType in groupTypes) {
           if (groupType != 'niveau') {
             futures.add(
-                _countUnreadForSessionGroup(clubId, sessionDoc.id, groupType));
+              _countUnreadForSessionGroup(
+                clubId,
+                sessionDoc.id,
+                groupType,
+                failOnError: failOnError,
+              ),
+            );
             continue;
           }
           final rawLevels = sessionDoc.data()['niveaux'];
@@ -284,8 +304,15 @@ class UnreadCountService {
               ? rawLevels.keys.map((level) => level.toString())
               : const <String>[];
           for (final level in levels) {
-            futures.add(_countUnreadForSessionGroup(
-                clubId, sessionDoc.id, groupType, level));
+            futures.add(
+              _countUnreadForSessionGroup(
+                clubId,
+                sessionDoc.id,
+                groupType,
+                groupLevel: level,
+                failOnError: failOnError,
+              ),
+            );
           }
         }
       }
@@ -294,14 +321,19 @@ class UnreadCountService {
       return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadSessionMessages error: $e');
+      if (failOnError) rethrow;
       return 0;
     }
   }
 
   /// Count each session group independently, including separate niveau keys.
   Future<int> _countUnreadForSessionGroup(
-      String clubId, String sessionId, String groupType,
-      [String? groupLevel]) async {
+    String clubId,
+    String sessionId,
+    String groupType, {
+    String? groupLevel,
+    bool failOnError = false,
+  }) async {
     try {
       final key = unreadSessionReadKey(sessionId, groupType, groupLevel);
       final lastRead = _tracker.getLastRead(key) ?? _epoch;
@@ -316,6 +348,7 @@ class UnreadCountService {
       final snapshot = await scopedQuery.count().get().timeout(_queryTimeout);
       return snapshot.count ?? 0;
     } catch (e) {
+      if (failOnError) rethrow;
       return 0;
     }
   }
@@ -335,8 +368,8 @@ class UnreadCountService {
     bool formationActive = false,
   }) async {
     final results = await Future.wait([
-      countUnreadAnnouncements(clubId),
-      countUnreadEventMessages(clubId),
+      countUnreadAnnouncements(clubId, failOnError: true),
+      countUnreadEventMessages(clubId, failOnError: true),
       countUnreadTeamMessages(
         clubId,
         roles,
@@ -344,8 +377,9 @@ class UnreadCountService {
         plongeurCode: plongeurCode,
         targetFormationLevel: targetFormationLevel,
         formationActive: formationActive,
+        failOnError: true,
       ),
-      countUnreadSessionMessages(clubId, roles),
+      countUnreadSessionMessages(clubId, roles, failOnError: true),
     ]);
 
     return {

@@ -427,8 +427,12 @@ service cloud.firestore {
               ? (isAdmin(clubId) && hasValidSession(clubId))
               : isMember(clubId);
 
-        // Only admins can write, and they need a valid session
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        // The cursor migration baseline is trusted server metadata. Even an
+        // administrator client may not forge it; Admin SDK migration tools and
+        // Functions bypass these rules.
+        allow write: if settingId != 'unread_cursor_v1_migration'
+          && isAdmin(clubId)
+          && hasValidSession(clubId);
       }
 
       // Email templates - admin management only

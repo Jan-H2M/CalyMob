@@ -56,9 +56,23 @@ async function main() {
       const db = context.firestore();
       await setDoc(doc(db, `${clubPath}/members/member-a`), {app_role: 'user'});
       await setDoc(doc(db, `${clubPath}/members/member-b`), {app_role: 'user'});
+      await setDoc(doc(db, `${clubPath}/members/member-admin`), {app_role: 'admin'});
       await setDoc(doc(db, `${clubPath}/settings/feature_flags`), {
         unreadCursorV1Enabled: false,
         unreadCursorV1Mode: 'off',
+      });
+      await setDoc(doc(db, `${clubPath}/settings/unread_cursor_v1_migration`), {
+        schema_version: 1,
+        status: 'roots-seeded',
+        baseline_at: new Date('2026-09-25T08:26:55.038Z'),
+      });
+      await setDoc(doc(
+        db,
+        `${clubPath}/members/member-a/read_state_bootstraps/unread_cursor_v1`,
+      ), {
+        schema_version: 1,
+        status: 'complete',
+        bootstrapped_at: new Date('2026-09-26T10:00:00.000Z'),
       });
       await setDoc(doc(db, `${clubPath}/operations/event-1/messages/message-1`), {
         sender_id: 'member-b',
@@ -70,6 +84,7 @@ async function main() {
     const ownDb = env.authenticatedContext('member-a').firestore();
     const otherDb = env.authenticatedContext('member-b').firestore();
     const anonymousDb = env.unauthenticatedContext().firestore();
+    const adminDb = env.authenticatedContext('member-admin').firestore();
 
     const ownCursor = doc(ownDb, cursorPath);
     const otherCursor = doc(otherDb, cursorPath);
@@ -137,6 +152,38 @@ async function main() {
     const flags = doc(ownDb, `${clubPath}/settings/feature_flags`);
     await assertSucceeds(getDoc(flags));
     await assertFails(updateDoc(flags, {unreadCursorV1Enabled: true}));
+    await assertSucceeds(updateDoc(
+      doc(adminDb, `${clubPath}/settings/feature_flags`),
+      {unreadCursorV1Enabled: true},
+    ));
+
+    const migrationMarker = doc(
+      ownDb,
+      `${clubPath}/settings/unread_cursor_v1_migration`,
+    );
+    await assertSucceeds(getDoc(migrationMarker));
+    await assertFails(updateDoc(migrationMarker, {status: 'forged'}));
+    await assertFails(updateDoc(
+      doc(adminDb, `${clubPath}/settings/unread_cursor_v1_migration`),
+      {status: 'forged'},
+    ));
+
+    // The per-member bootstrap marker coordinates trusted server writes and
+    // must remain invisible and immutable to every client, including admins.
+    const ownBootstrapMarkerPath =
+      `${clubPath}/members/member-a/read_state_bootstraps/unread_cursor_v1`;
+    const ownBootstrapMarker = doc(ownDb, ownBootstrapMarkerPath);
+    const adminBootstrapMarker = doc(adminDb, ownBootstrapMarkerPath);
+    for (const marker of [ownBootstrapMarker, adminBootstrapMarker]) {
+      await assertFails(getDoc(marker));
+      await assertFails(setDoc(marker, {
+        schema_version: 1,
+        status: 'complete',
+        bootstrapped_at: serverTimestamp(),
+      }));
+      await assertFails(updateDoc(marker, {status: 'forged'}));
+      await assertFails(deleteDoc(marker));
+    }
 
     // Phase 1 intentionally leaves existing message/read_by permissions intact.
     await assertSucceeds(updateDoc(
@@ -145,7 +192,7 @@ async function main() {
     ));
 
     console.log(
-      'PASS read-state rules: self-only server-timestamp cursors, strict schema, feature flag protection, and legacy read_by compatibility',
+      'PASS read-state rules: self-only server-timestamp cursors, server-only bootstrap markers, strict schema, feature flag protection, and legacy read_by compatibility',
     );
   } finally {
     await env.cleanup();

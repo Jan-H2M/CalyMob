@@ -79,12 +79,13 @@ void main() {
         .set({'created_at': ts(now), 'deleted_at': ts(now)});
     expect(await service(db).countAnnouncements(club, member), 1);
   });
-  test('missing announcement cursor returns zero rather than an epoch flood',
+  test('missing announcement cursor fails instead of publishing a false zero',
       () async {
     await db
         .doc('clubs/$club/announcements/new')
         .set({'visibility': 'published', 'last_activity_at': ts(now)});
-    expect(await service(db).countAnnouncements(club, member), 0);
+    await expectLater(service(db).countAnnouncements(club, member),
+        throwsA(isA<StateError>()));
   });
   test('counts eligible event messages within Brussels grace', () async {
     await root(db, 'events', cursor);
@@ -200,31 +201,67 @@ void main() {
     expect(result.announcements, 1);
     expect(result.teams, 1);
   });
-  test('partial query failure retains the previous category value', () async {
-    await root(db, 'announcements', cursor);
-    await db
-        .doc('clubs/$club/announcements/a')
-        .set({'visibility': 'published', 'last_activity_at': ts(now)});
-    var fail = false;
-    final tested = CursorUnreadCountService(
-      firestore: db,
-      readStateService: ReadStateService(firestore: db),
-      clock: () => now,
-      countQuery: (query) async {
-        if (fail) throw StateError('simulated aggregation failure');
-        return (await query.get()).size;
-      },
-    );
-    expect(
+  test(
+    'partial category failure rejects the whole canonical refresh',
+    () async {
+      for (final section in ['announcements', 'events', 'teams', 'sessions']) {
+        await root(db, section, cursor);
+      }
+      await db.doc('clubs/$club/announcements/a').set({
+        'visibility': 'published',
+        'last_activity_at': ts(now),
+      });
+      var fail = false;
+      final tested = CursorUnreadCountService(
+        firestore: db,
+        readStateService: ReadStateService(firestore: db),
+        clock: () => now,
+        countQuery: (query) async {
+          if (fail) throw StateError('simulated aggregation failure');
+          return (await query.get()).size;
+        },
+      );
+      expect(
         (await tested.refreshAllCounts(
-                clubId: club, userId: member, roles: const []))
+          clubId: club,
+          userId: member,
+          roles: const [],
+        ))
             .announcements,
-        1);
-    fail = true;
-    expect(
-        (await tested.refreshAllCounts(
-                clubId: club, userId: member, roles: const []))
-            .announcements,
-        1);
-  });
+        1,
+      );
+      fail = true;
+      await expectLater(
+        tested.refreshAllCounts(clubId: club, userId: member, roles: const []),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
+
+  test(
+    'one bounded team subquery failure is never returned as a partial sum',
+    () async {
+      await root(db, 'teams', cursor);
+      var queryNumber = 0;
+      final tested = CursorUnreadCountService(
+        firestore: db,
+        readStateService: ReadStateService(firestore: db),
+        clock: () => now,
+        countQuery: (query) async {
+          queryNumber++;
+          if (queryNumber == 2) throw StateError('one channel failed');
+          return 7;
+        },
+      );
+      await expectLater(
+        tested.countTeamMessages(
+          club,
+          member,
+          const [],
+          includeAllChannels: true,
+        ),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
 }

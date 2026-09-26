@@ -47,11 +47,25 @@ async function main() {
     members.doc('already').set({ member_status: 'active' }),
   ]);
   const oldTimestamp = admin.firestore.Timestamp.fromDate(new Date('2025-01-01T00:00:00.000Z'));
-  await members.doc('already').collection('read_state').doc('announcements').set({
+  const legacyClub = 'legacy-without-marker';
+  const legacyMember = db.doc(`clubs/${legacyClub}/members/member-a`);
+  await legacyMember.set({ member_status: 'active' });
+  await legacyMember.collection('read_state').doc('announcements').set({
     schema_version: 1,
     last_seen_at: oldTimestamp,
     updated_at: oldTimestamp,
   });
+  await assert.rejects(
+    () => migration.run(options({ club: legacyClub }), { firestore: db }),
+    /Existing read_state roots have no trusted migration marker/,
+  );
+  assert.equal(
+    (await db.doc(
+      `clubs/${legacyClub}/settings/unread_cursor_v1_migration`,
+    ).get()).exists,
+    false,
+    'ambiguous existing roots never create a marker',
+  );
   await announcements.doc('legacy').set({ created_at: oldTimestamp });
   await announcements.doc('deleted').set({ created_at: oldTimestamp, deleted_at: oldTimestamp });
 
@@ -72,7 +86,11 @@ async function main() {
   const backupFiles = fs.readdirSync(applyOptions.backupDir).filter((file) => file.endsWith('.json'));
   assert.equal(backupFiles.length, 1, 'apply writes one pre-write backup');
   const backup = JSON.parse(fs.readFileSync(path.join(applyOptions.backupDir, backupFiles[0]), 'utf8'));
-  assert.equal(backup.length, 11, 'three missing roots for already + four roots for each other active member');
+  assert.equal(
+    backup.length,
+    13,
+    'twelve roots plus the pre-write migration-marker backup',
+  );
 
   const roots = await Promise.all(['announcements', 'events', 'teams', 'sessions'].map((section) =>
     members.doc('active-a').collection('read_state').doc(section).get(),
@@ -85,7 +103,19 @@ async function main() {
   });
   assert.equal((await members.doc('inactive').collection('read_state').doc('events').get()).exists, false);
   assert.deepEqual((await members.doc('active-a').get()).data().unread_counts, { announcements: 12 });
-  assert.ok((await members.doc('already').collection('read_state').doc('announcements').get()).data().last_seen_at.isEqual(oldTimestamp));
+  assert.ok(
+    (await members.doc('already').collection('read_state').doc('announcements')
+      .get()).data().last_seen_at.isEqual(roots[0].data().last_seen_at),
+  );
+  const migrationMarker = await db.doc(
+    `clubs/${club}/settings/unread_cursor_v1_migration`,
+  ).get();
+  assert.equal(migrationMarker.data().schema_version, 1);
+  assert.equal(migrationMarker.data().status, 'roots-seeded');
+  assert.ok(
+    migrationMarker.data().baseline_at.isEqual(roots[0].data().updated_at),
+    'trusted marker records the same one-shot root baseline',
+  );
 
   assert.equal(await migration.run(options({ mode: 'verify' }), { firestore: db }), 0);
   await members.doc('active-b').collection('read_state').doc('teams').update({ unexpected: true });
