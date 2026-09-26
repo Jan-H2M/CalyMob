@@ -10,6 +10,7 @@ import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../services/unread_count_service.dart';
+import '../../services/cursor_unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import 'operation_detail_screen.dart';
@@ -174,7 +175,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          if (unreadProvider.usesCursorReadState)
+          if (unreadProvider.usesCursorReadState &&
+              unreadProvider.isCursorReady)
             IconButton(
               icon: const Icon(Icons.done_all_outlined),
               tooltip: 'Tout marquer comme lu',
@@ -767,7 +769,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   }
 
   Widget _buildUnreadBadgeAndArrow(ActivityItem item) {
-    final userId = context.read<AuthProvider>().currentUser?.uid;
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    final unreadProvider = context.watch<UnreadCountProvider>();
 
     if (userId == null) {
       return Padding(
@@ -783,16 +786,21 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
     late final Stream<int> unreadStream;
 
-    // Skip unread badge voor verlopen events (date_fin + 5 dagen)
-    final eventEndDate = item.operation?.dateFin ?? item.date;
-    final isExpired = DateTime.now().difference(eventEndDate).inDays > 5;
-
     // Individuele unread count per operatie via UnreadCountService
     final clubId = FirebaseConfig.defaultClubId;
     final opId = item.operation?.id;
-
-    if (isExpired || opId == null) {
+    if (opId == null) {
       unreadStream = Stream.value(0);
+    } else if (unreadProvider.usesCursorReadState) {
+      unreadStream = unreadProvider.isCursorReady
+          ? Stream.fromFuture(
+              CursorUnreadCountService().countEligibleEventConversation(
+                clubId,
+                userId,
+                opId,
+              ),
+            )
+          : Stream.value(0);
     } else {
       unreadStream = Stream.fromFuture(
         UnreadCountService().countUnreadForOperation(clubId, opId),
@@ -802,13 +810,25 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     return StreamBuilder<int>(
       stream: unreadStream,
       builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
+        final unreadCount = snapshot.data;
+        final cursorError = unreadProvider.usesCursorReadState &&
+            unreadProvider.isCursorReady &&
+            snapshot.hasError;
         return Padding(
           padding: const EdgeInsets.only(right: 12),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (unreadCount > 0)
+              if (cursorError)
+                const Tooltip(
+                  message: 'Compteur temporairement indisponible',
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                )
+              else if (unreadCount != null && unreadCount > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -827,7 +847,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                     ),
                   ),
                 ),
-              if (unreadCount > 0) const SizedBox(width: 6),
+              if (cursorError || (unreadCount != null && unreadCount > 0))
+                const SizedBox(width: 6),
               Icon(
                 Icons.chevron_right,
                 color: item.isPiscine

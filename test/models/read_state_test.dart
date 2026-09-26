@@ -8,8 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('read cursor v1 model', () {
     test('effective cursor is the newest global or scoped acknowledgement', () {
-      final global = DateTime.utc(2026, 9, 25, 10);
-      final scope = DateTime.utc(2026, 9, 25, 11);
+      final global = Timestamp.fromDate(DateTime.utc(2026, 9, 25, 10));
+      final scope = Timestamp.fromDate(DateTime.utc(2026, 9, 25, 11));
 
       expect(
         effectiveReadCursor(
@@ -28,6 +28,20 @@ void main() {
       expect(effectiveReadCursor(globalLastSeenAt: global), global);
       expect(effectiveReadCursor(scopeLastSeenAt: scope), scope);
       expect(effectiveReadCursor(), isNull);
+    });
+
+    test('effective cursor preserves nanosecond ordering', () {
+      final earlier = Timestamp(10, 123456700);
+      final later = Timestamp(10, 123456789);
+
+      expect(
+        effectiveReadCursor(
+          globalLastSeenAt: earlier,
+          scopeLastSeenAt: later,
+        ),
+        same(later),
+      );
+      expect(compareFirestoreTimestamps(later, earlier), greaterThan(0));
     });
 
     test('session scopes keep group and level distinct', () {

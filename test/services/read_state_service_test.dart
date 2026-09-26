@@ -72,7 +72,7 @@ void main() {
         ReadStateSection.events,
         scopeId: 'op-1',
       );
-      expect(effective!.isAtSameMomentAs(scope), isTrue);
+      expect(effective, Timestamp.fromDate(scope));
     });
 
     test('coalesces a burst into one trailing acknowledgement', () async {
@@ -81,19 +81,22 @@ void main() {
       service = ReadStateService(
         firestore: firestore,
         clock: () => now,
-        acknowledgementWrite: (_, __) async {
+        acknowledgementWrite: (reference, payload) async {
           writes += 1;
+          await reference.set(payload);
         },
         acknowledgementDelay: (duration) {
           expect(duration, const Duration(seconds: 1));
           return delay.future;
         },
       );
-      await service.markTeamChannelSeen(clubId, userId, 'general');
+      await service.markSectionSeen(clubId, userId, ReadStateSection.teams);
       expect(writes, 1);
       now = now.add(const Duration(seconds: 9));
-      final second = service.markTeamChannelSeen(clubId, userId, 'general');
-      final concurrent = service.markTeamChannelSeen(clubId, userId, 'general');
+      final second =
+          service.markSectionSeen(clubId, userId, ReadStateSection.teams);
+      final concurrent =
+          service.markSectionSeen(clubId, userId, ReadStateSection.teams);
       expect(writes, 1);
       delay.complete();
       await Future.wait([second, concurrent]);
@@ -108,22 +111,22 @@ void main() {
       final retryService = ReadStateService(
         firestore: firestore,
         clock: () => now,
-        acknowledgementWrite: (_, __) {
+        acknowledgementWrite: (reference, payload) async {
           attempts += 1;
-          if (attempts == 1) return firstWrite.future;
-          return Future<void>.value();
+          if (attempts == 1) await firstWrite.future;
+          await reference.set(payload);
         },
       );
 
-      final first = retryService.markTeamChannelSeen(
+      final first = retryService.markSectionSeen(
         clubId,
         userId,
-        'general',
+        ReadStateSection.teams,
       );
-      final concurrent = retryService.markTeamChannelSeen(
+      final concurrent = retryService.markSectionSeen(
         clubId,
         userId,
-        'general',
+        ReadStateSection.teams,
       );
       await Future<void>.delayed(Duration.zero);
       expect(attempts, 1);
@@ -133,7 +136,11 @@ void main() {
       await firstFailure;
       await concurrentFailure;
 
-      await retryService.markTeamChannelSeen(clubId, userId, 'general');
+      await retryService.markSectionSeen(
+        clubId,
+        userId,
+        ReadStateSection.teams,
+      );
       expect(attempts, 2);
     });
 
@@ -145,9 +152,10 @@ void main() {
       final trailingService = ReadStateService(
         firestore: firestore,
         clock: () => now,
-        acknowledgementWrite: (_, __) {
+        acknowledgementWrite: (reference, payload) async {
           writes += 1;
-          return writes == 1 ? firstWrite.future : Future<void>.value();
+          if (writes == 1) await firstWrite.future;
+          await reference.set(payload);
         },
         acknowledgementDelay: (duration) {
           expect(
@@ -158,16 +166,16 @@ void main() {
         },
       );
 
-      final first = trailingService.markTeamChannelSeen(
+      final first = trailingService.markSectionSeen(
         clubId,
         userId,
-        'general',
+        ReadStateSection.teams,
       );
       await Future<void>.delayed(Duration.zero);
-      final arrivedDuringWrite = trailingService.markTeamChannelSeen(
+      final arrivedDuringWrite = trailingService.markSectionSeen(
         clubId,
         userId,
-        'general',
+        ReadStateSection.teams,
       );
       firstWrite.complete();
       await Future<void>.delayed(Duration.zero);
@@ -192,15 +200,20 @@ void main() {
         final fallback = DateTime.utc(2024, 1, 1);
         await bootstrapService.bootstrapFromLegacy(
           clubId,
+          userId,
           LegacyReadStateSnapshot(
             fallbackLastSeenAt: fallback,
             announcementsLastSeenAt: DateTime.utc(2026, 9, 20),
+            eventsLastSeenAt: fallback,
+            teamsLastSeenAt: fallback,
+            sessionsLastSeenAt: fallback,
             eventConversations: {'event': DateTime.utc(2026, 9, 21)},
             teamChannels: {'general': DateTime.utc(2026, 9, 22)},
             sessionChats: {'session__accueil': DateTime.utc(2026, 9, 23)},
           ),
         );
         expect(payload?['clubId'], clubId);
+        expect(payload?['memberId'], userId);
         expect(payload?['schemaVersion'], 1);
         expect(
           payload?['fallbackLastSeenAtMs'],
@@ -215,9 +228,13 @@ void main() {
         await expectLater(
           mergeService.bootstrapFromLegacy(
             clubId,
+            userId,
             LegacyReadStateSnapshot(
               fallbackLastSeenAt: fallback,
               announcementsLastSeenAt: fallback,
+              eventsLastSeenAt: fallback,
+              teamsLastSeenAt: fallback,
+              sessionsLastSeenAt: fallback,
               eventConversations: const {},
               teamChannels: const {},
               sessionChats: const {},
@@ -233,9 +250,13 @@ void main() {
         await expectLater(
           invalid.bootstrapFromLegacy(
             clubId,
+            userId,
             LegacyReadStateSnapshot(
               fallbackLastSeenAt: fallback,
               announcementsLastSeenAt: fallback,
+              eventsLastSeenAt: fallback,
+              teamsLastSeenAt: fallback,
+              sessionsLastSeenAt: fallback,
               eventConversations: const {},
               teamChannels: const {},
               sessionChats: const {},
@@ -270,25 +291,63 @@ void main() {
 
     test('event eligibility is seven Brussels calendar days across DST', () {
       final operation = <String, dynamic>{
+        'type': 'evenement',
+        'statut': 'ouvert',
         'date_fin': Timestamp.fromDate(DateTime.utc(2026, 3, 28, 22)),
       };
       // 23:00 Brussels on 28 March + 7 calendar days = 23:00 CEST 4 April.
       expect(
-        isUnreadEligibleEvent(operation, DateTime.utc(2026, 4, 4, 20, 59)),
+        isUnreadEligibleEvent(operation, DateTime.utc(2026, 4, 3, 21)),
         isTrue,
       );
       expect(
-        isUnreadEligibleEvent(operation, DateTime.utc(2026, 4, 4, 21, 1)),
+        isUnreadEligibleEvent(operation, DateTime.utc(2026, 4, 4, 21)),
+        isTrue,
+      );
+      expect(
+        isUnreadEligibleEvent(
+          operation,
+          DateTime.utc(2026, 4, 4, 21, 0, 1),
+        ),
+        isFalse,
+      );
+      expect(
+        isUnreadEligibleEvent(
+          {...operation, 'statut': 'supprimé'},
+          DateTime.utc(2026, 4, 1),
+        ),
+        isFalse,
+      );
+      expect(
+        isUnreadEligibleEvent(
+          {...operation, 'deleted_at': Timestamp.now()},
+          DateTime.utc(2026, 4, 1),
+        ),
+        isFalse,
+      );
+      expect(
+        isUnreadEligibleEvent(
+          {...operation, 'statut': 'brouillon'},
+          DateTime.utc(2026, 4, 1),
+        ),
+        isFalse,
+      );
+      expect(
+        isUnreadEligibleEvent(
+          {...operation, 'type': 'cotisation'},
+          DateTime.utc(2026, 4, 1),
+        ),
         isFalse,
       );
     });
 
-    test('canceled and waitlisted registrations are not countable', () {
-      expect(isCursorCountableRegistration({'registration_status': 'canceled'}),
-          isFalse);
-      expect(
-          isCursorCountableRegistration({'registration_status': 'waitlisted'}),
-          isFalse);
+    test('inactive registration statuses are not countable', () {
+      for (final status in ['canceled', 'waitlisted', 'withdrawn']) {
+        expect(
+          isCursorCountableRegistration({'registration_status': status}),
+          isFalse,
+        );
+      }
       expect(
           isCursorCountableRegistration({'registration_status': 'confirmed'}),
           isTrue);

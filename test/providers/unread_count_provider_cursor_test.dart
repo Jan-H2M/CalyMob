@@ -1,18 +1,20 @@
 import 'dart:async';
 
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:calymob/models/unread_cursor_feature_flag.dart';
 import 'package:calymob/providers/unread_count_provider.dart';
 import 'package:calymob/services/cursor_unread_count_service.dart';
 import 'package:calymob/services/local_read_tracker.dart';
+import 'package:calymob/services/read_state_service.dart';
 
 CursorUnreadBreakdown cursorCounts() => const CursorUnreadBreakdown(
-  announcements: 2,
-  events: 3,
-  teams: 4,
-  sessions: 5,
-);
+      announcements: 2,
+      events: 3,
+      teams: 4,
+      sessions: 5,
+    );
 
 Future<void> settle() async {
   for (var i = 0; i < 5; i++) {
@@ -26,6 +28,9 @@ Future<void> waitUntil(bool Function() condition) async {
   }
   expect(condition(), isTrue);
 }
+
+Stream<UnreadCursorFeatureFlag> explicitOffStream() =>
+    Stream<UnreadCursorFeatureFlag>.value(UnreadCursorFeatureFlag.defaults);
 
 void main() {
   setUp(() {
@@ -60,6 +65,12 @@ void main() {
       );
       provider.listen('club', 'member');
       await settle();
+      expect(provider.total, 0,
+          reason: 'unknown authority must remain fail-closed');
+      expect(provider.hasReliableBadgeCount, isFalse);
+      expect(provider.usesCursorReadState, isTrue);
+      flags.add(UnreadCursorFeatureFlag.defaults);
+      await waitUntil(() => provider.total == 6);
       expect(provider.cursorMode, UnreadCursorV1Mode.off);
       expect(provider.total, 6);
       expect(legacyCalls, greaterThan(0));
@@ -110,6 +121,7 @@ void main() {
       );
       provider.listen('club', 'pilot');
       await settle();
+      expect(provider.total, 0);
       final beforeOnWrites = writerCalls;
       flags.add(
         const UnreadCursorFeatureFlag(
@@ -138,10 +150,11 @@ void main() {
   );
 
   test(
-    'nonzero legacy values stay visible until handover is confirmed',
+    'switching an OFF member ON hides legacy values before bootstrap completes',
     () async {
       final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
       final bootstrap = Completer<void>();
+      final badgeValues = <int>[];
       final provider = UnreadCountProvider(
         flagStream: (_) => flags.stream,
         legacyRefresh: () async => {
@@ -158,9 +171,10 @@ void main() {
           sessions: 0,
         ),
         legacySync: (_, __, ___, ____) async {},
-        badgeUpdater: (_) {},
+        badgeUpdater: badgeValues.add,
       );
       provider.listen('club', 'pilot');
+      flags.add(UnreadCursorFeatureFlag.defaults);
       await waitUntil(() => provider.total == 630);
 
       flags.add(
@@ -172,8 +186,12 @@ void main() {
       );
       await waitUntil(() => provider.cursorMode == UnreadCursorV1Mode.on);
       await settle();
-      expect(provider.total, 630);
-      expect(provider.usesCursorReadState, isFalse);
+      expect(provider.total, 0,
+          reason: 'legacy handover values must never remain visible in ON');
+      expect(badgeValues.last, 0,
+          reason: 'the OS badge must be neutral while bootstrap is pending');
+      expect(provider.usesCursorReadState, isTrue);
+      expect(provider.isCursorReady, isFalse);
 
       bootstrap.complete();
       await waitUntil(() => provider.isCursorReady);
@@ -188,10 +206,11 @@ void main() {
   );
 
   test(
-    'bootstrap or initial cursor query failure safely retains legacy',
+    'bootstrap or initial cursor query failure never republishes legacy',
     () async {
       for (final failAt in ['bootstrap', 'query']) {
         final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+        final badgeValues = <int>[];
         final provider = UnreadCountProvider(
           flagStream: (_) => flags.stream,
           legacyRefresh: () async => {
@@ -208,10 +227,12 @@ void main() {
             return cursorCounts();
           },
           legacySync: (_, __, ___, ____) async {},
-          badgeUpdater: (_) {},
+          badgeUpdater: badgeValues.add,
         );
         provider.listen('club', 'pilot');
+        flags.add(UnreadCursorFeatureFlag.defaults);
         await waitUntil(() => provider.total == 14);
+        final writesBeforeOn = badgeValues.length;
         flags.add(
           const UnreadCursorFeatureFlag(
             enabled: true,
@@ -220,13 +241,54 @@ void main() {
         );
         await waitUntil(() => provider.cursorMode == UnreadCursorV1Mode.on);
         await provider.refresh();
-        expect(provider.total, 14, reason: failAt);
-        expect(provider.usesCursorReadState, isFalse, reason: failAt);
+        expect(provider.total, 0, reason: failAt);
+        expect(provider.usesCursorReadState, isTrue, reason: failAt);
+        expect(provider.hasReliableBadgeCount, isFalse, reason: failAt);
+        expect(badgeValues.sublist(writesBeforeOn), const <int>[0],
+            reason: 'effective ON must neutralise the legacy OS badge even '
+                'when bootstrap/query authority is unavailable');
         provider.dispose();
         await flags.close();
       }
     },
   );
+
+  test('a delayed feature flag clears a cold-start OS badge immediately',
+      () async {
+    final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+    final badgeValues = <int>[99];
+    final provider = UnreadCountProvider(
+      flagStream: (_) => flags.stream,
+      legacyRefresh: () async => {
+        'announcements': 27,
+        'event_messages': 425,
+        'team_messages': 175,
+        'session_messages': 3,
+      },
+      cursorBootstrap: () async => throw StateError('offline'),
+      cursorRefresh: () async => cursorCounts(),
+      legacySync: (_, __, ___, ____) async {},
+      badgeUpdater: badgeValues.add,
+    );
+
+    provider.listen('club', 'pilot');
+    expect(badgeValues, <int>[99, 0]);
+    await settle();
+    expect(provider.hasReliableBadgeCount, isFalse);
+
+    flags.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.shadow,
+      pilotMemberIds: <String>['pilot'],
+    ));
+    await waitUntil(() => provider.cursorMode == UnreadCursorV1Mode.on);
+    await provider.refresh();
+    expect(badgeValues, <int>[99, 0, 0]);
+    expect(provider.hasReliableBadgeCount, isFalse);
+
+    provider.dispose();
+    await flags.close();
+  });
 
   test(
     'mode switch queues behind an in-flight legacy refresh without stale UI',
@@ -254,6 +316,8 @@ void main() {
       );
       provider.listen('club', 'pilot');
       await settle();
+      flags.add(UnreadCursorFeatureFlag.defaults);
+      await waitUntil(() => legacyCalls == 1);
       flags.add(
         const UnreadCursorFeatureFlag(
           enabled: true,
@@ -276,13 +340,124 @@ void main() {
       );
       expect(
         legacyCalls,
-        greaterThanOrEqualTo(2),
-        reason: 'the ON handover refresh must not be dropped',
+        1,
+        reason: 'ON must not start another legacy refresh',
       );
       provider.dispose();
       await flags.close();
     },
   );
+
+  test('failed OFF mirror is merged once on ON bootstrap then cleared',
+      () async {
+    final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+    final tracker = LocalReadTracker();
+    Map<String, Object>? bootstrapPayload;
+    final trustedVisibleAt = DateTime.utc(2026, 9, 25, 8, 30);
+    final readState = ReadStateService(
+      firestore: FakeFirebaseFirestore(),
+      visibleAcknowledgementCall: (_) async {
+        throw StateError('offline');
+      },
+      bootstrapCall: (payload) async {
+        bootstrapPayload = payload;
+        return {'status': 'merged', 'schemaVersion': 1};
+      },
+    );
+    final provider = UnreadCountProvider(
+      tracker: tracker,
+      readState: readState,
+      flagStream: (_) => flags.stream,
+      legacyRefresh: () async => {
+        'announcements': 0,
+        'event_messages': 0,
+        'team_messages': 0,
+        'session_messages': 0,
+      },
+      cursorRefresh: () async => cursorCounts(),
+      legacySync: (_, __, ___, ____) async {},
+      badgeUpdater: (_) {},
+    );
+    provider.listen('club', 'member');
+    flags.add(UnreadCursorFeatureFlag.defaults);
+    await waitUntil(
+        () => provider.isListening && !provider.usesCursorReadState);
+
+    await provider.markEventConversationSeen(
+      'operation-1',
+      visibleMessageId: 'message-1',
+      visibleThroughAt: trustedVisibleAt,
+    );
+    final pending = await tracker.exportReadState();
+    expect(pending.pendingEventConversations, {
+      'operation-1': trustedVisibleAt,
+    });
+
+    flags.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    await waitUntil(() => provider.isCursorReady);
+    expect(
+      (bootstrapPayload?['pendingEventConversations'] as Map?)?['operation-1'],
+      trustedVisibleAt.millisecondsSinceEpoch,
+    );
+    expect(
+      (await tracker.exportReadState()).pendingEventConversations,
+      isEmpty,
+    );
+    provider.dispose();
+    await flags.close();
+  });
+
+  test('successful ON acknowledgement updates rollback but never pending merge',
+      () async {
+    final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+    final tracker = LocalReadTracker();
+    final serverVisibleAt = DateTime.utc(2026, 9, 25, 9);
+    final readState = ReadStateService(
+      firestore: FakeFirebaseFirestore(),
+      visibleAcknowledgementCall: (_) async => {
+        'status': 'acknowledged',
+        'visibleThroughMs': serverVisibleAt.millisecondsSinceEpoch,
+      },
+      bootstrapCall: (_) async => {
+        'status': 'already-complete',
+        'schemaVersion': 1,
+      },
+    );
+    final provider = UnreadCountProvider(
+      tracker: tracker,
+      readState: readState,
+      flagStream: (_) => flags.stream,
+      legacyRefresh: () async => {
+        'announcements': 0,
+        'event_messages': 0,
+        'team_messages': 0,
+        'session_messages': 0,
+      },
+      cursorRefresh: () async => cursorCounts(),
+      legacySync: (_, __, ___, ____) async {},
+      badgeUpdater: (_) {},
+    );
+    provider.listen('club', 'member');
+    flags.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    await waitUntil(() => provider.isCursorReady);
+
+    await provider.markEventConversationSeen(
+      'operation-1',
+      visibleMessageId: 'message-1',
+    );
+
+    final snapshot = await tracker.exportReadState();
+    expect(snapshot.eventConversations['operation-1'], serverVisibleAt);
+    expect(snapshot.pendingSections, isEmpty);
+    provider.dispose();
+    await flags.close();
+  });
 
   test(
     'a later canonical query failure keeps the last complete cursor result',
@@ -307,7 +482,6 @@ void main() {
         badgeUpdater: (_) {},
       );
       provider.listen('club', 'pilot');
-      await waitUntil(() => provider.total == 32);
       flags.add(
         const UnreadCursorFeatureFlag(
           enabled: true,
@@ -326,7 +500,7 @@ void main() {
 
   test('cached counts are isolated per club and member', () async {
     final first = UnreadCountProvider(
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () async => {
         'announcements': 27,
         'event_messages': 425,
@@ -344,7 +518,7 @@ void main() {
 
     final secondRefresh = Completer<Map<String, int>>();
     final second = UnreadCountProvider(
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () => secondRefresh.future,
       cursorRefresh: () async => cursorCounts(),
       legacySync: (_, __, ___, ____) async {},
@@ -379,7 +553,7 @@ void main() {
     LocalReadTracker().resetForTesting();
     final refresh = Completer<Map<String, int>>();
     final provider = UnreadCountProvider(
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () => refresh.future,
       cursorRefresh: () async => cursorCounts(),
       legacySync: (_, __, ___, ____) async {},
@@ -408,7 +582,7 @@ void main() {
     final memberBRefresh = Completer<Map<String, int>>();
     var calls = 0;
     final provider = UnreadCountProvider(
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () {
         calls += 1;
         if (calls == 1) {
@@ -440,22 +614,85 @@ void main() {
     provider.dispose();
   });
 
-  test('a stale listen initialization cannot replace the new flag stream',
+  test('external auth sign-out clear immediately removes UI and OS badge state',
       () async {
-    final prefs = await SharedPreferences.getInstance();
-    final delayedFirstCacheLoad = Completer<SharedPreferences>();
-    final flagClubs = <String>[];
-    var loaderCalls = 0;
+    final badgeValues = <int>[];
+    final tracker = LocalReadTracker();
     final provider = UnreadCountProvider(
-      preferencesLoader: () {
-        loaderCalls += 1;
-        return loaderCalls == 1
-            ? delayedFirstCacheLoad.future
-            : Future.value(prefs);
+      tracker: tracker,
+      flagStream: (_) => explicitOffStream(),
+      legacyRefresh: () async => {
+        'announcements': 27,
+        'event_messages': 425,
+        'team_messages': 175,
+        'session_messages': 3,
       },
+      cursorRefresh: () async => cursorCounts(),
+      legacySync: (_, __, ___, ____) async {},
+      badgeUpdater: badgeValues.add,
+    );
+    provider.listen('club', 'member-a');
+    await waitUntil(() => provider.total == 630);
+
+    final clearing = provider.clear();
+    expect(provider.total, 0);
+    expect(provider.isListening, isFalse);
+    expect(badgeValues.last, 0);
+    await clearing;
+    expect(tracker.isActiveContext('club', 'member-a'), isFalse);
+    provider.dispose();
+  });
+
+  test('confirmed account switch clears the old OS badge immediately',
+      () async {
+    final badgeValues = <int>[];
+    final next = Completer<Map<String, int>>();
+    var calls = 0;
+    final provider = UnreadCountProvider(
+      flagStream: (_) => explicitOffStream(),
+      legacyRefresh: () {
+        calls++;
+        return calls == 1
+            ? Future.value({
+                'announcements': 1,
+                'event_messages': 2,
+                'team_messages': 3,
+                'session_messages': 4,
+              })
+            : next.future;
+      },
+      cursorRefresh: () async => cursorCounts(),
+      legacySync: (_, __, ___, ____) async {},
+      badgeUpdater: badgeValues.add,
+    );
+    provider.listen('club', 'member-a');
+    await waitUntil(() => provider.total == 10);
+
+    provider.listen('club', 'member-b');
+    expect(provider.total, 0);
+    expect(badgeValues.last, 0);
+    expect(provider.hasReliableBadgeCount, isFalse);
+
+    next.complete({
+      'announcements': 0,
+      'event_messages': 0,
+      'team_messages': 0,
+      'session_messages': 0,
+    });
+    await settle();
+    provider.dispose();
+  });
+
+  test('old flag subscriptions cannot steer A-B-A context switches', () async {
+    final flags = <String, StreamController<UnreadCursorFeatureFlag>>{
+      'club-a': StreamController<UnreadCursorFeatureFlag>.broadcast(),
+      'club-b': StreamController<UnreadCursorFeatureFlag>.broadcast(),
+    };
+    final flagClubs = <String>[];
+    final provider = UnreadCountProvider(
       flagStream: (clubId) {
         flagClubs.add(clubId);
-        return const Stream<UnreadCursorFeatureFlag>.empty();
+        return flags[clubId]!.stream;
       },
       legacyRefresh: () async => {
         'announcements': 0,
@@ -469,15 +706,28 @@ void main() {
     );
 
     provider.listen('club-a', 'member-a');
-    await waitUntil(() => loaderCalls == 1);
     provider.listen('club-b', 'member-b');
     await waitUntil(() => flagClubs.contains('club-b'));
+    flags['club-a']!.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    flags['club-b']!.add(UnreadCursorFeatureFlag.defaults);
+    await settle();
+    expect(provider.cursorMode, UnreadCursorV1Mode.off);
 
-    delayedFirstCacheLoad.complete(prefs);
+    provider.listen('club-a', 'member-a');
+    flags['club-b']!.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    flags['club-a']!.add(UnreadCursorFeatureFlag.defaults);
     await settle();
 
-    expect(flagClubs, ['club-b']);
+    expect(flagClubs, ['club-a', 'club-b', 'club-a']);
+    expect(provider.cursorMode, UnreadCursorV1Mode.off);
     provider.dispose();
+    await Future.wait(flags.values.map((controller) => controller.close()));
   });
 
   test('a late save cannot write new-context values under the old member key',
@@ -490,11 +740,9 @@ void main() {
     final provider = UnreadCountProvider(
       preferencesLoader: () {
         loaderCalls += 1;
-        return loaderCalls == 2
-            ? delayedSave.future
-            : Future.value(prefs);
+        return loaderCalls == 2 ? delayedSave.future : Future.value(prefs);
       },
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () {
         refreshCalls += 1;
         if (refreshCalls == 1) {
@@ -555,7 +803,7 @@ void main() {
           await releaseOldSave.future;
         }
       },
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () async => Map<String, int>.from(currentCounts),
       cursorRefresh: () async => cursorCounts(),
       legacySync: (_, __, ___, ____) async {},
@@ -593,10 +841,10 @@ void main() {
     final currentToken = stagedTokens[stagedUsers.lastIndexOf('member-a')];
     await waitUntil(
       () => prefs.getKeys().any(
-        (key) =>
-            key.endsWith('commit_token') &&
-            prefs.getString(key) == currentToken,
-      ),
+            (key) =>
+                key.endsWith('commit_token') &&
+                prefs.getString(key) == currentToken,
+          ),
     );
 
     releaseOldSave.complete();
@@ -605,17 +853,17 @@ void main() {
     );
     expect(
       prefs.getKeys().any(
-        (key) =>
-            key.endsWith('commit_token') &&
-            prefs.getString(key) == currentToken,
-      ),
+            (key) =>
+                key.endsWith('commit_token') &&
+                prefs.getString(key) == currentToken,
+          ),
       isTrue,
     );
     provider.dispose();
 
     final refresh = Completer<Map<String, int>>();
     final reloaded = UnreadCountProvider(
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () => refresh.future,
       cursorRefresh: () async => cursorCounts(),
       legacySync: (_, __, ___, ____) async {},
@@ -640,11 +888,9 @@ void main() {
     final provider = UnreadCountProvider(
       preferencesLoader: () {
         loaderCalls += 1;
-        return loaderCalls == 2
-            ? delayedSave.future
-            : Future.value(prefs);
+        return loaderCalls == 2 ? delayedSave.future : Future.value(prefs);
       },
-      flagStream: (_) => const Stream<UnreadCursorFeatureFlag>.empty(),
+      flagStream: (_) => explicitOffStream(),
       legacyRefresh: () async => {
         'announcements': 1,
         'event_messages': 2,

@@ -10,21 +10,27 @@ enum ReadStateSection { announcements, events, teams, sessions }
 extension ReadStateSectionPath on ReadStateSection {
   String get id => name;
 
-  bool get supportsScopes => this != ReadStateSection.announcements;
+  bool get supportsScopes => true;
 
   String get scopeCollection => switch (this) {
         ReadStateSection.events => 'conversations',
         ReadStateSection.teams => 'channels',
         ReadStateSection.sessions => 'chats',
-        ReadStateSection.announcements =>
-          throw StateError('Announcements do not have scoped cursors.'),
+        ReadStateSection.announcements => 'items',
       };
 }
 
-DateTime? _dateTimeFromFirestore(Object? value) {
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
+Timestamp? _timestampFromFirestore(Object? value) {
+  if (value is Timestamp) return value;
+  if (value is DateTime) return Timestamp.fromDate(value);
   return null;
+}
+
+int compareFirestoreTimestamps(Timestamp left, Timestamp right) {
+  if (left.seconds != right.seconds) {
+    return left.seconds.compareTo(right.seconds);
+  }
+  return left.nanoseconds.compareTo(right.nanoseconds);
 }
 
 /// A section-level cursor document under `members/{uid}/read_state/{section}`.
@@ -41,9 +47,9 @@ class ReadStateSectionCursor {
 
   final ReadStateSection section;
   final int schemaVersionValue;
-  final DateTime? lastSeenAt;
-  final DateTime? globalLastSeenAt;
-  final DateTime? updatedAt;
+  final Timestamp? lastSeenAt;
+  final Timestamp? globalLastSeenAt;
+  final Timestamp? updatedAt;
 
   factory ReadStateSectionCursor.fromFirestore(
     ReadStateSection section,
@@ -52,9 +58,9 @@ class ReadStateSectionCursor {
     return ReadStateSectionCursor(
       section: section,
       schemaVersionValue: (data?['schema_version'] as num?)?.toInt() ?? 0,
-      lastSeenAt: _dateTimeFromFirestore(data?['last_seen_at']),
-      globalLastSeenAt: _dateTimeFromFirestore(data?['global_last_seen_at']),
-      updatedAt: _dateTimeFromFirestore(data?['updated_at']),
+      lastSeenAt: _timestampFromFirestore(data?['last_seen_at']),
+      globalLastSeenAt: _timestampFromFirestore(data?['global_last_seen_at']),
+      updatedAt: _timestampFromFirestore(data?['updated_at']),
     );
   }
 
@@ -80,13 +86,13 @@ class ReadStateSectionCursor {
 class ReadStateScopeCursor {
   const ReadStateScopeCursor({this.lastSeenAt, this.updatedAt});
 
-  final DateTime? lastSeenAt;
-  final DateTime? updatedAt;
+  final Timestamp? lastSeenAt;
+  final Timestamp? updatedAt;
 
   factory ReadStateScopeCursor.fromFirestore(Map<String, dynamic>? data) {
     return ReadStateScopeCursor(
-      lastSeenAt: _dateTimeFromFirestore(data?['last_seen_at']),
-      updatedAt: _dateTimeFromFirestore(data?['updated_at']),
+      lastSeenAt: _timestampFromFirestore(data?['last_seen_at']),
+      updatedAt: _timestampFromFirestore(data?['updated_at']),
     );
   }
 
@@ -100,13 +106,13 @@ class ReadStateScopeCursor {
 }
 
 /// A cursor that applies to a conversation is the newest section or scope mark.
-DateTime? effectiveReadCursor({
-  DateTime? globalLastSeenAt,
-  DateTime? scopeLastSeenAt,
+Timestamp? effectiveReadCursor({
+  Timestamp? globalLastSeenAt,
+  Timestamp? scopeLastSeenAt,
 }) {
   if (globalLastSeenAt == null) return scopeLastSeenAt;
   if (scopeLastSeenAt == null) return globalLastSeenAt;
-  return globalLastSeenAt.isAfter(scopeLastSeenAt)
+  return compareFirestoreTimestamps(globalLastSeenAt, scopeLastSeenAt) > 0
       ? globalLastSeenAt
       : scopeLastSeenAt;
 }

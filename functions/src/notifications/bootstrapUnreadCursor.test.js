@@ -1,9 +1,10 @@
-const { MemoryFirestore } = require('../../test-utils/memoryFirestore');
+const { MemoryFirestore, MemoryTimestamp } = require('../../test-utils/memoryFirestore');
 const {
   bootstrapUnreadCursor,
   normalizeInput,
   MIN_TIMESTAMP_MS,
 } = require('./bootstrapUnreadCursor');
+const { advanceSenderUnreadCursor } = require('./advanceSenderUnreadCursor');
 
 const uid = 'member-a';
 const clubId = 'calypso';
@@ -13,6 +14,7 @@ const rolloutBaselineMs = Date.parse('2026-09-25T08:26:55.038Z');
 function input(overrides = {}) {
   return {
     clubId,
+    memberId: uid,
     schemaVersion: 1,
     fallbackLastSeenAtMs: Date.parse('2024-01-01T00:00:00Z'),
     announcementsLastSeenAtMs: Date.parse('2026-09-20T10:00:00Z'),
@@ -122,31 +124,59 @@ describe('bootstrapUnreadCursorV1', () => {
     expect(db.docs.get(`${memberPath}/read_state/announcements`)).toEqual(first);
   });
 
-  test('a second device monotonically merges newer legacy reads', async () => {
+  test('a completed handover ignores a newer non-explicit reinstall baseline', async () => {
     const db = database();
     await run(db);
+    const originalEvents = db.docs.get(`${memberPath}/read_state/events`);
+    const originalScope = db.docs.get(
+      `${memberPath}/read_state/events/conversations/event-1`,
+    );
     const newer = Date.parse('2026-09-26T11:00:00Z');
     const reconcileBadge = jest.fn().mockResolvedValue({ total: 0 });
 
     await expect(run(db, input({
       fallbackLastSeenAtMs: newer,
       announcementsLastSeenAtMs: newer,
+      eventConversations: {},
+      teamChannels: {},
+      sessionChats: {},
+    }), { reconcileBadge })).resolves.toEqual({
+      status: 'already-complete',
+      schemaVersion: 1,
+    });
+
+    expect(db.docs.get(`${memberPath}/read_state/events`)).toEqual(originalEvents);
+    expect(db.docs.get(
+      `${memberPath}/read_state/events/conversations/event-1`,
+    )).toEqual(originalScope);
+    expect(reconcileBadge).not.toHaveBeenCalled();
+  });
+
+  test('a second device monotonically merges only failed OFF mirrors', async () => {
+    const db = database();
+    await run(db);
+    const newer = Date.parse('2026-09-26T11:00:00Z');
+    const reconcileBadge = jest.fn().mockResolvedValue({ total: 0 });
+
+    await expect(run(db, input({
+      announcementsLastSeenAtMs: newer,
+      pendingSections: { announcements: newer },
       eventConversations: { 'event-1': newer },
-      teamChannels: { general: newer },
-      sessionChats: { 'session-1__accueil': newer },
+      pendingEventConversations: { 'event-1': newer },
+      teamChannels: {},
+      sessionChats: {},
     }), { reconcileBadge })).resolves.toEqual({
       status: 'merged',
       schemaVersion: 1,
     });
-
-    expect(db.docs.get(`${memberPath}/read_state/events`).global_last_seen_at)
+    expect(db.docs.get(`${memberPath}/read_state/announcements`).last_seen_at)
       .toEqual({ millis: newer });
     expect(db.docs.get(
       `${memberPath}/read_state/events/conversations/event-1`,
     ).last_seen_at).toEqual({ millis: newer });
     expect(db.docs.get(
       `${memberPath}/read_state_bootstraps/unread_cursor_v1`,
-    ).last_merged_at).toEqual({ serverTimestamp: true });
+    ).last_merge_changed_count).toBe(2);
     expect(reconcileBadge).toHaveBeenCalledTimes(1);
   });
 
@@ -183,8 +213,7 @@ describe('bootstrapUnreadCursorV1', () => {
     expect(reconcileBadge).not.toHaveBeenCalled();
   });
 
-  test('legacy reads made while rollout is OFF merge after ON is restored',
-      async () => {
+  test('OFF reads merge forward when cursor mode is enabled again', async () => {
     const db = database();
     await run(db);
     db.docs.set(`clubs/${clubId}/settings/feature_flags`, {
@@ -195,6 +224,7 @@ describe('bootstrapUnreadCursorV1', () => {
     const readWhileOff = Date.parse('2026-09-26T10:30:00Z');
     await expect(run(db, input({
       announcementsLastSeenAtMs: readWhileOff,
+      pendingSections: { announcements: readWhileOff },
     }))).rejects.toMatchObject({ code: 'failed-precondition' });
 
     db.docs.set(`clubs/${clubId}/settings/feature_flags`, {
@@ -204,9 +234,54 @@ describe('bootstrapUnreadCursorV1', () => {
     });
     await expect(run(db, input({
       announcementsLastSeenAtMs: readWhileOff,
+      pendingSections: { announcements: readWhileOff },
+      eventConversations: {},
+      teamChannels: {},
+      sessionChats: {},
     }))).resolves.toEqual({ status: 'merged', schemaVersion: 1 });
     expect(db.docs.get(`${memberPath}/read_state/announcements`).last_seen_at)
       .toEqual({ millis: readWhileOff });
+  });
+
+  test('completed handover ignores ordinary ON rollback timestamps and scopes',
+      async () => {
+    const db = database();
+    await run(db);
+    const originalRoot = db.docs.get(`${memberPath}/read_state/announcements`);
+    const originalScope = db.docs.get(
+      `${memberPath}/read_state/events/conversations/event-1`,
+    );
+    const afterMessageArrival = Date.parse('2026-09-26T11:30:00Z');
+
+    await expect(run(db, input({
+      announcementsLastSeenAtMs: afterMessageArrival,
+      eventConversations: { 'event-1': afterMessageArrival },
+      teamChannels: {},
+      sessionChats: {},
+    }))).resolves.toEqual({
+      status: 'already-complete',
+      schemaVersion: 1,
+    });
+
+    expect(db.docs.get(`${memberPath}/read_state/announcements`))
+      .toEqual(originalRoot);
+    expect(db.docs.get(
+      `${memberPath}/read_state/events/conversations/event-1`,
+    )).toEqual(originalScope);
+  });
+
+  test('clamps pending future timestamps and rejects unknown pending sections',
+      async () => {
+    const normalized = normalizeInput(input({
+      pendingSections: { events: nowMs + 5000 },
+      pendingTeamChannels: { general: nowMs + 9000 },
+    }), nowMs);
+    expect(normalized.pendingSections.get('events')).toBe(nowMs);
+    expect(normalized.pendingTeams.get('general')).toBe(nowMs);
+    expect(normalized.timestampsClamped).toBe(true);
+    expect(() => normalizeInput(input({
+      pendingSections: { unknown: nowMs },
+    }), nowMs)).toThrow(expect.objectContaining({ code: 'invalid-argument' }));
   });
 
   test('one callable reconciliation covers a multi-scope bootstrap', async () => {
@@ -256,6 +331,29 @@ describe('bootstrapUnreadCursorV1', () => {
     ).last_seen_at).toEqual({ millis: laterScope });
   });
 
+  test('pre-bootstrap sender cursor survives the legacy handover transaction',
+      async () => {
+    const db = database();
+    const sentAt = new MemoryTimestamp('2026-09-26T11:00:00Z');
+    await advanceSenderUnreadCursor({
+      db,
+      clubId,
+      senderId: uid,
+      section: 'teams',
+      scopeId: 'general',
+      visibleAt: sentAt,
+      serverTimestamp: () => sentAt,
+    });
+
+    await run(db, input({
+      teamChannels: { general: Date.parse('2026-09-22T10:00:00Z') },
+    }));
+
+    expect(db.docs.get(
+      `${memberPath}/read_state/teams/channels/general`,
+    ).last_seen_at).toBe(sentAt);
+  });
+
   test('refuses to backdate without a trusted server migration marker', async () => {
     const db = database();
     db.docs.delete(`clubs/${clubId}/settings/unread_cursor_v1_migration`);
@@ -290,5 +388,14 @@ describe('bootstrapUnreadCursorV1', () => {
     await expect(run(database({ pilot: false }))).rejects.toMatchObject({
       code: 'failed-precondition',
     });
+  });
+
+  test('rejects an account-switched payload before writing another member', async () => {
+    const db = database();
+    await expect(run(db, input({ memberId: 'member-b' })))
+      .rejects.toMatchObject({ code: 'permission-denied' });
+    expect(db.docs.has(
+      `${memberPath}/read_state_bootstraps/unread_cursor_v1`,
+    )).toBe(false);
   });
 });

@@ -97,6 +97,20 @@ void main() {
       expect(value.routeKind, NotificationRouteKind.formationTask);
     });
 
+    test('normalises the server-owned notification recipient identity', () {
+      final snakeCase = request({
+        'type': 'birthday',
+        'recipient_id': ' member-a ',
+      });
+      final camelCase = request({
+        'type': 'birthday',
+        'recipientId': 'member-b',
+      });
+
+      expect(snakeCase.recipientId, 'member-a');
+      expect(camelCase.recipientId, 'member-b');
+    });
+
     test('legacy exercise declaration retains member and exercise ids', () {
       final value = request({
         'type': 'exercice_declared',
@@ -190,6 +204,16 @@ void main() {
         {'type': 'announcement'},
         {'type': 'team_message'},
         {'type': 'session_message'},
+        {
+          'type': 'session_message',
+          'session_id': 'session-1',
+          'group_type': 'unknown',
+        },
+        {
+          'type': 'session_message',
+          'session_id': 'session-1',
+          'group_type': 'niveau',
+        },
         {'type': 'session_reminder'},
         {'type': 'exercice_declared', 'member_id': 'member-1'},
         {'type': 'logbook_dive_confirmation'},
@@ -210,7 +234,11 @@ void main() {
         {'type': 'event_message', 'operation_id': 'operation-1'},
         {'type': 'announcement', 'announcementId': 'announcement-1'},
         {'type': 'team_message', 'channel_id': 'channel-1'},
-        {'type': 'session_message', 'sessionId': 'session-1'},
+        {
+          'type': 'session_message',
+          'sessionId': 'session-1',
+          'groupType': 'encadrants',
+        },
         {'type': 'session_reminder', 'session_id': 'session-1'},
         {
           'type': 'exercice_declared',
@@ -236,6 +264,28 @@ void main() {
   });
 
   group('idempotent pending queue', () {
+    test('clear drops pending and in-flight requests across auth changes', () {
+      final queue = NotificationNavigationQueue();
+      final inFlight = request({
+        'type': 'team_message',
+        'channel_id': 'general',
+      });
+      final pending = request({
+        'type': 'announcement',
+        'announcement_id': 'announcement-pending',
+      });
+      expect(queue.enqueue(inFlight), isTrue);
+      expect(queue.takeNext(), same(inFlight));
+      expect(queue.enqueue(pending), isTrue);
+
+      queue.clear();
+
+      expect(queue.pendingCount, 0);
+      expect(queue.takeNext(), isNull);
+      expect(queue.enqueue(inFlight), isTrue,
+          reason: 'an old in-flight dedupe key must not survive logout');
+    });
+
     test('keeps a cold-start tap pending until the app consumes it', () {
       final queue = NotificationNavigationQueue();
       final value = request({
@@ -355,5 +405,107 @@ void main() {
       expect(queue.enqueue(p3Message), isTrue);
       expect(queue.enqueue(duplicateP2Message), isFalse);
     });
+  });
+
+  test('cold-start tap survives initial null auth but not a later logout', () {
+    final buffer = StartupNotificationBuffer();
+    final coldStart = request({
+      'type': 'announcement',
+      'announcement_id': 'announcement-1',
+      'recipient_id': 'member-a',
+    }, origin: NotificationTapOrigin.terminated);
+
+    expect(
+      buffer.stageIfNeeded(
+        coldStart,
+        currentUserId: null,
+      ),
+      isTrue,
+    );
+    expect(buffer.synchronizeIdentity(null), isNull);
+    expect(buffer.synchronizeIdentity('member-a'), same(coldStart));
+
+    final staleAfterLogout = request({
+      'type': 'announcement',
+      'announcement_id': 'announcement-2',
+      'recipient_id': 'member-a',
+    }, origin: NotificationTapOrigin.terminated);
+    expect(
+      buffer.stageIfNeeded(
+        staleAfterLogout,
+        currentUserId: null,
+      ),
+      isFalse,
+    );
+    expect(buffer.synchronizeIdentity(null), isNull);
+    expect(buffer.synchronizeIdentity('member-b'), isNull);
+  });
+
+  test('cold-start request is released only to its payload recipient', () {
+    final buffer = StartupNotificationBuffer();
+    final coldStart = request({
+      'type': 'team_message',
+      'channel_id': 'general',
+      'recipient_id': 'member-a',
+    }, origin: NotificationTapOrigin.terminated);
+    expect(
+      buffer.stageIfNeeded(
+        coldStart,
+        currentUserId: null,
+      ),
+      isTrue,
+    );
+    expect(buffer.synchronizeIdentity('member-b'), isNull);
+  });
+
+  test('cold-start request without a bound recipient is never released', () {
+    final buffer = StartupNotificationBuffer();
+    final unbound = request({
+      'type': 'announcement',
+      'announcement_id': 'announcement-1',
+    }, origin: NotificationTapOrigin.terminated);
+
+    expect(
+      buffer.stageIfNeeded(unbound, currentUserId: null),
+      isTrue,
+    );
+    expect(buffer.synchronizeIdentity('member-a'), isNull);
+  });
+
+  test('background OS tap waits for its exact recipient during auth restore',
+      () {
+    final buffer = StartupNotificationBuffer();
+    final background = request({
+      'type': 'event_message',
+      'operation_id': 'operation-1',
+      'recipient_id': 'member-a',
+    }, origin: NotificationTapOrigin.background);
+
+    expect(buffer.stageIfNeeded(background, currentUserId: null), isTrue);
+    expect(buffer.synchronizeIdentity(null), isNull);
+    expect(buffer.synchronizeIdentity('member-a'), same(background));
+  });
+
+  test('only in-app history may navigate without a recipient binding', () {
+    for (final origin in [
+      NotificationTapOrigin.foreground,
+      NotificationTapOrigin.background,
+      NotificationTapOrigin.terminated,
+    ]) {
+      final osRequest = request({
+        'type': 'announcement',
+        'announcement_id': 'announcement-1',
+      }, origin: origin);
+      expect(osRequest.requiresBoundRecipient, isTrue);
+    }
+    final history = request({
+      'type': 'announcement',
+      'announcement_id': 'announcement-1',
+    }, origin: NotificationTapOrigin.history);
+    expect(history.requiresBoundRecipient, isFalse);
+    expect(
+      StartupNotificationBuffer().stageIfNeeded(history, currentUserId: null),
+      isFalse,
+    );
   });
 }

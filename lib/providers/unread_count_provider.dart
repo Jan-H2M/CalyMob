@@ -39,26 +39,24 @@ class UnreadCountProvider extends ChangeNotifier {
     Future<SharedPreferences> Function()? preferencesLoader,
     @visibleForTesting
     Future<void> Function(String clubId, String userId, String token)?
-    cacheBeforeCommit,
-  }) : _service =
-           service ?? (legacyRefresh == null ? UnreadCountService() : null),
-       _tracker = tracker ?? LocalReadTracker(),
-       _readState =
-           readState ?? (cursorRefresh == null ? ReadStateService() : null),
-       _cursorService =
-           cursorService ??
-           (cursorRefresh == null ? CursorUnreadCountService() : null),
-       _featureFlags =
-           featureFlags ?? (flagStream == null ? FeatureFlagService() : null),
-       _legacyRefresh = legacyRefresh,
-       _cursorRefresh = cursorRefresh,
-       _cursorBootstrap = cursorBootstrap,
-       _legacySync = legacySync,
-       _badgeUpdater = badgeUpdater,
-       _flagStream = flagStream,
-       _preferencesLoader =
-           preferencesLoader ?? SharedPreferences.getInstance,
-       _cacheBeforeCommit = cacheBeforeCommit;
+        cacheBeforeCommit,
+  })  : _service =
+            service ?? (legacyRefresh == null ? UnreadCountService() : null),
+        _tracker = tracker ?? LocalReadTracker(),
+        _readState =
+            readState ?? (cursorRefresh == null ? ReadStateService() : null),
+        _cursorService = cursorService ??
+            (cursorRefresh == null ? CursorUnreadCountService() : null),
+        _featureFlags =
+            featureFlags ?? (flagStream == null ? FeatureFlagService() : null),
+        _legacyRefresh = legacyRefresh,
+        _cursorRefresh = cursorRefresh,
+        _cursorBootstrap = cursorBootstrap,
+        _legacySync = legacySync,
+        _badgeUpdater = badgeUpdater,
+        _flagStream = flagStream,
+        _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance,
+        _cacheBeforeCommit = cacheBeforeCommit;
 
   final UnreadCountService? _service;
   final LocalReadTracker _tracker;
@@ -73,7 +71,7 @@ class UnreadCountProvider extends ChangeNotifier {
   final Stream<UnreadCursorFeatureFlag> Function(String clubId)? _flagStream;
   final Future<SharedPreferences> Function() _preferencesLoader;
   final Future<void> Function(String clubId, String userId, String token)?
-  _cacheBeforeCommit;
+      _cacheBeforeCommit;
 
   int _announcements = 0;
   int _eventMessages = 0;
@@ -84,6 +82,7 @@ class UnreadCountProvider extends ChangeNotifier {
   bool _refreshQueued = false;
   final List<Completer<void>> _refreshWaiters = <Completer<void>>[];
   int _refreshGeneration = 0;
+  int _listenGeneration = 0;
   int _flagStreamGeneration = 0;
   int _cacheGeneration = 0;
   int _cacheWriteSequence = 0;
@@ -93,6 +92,10 @@ class UnreadCountProvider extends ChangeNotifier {
   StreamSubscription<UnreadCursorFeatureFlag>? _flagSubscription;
   UnreadCursorV1Mode _cursorMode = UnreadCursorV1Mode.off;
   bool _cursorReady = false;
+  bool _flagResolved = false;
+  bool _contextReady = false;
+  bool _hasReliableBadgeCount = false;
+  Object? _lastRefreshError;
   String? _clubId;
   String? _userId;
   List<String> _roles = const [];
@@ -104,6 +107,7 @@ class UnreadCountProvider extends ChangeNotifier {
   // === Cache keys voor SharedPreferences ===
   static const _legacyCachePrefix = 'unread_cache_';
   static const _cacheV2Prefix = 'unread_cache_v2_';
+  static const _cacheV3Prefix = 'unread_cache_v3_';
   static const _cacheCommitSuffix = 'commit_token';
 
   /// Cache geldigheid: 5 minuten
@@ -122,20 +126,53 @@ class UnreadCountProvider extends ChangeNotifier {
   UnreadCursorV1Mode get cursorMode => _cursorMode;
   bool get isCursorReady => _cursorReady;
   bool get isListening => _isListening;
+  bool get hasReliableBadgeCount =>
+      _isListening &&
+      _flagResolved &&
+      _contextReady &&
+      _hasReliableBadgeCount &&
+      (_cursorMode != UnreadCursorV1Mode.on || _cursorReady);
+  Object? get lastRefreshError => _lastRefreshError;
 
-  /// Cursor acknowledgements are intentionally available only in ON mode.
-  /// Legacy LocalReadTracker calls remain the sole behaviour in OFF/shadow.
+  /// Notification/deep-link navigation may start only after this identity's
+  /// authority is known and its local namespace is active. Cursor bootstrap
+  /// itself may still be retrying; screens then remain cursor-pending and
+  /// never fall through to legacy acknowledgement.
+  bool hasResolvedAuthorityFor(String clubId, String userId) =>
+      _isListening &&
+      _clubId == clubId &&
+      _userId == userId &&
+      _flagResolved &&
+      _contextReady;
+
+  /// Before the server flag resolves, the provider deliberately presents a
+  /// cursor-pending authority. This prevents screens from briefly rendering
+  /// or acknowledging through legacy state for a member who is effectively
+  /// ON. A confirmed OFF/shadow (non-pilot) flag switches back to legacy.
   bool get usesCursorReadState =>
-      _cursorMode == UnreadCursorV1Mode.on && _cursorReady;
+      _isListening && (!_flagResolved || _cursorMode == UnreadCursorV1Mode.on);
 
-  Future<void> markAnnouncementSeen() => _acknowledge(
-    (clubId, userId) => _readState!.markAnnouncementSeen(clubId, userId),
-  );
+  Future<void> markAnnouncementSeen(
+    String announcementId, {
+    String? visibleReplyId,
+    DateTime? visibleThroughAt,
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markAnnouncementSeen(
+          clubId,
+          userId,
+          announcementId,
+          visibleReplyId: visibleReplyId,
+        ),
+        legacyKey: 'announcement_$announcementId',
+        visibleThroughAt: visibleThroughAt,
+      );
 
   Future<void> markEventsSeen() => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSectionSeen(clubId, userId, ReadStateSection.events),
-  );
+        (clubId, userId) => _readState!
+            .markSectionSeen(clubId, userId, ReadStateSection.events),
+        legacySection: ReadStateSection.events,
+      );
 
   Future<void> markCommunicationSeen() async {
     await markAnnouncementsSeen();
@@ -143,39 +180,180 @@ class UnreadCountProvider extends ChangeNotifier {
     await markSessionsSeen();
   }
 
-  Future<void> markAnnouncementsSeen() => markAnnouncementSeen();
+  Future<void> markAnnouncementsSeen() => _acknowledge(
+        (clubId, userId) => _readState!.markSectionSeen(
+          clubId,
+          userId,
+          ReadStateSection.announcements,
+        ),
+        legacyKey: 'announcements',
+      );
 
   Future<void> markTeamsSeen() => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSectionSeen(clubId, userId, ReadStateSection.teams),
-  );
+        (clubId, userId) =>
+            _readState!.markSectionSeen(clubId, userId, ReadStateSection.teams),
+        legacySection: ReadStateSection.teams,
+      );
 
   Future<void> markSessionsSeen() => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSectionSeen(clubId, userId, ReadStateSection.sessions),
-  );
+        (clubId, userId) => _readState!
+            .markSectionSeen(clubId, userId, ReadStateSection.sessions),
+        legacySection: ReadStateSection.sessions,
+      );
 
-  Future<void> markEventConversationSeen(String operationId) => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markEventConversationSeen(clubId, userId, operationId),
-  );
+  Future<void> markEventConversationSeen(
+    String operationId, {
+    required String visibleMessageId,
+    DateTime? visibleThroughAt,
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markEventConversationSeen(
+          clubId,
+          userId,
+          operationId,
+          visibleMessageId: visibleMessageId,
+        ),
+        legacyKey: 'operation_$operationId',
+        visibleThroughAt: visibleThroughAt,
+      );
 
-  Future<void> markTeamChannelSeen(String channelId) => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markTeamChannelSeen(clubId, userId, channelId),
-  );
+  Future<void> markTeamChannelSeen(
+    String channelId, {
+    required String visibleMessageId,
+    DateTime? visibleThroughAt,
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markTeamChannelSeen(
+          clubId,
+          userId,
+          channelId,
+          visibleMessageId: visibleMessageId,
+        ),
+        legacyKey: 'team_$channelId',
+        visibleThroughAt: visibleThroughAt,
+      );
 
-  Future<void> markSessionChatSeen(String scopeId) => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSessionChatSeen(clubId, userId, scopeId),
-  );
+  Future<void> markSessionChatSeen(
+    String scopeId, {
+    required String visibleMessageId,
+    String? sessionId,
+    String? groupType,
+    String? groupLevel,
+    DateTime? visibleThroughAt,
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markSessionChatSeen(
+          clubId,
+          userId,
+          scopeId,
+          visibleMessageId: visibleMessageId,
+          sessionId: sessionId,
+          groupType: groupType,
+          groupLevel: groupLevel,
+        ),
+        legacyKey: 'session_${scopeId.replaceAll('__', '_')}',
+        visibleThroughAt: visibleThroughAt,
+      );
 
   Future<void> _acknowledge(
-    Future<void> Function(String clubId, String userId) action,
-  ) async {
-    if (!usesCursorReadState || _clubId == null || _userId == null) return;
-    await action(_clubId!, _userId!);
-    await refresh();
+    Future<DateTime> Function(String clubId, String userId) action, {
+    String? legacyKey,
+    ReadStateSection? legacySection,
+    DateTime? visibleThroughAt,
+  }) async {
+    final clubId = _clubId;
+    final userId = _userId;
+    final generation = _refreshGeneration;
+    if (clubId == null || userId == null || !_flagResolved || !_contextReady) {
+      throw StateError('Unread authority is not ready yet.');
+    }
+    final cursorAuthority = usesCursorReadState;
+    if (cursorAuthority && !_cursorReady) {
+      throw StateError('Cursor read state is not ready yet.');
+    }
+
+    Future<void> advanceRollbackState(DateTime timestamp) async {
+      if (legacyKey != null) {
+        await _tracker.markAsReadAtFor(clubId, userId, legacyKey, timestamp);
+        return;
+      }
+      if (legacySection != null) {
+        await _tracker.markSectionAsReadAtFor(
+          clubId,
+          userId,
+          legacySection,
+          timestamp,
+        );
+        return;
+      }
+      throw StateError('An unread acknowledgement needs a rollback key.');
+    }
+
+    Future<void> clearPendingMirror(DateTime through) async {
+      if (legacyKey != null) {
+        await _tracker.clearPendingReadMirrorFor(
+          clubId,
+          userId,
+          legacyKey,
+          through,
+        );
+      } else if (legacySection != null) {
+        await _tracker.clearPendingSectionMirrorFor(
+          clubId,
+          userId,
+          legacySection,
+          through,
+        );
+      }
+    }
+
+    Future<void> recordPendingMirror(DateTime timestamp) async {
+      if (legacyKey != null) {
+        await _tracker.recordPendingReadMirrorFor(
+          clubId,
+          userId,
+          legacyKey,
+          timestamp,
+        );
+      } else if (legacySection != null) {
+        await _tracker.recordPendingSectionMirrorFor(
+          clubId,
+          userId,
+          legacySection,
+          timestamp,
+        );
+      }
+    }
+
+    if (cursorAuthority) {
+      final serverTimestamp = await action(clubId, userId);
+      // Keep OFF rollback authority monotone with ON acknowledgements.
+      await advanceRollbackState(serverTimestamp);
+      await clearPendingMirror(serverTimestamp);
+    } else {
+      try {
+        final serverTimestamp = await action(clubId, userId);
+        await advanceRollbackState(serverTimestamp);
+        await clearPendingMirror(serverTimestamp);
+      } catch (error) {
+        // A loaded Firestore snapshot timestamp is safe to retain while the
+        // cursor mirror is offline. Never substitute DateTime.now(): a newer
+        // message may have arrived between the visible snapshot and the local
+        // write, and a client clock must not hide it after ON→OFF rollback.
+        if (visibleThroughAt == null) rethrow;
+        await advanceRollbackState(visibleThroughAt);
+        await recordPendingMirror(visibleThroughAt);
+        debugPrint('⚠️ Cursor mirror during legacy mode failed: $error');
+      }
+    }
+    if (_isCurrent(
+      generation,
+      cursorAuthority ? UnreadCursorV1Mode.on : _cursorMode,
+      clubId,
+      userId,
+    )) {
+      await refresh();
+    }
   }
 
   /// Start periodic refresh voor alle berichttypes.
@@ -189,47 +367,27 @@ class UnreadCountProvider extends ChangeNotifier {
     String? targetFormationLevel,
     bool formationActive = false,
   }) async {
-    if (_isListening) {
-      final contextChanged =
-          _clubId != clubId ||
-          _userId != userId ||
-          !listEquals(_roles, roles) ||
-          _includeAllTeamChannels != includeAllTeamChannels ||
-          _plongeurCode != plongeurCode ||
-          _targetFormationLevel != targetFormationLevel ||
-          _formationActive != formationActive;
-
-      if (!contextChanged) {
-        debugPrint('ℹ️ UnreadCountProvider: al actief');
-        return;
-      }
-
-      debugPrint('🔄 UnreadCountProvider: context bijgewerkt (roles: $roles)');
-      _clubId = clubId;
-      _userId = userId;
-      _roles = List<String>.from(roles);
-      _includeAllTeamChannels = includeAllTeamChannels;
-      _plongeurCode = plongeurCode;
-      _targetFormationLevel = targetFormationLevel;
-      _formationActive = formationActive;
-      _refreshGeneration++;
-      _cacheGeneration++;
-      _cursorMode = UnreadCursorV1Mode.off;
-      _cursorReady = false;
-      _clearDisplayedCountsForContextChange();
-      final listenGeneration = _refreshGeneration;
-
-      await _tracker.init();
-      await _loadCachedCounts(clubId, userId, listenGeneration);
-      if (!_isListenContextCurrent(clubId, userId, listenGeneration)) return;
-      _listenToCursorFlag(clubId);
-      unawaited(refresh());
+    final contextChanged = !_isListening ||
+        _clubId != clubId ||
+        _userId != userId ||
+        !listEquals(_roles, roles) ||
+        _includeAllTeamChannels != includeAllTeamChannels ||
+        _plongeurCode != plongeurCode ||
+        _targetFormationLevel != targetFormationLevel ||
+        _formationActive != formationActive;
+    if (!contextChanged) {
+      debugPrint('ℹ️ UnreadCountProvider: al actief');
       return;
     }
 
-    debugPrint(
-      '🔔 UnreadCountProvider: start periodic refresh (roles: $roles)',
-    );
+    // Invalidate the old listener before the first await. A late A emission
+    // therefore cannot steer B (or a subsequent A) after a slow cache load.
+    _flagStreamGeneration++;
+    unawaited(_flagSubscription?.cancel() ?? Future<void>.value());
+    _flagSubscription = null;
+    _refreshGeneration++;
+    _listenGeneration++;
+    _cacheGeneration++;
     _clubId = clubId;
     _userId = userId;
     _roles = List<String>.from(roles);
@@ -238,20 +396,33 @@ class UnreadCountProvider extends ChangeNotifier {
     _targetFormationLevel = targetFormationLevel;
     _formationActive = formationActive;
     _isListening = true;
-    final listenGeneration = _refreshGeneration;
+    _flagResolved = false;
+    _contextReady = false;
+    _cursorMode = UnreadCursorV1Mode.off;
+    _cursorReady = false;
+    _hasReliableBadgeCount = false;
+    _lastRefreshError = null;
+    // Authority is deliberately unknown until the server flag resolves. The
+    // device badge is global and may still contain a legacy/cache value from
+    // an earlier process or notification. Neutralise it synchronously now;
+    // confirmed OFF/shadow restores its live legacy value after refresh,
+    // while an eventual ON member can never retain a legacy 99+ during a slow
+    // flag/bootstrap/query path.
+    _clearDisplayedCountsForContextChange(clearOsBadge: true);
+    final listenGeneration = _listenGeneration;
+    _listenToCursorFlag(clubId, userId);
 
-    // The legacy tracker remains initialized for OFF/shadow coexistence. ON
-    // never writes it; Phase 3 moves the screen-level acknowledgements.
     await _tracker.init();
-
-    // Laad cached counts direct (geen netwerk nodig, instant)
-    await _loadCachedCounts(clubId, userId, listenGeneration);
+    await _tracker.activateContext(clubId, userId);
     if (!_isListenContextCurrent(clubId, userId, listenGeneration)) return;
-
-    _listenToCursorFlag(clubId);
-
-    // Refresh in achtergrond (niet blocking)
-    unawaited(refresh());
+    _contextReady = true;
+    if (_flagResolved) {
+      unawaited(_loadAuthorityCacheAndRefresh(
+        clubId,
+        userId,
+        listenGeneration,
+      ));
+    }
     _configureRefreshTimer();
   }
 
@@ -263,58 +434,103 @@ class UnreadCountProvider extends ChangeNotifier {
       _isListening &&
       _clubId == clubId &&
       _userId == userId &&
-      _refreshGeneration == generation;
+      _listenGeneration == generation;
 
-  void _listenToCursorFlag(String clubId) {
-    final streamGeneration = ++_flagStreamGeneration;
-    _flagSubscription?.cancel();
+  void _listenToCursorFlag(String clubId, String userId) {
+    final streamGeneration = _flagStreamGeneration;
     final stream =
         _flagStream?.call(clubId) ?? _featureFlags!.unreadCursorV1(clubId);
     _flagSubscription = stream.listen(
       (flag) {
-        if (streamGeneration == _flagStreamGeneration) {
-          _onCursorFlag(flag);
+        if (streamGeneration == _flagStreamGeneration &&
+            clubId == _clubId &&
+            userId == _userId) {
+          _onCursorFlag(flag, clubId, userId);
         }
       },
       onError: (Object error, StackTrace stackTrace) {
         if (streamGeneration != _flagStreamGeneration) return;
+        _lastRefreshError = error;
+        notifyListeners();
         debugPrint('⚠️ unread cursor feature flag stream failed: $error');
-        _onCursorFlag(UnreadCursorFeatureFlag.defaults);
+        // Unknown authority is fail-closed: do not expose a legacy cache or
+        // publish an OS badge until a real flag value arrives.
       },
     );
   }
 
-  void _onCursorFlag(UnreadCursorFeatureFlag flag) {
-    final next = flag.effectiveModeFor(_userId);
-    if (next == _cursorMode) {
-      if (next == UnreadCursorV1Mode.on && !_cursorReady) {
-        unawaited(refresh());
-      }
+  void _onCursorFlag(
+    UnreadCursorFeatureFlag flag,
+    String clubId,
+    String userId,
+  ) {
+    final next = flag.effectiveModeFor(userId);
+    final firstResolution = !_flagResolved;
+    if (!firstResolution && next == _cursorMode) {
+      if (_contextReady) unawaited(refresh());
       return;
     }
+    _flagResolved = true;
     _cursorMode = next;
     _cursorReady = false;
+    _hasReliableBadgeCount = false;
+    _lastRefreshError = null;
     _refreshGeneration++;
+    _cacheGeneration++;
+    _clearDisplayedCountsForContextChange(
+      clearOsBadge: next == UnreadCursorV1Mode.on,
+    );
     debugPrint('🔀 unread cursor v1 mode=$_cursorMode');
     _configureRefreshTimer();
-    notifyListeners();
-    unawaited(refresh());
+    if (_contextReady) {
+      unawaited(_loadAuthorityCacheAndRefresh(
+        clubId,
+        userId,
+        _listenGeneration,
+      ));
+    }
+  }
+
+  Future<void> _loadAuthorityCacheAndRefresh(
+    String clubId,
+    String userId,
+    int generation,
+  ) async {
+    final cursorAuthority = _cursorMode == UnreadCursorV1Mode.on;
+    final authority = cursorAuthority ? 'cursor' : 'legacy';
+    // Cursor authority deliberately has no persistent startup cache. Even a
+    // formerly canonical cache can be from a pre-fix/global identity and can
+    // render the same transient 99+ symptom. Stay at zero until bootstrap and
+    // one complete live canonical query succeed.
+    if (!cursorAuthority) {
+      await _loadCachedCounts(clubId, userId, generation, authority);
+    }
+    if (!_isListenContextCurrent(clubId, userId, generation) ||
+        authority !=
+            (_cursorMode == UnreadCursorV1Mode.on ? 'cursor' : 'legacy')) {
+      return;
+    }
+    await refresh();
   }
 
   void _configureRefreshTimer() {
     _refreshTimer?.cancel();
-    final interval = usesCursorReadState
+    final interval = usesCursorReadState && _cursorReady
         ? const Duration(minutes: 5)
         : const Duration(seconds: 60);
     _refreshTimer = Timer.periodic(interval, (_) => refresh());
   }
 
   /// Laad cached counts uit SharedPreferences (instant, geen netwerk)
-  String _cachePrefixFor(String clubId, String userId) {
+  String _cachePrefixFor(
+    String clubId,
+    String userId,
+    String authority,
+  ) {
     final identity = base64Url
         .encode(utf8.encode('$clubId\u0000$userId'))
         .replaceAll('=', '');
-    return '$_cacheV2Prefix${identity}_';
+    return '$_cacheV3Prefix${identity}_${authority}_';
   }
 
   String _cacheSnapshotPrefix(String prefix, String token) =>
@@ -360,11 +576,12 @@ class UnreadCountProvider extends ChangeNotifier {
     String clubId,
     String userId,
     int generation,
+    String authority,
   ) async {
     try {
       final prefs = await _preferencesLoader();
       await _removeLegacyGlobalCache(prefs);
-      final prefix = _cachePrefixFor(clubId, userId);
+      final prefix = _cachePrefixFor(clubId, userId, authority);
       final commitKey = '$prefix$_cacheCommitSuffix';
       final token = prefs.getString(commitKey);
       if (token == null || token.isEmpty) return;
@@ -386,7 +603,11 @@ class UnreadCountProvider extends ChangeNotifier {
 
       // Gebruik cache als die niet te oud is
       if (cacheAge >= 0 && cacheAge < _cacheTTL.inMilliseconds) {
-        if (!_isListenContextCurrent(clubId, userId, generation)) return;
+        if (!_isListenContextCurrent(clubId, userId, generation) ||
+            authority !=
+                (_cursorMode == UnreadCursorV1Mode.on ? 'cursor' : 'legacy')) {
+          return;
+        }
         _announcements = announcements;
         _eventMessages = eventMessages;
         _teamMessages = teamMessages;
@@ -402,7 +623,7 @@ class UnreadCountProvider extends ChangeNotifier {
   }
 
   /// Sla huidige counts op in SharedPreferences cache
-  Future<void> _saveCachedCounts() async {
+  Future<void> _saveCachedCounts(String authority) async {
     final clubId = _clubId;
     final userId = _userId;
     if (clubId == null || userId == null) return;
@@ -417,7 +638,7 @@ class UnreadCountProvider extends ChangeNotifier {
     try {
       final prefs = await _preferencesLoader();
       if (generation != _cacheGeneration) return;
-      final prefix = _cachePrefixFor(clubId, userId);
+      final prefix = _cachePrefixFor(clubId, userId, authority);
       final snapshotPrefix = _cacheSnapshotPrefix(prefix, token);
       final commitKey = '$prefix$_cacheCommitSuffix';
 
@@ -469,13 +690,13 @@ class UnreadCountProvider extends ChangeNotifier {
     }
   }
 
-  void _clearDisplayedCountsForContextChange() {
+  void _clearDisplayedCountsForContextChange({bool clearOsBadge = false}) {
     _announcements = 0;
     _eventMessages = 0;
     _teamMessages = 0;
     _sessionMessages = 0;
     notifyListeners();
-    _updateBadge(0);
+    if (clearOsBadge) _updateBadgeImmediate(0);
   }
 
   /// Herbereken alle counts. Wordt aangeroepen:
@@ -504,6 +725,8 @@ class UnreadCountProvider extends ChangeNotifier {
         try {
           await _refreshOnce();
         } catch (error, stackTrace) {
+          _lastRefreshError = error;
+          notifyListeners();
           debugPrint('❌ UnreadCountProvider refresh error: $error');
           debugPrintStack(stackTrace: stackTrace);
         }
@@ -521,7 +744,7 @@ class UnreadCountProvider extends ChangeNotifier {
   Future<void> _refreshOnce() async {
     final clubId = _clubId;
     final userId = _userId;
-    if (clubId == null) return;
+    if (clubId == null || !_flagResolved || !_contextReady) return;
     final generation = _refreshGeneration;
     final mode = _cursorMode;
 
@@ -556,41 +779,23 @@ class UnreadCountProvider extends ChangeNotifier {
     required int generation,
   }) async {
     if (!_cursorReady) {
-      // Keep a complete legacy result visible while the server performs the
-      // one-time handover. A failed legacy refresh leaves cached/current values
-      // untouched instead of flashing zero.
-      try {
-        final legacy = await _loadLegacyCounts(clubId);
-        if (_isCurrent(generation, UnreadCursorV1Mode.on, clubId, userId)) {
-          final values = _legacyValues(legacy);
-          _applyCounts(
-            values[0],
-            values[1],
-            values[2],
-            values[3],
-            source: 'legacy-handover',
-          );
-        }
-      } catch (error) {
-        debugPrint(
-          '⚠️ legacy fallback refresh failed during cursor handover: '
-          '$error',
-        );
-      }
-      if (!_isCurrent(generation, UnreadCursorV1Mode.on, clubId, userId)) {
-        return;
-      }
-
       try {
         await (_cursorBootstrap?.call() ??
             () async {
               final snapshot = await _tracker.exportReadState();
-              await _readState!.bootstrapFromLegacy(clubId, snapshot);
+              await _readState!.bootstrapFromLegacy(clubId, userId, snapshot);
+              await _tracker.clearPendingMirrorsUpTo(
+                clubId,
+                userId,
+                snapshot,
+              );
             }());
       } catch (error) {
+        _lastRefreshError = error;
+        notifyListeners();
         debugPrint(
-          '⚠️ unread cursor bootstrap failed; keeping legacy '
-          'authority: $error',
+          '⚠️ unread cursor bootstrap failed; keeping canonical UI '
+          'fail-closed: $error',
         );
         return;
       }
@@ -606,6 +811,7 @@ class UnreadCountProvider extends ChangeNotifier {
 
     final becameReady = !_cursorReady;
     _cursorReady = true;
+    _lastRefreshError = null;
     if (becameReady) _configureRefreshTimer();
     _applyCounts(
       cursor.announcements,
@@ -649,11 +855,11 @@ class UnreadCountProvider extends ChangeNotifier {
       );
 
   List<int> _legacyValues(Map<String, int> counts) => <int>[
-    counts['announcements'] ?? 0,
-    counts['event_messages'] ?? 0,
-    counts['team_messages'] ?? 0,
-    counts['session_messages'] ?? 0,
-  ];
+        counts['announcements'] ?? 0,
+        counts['event_messages'] ?? 0,
+        counts['team_messages'] ?? 0,
+        counts['session_messages'] ?? 0,
+      ];
 
   Future<CursorUnreadBreakdown> _loadCursorCounts(
     String clubId,
@@ -689,13 +895,15 @@ class UnreadCountProvider extends ChangeNotifier {
     required String source,
     bool notifyEvenIfUnchanged = false,
   }) {
+    _hasReliableBadgeCount = true;
+    _lastRefreshError = null;
     if (announcements == _announcements &&
         eventMessages == _eventMessages &&
         teamMessages == _teamMessages &&
         sessionMessages == _sessionMessages) {
       // Cursor mode owns the OS icon, including an unchanged zero after a
       // cold start or foreground push.
-      if (source == 'cursor') _updateBadge(total);
+      _updateBadge(total);
       if (notifyEvenIfUnchanged) notifyListeners();
       return;
     }
@@ -710,7 +918,9 @@ class UnreadCountProvider extends ChangeNotifier {
     );
     notifyListeners();
     _updateBadge(total);
-    unawaited(_saveCachedCounts());
+    if (source == 'legacy') {
+      unawaited(_saveCachedCounts('legacy'));
+    }
   }
 
   /// Schrijf de lokaal berekende counts terug naar het Firestore member document.
@@ -772,21 +982,40 @@ class UnreadCountProvider extends ChangeNotifier {
     });
   }
 
+  void _updateBadgeImmediate(int count) {
+    if (_badgeUpdater != null) {
+      _badgeUpdater!(count);
+      return;
+    }
+    if (kIsWeb) return;
+    try {
+      AppBadgePlus.updateBadge(count);
+      debugPrint('🔴 Badge immediately updated: $count');
+    } catch (e) {
+      debugPrint('⚠️ Immediate badge update failed: $e');
+    }
+  }
+
   /// Stop periodic refresh
   void stopListening() {
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _isListening = false;
     _refreshGeneration++;
+    _listenGeneration++;
     _cacheGeneration++;
     _flagStreamGeneration++;
     _flagSubscription?.cancel();
     _flagSubscription = null;
+    _flagResolved = false;
+    _contextReady = false;
     debugPrint('🔕 UnreadCountProvider: periodic refresh gestopt');
   }
 
   /// Reset alles (bij logout)
-  void clear() {
+  Future<void> clear() async {
+    final oldClubId = _clubId;
+    final oldUserId = _userId;
     stopListening();
     _clubId = null;
     _userId = null;
@@ -797,25 +1026,36 @@ class UnreadCountProvider extends ChangeNotifier {
     _formationActive = false;
     _cursorMode = UnreadCursorV1Mode.off;
     _cursorReady = false;
+    _hasReliableBadgeCount = false;
+    _lastRefreshError = null;
     _announcements = 0;
     _eventMessages = 0;
     _teamMessages = 0;
     _sessionMessages = 0;
-    _tracker.resetAll();
-    _clearCache();
+    _updateBadgeImmediate(0);
     notifyListeners();
+    await Future.wait<void>([
+      _tracker.deactivateContext(),
+      if (oldClubId != null && oldUserId != null)
+        _clearCacheFor(oldClubId, oldUserId),
+    ]);
   }
 
-  /// Wis de cached counts (bij logout)
-  Future<void> _clearCache() async {
+  /// Wis alleen de cache van de uitgelogde identiteit. Een trailing A-write
+  /// kan door generation+token ownership geen nieuwere B/A-cache verwijderen.
+  Future<void> _clearCacheFor(String clubId, String userId) async {
     try {
       final prefs = await _preferencesLoader();
       await _withCacheMutationLock(() async {
+        final identity = base64Url
+            .encode(utf8.encode('$clubId\u0000$userId'))
+            .replaceAll('=', '');
         final keys = prefs
             .getKeys()
             .where(
               (key) =>
-                  key.startsWith(_cacheV2Prefix) ||
+                  key.startsWith('$_cacheV3Prefix${identity}_') ||
+                  key.startsWith('$_cacheV2Prefix${identity}_') ||
                   key.startsWith(_legacyCachePrefix),
             )
             .toList(growable: false);

@@ -1,6 +1,3 @@
-const CACHE_TTL_MS = 60 * 1000;
-const cache = new Map();
-
 function normalizeMode(data = {}) {
   if (data.unreadCursorV1Enabled !== true) return 'off';
   return ['off', 'shadow', 'on'].includes(data.unreadCursorV1Mode)
@@ -15,36 +12,36 @@ function effectiveUnreadCursorV1Mode(data = {}, memberId) {
     && data.unreadCursorV1PilotMemberIds.includes(memberId) ? 'on' : mode;
 }
 
-async function getUnreadCursorV1Mode(db, clubId, now = Date.now()) {
-  const cached = cache.get(clubId);
-  if (cached && now - cached.at < CACHE_TTL_MS) return cached.mode;
+async function getUnreadCursorV1Config(db, clubId) {
   try {
     const snapshot = await db.collection('clubs').doc(clubId)
       .collection('settings').doc('feature_flags').get();
-    const data = snapshot.exists ? snapshot.data() || {} : {};
-    const mode = normalizeMode(data);
-    cache.set(clubId, { at: now, mode, data });
-    return mode;
+    return { known: true, data: snapshot.exists ? snapshot.data() || {} : {} };
   } catch (error) {
-    console.warn(`Unread cursor flag read failed for ${clubId}; defaulting OFF: ${error.message}`);
-    return 'off';
+    console.warn(`Unread cursor flag read failed for ${clubId}; badge authority unknown: ${error.message}`);
+    return { known: false, data: {} };
   }
 }
 
-async function getUnreadCursorV1ModeForMember(db, clubId, memberId, now = Date.now()) {
-  const cached = cache.get(clubId);
-  if (cached && now - cached.at < CACHE_TTL_MS) return effectiveUnreadCursorV1Mode(cached.data || {}, memberId);
-  try {
-    const snapshot = await db.collection('clubs').doc(clubId).collection('settings').doc('feature_flags').get();
-    const data = snapshot.exists ? snapshot.data() || {} : {};
-    cache.set(clubId, { at: now, mode: normalizeMode(data), data });
-    return effectiveUnreadCursorV1Mode(data, memberId);
-  } catch (error) {
-    console.warn(`Unread cursor flag read failed for ${clubId}; defaulting OFF: ${error.message}`);
-    return 'off';
-  }
+// Deliberately read the flag for every invocation. A warm Functions instance
+// must not retain OFF/shadow after the one-moment production cutover while
+// clients already observe ON through their realtime listener.
+async function getUnreadCursorV1Mode(db, clubId) {
+  const config = await getUnreadCursorV1Config(db, clubId);
+  return config.known ? normalizeMode(config.data) : 'unknown';
 }
 
-function clearUnreadCursorV1FlagCache() { cache.clear(); }
+async function getUnreadCursorV1ModeForMember(db, clubId, memberId) {
+  const config = await getUnreadCursorV1Config(db, clubId);
+  return config.known
+    ? effectiveUnreadCursorV1Mode(config.data, memberId)
+    : 'unknown';
+}
 
-module.exports = { getUnreadCursorV1Mode, getUnreadCursorV1ModeForMember, normalizeMode, effectiveUnreadCursorV1Mode, clearUnreadCursorV1FlagCache, CACHE_TTL_MS };
+module.exports = {
+  getUnreadCursorV1Config,
+  getUnreadCursorV1Mode,
+  getUnreadCursorV1ModeForMember,
+  normalizeMode,
+  effectiveUnreadCursorV1Mode,
+};

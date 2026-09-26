@@ -24,6 +24,8 @@ import 'services/app_update_service.dart';
 import 'services/formation_task_service.dart';
 import 'services/formation_task_navigation_service.dart';
 import 'services/lifras_service.dart';
+import 'services/session_message_service.dart';
+import 'services/visible_read_ack_gate.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -66,6 +68,7 @@ import 'models/formation_task.dart';
 // Config
 import 'config/app_colors.dart';
 import 'config/firebase_config.dart';
+import 'utils/club_role_utils.dart';
 
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -213,12 +216,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       GlobalKey<ScaffoldMessengerState>();
   final NotificationNavigationQueue _notificationQueue =
       NotificationNavigationQueue();
+  final StartupNotificationBuffer _startupNotificationBuffer =
+      StartupNotificationBuffer();
   late final _NotificationNavigatorObserver _notificationNavigatorObserver;
   StreamSubscription<RemoteMessage>? _notificationOpenedSubscription;
   AuthProvider? _notificationAuthProvider;
   MemberProvider? _notificationMemberProvider;
+  UnreadCountProvider? _notificationUnreadProvider;
   bool _notificationDrainScheduled = false;
-  bool _notificationDrainInProgress = false;
+  int? _notificationDrainOwnerGeneration;
+  bool _notificationIdentityInitialized = false;
+  String? _notificationIdentityUserId;
+  int _notificationIdentityGeneration = 0;
 
   @override
   void initState() {
@@ -238,7 +247,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _enqueueNotificationRequest(
         NotificationNavigationRequest.fromData(
           data,
-          origin: NotificationTapOrigin.foreground,
+          origin: NotificationTapOrigin.history,
         ),
       );
     };
@@ -251,10 +260,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final initialLocalPayload =
           _notificationService.takeInitialLocalNotificationPayload();
       if (initialLocalPayload != null) {
-        _handleLocalNotificationTap(
-          initialLocalPayload,
-          origin: NotificationTapOrigin.terminated,
-        );
+        unawaited(_handleInitialLocalNotification(initialLocalPayload));
       }
       _updateBadgeFromUnreadCounts();
     });
@@ -272,7 +278,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // Handler quand l'app est complètement fermée et ouverte via une notification
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message != null) {
-        _enqueueRemoteNotification(message, NotificationTapOrigin.terminated);
+        _enqueueRemoteNotification(
+          message,
+          NotificationTapOrigin.terminated,
+        );
       }
     });
 
@@ -313,6 +322,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _handleInitialLocalNotification(String payload) async {
+    if (!mounted) return;
+    _handleLocalNotificationTap(
+      payload,
+      origin: NotificationTapOrigin.terminated,
+    );
+  }
+
   void _enqueueRemoteNotification(
     RemoteMessage message,
     NotificationTapOrigin origin,
@@ -341,6 +358,27 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       );
       return;
     }
+    final currentNotificationUserId =
+        _notificationAuthProvider?.currentUser?.uid;
+    final recipientId = request.recipientId;
+    if (recipientId != null &&
+        currentNotificationUserId != null &&
+        recipientId != currentNotificationUserId) {
+      debugPrint('⚠️ Notification dropped: recipient identity changed');
+      return;
+    }
+    if (request.requiresBoundRecipient && recipientId == null) {
+      debugPrint(
+          '⚠️ OS notification dropped: recipient identity is unavailable');
+      return;
+    }
+    if (_startupNotificationBuffer.stageIfNeeded(
+      request,
+      currentUserId: currentNotificationUserId,
+    )) {
+      debugPrint('🔔 Cold-start notification held until auth is restored');
+      return;
+    }
     if (!_notificationQueue.enqueue(request)) {
       debugPrint(
           'ℹ️ Duplicate notification tap ignored (type=${request.type})');
@@ -356,17 +394,83 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (context == null) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+    final unreadProvider =
+        Provider.of<UnreadCountProvider>(context, listen: false);
     if (!identical(_notificationAuthProvider, authProvider)) {
-      _notificationAuthProvider?.removeListener(_scheduleNotificationDrain);
+      _notificationAuthProvider?.removeListener(_handleNotificationAuthChanged);
       _notificationAuthProvider = authProvider
-        ..addListener(_scheduleNotificationDrain);
+        ..addListener(_handleNotificationAuthChanged);
+      _synchronizeNotificationIdentity();
     }
     if (!identical(_notificationMemberProvider, memberProvider)) {
       _notificationMemberProvider?.removeListener(_scheduleNotificationDrain);
       _notificationMemberProvider = memberProvider
         ..addListener(_scheduleNotificationDrain);
     }
+    if (!identical(_notificationUnreadProvider, unreadProvider)) {
+      _notificationUnreadProvider?.removeListener(_scheduleNotificationDrain);
+      _notificationUnreadProvider = unreadProvider
+        ..addListener(_scheduleNotificationDrain);
+    }
+
+    final userId = authProvider.currentUser?.uid;
+    if (userId == null) return;
+    if (memberProvider.isLoadedFor(FirebaseConfig.defaultClubId, userId)) {
+      unreadProvider.listen(
+        FirebaseConfig.defaultClubId,
+        userId,
+        roles: memberProvider.clubStatuten,
+        includeAllTeamChannels: ClubRoleUtils.hasAdminAccess(
+          memberProvider.clubStatuten,
+          appRole: memberProvider.appRole,
+        ),
+        plongeurCode: memberProvider.plongeurCode,
+        targetFormationLevel: memberProvider.targetFormationLevel,
+        formationActive: memberProvider.formationActive,
+      );
+    }
   }
+
+  void _handleNotificationAuthChanged() {
+    _synchronizeNotificationIdentity();
+    _scheduleNotificationDrain();
+  }
+
+  void _synchronizeNotificationIdentity() {
+    final nextUserId = _notificationAuthProvider?.currentUser?.uid;
+    final startupRequest =
+        _startupNotificationBuffer.synchronizeIdentity(nextUserId);
+    if (!_notificationIdentityInitialized) {
+      _notificationIdentityInitialized = true;
+      _notificationIdentityUserId = nextUserId;
+      if (nextUserId == null) _clearNotificationIdentityState();
+      if (startupRequest != null) _notificationQueue.enqueue(startupRequest);
+      return;
+    }
+    if (nextUserId == _notificationIdentityUserId) return;
+
+    _notificationIdentityUserId = nextUserId;
+    _notificationIdentityGeneration++;
+    _notificationDrainOwnerGeneration = null;
+    _clearNotificationIdentityState();
+    // This also invalidates a load still running for the previous account.
+    _notificationMemberProvider?.clear();
+    if (startupRequest != null) _notificationQueue.enqueue(startupRequest);
+  }
+
+  void _clearNotificationIdentityState() {
+    _notificationQueue.clear();
+    final unread = _notificationUnreadProvider;
+    if (unread != null) unawaited(unread.clear());
+    // unread.clear() updates the OS badge synchronously before awaiting cache
+    // cleanup. This direct fallback also covers very early auth transitions.
+    unawaited(_notificationService.clearBadge());
+  }
+
+  bool _notificationIdentityMatches(String userId, int generation) =>
+      generation == _notificationIdentityGeneration &&
+      userId == _notificationIdentityUserId &&
+      userId == _notificationAuthProvider?.currentUser?.uid;
 
   void _scheduleNotificationDrain() {
     if (!mounted || _notificationDrainScheduled) return;
@@ -381,34 +485,57 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool get _notificationNavigationIsReady {
     final authProvider = _notificationAuthProvider;
     final memberProvider = _notificationMemberProvider;
+    final unreadProvider = _notificationUnreadProvider;
+    final userId = authProvider?.currentUser?.uid;
     final route = _notificationNavigatorObserver.currentRoute;
     return _navigatorKey.currentState != null &&
-        authProvider?.currentUser != null &&
-        memberProvider?.isLoaded == true &&
+        userId != null &&
+        memberProvider?.isLoadedFor(FirebaseConfig.defaultClubId, userId) ==
+            true &&
         memberProvider?.requirePasswordChange != true &&
+        unreadProvider?.hasResolvedAuthorityFor(
+              FirebaseConfig.defaultClubId,
+              userId,
+            ) ==
+            true &&
         route != null &&
         route.settings.name != Navigator.defaultRouteName;
   }
 
   Future<void> _drainNotificationQueue() async {
-    if (_notificationDrainInProgress || !_notificationNavigationIsReady) {
+    final currentGeneration = _notificationIdentityGeneration;
+    if (_notificationDrainOwnerGeneration == currentGeneration ||
+        !_notificationNavigationIsReady) {
       return;
     }
     final request = _notificationQueue.takeNext();
     if (request == null) return;
+    final userId = _notificationAuthProvider?.currentUser?.uid;
+    final identityGeneration = _notificationIdentityGeneration;
+    if (userId == null) {
+      _notificationQueue.clear();
+      return;
+    }
 
-    _notificationDrainInProgress = true;
+    _notificationDrainOwnerGeneration = identityGeneration;
     try {
-      final handled = await _navigateForNotification(request);
+      final handled = await _navigateForNotification(
+        request,
+        expectedUserId: userId,
+        identityGeneration: identityGeneration,
+      );
       // Mark only after the destination was validated and navigation was
       // attempted. Invalid payloads are therefore not silently acknowledged
       // before their target has been checked.
-      if (handled) {
+      if (handled && _notificationIdentityMatches(userId, identityGeneration)) {
         _notificationQueue.markHandled(request);
       }
     } finally {
-      _notificationDrainInProgress = false;
-      if (_notificationQueue.pendingCount > 0) {
+      if (_notificationDrainOwnerGeneration == identityGeneration) {
+        _notificationDrainOwnerGeneration = null;
+      }
+      if (_notificationQueue.pendingCount > 0 &&
+          identityGeneration == _notificationIdentityGeneration) {
         _scheduleNotificationDrain();
       }
     }
@@ -420,8 +547,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   /// Routes every notification origin through the same normalised request.
   Future<bool> _navigateForNotification(
-    NotificationNavigationRequest request,
-  ) async {
+    NotificationNavigationRequest request, {
+    required String expectedUserId,
+    required int identityGeneration,
+  }) async {
     final navigator = _navigatorKey.currentState;
     final context = _navigatorKey.currentContext;
     if (navigator == null || context == null) {
@@ -429,6 +558,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       return false;
     }
     final clubId = request.clubId ?? FirebaseConfig.defaultClubId;
+    bool identityIsCurrent() =>
+        _notificationIdentityMatches(expectedUserId, identityGeneration);
+    if (!identityIsCurrent()) return false;
     debugPrint(
         '🔔 Opening notification destination (type=${request.type}, route=${request.routeKind.name})');
 
@@ -446,12 +578,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             _showMissingNotificationTarget();
             return true;
           }
-          await navigator.push(MaterialPageRoute(
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => OperationDetailScreen(
               operationId: operationId,
               clubId: clubId,
             ),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.announcement:
@@ -471,18 +603,34 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             _showMissingNotificationTarget();
             return true;
           }
-          await navigator.push(MaterialPageRoute(
+          if (!identityIsCurrent()) return false;
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => AnnouncementDetailScreen(
               announcement: Announcement.fromFirestore(doc),
               clubId: clubId,
             ),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.teamChat:
           final channelId = request.channelId;
           if (channelId == null) {
             _showMissingNotificationTarget();
+            return true;
+          }
+          final member = _notificationMemberProvider;
+          if (member == null ||
+              !ClubRoleUtils.getVisibleTeamChannelIds(
+                member.clubStatuten,
+                includeAllChannels: ClubRoleUtils.hasAdminAccess(
+                  member.clubStatuten,
+                  appRole: member.appRole,
+                ),
+                plongeurCode: member.plongeurCode,
+                targetFormationLevel: member.targetFormationLevel,
+                formationActive: member.formationActive,
+              ).contains(channelId)) {
+            _showNotificationFeedback('Tu n’as plus accès à cette équipe.');
             return true;
           }
           final doc = await FirebaseFirestore.instance
@@ -492,15 +640,29 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               .doc(channelId)
               .get()
               .timeout(_notificationTapTimeout);
-          if (!doc.exists) {
-            _showMissingNotificationTarget();
-            return true;
+          TeamChannel? channel;
+          if (doc.exists) {
+            channel = TeamChannel.fromFirestore(doc);
+          } else {
+            TeamChannelType? defaultType;
+            for (final candidate in TeamChannelType.values) {
+              if (candidate.id == channelId) {
+                defaultType = candidate;
+                break;
+              }
+            }
+            if (defaultType == null) {
+              _showMissingNotificationTarget();
+              return true;
+            }
+            channel = TeamChannel.defaultForType(defaultType);
           }
-          await navigator.push(MaterialPageRoute(
+          if (!identityIsCurrent()) return false;
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => TeamChatScreen(
-              channel: TeamChannel.fromFirestore(doc),
+              channel: channel!,
             ),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.sessionChat:
@@ -520,28 +682,35 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             _showMissingNotificationTarget();
             return true;
           }
+          if (!identityIsCurrent()) return false;
           final session = PiscineSession.fromFirestore(doc);
           final groupType = request.groupType;
           final groupLevel = request.groupLevel;
-          var sessionGroupType = SessionGroupType.encadrants;
-          var displayName = 'Encadrants';
-          if (groupType == 'accueil') {
-            sessionGroupType = SessionGroupType.accueil;
-            displayName = 'Accueil';
-          } else if (groupType == 'niveau' && groupLevel != null) {
-            sessionGroupType = SessionGroupType.niveau;
-            displayName = 'Niveau $groupLevel';
+          final groups = SessionMessageService.availableGroupsForMember(
+            session: session,
+            userId: expectedUserId,
+          );
+          SessionChatGroup? requestedGroup;
+          for (final group in groups) {
+            if (group.type.value == groupType &&
+                (groupType != 'niveau' || group.level == groupLevel)) {
+              requestedGroup = group;
+              break;
+            }
           }
-          await navigator.push(MaterialPageRoute(
+          if (requestedGroup == null) {
+            _showNotificationFeedback(
+              'Tu n’as plus accès à cette discussion.',
+            );
+            return true;
+          }
+          if (!identityIsCurrent()) return false;
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => SessionChatScreen(
               session: session,
-              chatGroup: SessionChatGroup(
-                type: sessionGroupType,
-                level: groupType == 'niveau' ? groupLevel : null,
-                displayName: displayName,
-              ),
+              chatGroup: requestedGroup!,
             ),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.sessionDetail:
@@ -561,36 +730,44 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             _showMissingNotificationTarget();
             return true;
           }
-          await navigator.push(MaterialPageRoute(
+          if (!identityIsCurrent()) return false;
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => SessionDetailScreen(
               session: PiscineSession.fromFirestore(doc),
             ),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.formationTask:
-          await _openFormationTaskNotification(request, clubId, context);
+          await _openFormationTaskNotification(
+            request,
+            clubId,
+            context,
+            expectedUserId,
+            identityGeneration,
+          );
           break;
 
         case NotificationRouteKind.exerciseDeclaration:
-          await _openExerciseDeclarationNotification(request, clubId);
+          await _openExerciseDeclarationNotification(
+            request,
+            clubId,
+            expectedUserId,
+            identityGeneration,
+          );
           break;
 
         case NotificationRouteKind.actionsEvaluations:
-          await navigator.push(MaterialPageRoute(
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => const ActionsEvaluationsScreen(),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.medicalCertificate:
-          final userId = FirebaseAuth.instance.currentUser?.uid;
-          if (userId == null) {
-            _showMissingNotificationTarget();
-            return true;
-          }
-          await navigator.push(MaterialPageRoute(
-            builder: (_) => MedicalCertificationScreen(userId: userId),
-          ));
+          if (!identityIsCurrent()) return false;
+          unawaited(navigator.push(MaterialPageRoute(
+            builder: (_) => MedicalCertificationScreen(userId: expectedUserId),
+          )));
           break;
 
         case NotificationRouteKind.logbookConfirmation:
@@ -599,12 +776,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             _showMissingNotificationTarget();
             return true;
           }
-          await navigator.push(MaterialPageRoute(
+          unawaited(navigator.push(MaterialPageRoute(
             builder: (_) => LogbookDiveConfirmationScreen(
               confirmationId: confirmationId,
               clubId: clubId,
             ),
-          ));
+          )));
           break;
 
         case NotificationRouteKind.unsupported:
@@ -640,15 +817,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     NotificationNavigationRequest request,
     String clubId,
     BuildContext context,
+    String expectedUserId,
+    int identityGeneration,
   ) async {
     final taskId = request.formationTaskId;
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (taskId == null || userId == null) {
+    if (taskId == null) {
       return _showMissingNotificationTarget();
     }
     final task = await FormationTaskService()
-        .fetchAssignedTask(clubId, taskId, userId)
+        .fetchAssignedTask(clubId, taskId, expectedUserId)
         .timeout(_notificationTapTimeout);
+    if (!_notificationIdentityMatches(expectedUserId, identityGeneration)) {
+      return;
+    }
     if (task == null) return _showMissingNotificationTarget();
     if (task.status == FormationTaskStatus.done ||
         task.status == FormationTaskStatus.dismissed ||
@@ -663,6 +844,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Future<void> _openExerciseDeclarationNotification(
     NotificationNavigationRequest request,
     String clubId,
+    String expectedUserId,
+    int identityGeneration,
   ) async {
     final memberId = request.memberId;
     final declarationId = request.exerciceValideId;
@@ -679,6 +862,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         .doc(declarationId)
         .get()
         .timeout(_notificationTapTimeout);
+    if (!_notificationIdentityMatches(expectedUserId, identityGeneration)) {
+      return;
+    }
     if (!declaration.exists) return _showMissingNotificationTarget();
     final declarationData = declaration.data() ?? const <String, dynamic>{};
     final exerciseId = declarationData['exercice_id']?.toString().trim();
@@ -688,8 +874,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     var exercise = exerciseId == null || exerciseId.isEmpty
         ? null
         : await LifrasService().getExerciceById(clubId, exerciseId);
+    if (!_notificationIdentityMatches(expectedUserId, identityGeneration)) {
+      return;
+    }
     if (exercise == null && exerciseCode != null && exerciseCode.isNotEmpty) {
       final catalog = await LifrasService().getAllExercices(clubId);
+      if (!_notificationIdentityMatches(expectedUserId, identityGeneration)) {
+        return;
+      }
       for (final item in catalog) {
         if (item.code.toLowerCase() == exerciseCode.toLowerCase()) {
           exercise = item;
@@ -706,6 +898,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         .doc(memberId)
         .get()
         .timeout(_notificationTapTimeout);
+    if (!_notificationIdentityMatches(expectedUserId, identityGeneration)) {
+      return;
+    }
     if (!directory.exists) return _showMissingNotificationTarget();
     final directoryData = directory.data() ?? const <String, dynamic>{};
     final memberName = (directoryData['display_name'] ??
@@ -715,13 +910,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         .trim();
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    await navigator.push(MaterialPageRoute(
+    unawaited(navigator.push(MaterialPageRoute(
       builder: (_) => ValidateExerciseScreen(
         memberId: memberId,
         memberName: memberName.isEmpty ? 'Membre' : memberName,
         preselectedExercise: exercise,
       ),
-    ));
+    )));
   }
 
   void _showMissingNotificationTarget() {
@@ -762,8 +957,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     NotificationHistoryNavigationDispatcher.instance.handler = null;
     WidgetsBinding.instance.removeObserver(this);
     _notificationOpenedSubscription?.cancel();
-    _notificationAuthProvider?.removeListener(_scheduleNotificationDrain);
+    _notificationAuthProvider?.removeListener(_handleNotificationAuthChanged);
     _notificationMemberProvider?.removeListener(_scheduleNotificationDrain);
+    _notificationUnreadProvider?.removeListener(_scheduleNotificationDrain);
     super.dispose();
   }
 
@@ -829,11 +1025,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _updateBadgeFromUnreadCounts() {
     if (kIsWeb) return; // app_badge_plus not available on web (fixes CALYMOB-F)
     try {
+      final authProvider = _notificationAuthProvider;
+      if (authProvider == null) return;
+      if (authProvider.currentUser == null) {
+        _notificationService.setBadge(0);
+        return;
+      }
       final unreadProvider = _navigatorKey.currentContext != null
           ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!,
               listen: false)
           : null;
-      if (unreadProvider != null) {
+      if (unreadProvider != null && unreadProvider.hasReliableBadgeCount) {
         _notificationService.setBadge(unreadProvider.total);
       }
     } catch (e) {
@@ -866,7 +1068,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: _messengerKey,
-          navigatorObservers: [_notificationNavigatorObserver],
+          navigatorObservers: [
+            _notificationNavigatorObserver,
+            readAcknowledgementRouteObserver,
+          ],
           // BugReportOverlay est maintenant DANS le MaterialApp via builder,
           // pour avoir accès au Navigator, MediaQuery, et Theme.
           builder: (context, child) {

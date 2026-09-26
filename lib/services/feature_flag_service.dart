@@ -109,9 +109,9 @@ class FeatureFlagService extends ChangeNotifier {
         .map((doc) => parseBoutiqueVisibility(doc.data()));
   }
 
-  /// Cursor-v1 rollout flag. A missing, unreadable, or malformed document is
-  /// deliberately OFF so a rules/configuration issue cannot switch users away
-  /// from the legacy badge path.
+  /// Cursor-v1 rollout flag. A missing document is a real OFF value, but a
+  /// read error remains unknown. Converting an error to OFF could briefly
+  /// expose stale legacy `99+` counts for a member who is effectively ON.
   Stream<UnreadCursorFeatureFlag> unreadCursorV1(String clubId) async* {
     try {
       await for (final doc in _firestore
@@ -124,7 +124,7 @@ class FeatureFlagService extends ChangeNotifier {
       }
     } catch (error) {
       debugPrint('⚠️ unreadCursorV1 feature flag read failed: $error');
-      yield UnreadCursorFeatureFlag.defaults;
+      rethrow;
     }
   }
 
@@ -140,7 +140,7 @@ class FeatureFlagService extends ChangeNotifier {
       return UnreadCursorFeatureFlag.fromFirestore(doc.data());
     } catch (error) {
       debugPrint('⚠️ unreadCursorV1 feature flag read failed: $error');
-      return UnreadCursorFeatureFlag.defaults;
+      rethrow;
     }
   }
 

@@ -12,8 +12,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { getBadgeCount } = require('../utils/badge-helper');
-const { persistNotificationHistory } = require('../utils/notificationHistory');
+const { sendNotificationsWithBadge } = require('../utils/badge-helper');
 
 /**
  * Format date to French locale string
@@ -108,10 +107,6 @@ exports.onMedicalCertStatusChange = onDocumentUpdated(
       console.log(`📱 [onMedicalCertStatusChange] Sending to ${tokens.length} device(s): ${title}`);
 
       // 3. Prepare the notification payload
-      // Get the current badge count for this member
-      const badgeCount = await getBadgeCount(clubId, memberId);
-      const newBadge = badgeCount + 1;
-
       const payload = {
         notification: {
           title,
@@ -136,43 +131,22 @@ exports.onMedicalCertStatusChange = onDocumentUpdated(
           payload: {
             aps: {
               sound: 'default',
-              badge: newBadge,
             },
           },
         },
       };
 
       // 4. Send notification
-      const result = await admin.messaging().sendEachForMulticast({
-        tokens,
-        ...payload,
-      });
-
-      if (result.successCount > 0) {
-        await persistNotificationHistory(
-          clubId,
-          memberId,
-          payload,
-          'Médical',
-        );
-      }
+      const result = await sendNotificationsWithBadge(
+        clubId,
+        new Map([[memberId, tokens]]),
+        payload,
+        'Médical',
+      );
 
       console.log(`✅ [onMedicalCertStatusChange] Sent: ${result.successCount} success, ${result.failureCount} failures`);
 
-      // 5. Log any token errors
-      result.responses.forEach((response, index) => {
-        if (!response.success) {
-          const error = response.error;
-          if (error.code === 'messaging/invalid-registration-token' ||
-              error.code === 'messaging/registration-token-not-registered') {
-            console.log(`   Invalid token at index ${index}: ${tokens[index]?.substring(0, 20)}...`);
-          } else {
-            console.log(`   Error at index ${index}: ${error.code} - ${error.message}`);
-          }
-        }
-      });
-
-      // 6. Log to audit collection
+      // 5. Log to audit collection
       await db
         .collection('clubs')
         .doc(clubId)

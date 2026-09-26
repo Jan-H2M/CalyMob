@@ -39,7 +39,7 @@ class AnnouncementDetailScreen extends StatefulWidget {
 }
 
 class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final AnnouncementService _announcementService = AnnouncementService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -50,7 +50,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
 
   // Store replies locally to prevent flickering
   List<AnnouncementReply> _cachedReplies = [];
-  int _lastKnownReplyCount = 0;
+  String? _lastReplyContentToken;
+  String? _latestVisibleReplyId;
+  DateTime? _latestVisibleContentAt;
 
   // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
   DateTime? _lastReadBeforeOpen;
@@ -60,7 +62,12 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   bool _hasLoadedContent = false;
   int _loadedContentRevision = 0;
   int _acknowledgedContentRevision = -1;
+  int _legacyAcknowledgedContentRevision = -1;
   bool _cursorAcknowledgementInFlight = false;
+  bool _appIsForeground = true;
+  final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
+  ModalRoute<dynamic>? _subscribedRoute;
+  String? _acknowledgementUserId;
 
   /// Key sur le divider "Nouveaux messages" — utilisée pour scroller
   /// directement à la première communication non-lue à l'ouverture.
@@ -70,27 +77,51 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Cursor mode waits for a successful replies snapshot. Legacy preserves
-    // the existing eager local acknowledgement/divider behaviour.
-    if (!context.read<UnreadCountProvider>().usesCursorReadState) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _markAsRead(forceLegacy: true);
-      });
-    }
+    _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    // Both authorities wait for a successful visible replies snapshot. This
+    // avoids acknowledging a covered/background route or failed load.
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _ackRetry.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (identical(route, _subscribedRoute)) return;
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _subscribedRoute = route;
+    if (route != null) {
+      readAcknowledgementRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() => _ackRetry.suspend();
+
+  @override
+  void didPopNext() => _scheduleLoadedCursorAcknowledgement();
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground && mounted) {
       _scheduleLoadedCursorAcknowledgement();
+    } else {
+      _ackRetry.suspend();
     }
   }
 
@@ -101,61 +132,92 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   }
 
   Future<void> _acknowledgeLoadedCursorContent() async {
-    if (!isCurrentRouteForReadAcknowledgement(context) ||
+    if (!_appIsForeground ||
+        !isCurrentRouteForReadAcknowledgement(context) ||
         !_hasLoadedContent ||
         _cursorAcknowledgementInFlight ||
         _acknowledgedContentRevision >= _loadedContentRevision) {
       return;
     }
     final unreadProvider = context.read<UnreadCountProvider>();
-    if (!unreadProvider.usesCursorReadState) return;
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null || currentUserId != _acknowledgementUserId) {
+      _ackRetry.suspend();
+      return;
+    }
+    final cursorAuthority = unreadProvider.usesCursorReadState;
+    final acknowledgedRevision = cursorAuthority
+        ? _acknowledgedContentRevision
+        : _legacyAcknowledgedContentRevision;
+    if (acknowledgedRevision >= _loadedContentRevision) return;
     final targetRevision = _loadedContentRevision;
     _cursorAcknowledgementInFlight = true;
     var succeeded = false;
     try {
-      await unreadProvider.markAnnouncementSeen();
+      await _markAsRead(expectedUserId: currentUserId);
       succeeded = true;
+      _ackRetry.reset();
       if (mounted) {
-        _acknowledgedContentRevision = targetRevision;
+        if (cursorAuthority) {
+          _acknowledgedContentRevision = targetRevision;
+        } else {
+          _legacyAcknowledgedContentRevision = targetRevision;
+        }
       }
     } catch (error) {
       debugPrint('⚠️ Announcement cursor acknowledgement failed: $error');
+      _ackRetry.schedule(() {
+        if (mounted) _scheduleLoadedCursorAcknowledgement();
+      });
     } finally {
       _cursorAcknowledgementInFlight = false;
       // If a newer reply arrived while the successful write was in flight,
       // acknowledge that newer visible revision as a separate server write.
-      if (succeeded &&
-          mounted &&
-          _acknowledgedContentRevision < _loadedContentRevision) {
-        _scheduleLoadedCursorAcknowledgement();
+      if (succeeded && mounted) {
+        final currentCursorAuthority =
+            context.read<UnreadCountProvider>().usesCursorReadState;
+        final currentAcknowledged = currentCursorAuthority
+            ? _acknowledgedContentRevision
+            : _legacyAcknowledgedContentRevision;
+        if (currentAcknowledged < _loadedContentRevision) {
+          _scheduleLoadedCursorAcknowledgement();
+        }
       }
     }
   }
 
-  Future<void> _markAsRead({bool forceLegacy = false}) async {
-    if (!isCurrentRouteForReadAcknowledgement(context)) return;
+  Future<void> _markAsRead({required String expectedUserId}) async {
+    if (!_appIsForeground ||
+        !isCurrentRouteForReadAcknowledgement(context) ||
+        context.read<AuthProvider>().currentUser?.uid != expectedUserId) {
+      throw StateError('Announcement is no longer visibly owned by this user.');
+    }
     final unreadProvider = Provider.of<UnreadCountProvider>(
       context,
       listen: false,
     );
-    if (!forceLegacy && unreadProvider.usesCursorReadState) {
-      // Announcements use one section cursor. Opening the detail is an
-      // intentional acknowledgement; opening the list is not.
-      await unreadProvider.markAnnouncementSeen();
-      return;
-    }
     // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
     // pour pouvoir afficher le divider "Nouveaux messages"
     final tracker = LocalReadTracker();
     await tracker.init();
-    _lastReadBeforeOpen ??= tracker.getLastRead('announcements') ??
+    if (!mounted ||
+        !_appIsForeground ||
+        !isCurrentRouteForReadAcknowledgement(context) ||
+        context.read<AuthProvider>().currentUser?.uid != expectedUserId) {
+      throw StateError(
+          'Announcement visibility changed before acknowledgement.');
+    }
+    final itemKey = 'announcement_${widget.announcement.id}';
+    _lastReadBeforeOpen ??= tracker.getLastRead(itemKey) ??
+        tracker.getLastRead('announcements') ??
         tracker.installBaseline ??
         DateTime(2024);
-    await tracker.markAsRead('announcements');
-
-    if (mounted) {
-      await unreadProvider.refresh();
-    }
+    await unreadProvider.markAnnouncementSeen(
+      widget.announcement.id,
+      visibleReplyId: _latestVisibleReplyId,
+      visibleThroughAt:
+          _latestVisibleContentAt ?? widget.announcement.createdAt,
+    );
   }
 
   Future<void> _sendReply() async {
@@ -201,10 +263,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
         replyToPreview: replyPreview,
         attachments: attachments,
       );
-      if (mounted && isCurrentRouteForReadAcknowledgement(context)) {
-        await context.read<UnreadCountProvider>().markAnnouncementSeen();
-      }
-
       _messageController.clear();
       setState(() {
         _replyingTo = null;
@@ -275,9 +333,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   Widget build(BuildContext context) {
     // Use listen: false to prevent unnecessary rebuilds that would recreate the stream
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final usesCursorReadState = context
-        .watch<UnreadCountProvider>()
-        .usesCursorReadState;
+    final usesCursorReadState =
+        context.watch<UnreadCountProvider>().usesCursorReadState;
     final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
@@ -332,35 +389,42 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                           }
 
                           // Use cached replies while waiting for stream data to prevent flickering
-                          if (snapshot.hasData) {
+                          // A Firestore snapshot can carry cached data together
+                          // with an error. Keep rendering the last successful
+                          // cache, but never advance/ack a revision whose query
+                          // did not complete successfully.
+                          if (!snapshot.hasError && snapshot.hasData) {
                             final newReplies = snapshot.data!;
+                            final contentToken = newReplies
+                                .map(
+                                  (reply) =>
+                                      '${reply.id}:${reply.createdAt.microsecondsSinceEpoch}:'
+                                      '${reply.editedAt?.microsecondsSinceEpoch ?? 0}',
+                                )
+                                .join('|');
                             if (!_hasLoadedContent) {
                               _hasLoadedContent = true;
                               _loadedContentRevision = 1;
-                            } else if (newReplies.length >
-                                _lastKnownReplyCount) {
+                              _ackRetry.reset();
+                            } else if (contentToken != _lastReplyContentToken) {
                               _loadedContentRevision++;
+                              _ackRetry.reset();
                             }
+                            final acknowledgedRevision = usesCursorReadState
+                                ? _acknowledgedContentRevision
+                                : _legacyAcknowledgedContentRevision;
                             if (routeIsCurrent &&
-                                usesCursorReadState &&
-                                _acknowledgedContentRevision <
-                                    _loadedContentRevision) {
+                                acknowledgedRevision < _loadedContentRevision) {
                               _scheduleLoadedCursorAcknowledgement();
                             }
-                            // Detect new replies arriving while screen is open
-                            // _lastKnownReplyCount > 0 prevents double-trigger on initial load
-                            // for the legacy path. Cursor's first successful
-                            // snapshot is handled above.
-                            if (newReplies.length > _lastKnownReplyCount &&
-                                _lastKnownReplyCount > 0 &&
-                                !usesCursorReadState) {
-                              debugPrint(
-                                  '🔔 New replies detected ($_lastKnownReplyCount → ${newReplies.length}), re-marking as read');
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _markAsRead();
-                              });
-                            }
-                            _lastKnownReplyCount = newReplies.length;
+                            _lastReplyContentToken = contentToken;
+                            _latestVisibleReplyId =
+                                newReplies.isEmpty ? null : newReplies.last.id;
+                            _latestVisibleContentAt = newReplies.isEmpty
+                                ? widget.announcement.createdAt
+                                : newReplies.last.unreadCreatedAt ??
+                                    newReplies.last.createdAt;
+                            _acknowledgementUserId = currentUserId;
                             _cachedReplies = newReplies;
                             debugPrint(
                                 '📝 Updated cache with ${_cachedReplies.length} replies');

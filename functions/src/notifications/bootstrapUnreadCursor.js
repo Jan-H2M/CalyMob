@@ -48,6 +48,25 @@ function normalizeScopeMap(raw, nowMs, field) {
   return { values, clamped };
 }
 
+function normalizeSectionMap(raw, nowMs, field) {
+  if (raw == null) return { values: new Map(), clamped: false };
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    fail('invalid-argument', `${field} doit être un objet.`);
+  }
+  const allowedSections = new Set(['announcements', 'events', 'teams', 'sessions']);
+  const values = new Map();
+  let clamped = false;
+  for (const [section, timestamp] of Object.entries(raw)) {
+    if (!allowedSections.has(section)) {
+      fail('invalid-argument', `${field} contient une section invalide.`);
+    }
+    const normalized = normalizeTimestamp(timestamp, nowMs, `${field}.${section}`);
+    values.set(section, normalized.value);
+    clamped ||= normalized.clamped;
+  }
+  return { values, clamped };
+}
+
 function normalizeInput(input, nowMs) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     fail('invalid-argument', 'Données de migration manquantes.');
@@ -70,12 +89,64 @@ function normalizeInput(input, nowMs) {
     nowMs,
     'announcementsLastSeenAtMs',
   );
+  const eventsRoot = normalizeTimestamp(
+    input.eventsLastSeenAtMs ?? input.fallbackLastSeenAtMs,
+    nowMs,
+    'eventsLastSeenAtMs',
+  );
+  const teamsRoot = normalizeTimestamp(
+    input.teamsLastSeenAtMs ?? input.fallbackLastSeenAtMs,
+    nowMs,
+    'teamsLastSeenAtMs',
+  );
+  const sessionsRoot = normalizeTimestamp(
+    input.sessionsLastSeenAtMs ?? input.fallbackLastSeenAtMs,
+    nowMs,
+    'sessionsLastSeenAtMs',
+  );
+  const announcementItems = normalizeScopeMap(
+    input.announcementItems,
+    nowMs,
+    'announcementItems',
+  );
   const events = normalizeScopeMap(input.eventConversations, nowMs, 'eventConversations');
   const teams = normalizeScopeMap(input.teamChannels, nowMs, 'teamChannels');
   const sessions = normalizeScopeMap(input.sessionChats, nowMs, 'sessionChats');
-  const scopeCount = events.values.size + teams.values.size + sessions.values.size;
+  const pendingSections = normalizeSectionMap(
+    input.pendingSections,
+    nowMs,
+    'pendingSections',
+  );
+  const pendingAnnouncementItems = normalizeScopeMap(
+    input.pendingAnnouncementItems,
+    nowMs,
+    'pendingAnnouncementItems',
+  );
+  const pendingEvents = normalizeScopeMap(
+    input.pendingEventConversations,
+    nowMs,
+    'pendingEventConversations',
+  );
+  const pendingTeams = normalizeScopeMap(
+    input.pendingTeamChannels,
+    nowMs,
+    'pendingTeamChannels',
+  );
+  const pendingSessions = normalizeScopeMap(
+    input.pendingSessionChats,
+    nowMs,
+    'pendingSessionChats',
+  );
+  const scopeCount = announcementItems.values.size + events.values.size
+    + teams.values.size + sessions.values.size;
   if (scopeCount > MAX_SCOPE_WRITES) {
     fail('invalid-argument', 'Trop de conversations à migrer.');
+  }
+  const pendingScopeCount = pendingAnnouncementItems.values.size
+    + pendingEvents.values.size + pendingTeams.values.size
+    + pendingSessions.values.size;
+  if (pendingScopeCount > MAX_SCOPE_WRITES) {
+    fail('invalid-argument', 'Trop de conversations en attente à fusionner.');
   }
 
   const floorScopes = source => new Map(
@@ -85,15 +156,34 @@ function normalizeInput(input, nowMs) {
     clubId,
     fallbackMs: fallback.value,
     announcementsMs: Math.max(fallback.value, announcements.value),
+    eventsRootMs: Math.max(fallback.value, eventsRoot.value),
+    teamsRootMs: Math.max(fallback.value, teamsRoot.value),
+    sessionsRootMs: Math.max(fallback.value, sessionsRoot.value),
+    announcementItems: floorScopes(announcementItems.values),
     events: floorScopes(events.values),
     teams: floorScopes(teams.values),
     sessions: floorScopes(sessions.values),
+    pendingSections: pendingSections.values,
+    pendingAnnouncementItems: pendingAnnouncementItems.values,
+    pendingEvents: pendingEvents.values,
+    pendingTeams: pendingTeams.values,
+    pendingSessions: pendingSessions.values,
     scopeCount,
+    pendingScopeCount,
     timestampsClamped: fallback.clamped
       || announcements.clamped
+      || eventsRoot.clamped
+      || teamsRoot.clamped
+      || sessionsRoot.clamped
+      || announcementItems.clamped
       || events.clamped
       || teams.clamped
-      || sessions.clamped,
+      || sessions.clamped
+      || pendingSections.clamped
+      || pendingAnnouncementItems.clamped
+      || pendingEvents.clamped
+      || pendingTeams.clamped
+      || pendingSessions.clamped,
   };
 }
 
@@ -135,6 +225,9 @@ async function bootstrapUnreadCursor({
   serverTimestamp = () => admin.firestore.FieldValue.serverTimestamp(),
   reconcileBadge,
 }) {
+  if (input?.memberId !== uid) {
+    fail('permission-denied', 'Le membre demandé ne correspond pas à la session.');
+  }
   const normalized = normalizeInput(input, nowMs);
   const memberPath = `clubs/${normalized.clubId}/members/${uid}`;
   const markerRef = db.doc(`${memberPath}/read_state_bootstraps/unread_cursor_v1`);
@@ -150,14 +243,17 @@ async function bootstrapUnreadCursor({
     sessions: db.doc(`${memberPath}/read_state/sessions`),
   };
 
-  const scopeWrites = [
-    ...[...normalized.events].map(([scopeId, timestamp]) => ({
+  const buildScopeWrites = ({ announcements, events, teams, sessions }) => [
+    ...[...announcements].map(([scopeId, timestamp]) => ({
+      section: 'announcements', collection: 'items', scopeId, timestamp,
+    })),
+    ...[...events].map(([scopeId, timestamp]) => ({
       section: 'events', collection: 'conversations', scopeId, timestamp,
     })),
-    ...[...normalized.teams].map(([scopeId, timestamp]) => ({
+    ...[...teams].map(([scopeId, timestamp]) => ({
       section: 'teams', collection: 'channels', scopeId, timestamp,
     })),
-    ...[...normalized.sessions].map(([scopeId, timestamp]) => ({
+    ...[...sessions].map(([scopeId, timestamp]) => ({
       section: 'sessions', collection: 'chats', scopeId, timestamp,
     })),
   ].map(item => ({
@@ -166,6 +262,18 @@ async function bootstrapUnreadCursor({
       `${memberPath}/read_state/${item.section}/${item.collection}/${item.scopeId}`,
     ),
   }));
+  const initialScopeWrites = buildScopeWrites({
+    announcements: normalized.announcementItems,
+    events: normalized.events,
+    teams: normalized.teams,
+    sessions: normalized.sessions,
+  });
+  const pendingScopeWrites = buildScopeWrites({
+    announcements: normalized.pendingAnnouncementItems,
+    events: normalized.pendingEvents,
+    teams: normalized.pendingTeams,
+    sessions: normalized.pendingSessions,
+  });
 
   const outcome = await db.runTransaction(async transaction => {
     const [marker, member, flags] = await Promise.all([
@@ -183,44 +291,89 @@ async function bootstrapUnreadCursor({
     const alreadyComplete = marker.exists
       && markerData.status === 'complete'
       && markerData.schema_version === SCHEMA_VERSION;
-
+    const scopeWrites = alreadyComplete ? pendingScopeWrites : initialScopeWrites;
     // Reading every root and target scope before any write makes a concurrent
     // acknowledgement retry the transaction rather than being overwritten.
     const cursorSnapshots = await Promise.all([
       ...Object.values(rootRefs).map(reference => transaction.get(reference)),
       ...scopeWrites.map(item => transaction.get(item.ref)),
     ]);
-    let trustedBaselineMs = null;
-    if (!alreadyComplete) {
-      const migration = await transaction.get(migrationRef);
-      const migrationData = migration.data() || {};
-      trustedBaselineMs = timestampMillis(migrationData.baseline_at);
-      if (migrationData.schema_version !== SCHEMA_VERSION
-        || migrationData.status !== 'roots-seeded'
-        || trustedBaselineMs == null
-        || trustedBaselineMs > nowMs) {
-        fail(
-          'failed-precondition',
-          'La base de migration cursor n’est pas validée par le serveur.',
-        );
-      }
-    }
-
-    const updatedAt = serverTimestamp();
     const rootSnapshots = Object.fromEntries(
       Object.keys(rootRefs).map((section, index) => [section, cursorSnapshots[index]]),
     );
+    const scopeSnapshots = cursorSnapshots.slice(Object.keys(rootRefs).length);
     const targetRootMs = {
       announcements: normalized.announcementsMs,
-      events: normalized.fallbackMs,
-      teams: normalized.fallbackMs,
-      sessions: normalized.fallbackMs,
+      events: normalized.eventsRootMs,
+      teams: normalized.teamsRootMs,
+      sessions: normalized.sessionsRootMs,
     };
+
+    if (alreadyComplete) {
+      // Only acknowledgements that failed to mirror while OFF/shadow may be
+      // merged after the one-time handover. Ordinary local rollback state is
+      // intentionally ignored: its client-clock timestamp can be later than
+      // a server-exact acknowledgement and must never clear a message that
+      // arrived between those two writes.
+      const updatedAt = serverTimestamp();
+      let changedCount = 0;
+      for (const [section, pendingTimestamp] of normalized.pendingSections) {
+        const existingMs = rootCursorMillis(
+          section,
+          rootSnapshots[section].data() || {},
+        );
+        if (existingMs != null && existingMs >= pendingTimestamp) continue;
+        const cursorField = section === 'announcements'
+          ? 'last_seen_at'
+          : 'global_last_seen_at';
+        transaction.set(rootRefs[section], {
+          schema_version: SCHEMA_VERSION,
+          [cursorField]: timestampFromMillis(pendingTimestamp),
+          updated_at: updatedAt,
+        });
+        changedCount += 1;
+      }
+      scopeWrites.forEach((item, index) => {
+        const existingMs = timestampMillis(scopeSnapshots[index].data()?.last_seen_at);
+        if (existingMs != null && existingMs >= item.timestamp) return;
+        transaction.set(item.ref, {
+          last_seen_at: timestampFromMillis(item.timestamp),
+          updated_at: updatedAt,
+        });
+        changedCount += 1;
+      });
+      if (changedCount > 0) {
+        transaction.update(markerRef, {
+          last_merged_at: updatedAt,
+          last_merge_changed_count: changedCount,
+        });
+      }
+      return {
+        status: changedCount > 0 ? 'merged' : 'already-complete',
+        schemaVersion: SCHEMA_VERSION,
+        changedCount,
+      };
+    }
+
+    const migration = await transaction.get(migrationRef);
+    const migrationData = migration.data() || {};
+    const trustedBaselineMs = timestampMillis(migrationData.baseline_at);
+    if (migrationData.schema_version !== SCHEMA_VERSION
+      || migrationData.status !== 'roots-seeded'
+      || trustedBaselineMs == null
+      || trustedBaselineMs > nowMs) {
+      fail(
+        'failed-precondition',
+        'La base de migration cursor n’est pas validée par le serveur.',
+      );
+    }
+
+    const updatedAt = serverTimestamp();
     let changedCount = 0;
     Object.keys(rootRefs).forEach(section => {
       const existingData = rootSnapshots[section].data() || {};
       const existingMs = rootCursorMillis(section, existingData);
-      const mayReplaceSeed = !alreadyComplete && (
+      const mayReplaceSeed = (
         existingMs == null
         || isTrustedMigrationSeed(section, existingData, trustedBaselineMs)
       );
@@ -239,7 +392,6 @@ async function bootstrapUnreadCursor({
       changedCount += 1;
     });
 
-    const scopeSnapshots = cursorSnapshots.slice(Object.keys(rootRefs).length);
     scopeWrites.forEach((item, index) => {
       const existingMs = timestampMillis(scopeSnapshots[index].data()?.last_seen_at);
       if (existingMs != null && existingMs >= item.timestamp) return;
@@ -250,37 +402,18 @@ async function bootstrapUnreadCursor({
       changedCount += 1;
     });
 
-    if (!alreadyComplete) {
-      transaction.set(markerRef, {
-        schema_version: SCHEMA_VERSION,
-        status: 'complete',
-        source: 'legacy_local_v1',
-        bootstrapped_at: updatedAt,
-        scope_count: normalized.scopeCount,
-        timestamps_clamped: normalized.timestampsClamped,
-      });
-      return {
-        status: 'bootstrapped',
-        schemaVersion: SCHEMA_VERSION,
-        changedCount,
-      };
-    }
-    if (changedCount > 0) {
-      transaction.update(markerRef, {
-        last_merged_at: updatedAt,
-        last_merge_scope_count: normalized.scopeCount,
-        last_merge_timestamps_clamped: normalized.timestampsClamped,
-      });
-      return {
-        status: 'merged',
-        schemaVersion: SCHEMA_VERSION,
-        changedCount,
-      };
-    }
+    transaction.set(markerRef, {
+      schema_version: SCHEMA_VERSION,
+      status: 'complete',
+      source: 'legacy_local_v1',
+      bootstrapped_at: updatedAt,
+      scope_count: normalized.scopeCount,
+      timestamps_clamped: normalized.timestampsClamped,
+    });
     return {
-      status: 'already-complete',
+      status: 'bootstrapped',
       schemaVersion: SCHEMA_VERSION,
-      changedCount: 0,
+      changedCount,
     };
   });
 

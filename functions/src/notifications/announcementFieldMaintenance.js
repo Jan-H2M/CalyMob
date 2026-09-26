@@ -1,5 +1,6 @@
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { advanceAnnouncementAuthority } = require('./unreadTimestampAuthority');
 
 function asMillis(value) {
   if (!value) return 0;
@@ -11,13 +12,8 @@ function asMillis(value) {
 function desiredAnnouncementFields(before = {}, after = {}) {
   const deleted = after.deleted_at != null;
   const desired = { visibility: deleted ? 'deleted' : 'published' };
-  if (!deleted && !after.last_activity_at && after.created_at) {
-    desired.last_activity_at = after.created_at;
-  }
   const changed = Object.entries(desired).some(([key, value]) => {
-    return key === 'last_activity_at'
-      ? asMillis(after[key]) !== asMillis(value)
-      : after[key] !== value;
+    return after[key] !== value;
   });
   return changed ? desired : null;
 }
@@ -32,17 +28,13 @@ async function maintainAnnouncementFields({ db, clubId, announcementId, before, 
 
 async function advanceAnnouncementActivity({ db, clubId, announcementId, reply }) {
   const ref = db.collection('clubs').doc(clubId).collection('announcements').doc(announcementId);
-  const activity = reply.created_at || admin.firestore.Timestamp.now();
-  return db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(ref);
-    if (!snapshot.exists) return { skipped: 'announcement_missing' };
-    const current = snapshot.data() || {};
-    const updates = {};
-    if (current.deleted_at == null && current.visibility !== 'published') updates.visibility = 'published';
-    if (asMillis(activity) > asMillis(current.last_activity_at)) updates.last_activity_at = activity;
-    if (!Object.keys(updates).length) return { skipped: 'not_newer' };
-    transaction.update(ref, updates);
-    return { updated: Object.keys(updates) };
+  const activity = reply.unread_created_at;
+  if (!activity) throw new Error('Server-authoritative reply timestamp required');
+  return advanceAnnouncementAuthority({
+    db,
+    announcementRef: ref,
+    activityAt: activity,
+    isReply: true,
   });
 }
 

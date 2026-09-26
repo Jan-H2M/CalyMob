@@ -244,7 +244,7 @@ class _LandingScreenState extends State<LandingScreen>
 
       await authProvider.logout();
       memberProvider.clear();
-      unreadProvider.clear();
+      await unreadProvider.clear();
 
       if (context.mounted) {
         Navigator.of(context).pushReplacement(
@@ -342,6 +342,10 @@ class _LandingScreenState extends State<LandingScreen>
                           title: 'Événements',
                           icon: Icons.event,
                           badgeCount: unreadProvider.eventMessages,
+                          badgeUnavailable:
+                              unreadProvider.usesCursorReadState &&
+                                  unreadProvider.lastRefreshError != null &&
+                                  !unreadProvider.hasReliableBadgeCount,
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -360,6 +364,10 @@ class _LandingScreenState extends State<LandingScreen>
                             teamMessages: unreadProvider.teamMessages,
                             sessionMessages: unreadProvider.sessionMessages,
                           ),
+                          badgeUnavailable:
+                              unreadProvider.usesCursorReadState &&
+                                  unreadProvider.lastRefreshError != null &&
+                                  !unreadProvider.hasReliableBadgeCount,
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(

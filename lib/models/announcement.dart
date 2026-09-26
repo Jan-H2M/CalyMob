@@ -26,6 +26,7 @@ class Announcement {
   final String? deletedBy;
   final AnnouncementVisibility? visibility;
   final DateTime? lastActivityAt;
+  final DateTime? unreadActivityAt;
 
   Announcement({
     required this.id,
@@ -41,6 +42,7 @@ class Announcement {
     this.deletedBy,
     this.visibility,
     this.lastActivityAt,
+    this.unreadActivityAt,
   });
 
   /// Créer depuis Firestore
@@ -69,6 +71,9 @@ class Announcement {
       visibility: _parseVisibility(data['visibility']),
       lastActivityAt: data['last_activity_at'] is Timestamp
           ? (data['last_activity_at'] as Timestamp).toDate()
+          : null,
+      unreadActivityAt: data['unread_activity_at'] is Timestamp
+          ? (data['unread_activity_at'] as Timestamp).toDate()
           : null,
     );
   }
@@ -127,6 +132,7 @@ class Announcement {
     String? deletedBy,
     AnnouncementVisibility? visibility,
     DateTime? lastActivityAt,
+    DateTime? unreadActivityAt,
   }) {
     return Announcement(
       id: id,
@@ -142,11 +148,13 @@ class Announcement {
       deletedBy: deletedBy ?? this.deletedBy,
       visibility: visibility ?? this.visibility,
       lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+      unreadActivityAt: unreadActivityAt ?? this.unreadActivityAt,
     );
   }
 
   /// Is soft-deleted
-  bool get isDeleted => deletedAt != null;
+  bool get isDeleted =>
+      deletedAt != null || visibility == AnnouncementVisibility.deleted;
 
   /// A des pièces jointes
   bool get hasAttachments => attachments.isNotEmpty;

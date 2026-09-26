@@ -47,8 +47,10 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
   @override
   Widget build(BuildContext context) {
     final unreadProvider = context.watch<UnreadCountProvider>();
-    final unreadSeances =
-        unreadProvider.sessionMessages + unreadProvider.teamMessages;
+    // This tab only contains session discussions. Team channels have their own
+    // rows in Communication and must not keep this badge non-zero after the
+    // last session conversation is opened.
+    final unreadSeances = unreadProvider.sessionMessages;
 
     return Scaffold(
       body: OceanGradientBackground(

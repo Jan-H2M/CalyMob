@@ -124,7 +124,10 @@ async function processDueTaskReminders({
       const result = await messaging.sendEachForMulticast({
         tokens,
         notification: pushNotification,
-        data: buildReminderPayload(clubId, dueForPush),
+        data: {
+          ...buildReminderPayload(clubId, dueForPush),
+          recipient_id: memberId,
+        },
         android: { priority: 'high' },
         apns: { payload: { aps: { sound: 'default' } } },
       });
@@ -135,7 +138,10 @@ async function processDueTaskReminders({
           memberId,
           {
             notification: pushNotification,
-            data: buildReminderPayload(clubId, dueForPush),
+            data: {
+              ...buildReminderPayload(clubId, dueForPush),
+              recipient_id: memberId,
+            },
           },
           'Action',
         );

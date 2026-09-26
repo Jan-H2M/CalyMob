@@ -16,6 +16,16 @@ import 'package:calymob/services/unread_count_service.dart';
 /// 4. Rollen filteren team/session channels correct
 void main() {
   const clubId = 'calypso';
+  const memberId = 'member-under-test';
+  final tracker = LocalReadTracker();
+
+  Future<void> prepareTracker() async {
+    SharedPreferences.setMockInitialValues({});
+    tracker.resetForTesting();
+    await tracker.activateContext(clubId, memberId);
+  }
+
+  tearDown(tracker.resetForTesting);
 
   group('Notification badge regression policy', () {
     test('closed-event registrations remain countable', () {
@@ -41,19 +51,14 @@ void main() {
   });
 
   group('LocalReadTracker', () {
-    setUp(() {
-      // Mock SharedPreferences
-      SharedPreferences.setMockInitialValues({});
-    });
+    setUp(prepareTracker);
 
     test('getLastRead retourneert null voor een nieuwe key', () async {
-      final tracker = LocalReadTracker();
       await tracker.init();
       expect(tracker.getLastRead('test_key'), isNull);
     });
 
     test('markAsRead slaat timestamp op', () async {
-      final tracker = LocalReadTracker();
       await tracker.init();
 
       final before = DateTime.now();
@@ -70,7 +75,6 @@ void main() {
     });
 
     test('initIfAbsent initialiseert alleen als niet bestaat', () async {
-      final tracker = LocalReadTracker();
       await tracker.init();
 
       // Eerste keer: moet initialiseren
@@ -82,11 +86,11 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 10));
       await tracker.initIfAbsent('new_key');
       final second = tracker.getLastRead('new_key');
-      expect(second!.millisecondsSinceEpoch, equals(first!.millisecondsSinceEpoch));
+      expect(second!.millisecondsSinceEpoch,
+          equals(first!.millisecondsSinceEpoch));
     });
 
     test('resetAll verwijdert alle keys', () async {
-      final tracker = LocalReadTracker();
       await tracker.init();
 
       await tracker.markAsRead('key_1');
@@ -99,8 +103,8 @@ void main() {
       expect(tracker.getLastRead('key_2'), isNull);
     });
 
-    test('markAllAsRead legt een globale baseline op alle gesprekken', () async {
-      final tracker = LocalReadTracker();
+    test('markAllAsRead legt een globale baseline op alle gesprekken',
+        () async {
       await tracker.init();
       await tracker.resetAll();
 
@@ -124,17 +128,18 @@ void main() {
   group('UnreadCountService - Announcements', () {
     late FakeFirebaseFirestore fakeFirestore;
 
-    setUp(() {
-      SharedPreferences.setMockInitialValues({});
+    setUp(() async {
+      await prepareTracker();
       fakeFirestore = FakeFirebaseFirestore();
     });
 
-    test('CRITICAL FIX: nooit geopend → tel ALLE announcements als ongelezen', () async {
+    test('CRITICAL FIX: nooit geopend → tel ALLE announcements als ongelezen',
+        () async {
       // Setup: 3 announcements, user heeft het scherm nooit geopend
       for (int i = 0; i < 3; i++) {
         await fakeFirestore.collection('clubs/$clubId/announcements').add({
-          'created_at': Timestamp.fromDate(
-              DateTime.now().subtract(Duration(days: i))),
+          'created_at':
+              Timestamp.fromDate(DateTime.now().subtract(Duration(days: i))),
           'title': 'Annonce $i',
           'content': 'Contenu $i',
         });
@@ -144,7 +149,6 @@ void main() {
       // NU (fix): lastRead == null → gebruik epoch → tel alles
       // We kunnen niet direct de service testen omdat die FirebaseFirestore.instance gebruikt,
       // maar we testen de logica hier:
-      final tracker = LocalReadTracker();
       await tracker.init();
       final lastRead = tracker.getLastRead('announcements');
       expect(lastRead, isNull, reason: 'Nooit geopend, dus null');
@@ -175,7 +179,6 @@ void main() {
       }
 
       // User opent het scherm → markAsRead
-      final tracker = LocalReadTracker();
       await tracker.init();
       await tracker.markAsRead('announcements');
       final lastRead = tracker.getLastRead('announcements')!;
@@ -190,8 +193,7 @@ void main() {
       // Query: alleen messages na lastRead
       final snapshot = await fakeFirestore
           .collection('clubs/$clubId/announcements')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snapshot.docs.length, equals(1),
           reason: 'Alleen het nieuwe announcement is ongelezen');
@@ -202,8 +204,8 @@ void main() {
     late FakeFirebaseFirestore fakeFirestore;
     const operationId = 'sortie_mer_2026';
 
-    setUp(() {
-      SharedPreferences.setMockInitialValues({});
+    setUp(() async {
+      await prepareTracker();
       fakeFirestore = FakeFirebaseFirestore();
     });
 
@@ -223,8 +225,8 @@ void main() {
         await fakeFirestore
             .collection('clubs/$clubId/operations/$operationId/messages')
             .add({
-          'created_at': Timestamp.fromDate(
-              DateTime.now().subtract(Duration(hours: i))),
+          'created_at':
+              Timestamp.fromDate(DateTime.now().subtract(Duration(hours: i))),
           'message': 'Message $i',
           'sender_id': 'user_$i',
           'sender_name': 'User $i',
@@ -232,7 +234,6 @@ void main() {
       }
 
       // Nooit geopend → lastRead null
-      final tracker = LocalReadTracker();
       await tracker.init();
       final lastRead = tracker.getLastRead('operation_$operationId');
       expect(lastRead, isNull);
@@ -250,7 +251,8 @@ void main() {
           reason: 'Alle 5 messages moeten ongelezen zijn');
     });
 
-    test('multi-user scenario: 3 users posten, badges updaten correct', () async {
+    test('multi-user scenario: 3 users posten, badges updaten correct',
+        () async {
       await fakeFirestore
           .collection('clubs/$clubId/operations')
           .doc(operationId)
@@ -260,7 +262,6 @@ void main() {
         'titre': 'Sortie Mer',
       });
 
-      final tracker = LocalReadTracker();
       await tracker.init();
 
       // User Jan opent het event voor het eerst
@@ -303,8 +304,7 @@ void main() {
       // Jan's count: 3 messages na zijn lastRead
       final snapshot = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(janLastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(janLastRead))
           .get();
       expect(snapshot.docs.length, equals(3),
           reason: 'Jan ziet 3 ongelezen messages');
@@ -347,8 +347,8 @@ void main() {
   group('UnreadCountService - Team Messages (role-based)', () {
     late FakeFirebaseFirestore fakeFirestore;
 
-    setUp(() {
-      SharedPreferences.setMockInitialValues({});
+    setUp(() async {
+      await prepareTracker();
       fakeFirestore = FakeFirebaseFirestore();
     });
 
@@ -363,7 +363,9 @@ void main() {
           normalizedRoles.contains('encadrants')) {
         channelIds.add('equipe_encadrants');
       }
-      if (normalizedRoles.contains('gonflage')) channelIds.add('equipe_gonflage');
+      if (normalizedRoles.contains('gonflage')) {
+        channelIds.add('equipe_gonflage');
+      }
 
       expect(channelIds, equals(['equipe_accueil', 'equipe_encadrants']),
           reason: 'Accueil en encadrant rollen moeten 2 channels geven');
@@ -375,13 +377,16 @@ void main() {
       final normalizedRoles = roles.map((r) => r.toLowerCase()).toList();
 
       if (normalizedRoles.contains('accueil')) channelIds.add('equipe_accueil');
-      if (normalizedRoles.contains('encadrant')) channelIds.add('equipe_encadrants');
+      if (normalizedRoles.contains('encadrant')) {
+        channelIds.add('equipe_encadrants');
+      }
 
       expect(channelIds.isEmpty, isTrue,
           reason: 'Geen rollen → geen channels → 0 messages');
     });
 
-    test('CRITICAL FIX: nooit geopend team channel → tel ALLE messages', () async {
+    test('CRITICAL FIX: nooit geopend team channel → tel ALLE messages',
+        () async {
       const channelId = 'equipe_encadrants';
 
       // 4 messages in het team channel
@@ -389,15 +394,14 @@ void main() {
         await fakeFirestore
             .collection('clubs/$clubId/team_channels/$channelId/messages')
             .add({
-          'created_at': Timestamp.fromDate(
-              DateTime.now().subtract(Duration(hours: i))),
+          'created_at':
+              Timestamp.fromDate(DateTime.now().subtract(Duration(hours: i))),
           'message': 'Team message $i',
           'sender_id': 'user_$i',
         });
       }
 
       // Nooit geopend → lastRead null → epoch
-      final tracker = LocalReadTracker();
       await tracker.init();
       final lastRead = tracker.getLastRead('team_$channelId');
       expect(lastRead, isNull);
@@ -419,8 +423,8 @@ void main() {
     late FakeFirebaseFirestore fakeFirestore;
     const operationId = 'plongee_fevrier';
 
-    setUp(() {
-      SharedPreferences.setMockInitialValues({});
+    setUp(() async {
+      await prepareTracker();
       fakeFirestore = FakeFirebaseFirestore();
     });
 
@@ -435,7 +439,6 @@ void main() {
         'titre': 'Plongée Février',
       });
 
-      final tracker = LocalReadTracker();
       await tracker.init();
       final epoch = DateTime(2024, 1, 1);
 
@@ -458,12 +461,10 @@ void main() {
         'sender_id': 'pierre',
       });
 
-      var lastRead =
-          tracker.getLastRead('operation_$operationId') ?? epoch;
+      var lastRead = tracker.getLastRead('operation_$operationId') ?? epoch;
       var snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(2),
           reason: 'Étape 1: Jan voit 2 messages non lus');
@@ -474,8 +475,7 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(0),
           reason: 'Étape 2: Jan a tout lu, 0 non lus');
@@ -492,8 +492,7 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(1),
           reason: 'Étape 3: Jan voit 1 nouveau message de Marie');
@@ -518,11 +517,11 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(3),
-          reason: 'Étape 4: Jan voit 3 messages non lus (Marie + Pierre + Geoffroy)');
+          reason:
+              'Étape 4: Jan voit 3 messages non lus (Marie + Pierre + Geoffroy)');
 
       // === ÉTAPE 5: Jan ouvre à nouveau → tout lu ===
       await tracker.markAsRead('operation_$operationId');
@@ -530,8 +529,7 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(0),
           reason: 'Étape 5: Jan a tout lu, retour à 0');

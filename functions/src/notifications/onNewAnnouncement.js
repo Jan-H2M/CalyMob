@@ -9,6 +9,9 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode } = require('../utils/badge-helper');
+const { stampAnnouncementCreated } = require('./unreadTimestampAuthority');
+const { prepareNotificationUnreadTimestamp } = require('./notificationUnreadTimestamp');
+const { advanceSenderUnreadCursorIsolated } = require('./advanceSenderUnreadCursor');
 
 /**
  * Firestore trigger for new announcements (Gen2)
@@ -20,7 +23,27 @@ exports.onNewAnnouncement = onDocumentCreated(
   },
   async (event) => {
     const { clubId, announcementId } = event.params;
-    const announcement = event.data.data();
+    const authoritativeCreatedAt = await prepareNotificationUnreadTimestamp({
+      snapshot: event.data, eventTime: event.time, label: 'announcement',
+      stamp: () => stampAnnouncementCreated({
+        db: admin.firestore(),
+        snapshot: event.data,
+        eventTime: event.time,
+      }),
+    });
+    const announcement = {
+      ...event.data.data(),
+      created_at: authoritativeCreatedAt,
+      unread_created_at: authoritativeCreatedAt,
+      unread_activity_at: authoritativeCreatedAt,
+    };
+    if (announcement.sender_id) {
+      await advanceSenderUnreadCursorIsolated({
+        db: admin.firestore(), clubId, senderId: announcement.sender_id,
+        section: 'announcements', scopeId: announcementId,
+        visibleAt: authoritativeCreatedAt,
+      });
+    }
 
     console.log(`New announcement in club/${clubId}/announcements/${announcementId}`);
     console.log('Announcement data:', JSON.stringify(announcement));

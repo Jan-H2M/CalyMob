@@ -219,6 +219,7 @@ class TeamChannel {
   final TeamChannelType type;
   final String? description;
   final DateTime createdAt;
+  final DateTime? unreadCreatedAt;
 
   TeamChannel({
     required this.id,
@@ -226,6 +227,7 @@ class TeamChannel {
     required this.type,
     this.description,
     required this.createdAt,
+    this.unreadCreatedAt,
   });
 
   factory TeamChannel.fromFirestore(DocumentSnapshot doc) {
@@ -237,6 +239,7 @@ class TeamChannel {
       type: TeamChannelTypeExtension.fromString(data['type'] ?? 'encadrants'),
       description: data['description'],
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      unreadCreatedAt: (data['unread_created_at'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -271,6 +274,7 @@ class TeamMessage {
   final Map<String, List<String>> reactions;
   final Poll? poll;
   final DateTime createdAt;
+  final DateTime? unreadCreatedAt;
   final DateTime? editedAt;
 
   TeamMessage({
@@ -282,6 +286,7 @@ class TeamMessage {
     this.reactions = const {},
     this.poll,
     required this.createdAt,
+    this.unreadCreatedAt,
     this.editedAt,
   });
 
@@ -303,6 +308,7 @@ class TeamMessage {
           ? Poll.fromMap(data['poll'] as Map<String, dynamic>)
           : null,
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      unreadCreatedAt: (data['unread_created_at'] as Timestamp?)?.toDate(),
       editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
     );
   }
@@ -316,6 +322,8 @@ class TeamMessage {
       if (reactions.isNotEmpty) 'reactions': reactions,
       if (poll != null) 'poll': poll!.toMap(),
       'created_at': Timestamp.fromDate(createdAt),
+      if (unreadCreatedAt != null)
+        'unread_created_at': Timestamp.fromDate(unreadCreatedAt!),
       if (editedAt != null) 'edited_at': Timestamp.fromDate(editedAt!),
     };
   }

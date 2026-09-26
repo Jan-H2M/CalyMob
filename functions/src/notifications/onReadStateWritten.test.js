@@ -8,7 +8,6 @@ jest.mock('firebase-admin', () => ({ firestore: mockFirestore, messaging: () => 
 jest.mock('../utils/notificationHistory', () => ({ persistNotificationHistory: jest.fn() }));
 
 const { reconcileReadStateBadge, recentlySynced, cursorAdvanced } = require('./onReadStateWritten');
-const { clearUnreadCursorV1FlagCache } = require('./unreadCursorFeatureFlag');
 const ts = (iso) => new MemoryTimestamp(iso);
 const before = { last_seen_at: ts('2026-03-01T00:00:00Z') };
 const after = { last_seen_at: ts('2026-03-02T00:00:00Z') };
@@ -28,7 +27,7 @@ function seeded({ mode = 'on', pilots = [], memberId = 'm', message = false, tok
 
 describe('read-state badge reconciliation', () => {
   beforeEach(() => {
-    clearUnreadCursorV1FlagCache(); recentlySynced.clear(); mockSend.mockReset();
+    recentlySynced.clear(); mockSend.mockReset();
     mockSend.mockResolvedValue({ successCount: 1, failureCount: 0, responses: [{ success: true }] });
   });
   afterEach(() => jest.useRealTimers());
@@ -108,7 +107,7 @@ describe('read-state badge reconciliation', () => {
     const pilot = reconcileReadStateBadge({ db: mockDb, clubId: 'c', memberId: 'pilot', before, after });
     await new Promise((resolve) => setTimeout(resolve, 4050)); await pilot;
     expect(mockSend).toHaveBeenCalledTimes(1);
-    clearUnreadCursorV1FlagCache(); recentlySynced.clear(); mockSend.mockClear();
+    recentlySynced.clear(); mockSend.mockClear();
     mockDb = seeded({ mode: 'shadow', pilots: ['pilot'], memberId: 'other' });
     await expect(reconcileReadStateBadge({ db: mockDb, clubId: 'c', memberId: 'other', before, after })).resolves.toEqual({ skipped: 'flag_off' });
     expect(mockSend).not.toHaveBeenCalled();

@@ -10,6 +10,7 @@ class AnnouncementReply {
   final String senderName;
   final String message;
   final DateTime createdAt;
+  final DateTime? unreadCreatedAt;
   final DateTime? editedAt;
   final String? replyToId;
   final ReplyPreview? replyToPreview;
@@ -21,6 +22,7 @@ class AnnouncementReply {
     required this.senderName,
     required this.message,
     required this.createdAt,
+    this.unreadCreatedAt,
     this.editedAt,
     this.replyToId,
     this.replyToPreview,
@@ -37,10 +39,12 @@ class AnnouncementReply {
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
       createdAt: (data['created_at'] as Timestamp).toDate(),
+      unreadCreatedAt: (data['unread_created_at'] as Timestamp?)?.toDate(),
       editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
       replyToId: data['reply_to_id'],
       replyToPreview: data['reply_to_preview'] != null
-          ? ReplyPreview.fromMap(data['reply_to_preview'] as Map<String, dynamic>)
+          ? ReplyPreview.fromMap(
+              data['reply_to_preview'] as Map<String, dynamic>)
           : null,
       attachments: (data['attachments'] as List<dynamic>?)
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
@@ -78,6 +82,7 @@ class AnnouncementReply {
       senderName: senderName,
       message: message ?? this.message,
       createdAt: createdAt,
+      unreadCreatedAt: unreadCreatedAt,
       editedAt: editedAt ?? this.editedAt,
       replyToId: replyToId ?? this.replyToId,
       replyToPreview: replyToPreview ?? this.replyToPreview,

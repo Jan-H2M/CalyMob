@@ -35,26 +35,32 @@ void main() {
     test(
         'opening a list itself has no acknowledgement; a conversation writes once',
         () async {
-      final db = FakeFirebaseFirestore();
-      final service = ReadStateService(firestore: db);
-      expect(
-        (await db
-                .doc('clubs/c/members/u/read_state/events/conversations/op')
-                .get())
-            .exists,
-        isFalse,
+      var writes = 0;
+      final service = ReadStateService(
+        firestore: FakeFirebaseFirestore(),
+        visibleAcknowledgementCall: (_) async {
+          writes += 1;
+          return {
+            'status': 'acknowledged',
+            'visibleThroughMs':
+                DateTime.utc(2026, 9, 26).millisecondsSinceEpoch,
+          };
+        },
       );
-      await service.markEventConversationSeen('c', 'u', 'op');
-      await service.markEventConversationSeen('c', 'u', 'op');
-      expect(
-        (await db
-                .doc('clubs/c/members/u/read_state/events/conversations/op')
-                .get())
-            .exists,
-        isTrue,
-        reason:
-            'the acknowledgement coalescer makes repeated detail opens one write',
+      await service.markEventConversationSeen(
+        'c',
+        'u',
+        'op',
+        visibleMessageId: 'message-1',
       );
+      await service.markEventConversationSeen(
+        'c',
+        'u',
+        'op',
+        visibleMessageId: 'message-1',
+      );
+      expect(writes, 1,
+          reason: 'repeated exact-detail acknowledgements are coalesced');
     });
 
     test(

@@ -13,8 +13,6 @@ import '../../models/read_state.dart';
 import '../../widgets/message_hover_caret.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
-import '../../services/local_read_tracker.dart';
-import '../../services/unread_count_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
 import '../../services/visible_read_ack_gate.dart';
@@ -42,7 +40,7 @@ class SessionChatScreen extends StatefulWidget {
 }
 
 class _SessionChatScreenState extends State<SessionChatScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final SessionMessageService _messageService = SessionMessageService();
   final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
@@ -55,7 +53,14 @@ class _SessionChatScreenState extends State<SessionChatScreen>
 
   bool _isSending = false;
   bool _hasLoadedMessageSnapshot = false;
+  String? _latestVisibleMessageId;
+  DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
+  bool _appIsForeground = true;
+  final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
+  final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
+  ModalRoute<dynamic>? _subscribedRoute;
+  String? _acknowledgementUserId;
   Poll? _pendingPoll;
 
   /// Haal de foto URL op voor een member (cached Future)
@@ -73,20 +78,17 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Cursor mode acknowledges only after the message stream successfully
-    // yields; preserve the legacy eager local acknowledgement when OFF.
-    if (!context.read<UnreadCountProvider>().usesCursorReadState) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          unawaited(_markMessagesAsRead(forceLegacy: true));
-        }
-      });
-    }
+    _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _ackRetry.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -94,43 +96,93 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (identical(route, _subscribedRoute)) return;
+    if (_subscribedRoute != null) {
+      readAcknowledgementRouteObserver.unsubscribe(this);
+    }
+    _subscribedRoute = route;
+    if (route != null) {
+      readAcknowledgementRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() => _ackRetry.suspend();
+
+  @override
+  void didPopNext() => unawaited(_markMessagesAsRead());
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        mounted &&
-        _hasLoadedMessageSnapshot) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground && mounted && _hasLoadedMessageSnapshot) {
       unawaited(_markMessagesAsRead());
+    } else if (!_appIsForeground) {
+      _ackRetry.suspend();
     }
   }
 
   Future<void> _markMessagesAsRead({
     UnreadCountProvider? watchedUnreadProvider,
-    bool forceLegacy = false,
   }) async {
-    if (!isCurrentRouteForReadAcknowledgement(context)) return;
-    final unreadProvider =
-        watchedUnreadProvider ?? context.read<UnreadCountProvider>();
-    if (!forceLegacy && unreadProvider.usesCursorReadState) {
-      await unreadProvider.markSessionChatSeen(
-        readStateSessionScopeId(
-          widget.session.id,
-          widget.chatGroup.type.value,
-          widget.chatGroup.level,
-        ),
-      );
+    if (!_appIsForeground || !isCurrentRouteForReadAcknowledgement(context)) {
       return;
     }
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    await tracker.markAsRead(
-      unreadSessionReadKey(
-        widget.session.id,
-        widget.chatGroup.type.value,
-        widget.chatGroup.level,
-      ),
+    final unreadProvider =
+        watchedUnreadProvider ?? context.read<UnreadCountProvider>();
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null || currentUserId != _acknowledgementUserId) {
+      _ackRetry.suspend();
+      return;
+    }
+    final cursor = unreadProvider.usesCursorReadState;
+    final revision = _readAckGate.begin(
+      ready: _hasLoadedMessageSnapshot,
+      cursor: cursor,
     );
-
-    if (!mounted) return;
-    await unreadProvider.refresh();
+    if (revision == null) return;
+    var succeeded = false;
+    try {
+      final visibleMessageId = _latestVisibleMessageId;
+      if (visibleMessageId != null) {
+        await unreadProvider.markSessionChatSeen(
+          readStateSessionScopeId(
+            widget.session.id,
+            widget.chatGroup.type.value,
+            widget.chatGroup.level,
+          ),
+          visibleMessageId: visibleMessageId,
+          sessionId: widget.session.id,
+          groupType: widget.chatGroup.type.value,
+          groupLevel: widget.chatGroup.level,
+          visibleThroughAt: _latestVisibleMessageAt,
+        );
+      }
+      succeeded = true;
+      _ackRetry.reset();
+    } catch (error) {
+      debugPrint('⚠️ Session chat read acknowledgement failed: $error');
+      _ackRetry.schedule(() {
+        if (mounted) unawaited(_markMessagesAsRead());
+      });
+    } finally {
+      _readAckGate.finish(
+        revision: revision,
+        cursor: cursor,
+        succeeded: succeeded,
+      );
+    }
+    if (!mounted || !succeeded) return;
+    final currentCursorAuthority =
+        context.read<UnreadCountProvider>().usesCursorReadState;
+    if (_readAckGate.hasPending(cursor: currentCursorAuthority)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_markMessagesAsRead());
+      });
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -174,16 +226,6 @@ class _SessionChatScreenState extends State<SessionChatScreen>
         attachments: attachments,
         poll: _pendingPoll,
       );
-      if (mounted && isCurrentRouteForReadAcknowledgement(context)) {
-        await context.read<UnreadCountProvider>().markSessionChatSeen(
-          readStateSessionScopeId(
-            widget.session.id,
-            widget.chatGroup.type.value,
-            widget.chatGroup.level,
-          ),
-        );
-      }
-
       _messageController.clear();
       setState(() {
         _pendingAttachments.clear();
@@ -516,20 +558,64 @@ class _SessionChatScreenState extends State<SessionChatScreen>
                       );
                     }
 
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Container(
+                          key: const ValueKey('session-chat-load-error'),
+                          margin: const EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.94),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade700),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.sync_problem_rounded,
+                                color: Colors.orange.shade800,
+                                size: 36,
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Impossible de charger les messages. Réessayez dans un instant.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
                     final messages = snapshot.data ?? [];
-                    if (snapshot.hasData &&
-                        routeIsCurrent &&
-                        unreadProvider.usesCursorReadState) {
+                    if (snapshot.hasData) {
                       _hasLoadedMessageSnapshot = true;
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) {
-                          unawaited(
-                            _markMessagesAsRead(
-                              watchedUnreadProvider: unreadProvider,
-                            ),
-                          );
-                        }
-                      });
+                      final first = messages.isEmpty ? null : messages.first;
+                      final last = messages.isEmpty ? null : messages.last;
+                      _latestVisibleMessageId = last?.id;
+                      _latestVisibleMessageAt =
+                          last?.unreadCreatedAt ?? last?.createdAt;
+                      _acknowledgementUserId = userId;
+                      if (_readAckGate.recordContent(
+                        messages.isEmpty
+                            ? 'empty'
+                            : '${messages.length}:${first!.id}:${last!.id}:${last.createdAt.microsecondsSinceEpoch}',
+                      )) {
+                        _ackRetry.reset();
+                      }
+                      if (_appIsForeground && routeIsCurrent) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            unawaited(
+                              _markMessagesAsRead(
+                                watchedUnreadProvider: unreadProvider,
+                              ),
+                            );
+                          }
+                        });
+                      }
                     }
                     if (messages.isEmpty) {
                       return Center(

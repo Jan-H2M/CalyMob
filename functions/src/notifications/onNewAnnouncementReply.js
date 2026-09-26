@@ -9,7 +9,9 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
-const { advanceAnnouncementActivity } = require('./announcementFieldMaintenance');
+const { stampAnnouncementReplyCreated } = require('./unreadTimestampAuthority');
+const { prepareNotificationUnreadTimestamp } = require('./notificationUnreadTimestamp');
+const { advanceSenderUnreadCursorIsolated } = require('./advanceSenderUnreadCursor');
 
 /**
  * Firestore trigger for new announcement replies (Gen2)
@@ -21,19 +23,40 @@ exports.onNewAnnouncementReply = onDocumentCreated(
   },
   async (event) => {
     const { clubId, announcementId, replyId } = event.params;
-    const reply = event.data.data();
+    const announcementRef = admin.firestore()
+      .collection('clubs')
+      .doc(clubId)
+      .collection('announcements')
+      .doc(announcementId);
+    const authoritativeCreatedAt = await prepareNotificationUnreadTimestamp({
+      snapshot: event.data, eventTime: event.time,
+      label: 'announcement_reply',
+      stamp: () => stampAnnouncementReplyCreated({
+        db: admin.firestore(),
+        snapshot: event.data,
+        eventTime: event.time,
+        announcementRef,
+      }),
+    });
+    const reply = {
+      ...event.data.data(),
+      created_at: authoritativeCreatedAt,
+      unread_created_at: authoritativeCreatedAt,
+    };
+    if (reply.sender_id) {
+      await advanceSenderUnreadCursorIsolated({
+        db: admin.firestore(), clubId, senderId: reply.sender_id,
+        section: 'announcements', scopeId: announcementId,
+        visibleAt: authoritativeCreatedAt,
+      });
+    }
 
     console.log(`New reply in club/${clubId}/announcements/${announcementId}/replies/${replyId}`);
     console.log('Reply data:', JSON.stringify(reply));
 
     try {
       // 1. Get the announcement details
-      const announcementDoc = await admin.firestore()
-        .collection('clubs')
-        .doc(clubId)
-        .collection('announcements')
-        .doc(announcementId)
-        .get();
+      const announcementDoc = await announcementRef.get();
 
       if (!announcementDoc.exists) {
         console.log('Announcement not found, skipping notification');
@@ -43,13 +66,6 @@ exports.onNewAnnouncementReply = onDocumentCreated(
       const announcement = announcementDoc.data();
       const announcementTitle = announcement.title || 'Annonce';
       const announcementSenderId = announcement.sender_id;
-
-      // Keep the legacy reply marker and the cursor-v1 activity field. The
-      // transaction only advances activity, so out-of-order trigger delivery
-      // cannot move an announcement backwards.
-      await admin.firestore().collection('clubs').doc(clubId).collection('announcements')
-        .doc(announcementId).update({ last_reply_at: reply.created_at || admin.firestore.FieldValue.serverTimestamp() });
-      await advanceAnnouncementActivity({ db: admin.firestore(), clubId, announcementId, reply });
 
       // 2. Build list of thread participants (announcement author + all who replied)
       const threadParticipantIds = new Set();

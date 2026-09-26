@@ -11,7 +11,11 @@ const admin = require('firebase-admin');
 const { FIRESTORE_BATCH_LIMIT } = require('./constants');
 const { memberDisplayName } = require('./memberName');
 const { persistNotificationHistory } = require('./notificationHistory');
-const { getUnreadCursorV1Mode, getUnreadCursorV1ModeForMember } = require('../notifications/unreadCursorFeatureFlag');
+const {
+  getUnreadCursorV1Config,
+  normalizeMode,
+  effectiveUnreadCursorV1Mode,
+} = require('../notifications/unreadCursorFeatureFlag');
 const { getCanonicalUnreadBreakdown } = require('../notifications/canonicalUnreadBadge');
 
 /**
@@ -220,7 +224,7 @@ function collectTokensAndMembers(memberDocs, senderId) {
  * @param {string} category - De unread categorie
  * @returns {{ successCount: number, failureCount: number }}
  */
-async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category) {
+async function sendLegacyNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category) {
   let totalSuccess = 0;
   let totalFailure = 0;
 
@@ -237,7 +241,7 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
 
           // Maak payload met juiste badge voor deze member
           const payload = {
-            ...basePayload,
+            ...forRecipient(basePayload, memberId),
             apns: {
               ...(basePayload.apns || {}),
               headers: {
@@ -262,12 +266,18 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
           totalFailure += result.failureCount;
 
           if (result.successCount > 0) {
-            await persistNotificationHistory(
-              clubId,
-              memberId,
-              basePayload,
-              category,
-            );
+            try {
+              await persistNotificationHistory(
+                clubId,
+                memberId,
+                basePayload,
+                category,
+              );
+            } catch (error) {
+              // Delivery already succeeded. History is an independent audit
+              // side effect and must not turn this recipient into a retry.
+              console.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
+            }
           }
 
           // Verwijder ongeldige tokens
@@ -295,6 +305,56 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
   return { successCount: totalSuccess, failureCount: totalFailure };
 }
 
+function withoutApnsBadge(basePayload) {
+  const aps = { ...(basePayload.apns?.payload?.aps || {}) };
+  delete aps.badge;
+  return {
+    ...basePayload,
+    apns: {
+      ...(basePayload.apns || {}),
+      payload: { ...(basePayload.apns?.payload || {}), aps },
+    },
+  };
+}
+
+function forRecipient(basePayload, memberId) {
+  return {
+    ...basePayload,
+    data: {
+      ...(basePayload.data || {}),
+      // Bind every transport payload to its intended account. The client uses
+      // this server-owned value to prevent a tap received for account A from
+      // opening private content after a switch to account B.
+      recipient_id: memberId,
+    },
+  };
+}
+
+async function sendNotificationsWithoutBadge(clubId, memberTokenGroups, basePayload, category) {
+  let successCount = 0;
+  let failureCount = 0;
+  await bounded([...memberTokenGroups.entries()], async ([memberId, tokens]) => {
+    try {
+      const payload = withoutApnsBadge(forRecipient(basePayload, memberId));
+      const result = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
+      successCount += result.successCount;
+      failureCount += result.failureCount;
+      if (result.successCount > 0) {
+        try {
+          await persistNotificationHistory(clubId, memberId, basePayload, category);
+        } catch (error) {
+          console.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
+        }
+      }
+      removeInvalidTokens(clubId, memberId, tokens, result.responses);
+    } catch (error) {
+      console.error(`Badge-neutral send failed for ${memberId}: ${error.message}`);
+      failureCount += tokens.length;
+    }
+  });
+  return { successCount, failureCount };
+}
+
 /**
  * Coexistence bridge for cursor-v1. OFF preserves the historical sender byte
  * path. SHADOW sends that same payload and emits a comparison. ON still keeps
@@ -303,45 +363,87 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
  */
 async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, category) {
   const db = admin.firestore();
-  const mode = await getUnreadCursorV1Mode(db, clubId);
-  if (mode === 'off') return sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category);
+  const config = await getUnreadCursorV1Config(db, clubId);
+  const mode = config.known ? normalizeMode(config.data) : 'unknown';
+  if (mode === 'unknown') {
+    return sendNotificationsWithoutBadge(clubId, memberTokenGroups, basePayload, category);
+  }
+  if (mode === 'off') return sendLegacyNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category);
   if (mode === 'shadow') {
     const legacyGroups = new Map();
     const pilotGroups = new Map();
-    await Promise.all([...memberTokenGroups.entries()].map(async ([memberId, tokens]) => {
-      (await getUnreadCursorV1ModeForMember(db, clubId, memberId) === 'on' ? pilotGroups : legacyGroups).set(memberId, tokens);
-    }));
-    const result = await sendNotificationsWithBadge(clubId, legacyGroups, basePayload, category);
+    const unknownGroups = new Map();
+    [...memberTokenGroups.entries()].forEach(([memberId, tokens]) => {
+      const memberMode = effectiveUnreadCursorV1Mode(config.data, memberId);
+      (memberMode === 'on' ? pilotGroups : memberMode === 'unknown' ? unknownGroups : legacyGroups)
+        .set(memberId, tokens);
+    });
+    const result = await sendLegacyNotificationsWithBadge(clubId, legacyGroups, basePayload, category);
     const pilotResult = await sendCanonicalCursorNotifications(db, clubId, pilotGroups, basePayload, category);
-    await Promise.all([...memberTokenGroups.keys()].slice(0, 20).map(async (memberId) => {
+    const unknownResult = await sendNotificationsWithoutBadge(clubId, unknownGroups, basePayload, category);
+    await Promise.allSettled([...memberTokenGroups.keys()].slice(0, 20).map(async (memberId) => {
       const [legacy, canonical] = await Promise.all([
         getBadgeCount(clubId, memberId),
         getCanonicalUnreadBreakdown({ db, clubId, memberId }),
       ]);
       console.log(JSON.stringify({ event: 'unread_cursor_shadow_diff', clubId, memberId, category, legacy, canonical: canonical.total }));
     }));
-    return { successCount: result.successCount + pilotResult.successCount, failureCount: result.failureCount + pilotResult.failureCount };
+    return {
+      successCount: result.successCount + pilotResult.successCount + unknownResult.successCount,
+      failureCount: result.failureCount + pilotResult.failureCount + unknownResult.failureCount,
+    };
   }
   return sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, basePayload, category);
+}
+
+// Historical callers (birthdays, training, medical and reminders) still use
+// this name. Routing them through the same mode bridge prevents a non-unread
+// push from restoring a legacy 99+ badge while cursor authority is ON.
+async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category) {
+  return sendNotificationsWithUnreadCursorMode(
+    clubId,
+    memberTokenGroups,
+    basePayload,
+    category,
+  );
 }
 
 async function sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, basePayload, category) {
   let successCount = 0;
   let failureCount = 0;
   await bounded([...memberTokenGroups.entries()], async ([memberId, tokens]) => {
-    const breakdown = await getCanonicalUnreadBreakdown({ db, clubId, memberId });
-    const payload = {
-      ...basePayload,
-      apns: {
-        ...(basePayload.apns || {}),
-        payload: { aps: { ...(basePayload.apns?.payload?.aps || {}), badge: breakdown.total } },
-      },
-    };
-    const result = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
-    successCount += result.successCount;
-    failureCount += result.failureCount;
-    if (result.successCount > 0) await persistNotificationHistory(clubId, memberId, basePayload, category);
-    removeInvalidTokens(clubId, memberId, tokens, result.responses);
+    try {
+      let payload;
+      try {
+        const breakdown = await getCanonicalUnreadBreakdown({ db, clubId, memberId });
+        payload = {
+          ...forRecipient(basePayload, memberId),
+          apns: {
+            ...(basePayload.apns || {}),
+            payload: { ...(basePayload.apns?.payload || {}), aps: { ...(basePayload.apns?.payload?.aps || {}), badge: breakdown.total } },
+          },
+        };
+      } catch (error) {
+        // Deliver the content without touching APNs badge authority. Never
+        // substitute legacy counts for an effective-ON member.
+        console.error(`Canonical unread count failed for ${memberId}: ${error.message}`);
+        payload = withoutApnsBadge(forRecipient(basePayload, memberId));
+      }
+      const result = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
+      successCount += result.successCount;
+      failureCount += result.failureCount;
+      if (result.successCount > 0) {
+        try {
+          await persistNotificationHistory(clubId, memberId, basePayload, category);
+        } catch (error) {
+          console.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
+        }
+      }
+      removeInvalidTokens(clubId, memberId, tokens, result.responses);
+    } catch (error) {
+      console.error(`Canonical notification failed for ${memberId}: ${error.message}`);
+      failureCount += tokens.length;
+    }
   });
   return { successCount, failureCount };
 }
@@ -351,7 +453,11 @@ async function sendSilentCursorBadge({ clubId, memberId, tokens, total }) {
   const result = await admin.messaging().sendEachForMulticast({
     tokens,
     apns: { headers: { 'apns-push-type': 'background', 'apns-priority': '5' }, payload: { aps: { badge: total, 'content-available': 1 } } },
-    data: { type: 'unread_cursor_badge_sync', club_id: clubId },
+    data: {
+      type: 'unread_cursor_badge_sync',
+      club_id: clubId,
+      recipient_id: memberId,
+    },
   });
   removeInvalidTokens(clubId, memberId, tokens, result.responses);
   return result;

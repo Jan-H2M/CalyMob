@@ -177,6 +177,20 @@
       ]
     },
     {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "group_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "unread_created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "demandes_remboursement",
       "queryScope": "COLLECTION",
       "fields": [
@@ -790,6 +804,24 @@
         },
         {
           "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "group_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "group_level",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "unread_created_at",
           "order": "ASCENDING"
         }
       ]

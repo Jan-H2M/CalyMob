@@ -12,7 +12,6 @@ import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/app_update_service.dart';
-import '../../services/local_read_tracker.dart';
 import '../../providers/unread_count_provider.dart';
 import '../auth/login_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -989,44 +988,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final unreadProvider = context.read<UnreadCountProvider>();
-      if (unreadProvider.usesCursorReadState) {
-        // Cursor v1 has no mutable unread_counts reset. One acknowledgement
-        // per root section is shared by all the member's devices.
-        await unreadProvider.markEventsSeen();
-        await unreadProvider.markCommunicationSeen();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Tous les messages marqués comme lus'),
-              duration: Duration(seconds: 2),
-            ),
-          );
+      // Advance both active and rollback authority. OFF/shadow also mirrors
+      // these roots so re-enabling cursor mode cannot resurrect read content.
+      await unreadProvider.markEventsSeen();
+      await unreadProvider.markCommunicationSeen();
+      if (!unreadProvider.usesCursorReadState) {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId == null) {
+          throw Exception('Utilisateur non connecté');
         }
-        return;
-      }
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
-        throw Exception('Utilisateur non connecté');
-      }
 
-      // 1. Zet de globale "alles gelezen" baseline lokaal
-      await LocalReadTracker().markAllAsRead();
-
-      // 2. Reset Firestore counters via dot-notation
-      await FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(_clubId)
-          .collection('members')
-          .doc(userId)
-          .update({
-        'unread_counts.announcements': 0,
-        'unread_counts.event_messages': 0,
-        'unread_counts.team_messages': 0,
-        'unread_counts.session_messages': 0,
-        'unread_counts.medical_certificates': 0,
-        'unread_counts.total': 0,
-        'unread_counts.last_updated': FieldValue.serverTimestamp(),
-      });
+        // Reset legacy Firestore counters via dot-notation.
+        await FirebaseFirestore.instance
+            .collection('clubs')
+            .doc(_clubId)
+            .collection('members')
+            .doc(userId)
+            .update({
+          'unread_counts.announcements': 0,
+          'unread_counts.event_messages': 0,
+          'unread_counts.team_messages': 0,
+          'unread_counts.session_messages': 0,
+          'unread_counts.medical_certificates': 0,
+          'unread_counts.total': 0,
+          'unread_counts.last_updated': FieldValue.serverTimestamp(),
+        });
+      }
 
       // 3. Wis badge + pending notificaties
       await _notificationService.clearBadge();
@@ -1443,7 +1430,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await context.read<AuthProvider>().logout();
     if (!mounted) return;
     context.read<MemberProvider>().clear();
-    context.read<UnreadCountProvider>().clear();
+    await context.read<UnreadCountProvider>().clear();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,

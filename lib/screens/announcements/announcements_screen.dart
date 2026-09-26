@@ -11,6 +11,7 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../services/local_read_tracker.dart';
 import '../../utils/search_highlight.dart';
 import '../../providers/unread_count_provider.dart';
+import '../../services/cursor_unread_count_service.dart';
 import 'announcement_detail_screen.dart';
 import 'create_announcement_dialog.dart';
 
@@ -137,10 +138,6 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         type: type,
       );
       if (mounted) {
-        await context.read<UnreadCountProvider>().markAnnouncementSeen();
-      }
-
-      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Annonce publiée avec succès'),
@@ -177,15 +174,13 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     // Cursor v1 deliberately does not acknowledge a whole section merely by
     // navigating to its list. An individual announcement detail (or explicit
     // "Tout marquer comme lu") is the acknowledgement action.
-    if (context.read<UnreadCountProvider>().usesCursorReadState) return;
-    final tracker = LocalReadTracker();
-    await tracker.markAsRead('announcements');
+    final unreadProvider = context.read<UnreadCountProvider>();
+    if (unreadProvider.usesCursorReadState) return;
+    await unreadProvider.markAnnouncementsSeen();
     // Refresh unread counts so badge disappears
     if (mounted) {
       try {
-        final unreadProvider =
-            Provider.of<UnreadCountProvider>(context, listen: false);
-        unreadProvider.refresh();
+        await unreadProvider.refresh();
       } catch (_) {}
     }
   }
@@ -193,9 +188,32 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   /// Vérifie si une annonce est non lue (créée après lastRead)
   bool _isAnnouncementUnread(Announcement announcement) {
     final tracker = LocalReadTracker();
-    final lastRead = tracker.getLastRead('announcements');
+    final lastRead = tracker.getLastRead('announcement_${announcement.id}') ??
+        tracker.getLastRead('announcements');
     if (lastRead == null) return true; // Jamais ouvert = tout est nouveau
-    return announcement.createdAt.isAfter(lastRead);
+    return (announcement.lastActivityAt ?? announcement.createdAt)
+        .isAfter(lastRead);
+  }
+
+  Future<bool> _isAnnouncementUnreadFromCursor(
+    Announcement announcement,
+    String userId,
+  ) async {
+    final count = await CursorUnreadCountService().countAnnouncementThread(
+      'calypso',
+      userId,
+      announcement.id,
+      <String, dynamic>{
+        'visibility': announcement.visibility?.name ?? 'published',
+        'last_activity_at': Timestamp.fromDate(
+          announcement.lastActivityAt ?? announcement.createdAt,
+        ),
+        if (announcement.unreadActivityAt != null)
+          'unread_activity_at':
+              Timestamp.fromDate(announcement.unreadActivityAt!),
+      },
+    );
+    return count > 0;
   }
 
   @override
@@ -345,12 +363,40 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                         itemCount: announcements.length,
                         itemBuilder: (context, index) {
                           final announcement = announcements[index];
-                          return AnnouncementCard(
-                            announcement: announcement,
-                            currentUserId: currentUser.uid,
-                            isUnread: _isAnnouncementUnread(announcement),
-                            searchQuery: searchQuery,
-                            onTap: () => _navigateToDetail(announcement),
+                          final unreadProvider =
+                              context.watch<UnreadCountProvider>();
+                          if (!unreadProvider.usesCursorReadState) {
+                            return AnnouncementCard(
+                              announcement: announcement,
+                              currentUserId: currentUser.uid,
+                              isUnread: _isAnnouncementUnread(announcement),
+                              searchQuery: searchQuery,
+                              onTap: () => _navigateToDetail(announcement),
+                            );
+                          }
+                          return FutureBuilder<bool>(
+                            future: unreadProvider.isCursorReady
+                                ? _isAnnouncementUnreadFromCursor(
+                                    announcement,
+                                    currentUser.uid,
+                                  )
+                                : null,
+                            builder: (context, unreadSnapshot) {
+                              final statusUnavailable =
+                                  !unreadProvider.isCursorReady ||
+                                      unreadSnapshot.hasError ||
+                                      !unreadSnapshot.hasData;
+                              return AnnouncementCard(
+                                announcement: announcement,
+                                currentUserId: currentUser.uid,
+                                isUnread: statusUnavailable
+                                    ? false
+                                    : unreadSnapshot.data!,
+                                unreadStatusUnavailable: statusUnavailable,
+                                searchQuery: searchQuery,
+                                onTap: () => _navigateToDetail(announcement),
+                              );
+                            },
                           );
                         },
                       ),

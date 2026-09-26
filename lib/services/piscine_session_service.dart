@@ -70,6 +70,22 @@ class PiscineSessionService {
             .toList());
   }
 
+  /// Every published session that can still own a discussion. Unlike the
+  /// planning view this deliberately includes past sessions: canonical unread
+  /// counts do too, so every counted conversation must remain navigable.
+  Stream<List<PiscineSession>> getPublishedChatSessions(String clubId) {
+    return _sessionsCollection(clubId)
+        .where('statut', isEqualTo: PiscineSessionStatus.publie)
+        .snapshots()
+        .map((snapshot) {
+      final sessions = snapshot.docs
+          .map((doc) => PiscineSession.fromFirestore(doc))
+          .toList();
+      sessions.sort((left, right) => right.date.compareTo(left.date));
+      return sessions;
+    });
+  }
+
   /// Stream van sessies voor een specifieke maand
   Stream<List<PiscineSession>> getSessionsForMonth(
       String clubId, int year, int month) {

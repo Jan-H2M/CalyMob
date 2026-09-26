@@ -31,17 +31,54 @@ void main() {
       expect(availableTypes, contains(TeamChannelType.gonflage));
     });
 
-    test('encadrants see all formation channels', () {
+    test('career encadrant and CA aliases match rules and push audience', () {
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(['Encadrant Carrière']),
+        contains(TeamChannelType.encadrants),
+      );
+      for (final alias in ['comite', 'Comite', 'comité', 'Comité']) {
+        expect(
+          ClubRoleUtils.getVisibleTeamChannelTypes([alias]),
+          contains(TeamChannelType.ca),
+        );
+      }
+    });
+
+    test('role aliases not accepted by rules are not advertised by the UI', () {
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['conseil administration'],
+        ),
+        isNot(contains(TeamChannelType.ca)),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(['a']),
+        isNot(contains(TeamChannelType.accueil)),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(['e']),
+        isNot(contains(TeamChannelType.encadrants)),
+      );
+    });
+
+    test('encadrants see only their active target formation channel', () {
       final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
         ['encadrant'],
       );
 
       expect(availableTypes, contains(TeamChannelType.encadrants));
-      expect(availableTypes, contains(TeamChannelType.formation1));
-      expect(availableTypes, contains(TeamChannelType.formation2));
-      expect(availableTypes, contains(TeamChannelType.formation3));
-      expect(availableTypes, contains(TeamChannelType.formation4));
-      expect(availableTypes, contains(TeamChannelType.formationAM));
+      expect(
+        availableTypes.where((type) => type.name.startsWith('formation')),
+        isEmpty,
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['encadrant'],
+          formationActive: true,
+          targetFormationLevel: '2*',
+        ),
+        contains(TeamChannelType.formation2),
+      );
     });
 
     test('pool encadrants do not inherit career team and formation channels',
@@ -62,6 +99,20 @@ void main() {
       );
 
       expect(availableTypes, TeamChannelType.values);
+    });
+
+    test('club status Administrateur is not an app admin override', () {
+      expect(
+        ClubRoleUtils.hasAdminAccess(['Administrateur']),
+        isFalse,
+      );
+      expect(
+        ClubRoleUtils.hasAdminAccess(
+          ['Administrateur'],
+          appRole: 'admin',
+        ),
+        isTrue,
+      );
     });
 
     test('member without team role still sees general', () {
@@ -135,6 +186,25 @@ void main() {
 
       expect(availableTypes, contains(TeamChannelType.formationAM));
       expect(availableTypes, isNot(contains(TeamChannelType.formation2)));
+    });
+
+    test('formation values use the exact aliases accepted by rules', () {
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          targetFormationLevel: 'Formation P2',
+          formationActive: true,
+        ),
+        isNot(contains(TeamChannelType.formation2)),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          plongeurCode: 'Plongeur 1 étoile',
+          formationActive: true,
+        ).where((type) => type.name.startsWith('formation')),
+        isEmpty,
+      );
     });
   });
 

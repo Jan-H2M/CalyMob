@@ -34,6 +34,7 @@ class EventMessage {
   final String senderName;
   final String message;
   final DateTime createdAt;
+  final DateTime? unreadCreatedAt;
   final DateTime? editedAt;
   final String? replyToId;
   final ReplyPreview? replyToPreview;
@@ -47,6 +48,7 @@ class EventMessage {
     required this.senderName,
     required this.message,
     required this.createdAt,
+    this.unreadCreatedAt,
     this.editedAt,
     this.replyToId,
     this.replyToPreview,
@@ -65,6 +67,7 @@ class EventMessage {
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      unreadCreatedAt: (data['unread_created_at'] as Timestamp?)?.toDate(),
       editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
       replyToId: data['reply_to_id'],
       replyToPreview: data['reply_to_preview'] != null
@@ -116,6 +119,7 @@ class EventMessage {
       senderName: senderName,
       message: message ?? this.message,
       createdAt: createdAt,
+      unreadCreatedAt: unreadCreatedAt,
       editedAt: editedAt ?? this.editedAt,
       replyToId: replyToId ?? this.replyToId,
       replyToPreview: replyToPreview ?? this.replyToPreview,

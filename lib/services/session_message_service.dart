@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import '../models/poll.dart';
 import '../models/session_message.dart';
@@ -8,8 +9,19 @@ import '../models/piscine_session.dart';
 
 /// Service pour la gestion des messages de session piscine
 class SessionMessageService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseFirestore _firestore;
+  final FirebaseStorage _storage;
+  final FirebaseFunctions _functions;
+  final Map<String, Future<void>> _aclReadiness = <String, Future<void>>{};
+
+  SessionMessageService({
+    FirebaseFirestore? firestore,
+    FirebaseStorage? storage,
+    FirebaseFunctions? functions,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _storage = storage ?? FirebaseStorage.instance,
+        _functions =
+            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   /// Référence à la collection de messages pour une session
   CollectionReference<Map<String, dynamic>> _messagesCollection(
@@ -36,8 +48,11 @@ class SessionMessageService {
       query = query.where('group_level', isEqualTo: groupLevel);
     }
 
-    return query.orderBy('created_at', descending: false).snapshots().map(
-        (snapshot) => snapshot.docs
+    return Stream<void>.fromFuture(_ensureChatAcl(clubId, sessionId))
+        .asyncExpand(
+          (_) => query.orderBy('created_at', descending: false).snapshots(),
+        )
+        .map((snapshot) => snapshot.docs
             .map((doc) => SessionMessage.fromFirestore(doc))
             .toList());
   }
@@ -54,6 +69,7 @@ class SessionMessageService {
     List<MessageAttachment>? attachments,
     Poll? poll,
   }) async {
+    await _ensureChatAcl(clubId, sessionId);
     final messageData = SessionMessage(
       id: '',
       senderId: senderId,
@@ -66,10 +82,36 @@ class SessionMessageService {
       createdAt: DateTime.now(),
     );
 
-    final docRef = await _messagesCollection(clubId, sessionId)
-        .add(messageData.toFirestore());
+    final docRef = await _messagesCollection(clubId, sessionId).add({
+      ...messageData.toFirestore(),
+      'created_at': FieldValue.serverTimestamp(),
+      'unread_created_at': FieldValue.serverTimestamp(),
+    });
 
     return docRef.id;
+  }
+
+  Future<void> _ensureChatAcl(String clubId, String sessionId) {
+    final key = '$clubId\u0000$sessionId';
+    final existing = _aclReadiness[key];
+    if (existing != null) return existing;
+    late final Future<void> readiness;
+    readiness = _functions
+        .httpsCallable('ensurePiscineSessionChatAcl')
+        .call(<String, Object>{'clubId': clubId, 'sessionId': sessionId}).then<
+            void>((result) {
+      if (result.data is! Map ||
+          !{'ready', 'repaired'}.contains((result.data as Map)['status'])) {
+        throw StateError('Session chat access could not be prepared.');
+      }
+    }).catchError((Object error, StackTrace stackTrace) {
+      if (identical(_aclReadiness[key], readiness)) {
+        _aclReadiness.remove(key);
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    });
+    _aclReadiness[key] = readiness;
+    return readiness;
   }
 
   // markAsRead, markAllAsRead, getUnreadCount verwijderd
@@ -252,6 +294,12 @@ class SessionMessageService {
   List<SessionChatGroup> getAvailableGroups({
     required PiscineSession session,
     required String userId,
+  }) =>
+      availableGroupsForMember(session: session, userId: userId);
+
+  static List<SessionChatGroup> availableGroupsForMember({
+    required PiscineSession session,
+    required String userId,
   }) {
     final groups = <SessionChatGroup>[];
 
@@ -274,7 +322,7 @@ class SessionMessageService {
     }
 
     // Ajouter les chats par niveau pour les encadrants
-    for (final level in PiscineLevel.all) {
+    for (final level in session.niveaux.keys) {
       if (session.isEncadrantForLevel(userId, level)) {
         groups.add(SessionChatGroup(
           type: SessionGroupType.niveau,

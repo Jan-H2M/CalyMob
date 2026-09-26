@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:calymob/models/read_state.dart';
 import 'package:calymob/services/cursor_unread_count_service.dart';
 import 'package:calymob/services/read_state_service.dart';
 
@@ -18,6 +21,30 @@ CursorUnreadCountService service(FakeFirebaseFirestore db) =>
       clock: () => now,
       countQuery: (query) async => (await query.get()).size,
     );
+
+class _BarrierReadStateService extends ReadStateService {
+  _BarrierReadStateService({required super.firestore, required this.cursor});
+
+  final Timestamp cursor;
+  final Completer<void> bothWaiting = Completer<void>();
+  final Completer<void> release = Completer<void>();
+  int scopeCalls = 0;
+
+  @override
+  Future<Timestamp?> getEffectiveCursor(
+    String clubId,
+    String userId,
+    ReadStateSection section, {
+    String? scopeId,
+  }) async {
+    if (scopeId != null) {
+      scopeCalls++;
+      if (scopeCalls == 2) bothWaiting.complete();
+      await release.future;
+    }
+    return cursor;
+  }
+}
 
 Future<void> root(FakeFirebaseFirestore db, String section, DateTime value) =>
     db.doc('clubs/$club/members/$member/read_state/$section').set(
@@ -51,6 +78,29 @@ void main() {
     });
     expect(await service(db).countAnnouncements(club, member), 1);
   });
+  test('parallel subqueries cannot overwrite each other\'s subtotal', () async {
+    for (final id in ['one', 'two']) {
+      await db.doc('clubs/$club/announcements/$id').set({
+        'visibility': 'published',
+        'last_activity_at': ts(cursor.add(const Duration(minutes: 1))),
+      });
+    }
+    final readState = _BarrierReadStateService(
+      firestore: db,
+      cursor: ts(cursor),
+    );
+    final tested = CursorUnreadCountService(
+      firestore: db,
+      readStateService: readState,
+      clock: () => now,
+      countQuery: (query) async => (await query.get()).size,
+      timestampV2Resolver: (_, __) async => false,
+    );
+    final result = tested.countAnnouncements(club, member);
+    await readState.bothWaiting.future;
+    readState.release.complete();
+    expect(await result, 2);
+  });
   test('does not count announcement before cursor', () async {
     await root(db, 'announcements', cursor);
     await db.doc('clubs/$club/announcements/old').set({
@@ -58,6 +108,39 @@ void main() {
       'last_activity_at': ts(cursor.subtract(const Duration(seconds: 1)))
     });
     expect(await service(db).countAnnouncements(club, member), 0);
+  });
+  test('announcement authority preserves sub-microsecond ordering', () async {
+    final seen = Timestamp(10, 123456700);
+    final oneNanosecondLater = Timestamp(10, 123456701);
+    await db.doc('clubs/$club/members/$member/read_state/announcements').set({
+      'schema_version': 1,
+      'last_seen_at': seen,
+      'updated_at': seen,
+    });
+    await db.doc('clubs/$club/announcements/new').set({
+      'visibility': 'published',
+      'unread_activity_at': oneNanosecondLater,
+    });
+
+    expect(
+      await service(db).countAnnouncements(
+        club,
+        member,
+        timestampV2: true,
+      ),
+      1,
+    );
+    await db.doc('clubs/$club/announcements/new').update({
+      'unread_activity_at': seen,
+    });
+    expect(
+      await service(db).countAnnouncements(
+        club,
+        member,
+        timestampV2: true,
+      ),
+      0,
+    );
   });
   test('excludes soft-deleted announcement after cursor', () async {
     await root(db, 'announcements', cursor);
@@ -89,9 +172,11 @@ void main() {
   });
   test('counts eligible event messages within Brussels grace', () async {
     await root(db, 'events', cursor);
-    await db
-        .doc('clubs/$club/operations/op')
-        .set({'date_fin': ts(DateTime.utc(2026, 3, 29, 10))});
+    await db.doc('clubs/$club/operations/op').set({
+      'type': 'evenement',
+      'statut': 'ouvert',
+      'date_fin': ts(DateTime.utc(2026, 3, 29, 10)),
+    });
     await db
         .doc('clubs/$club/operations/op/inscriptions/i')
         .set({'membre_id': member, 'registration_status': 'confirmed'});
@@ -103,9 +188,11 @@ void main() {
   });
   test('excludes expired and canceled/waitlisted event inscriptions', () async {
     await root(db, 'events', cursor);
-    await db
-        .doc('clubs/$club/operations/expired')
-        .set({'date_fin': ts(DateTime.utc(2026, 3, 28, 10))});
+    await db.doc('clubs/$club/operations/expired').set({
+      'type': 'evenement',
+      'statut': 'ferme',
+      'date_fin': ts(DateTime.utc(2026, 3, 28, 10)),
+    });
     for (final status in ['confirmed', 'canceled', 'waitlisted']) {
       await db
           .doc('clubs/$club/operations/expired/inscriptions/$status')
@@ -122,7 +209,11 @@ void main() {
       'last_seen_at': ts(cursor.add(const Duration(days: 2))),
       'updated_at': ts(cursor)
     });
-    await db.doc('clubs/$club/operations/op').set({'date_fin': ts(now)});
+    await db.doc('clubs/$club/operations/op').set({
+      'type': 'evenement',
+      'statut': 'ferme',
+      'date_fin': ts(now),
+    });
     await db
         .doc('clubs/$club/operations/op/inscriptions/i')
         .set({'membre_id': member, 'registration_status': 'confirmed'});
@@ -142,6 +233,9 @@ void main() {
     await root(db, 'sessions', cursor);
     await db.doc('clubs/$club/piscine_sessions/published').set({
       'statut': 'publie',
+      'accueil': [
+        {'membre_id': member}
+      ],
       'niveaux': {'P2': true}
     });
     await db.doc('clubs/$club/piscine_sessions/draft').set({
@@ -156,11 +250,43 @@ void main() {
         await service(db).countSessionMessages(club, member, const ['accueil']),
         1);
   });
+  test('message queries exclude exact nanos and include one nanosecond later',
+      () async {
+    final seen = Timestamp(10, 123456700);
+    final later = Timestamp(10, 123456701);
+    await db.doc('clubs/$club/members/$member/read_state/events').set({
+      'schema_version': 1,
+      'global_last_seen_at': seen,
+      'updated_at': seen,
+    });
+    await db.doc('clubs/$club/operations/op/messages/exact').set({
+      'unread_created_at': seen,
+    });
+    await db.doc('clubs/$club/operations/op/messages/later').set({
+      'unread_created_at': later,
+    });
+
+    expect(
+      await service(db).countEventConversation(
+        club,
+        member,
+        'op',
+        timestampV2: true,
+      ),
+      1,
+    );
+  });
   test('session niveau scope cursor is applied', () async {
     await root(db, 'sessions', cursor);
     await db.doc('clubs/$club/piscine_sessions/s').set({
       'statut': 'publie',
-      'niveaux': {'P2': true}
+      'niveaux': {
+        'P2': {
+          'encadrants': [
+            {'membre_id': member}
+          ]
+        }
+      }
     });
     await db
         .doc(
@@ -183,6 +309,42 @@ void main() {
         await service(db)
             .countSessionMessages(club, member, const ['encadrant']),
         1);
+  });
+  test('legacy camelCase course-only assignment gets matching session counts',
+      () async {
+    await root(db, 'sessions', cursor);
+    await db.doc('clubs/$club/piscine_sessions/s').set({
+      'statut': 'publie',
+      'niveaux': {
+        'P2': {
+          'coursesByHour': {
+            'h20': [
+              {
+                'encadrants': [
+                  {'membre_id': member}
+                ]
+              }
+            ]
+          }
+        }
+      }
+    });
+    await message(db, 'clubs/$club/piscine_sessions/s/messages', now,
+        {'group_type': 'encadrants'});
+    await message(db, 'clubs/$club/piscine_sessions/s/messages',
+        now.add(const Duration(seconds: 1)), {
+      'group_type': 'niveau',
+      'group_level': 'P2',
+    });
+
+    expect(
+      await service(db).countSessionMessages(
+        club,
+        member,
+        const ['encadrant'],
+      ),
+      2,
+    );
   });
   test('refreshAllCounts computes communication and total from seeded docs',
       () async {

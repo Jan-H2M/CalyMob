@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import '../models/event_message.dart';
 import '../models/poll.dart';
 import '../models/session_message.dart' show MessageAttachment;
+import '../utils/event_unread_policy.dart';
 
 /// Service de gestion des messages liés aux événements
 class EventMessageService {
@@ -78,7 +79,11 @@ class EventMessageService {
 
       final docRef = await _firestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .add(eventMessage.toFirestore());
+          .add({
+        ...eventMessage.toFirestore(),
+        'created_at': FieldValue.serverTimestamp(),
+        'unread_created_at': FieldValue.serverTimestamp(),
+      });
 
       debugPrint('✅ Message envoyé pour event $operationId');
       return docRef.id;
@@ -282,7 +287,9 @@ class EventMessageService {
           .where('membre_id', isEqualTo: userId)
           .get();
 
-      final isParticipant = snapshot.docs.isNotEmpty;
+      final isParticipant = snapshot.docs.any(
+        (registration) => isCountableEventRegistration(registration.data()),
+      );
       debugPrint(
           'User $userId ${isParticipant ? "IS" : "IS NOT"} participant for event $operationId');
 

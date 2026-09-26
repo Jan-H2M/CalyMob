@@ -2,13 +2,89 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:calymob/models/session_message.dart';
+import 'package:calymob/models/piscine_session.dart';
+import 'package:calymob/services/session_message_service.dart';
 
 void main() {
   const clubId = 'club1';
   const sessionId = 'session1';
   const userId = 'user1';
-  final messagesPath =
-      'clubs/$clubId/piscine_sessions/$sessionId/messages';
+  final messagesPath = 'clubs/$clubId/piscine_sessions/$sessionId/messages';
+
+  test('dynamic session levels retain a navigable course-only chat group',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    await firestore.doc('clubs/$clubId/piscine_sessions/$sessionId').set({
+      'operation_id': 'operation',
+      'type': 'piscine',
+      'date': Timestamp.fromDate(DateTime.utc(2026, 9, 26)),
+      'lieu': 'Piscine',
+      'horaire_debut': '20:00',
+      'horaire_fin': '21:00',
+      'accueil': [],
+      'baptemes': [],
+      'gonflage': {},
+      'niveaux': {
+        'P2': {
+          'encadrants': [],
+          'courses_by_hour': {
+            '1ere_heure': [
+              {
+                'id': 'course-1',
+                'order': 0,
+                'encadrants': [
+                  {
+                    'membre_id': userId,
+                    'membre_nom': 'Test',
+                    'membre_prenom': 'Member',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        '5★': {
+          'encadrants': [
+            {
+              'membre_id': 'other',
+              'membre_nom': 'Other',
+              'membre_prenom': 'Member',
+            },
+          ],
+        },
+      },
+      'statut': PiscineSessionStatus.publie,
+      'created_at': Timestamp.fromDate(DateTime.utc(2026, 9, 1)),
+      'updated_at': Timestamp.fromDate(DateTime.utc(2026, 9, 1)),
+      'created_by': 'admin',
+    });
+    final session = PiscineSession.fromFirestore(
+      await firestore.doc('clubs/$clubId/piscine_sessions/$sessionId').get(),
+    );
+
+    expect(session.niveaux.keys, containsAll(['P2', '5★']));
+    final groups = SessionMessageService.availableGroupsForMember(
+      session: session,
+      userId: userId,
+    );
+    expect(
+      groups,
+      containsAll([
+        predicate<SessionChatGroup>(
+          (group) => group.type == SessionGroupType.encadrants,
+        ),
+        predicate<SessionChatGroup>(
+          (group) =>
+              group.type == SessionGroupType.niveau && group.level == 'P2',
+        ),
+      ]),
+    );
+    expect(
+      groups.any((group) => group.level == '5★'),
+      isFalse,
+      reason: 'unassigned stored levels remain hidden',
+    );
+  });
 
   group('SessionMessageService - Firestore Operations', () {
     late FakeFirebaseFirestore firestore;
@@ -361,13 +437,11 @@ void main() {
           SessionChatGroup(
               type: SessionGroupType.accueil, displayName: 'Accueil'),
           SessionChatGroup(
-              type: SessionGroupType.encadrants,
-              displayName: 'Encadrants'),
+              type: SessionGroupType.encadrants, displayName: 'Encadrants'),
         ];
 
         // Calculate total (mirrors getTotalUnreadCountStream logic)
-        final allSnapshot =
-            await firestore.collection(messagesPath).get();
+        final allSnapshot = await firestore.collection(messagesPath).get();
         int total = 0;
         for (final group in groups) {
           final groupMessages = allSnapshot.docs.where((doc) {
@@ -411,8 +485,7 @@ void main() {
               type: SessionGroupType.accueil, displayName: 'Accueil'),
         ];
 
-        final allSnapshot =
-            await firestore.collection(messagesPath).get();
+        final allSnapshot = await firestore.collection(messagesPath).get();
         int total = 0;
         for (final group in groups) {
           final groupMessages = allSnapshot.docs.where((doc) {
@@ -462,8 +535,7 @@ void main() {
           SessionChatGroup(
               type: SessionGroupType.accueil, displayName: 'Accueil'),
           SessionChatGroup(
-              type: SessionGroupType.encadrants,
-              displayName: 'Encadrants'),
+              type: SessionGroupType.encadrants, displayName: 'Encadrants'),
           SessionChatGroup(
             type: SessionGroupType.niveau,
             level: '1',
@@ -472,8 +544,7 @@ void main() {
         ];
 
         // Calculate per-group counts (mirrors getUnreadCountsStream)
-        final allSnapshot =
-            await firestore.collection(messagesPath).get();
+        final allSnapshot = await firestore.collection(messagesPath).get();
         final counts = <String, int>{};
 
         for (final group in groups) {
@@ -645,8 +716,7 @@ void main() {
           'unread_counts.total': FieldValue.increment(-accueilUnread),
         });
 
-        memberDoc =
-            await firestore.collection(memberPath).doc(userId).get();
+        memberDoc = await firestore.collection(memberPath).doc(userId).get();
         expect(
             (memberDoc.data()!['unread_counts']
                 as Map<String, dynamic>)['session_messages'],
@@ -674,13 +744,11 @@ void main() {
         expect(encUnread, 2);
 
         await firestore.collection(memberPath).doc(userId).update({
-          'unread_counts.session_messages':
-              FieldValue.increment(-encUnread),
+          'unread_counts.session_messages': FieldValue.increment(-encUnread),
           'unread_counts.total': FieldValue.increment(-encUnread),
         });
 
-        memberDoc =
-            await firestore.collection(memberPath).doc(userId).get();
+        memberDoc = await firestore.collection(memberPath).doc(userId).get();
         expect(
             (memberDoc.data()!['unread_counts']
                 as Map<String, dynamic>)['session_messages'],

@@ -105,23 +105,48 @@ class MockUnreadCountProvider extends ChangeNotifier
   bool get usesCursorReadState => false;
   @override
   bool get isListening => false;
+  @override
+  bool get hasReliableBadgeCount => false;
+  @override
+  Object? get lastRefreshError => null;
+  @override
+  bool hasResolvedAuthorityFor(String clubId, String userId) => false;
 
   @override
-  Future<void> markAnnouncementSeen() async {}
+  Future<void> markAnnouncementSeen(
+    String announcementId, {
+    String? visibleReplyId,
+    DateTime? visibleThroughAt,
+  }) async {}
   @override
   Future<void> markAnnouncementsSeen() async {}
   @override
   Future<void> markCommunicationSeen() async {}
   @override
-  Future<void> markEventConversationSeen(String operationId) async {}
+  Future<void> markEventConversationSeen(
+    String operationId, {
+    required String visibleMessageId,
+    DateTime? visibleThroughAt,
+  }) async {}
   @override
   Future<void> markEventsSeen() async {}
   @override
-  Future<void> markSessionChatSeen(String scopeId) async {}
+  Future<void> markSessionChatSeen(
+    String scopeId, {
+    required String visibleMessageId,
+    String? sessionId,
+    String? groupType,
+    String? groupLevel,
+    DateTime? visibleThroughAt,
+  }) async {}
   @override
   Future<void> markSessionsSeen() async {}
   @override
-  Future<void> markTeamChannelSeen(String channelId) async {}
+  Future<void> markTeamChannelSeen(
+    String channelId, {
+    required String visibleMessageId,
+    DateTime? visibleThroughAt,
+  }) async {}
   @override
   Future<void> markTeamsSeen() async {}
 
@@ -160,7 +185,7 @@ class MockUnreadCountProvider extends ChangeNotifier
   void stopListening() {}
 
   @override
-  void clear() {
+  Future<void> clear() async {
     setCounts();
   }
 }

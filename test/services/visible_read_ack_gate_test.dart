@@ -47,10 +47,57 @@ void main() {
     expect(gate.begin(ready: true, cursor: true), 2);
   });
 
+  testWidgets('failed acknowledgements retry indefinitely with capped backoff',
+      (tester) async {
+    var retries = 0;
+    final scheduler = VisibleReadAckRetryScheduler(
+      delays: const <Duration>[
+        Duration(milliseconds: 10),
+        Duration(milliseconds: 20),
+      ],
+    );
+
+    expect(scheduler.schedule(() => retries += 1), isTrue);
+    expect(scheduler.schedule(() => retries += 1), isFalse,
+        reason: 'only one retry timer may be pending');
+    await tester.pump(const Duration(milliseconds: 9));
+    expect(retries, 0);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(retries, 1);
+
+    expect(scheduler.schedule(() => retries += 1), isTrue);
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(retries, 2);
+    expect(scheduler.schedule(() => retries += 1), isTrue,
+        reason: 'the final delay repeats while visible content is pending');
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(retries, 3);
+
+    scheduler.reset();
+    expect(scheduler.schedule(() => retries += 1), isTrue,
+        reason: 'new content or a successful write resets the budget');
+    scheduler.dispose();
+  });
+
+  testWidgets('suspending a retry prevents background acknowledgement',
+      (tester) async {
+    var retries = 0;
+    final scheduler = VisibleReadAckRetryScheduler(
+      delays: const <Duration>[Duration(milliseconds: 10)],
+    );
+    scheduler.schedule(() => retries += 1);
+    scheduler.suspend();
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(retries, 0);
+    expect(scheduler.attempts, 1,
+        reason: 'covering a route must not create an unbounded retry loop');
+  });
+
   testWidgets('a mounted widget below another route is not visible',
       (tester) async {
     final probeKey = GlobalKey<_RouteVisibilityProbeState>();
-    await tester.pumpWidget(MaterialApp(home: _RouteVisibilityProbe(
+    await tester.pumpWidget(MaterialApp(
+        home: _RouteVisibilityProbe(
       key: probeKey,
     )));
     expect(probeKey.currentState!.isVisible, isTrue);

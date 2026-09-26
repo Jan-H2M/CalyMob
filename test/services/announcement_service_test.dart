@@ -73,10 +73,7 @@ void main() {
           'reply_count': 0,
         });
 
-        await firestore
-            .collection(announcementsPath)
-            .doc(docRef.id)
-            .delete();
+        await firestore.collection(announcementsPath).doc(docRef.id).delete();
 
         final doc = await docRef.get();
         expect(doc.exists, isFalse);
@@ -246,8 +243,7 @@ void main() {
       });
 
       test('adds reply with sender in read_by', () async {
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
 
         final replyRef = await firestore.collection(repliesPath).add({
           'sender_id': userId,
@@ -269,13 +265,11 @@ void main() {
         });
 
         final doc = await announcementRef.get();
-        expect(
-            (doc.data() as Map<String, dynamic>)['reply_count'], 1);
+        expect((doc.data() as Map<String, dynamic>)['reply_count'], 1);
       });
 
       test('multiple replies increment count correctly', () async {
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
 
         for (int i = 0; i < 5; i++) {
           await firestore.collection(repliesPath).add({
@@ -291,17 +285,14 @@ void main() {
         }
 
         final doc = await announcementRef.get();
-        expect(
-            (doc.data() as Map<String, dynamic>)['reply_count'], 5);
+        expect((doc.data() as Map<String, dynamic>)['reply_count'], 5);
 
-        final repliesSnapshot =
-            await firestore.collection(repliesPath).get();
+        final repliesSnapshot = await firestore.collection(repliesPath).get();
         expect(repliesSnapshot.docs.length, 5);
       });
 
       test('reply with replyToPreview (nested reply)', () async {
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
 
         await firestore.collection(repliesPath).add({
           'sender_id': userId,
@@ -337,8 +328,7 @@ void main() {
           'reply_count': 2,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
         final replyRef = await firestore.collection(repliesPath).add({
           'sender_id': userId,
           'sender_name': 'User',
@@ -357,8 +347,7 @@ void main() {
         expect(replyDoc.exists, isFalse);
 
         final annDoc = await announcementRef.get();
-        expect((annDoc.data() as Map<String, dynamic>)['reply_count'],
-            1);
+        expect((annDoc.data() as Map<String, dynamic>)['reply_count'], 1);
       });
     });
 
@@ -376,8 +365,7 @@ void main() {
           'reply_count': 3,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
 
         // 3 replies: 1 already read, 2 unread
         await firestore.collection(repliesPath).add({
@@ -422,8 +410,7 @@ void main() {
         expect(updated, 2);
 
         // Verify all are now read
-        final updatedSnapshot =
-            await firestore.collection(repliesPath).get();
+        final updatedSnapshot = await firestore.collection(repliesPath).get();
         for (final doc in updatedSnapshot.docs) {
           final readBy = List<String>.from(doc.data()['read_by']);
           expect(readBy, contains(userId));
@@ -443,8 +430,7 @@ void main() {
           'reply_count': 1,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
         await firestore.collection(repliesPath).add({
           'sender_id': 'other',
           'sender_name': 'Other',
@@ -481,14 +467,11 @@ void main() {
           'reply_count': 0,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
 
         // Create stream listener
-        final stream = firestore
-            .collection(repliesPath)
-            .snapshots()
-            .map((snapshot) {
+        final stream =
+            firestore.collection(repliesPath).snapshots().map((snapshot) {
           return snapshot.docs.where((doc) {
             final readBy = List<String>.from(doc.data()['read_by'] ?? []);
             return !readBy.contains(userId);
@@ -614,11 +597,9 @@ void main() {
         });
 
         // User opens it again → check if already read
-        final annDoc = (await firestore.collection(announcementsPath).get())
-            .docs
-            .first;
-        final readBy =
-            List<String>.from(annDoc.data()['read_by'] ?? []);
+        final annDoc =
+            (await firestore.collection(announcementsPath).get()).docs.first;
+        final readBy = List<String>.from(annDoc.data()['read_by'] ?? []);
         final wasUnread = !readBy.contains(userId);
         expect(wasUnread, isFalse, reason: 'Should already be read');
 
@@ -658,8 +639,7 @@ void main() {
           'reply_count': 3,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
         for (int i = 0; i < 3; i++) {
           await firestore.collection(repliesPath).add({
             'sender_id': 'other$i',
@@ -688,13 +668,11 @@ void main() {
         });
 
         // Step 3: Mark all replies as read, count how many
-        final repliesSnapshot =
-            await firestore.collection(repliesPath).get();
+        final repliesSnapshot = await firestore.collection(repliesPath).get();
         final batch = firestore.batch();
         int repliesMarked = 0;
         for (final doc in repliesSnapshot.docs) {
-          final replyReadBy =
-              List<String>.from(doc.data()['read_by'] ?? []);
+          final replyReadBy = List<String>.from(doc.data()['read_by'] ?? []);
           if (!replyReadBy.contains(userId)) {
             batch.update(doc.reference, {
               'read_by': FieldValue.arrayUnion([userId]),
@@ -764,6 +742,23 @@ void main() {
         expect(announcement.hasAttachments, isTrue);
       });
 
+      test('visibility-only soft deletion is excluded by the model', () async {
+        final docRef = await firestore.collection(announcementsPath).add({
+          'title': 'Deleted',
+          'message': 'Body',
+          'sender_id': adminId,
+          'sender_name': 'Admin',
+          'type': 'info',
+          'created_at': Timestamp.fromDate(DateTime.utc(2026, 9, 26)),
+          'visibility': 'deleted',
+          'reply_count': 0,
+        });
+
+        final announcement = Announcement.fromFirestore(await docRef.get());
+        expect(announcement.deletedAt, isNull);
+        expect(announcement.isDeleted, isTrue);
+      });
+
       test('copyWith creates modified copy', () {
         final original = Announcement(
           id: 'ann1',
@@ -804,8 +799,7 @@ void main() {
           'reply_count': 0,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
         final replyRef = await firestore.collection(repliesPath).add({
           'sender_id': userId,
           'sender_name': 'User',
@@ -856,12 +850,10 @@ void main() {
           'reply_count': 0,
         });
 
-        final repliesPath =
-            '$announcementsPath/${announcementRef.id}/replies';
+        final repliesPath = '$announcementsPath/${announcementRef.id}/replies';
         final docRef =
             await firestore.collection(repliesPath).add(reply.toFirestore());
-        final roundtrip =
-            AnnouncementReply.fromFirestore(await docRef.get());
+        final roundtrip = AnnouncementReply.fromFirestore(await docRef.get());
 
         expect(roundtrip.senderId, userId);
         expect(roundtrip.message, 'Test message');

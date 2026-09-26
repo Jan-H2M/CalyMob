@@ -11,6 +11,7 @@ class AnnouncementCard extends StatelessWidget {
   final String? currentUserId;
   final int unreadReplyCount;
   final bool isUnread;
+  final bool unreadStatusUnavailable;
   final String searchQuery;
 
   const AnnouncementCard({
@@ -20,6 +21,7 @@ class AnnouncementCard extends StatelessWidget {
     this.currentUserId,
     this.unreadReplyCount = 0,
     this.isUnread = false,
+    this.unreadStatusUnavailable = false,
     this.searchQuery = '',
   });
 
@@ -81,8 +83,12 @@ class AnnouncementCard extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: isUnread ? Colors.red : color.withValues(alpha: 0.3),
-            width: isUnread ? 2 : 1,
+            color: unreadStatusUnavailable
+                ? Colors.orange.shade700
+                : isUnread
+                    ? Colors.red
+                    : color.withValues(alpha: 0.3),
+            width: isUnread || unreadStatusUnavailable ? 2 : 1,
           ),
         ),
         child: Column(
@@ -122,6 +128,26 @@ class AnnouncementCard extends StatelessWidget {
                       ),
                       child: const Text(
                         'NOUVEAU',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  if (!isUnread && unreadStatusUnavailable)
+                    Container(
+                      key: const ValueKey('announcement-unread-error'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade700,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'À VÉRIFIER',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 11,
