@@ -42,6 +42,24 @@ class BoutiqueAccessPolicy {
   }
 }
 
+/// Live toegangscontext voor zowel de Boutique-ingang als haar vijf secties.
+class BoutiqueAccessState {
+  final bool canAccess;
+  final Map<String, String> visibility;
+  final Map<String, dynamic>? member;
+
+  const BoutiqueAccessState({
+    required this.canAccess,
+    required this.visibility,
+    required this.member,
+  });
+
+  bool canAccessSection(String key) {
+    return canAccess &&
+        BoutiqueAccessPolicy.canAccessMode(visibility[key], member);
+  }
+}
+
 class BoutiqueAccessService {
   final FirebaseFirestore _firestore;
 
@@ -49,6 +67,15 @@ class BoutiqueAccessService {
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   Stream<bool> watchCanAccessBoutique({
+    required String clubId,
+    required String userId,
+  }) {
+    return watchBoutiqueAccess(clubId: clubId, userId: userId)
+        .map((state) => state.canAccess)
+        .distinct();
+  }
+
+  Stream<BoutiqueAccessState> watchBoutiqueAccess({
     required String clubId,
     required String userId,
   }) {
@@ -66,11 +93,13 @@ class BoutiqueAccessService {
         .snapshots();
 
     return Rx.combineLatest2<DocumentSnapshot<Map<String, dynamic>>,
-        DocumentSnapshot<Map<String, dynamic>>, bool>(
+        DocumentSnapshot<Map<String, dynamic>>, BoutiqueAccessState>(
       flagsStream,
       memberStream,
-      (flagsDoc, memberDoc) =>
-          canAccessFromData(flags: flagsDoc.data(), member: memberDoc.data()),
+      (flagsDoc, memberDoc) => stateFromData(
+        flags: flagsDoc.data(),
+        member: memberDoc.data(),
+      ),
     );
   }
 
@@ -78,11 +107,23 @@ class BoutiqueAccessService {
     required Map<String, dynamic>? flags,
     required Map<String, dynamic>? member,
   }) {
+    return stateFromData(flags: flags, member: member).canAccess;
+  }
+
+  static BoutiqueAccessState stateFromData({
+    required Map<String, dynamic>? flags,
+    required Map<String, dynamic>? member,
+  }) {
+    final visibility = FeatureFlagService.parseBoutiqueVisibility(flags);
     final enabled = flags?['boutiqueEnabled'] == true ||
         flags?['boutiqueMobileEnabled'] == true;
-    if (!enabled) return false;
+    final canAccess = enabled &&
+        BoutiqueAccessPolicy.canAccessMode(visibility['access'], member);
 
-    final mode = FeatureFlagService.parseBoutiqueVisibility(flags)['access'];
-    return BoutiqueAccessPolicy.canAccessMode(mode, member);
+    return BoutiqueAccessState(
+      canAccess: canAccess,
+      visibility: visibility,
+      member: member,
+    );
   }
 }

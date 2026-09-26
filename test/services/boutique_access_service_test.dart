@@ -237,5 +237,61 @@ void main() {
       await flags.update({'boutiqueAccess': online});
       await expectation;
     });
+
+    test('live state reacts to responsibility and active status changes',
+        () async {
+      final firestore = FakeFirebaseFirestore();
+      final flags = firestore
+          .collection('clubs')
+          .doc('calypso')
+          .collection('settings')
+          .doc('feature_flags');
+      final memberRef = firestore
+          .collection('clubs')
+          .doc('calypso')
+          .collection('members')
+          .doc('member-1');
+      await flags.set({'boutiqueEnabled': true, 'boutiqueAccess': preparation});
+      await memberRef.set(member());
+
+      final service = BoutiqueAccessService(firestore: firestore);
+      final states = service.watchBoutiqueAccess(
+        clubId: 'calypso',
+        userId: 'member-1',
+      );
+      final expectation = expectLater(
+        states,
+        emitsInOrder([
+          predicate<BoutiqueAccessState>(
+            (state) => !state.canAccess,
+            'ordinary preparation member is denied',
+          ),
+          predicate<BoutiqueAccessState>(
+            (state) =>
+                state.canAccess &&
+                FeatureFlagService.boutiqueSectionKeys.every(
+                  state.canAccessSection,
+                ),
+            'new Boutique responsibility grants every fallback section',
+          ),
+          predicate<BoutiqueAccessState>(
+            (state) =>
+                !state.canAccess &&
+                FeatureFlagService.boutiqueSectionKeys.every(
+                  (key) => !state.canAccessSection(key),
+                ),
+            'inactive status removes module and section access',
+          ),
+        ]),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      await memberRef.update({
+        'clubStatuten': ['RB']
+      });
+      await Future<void>.delayed(Duration.zero);
+      await memberRef.update({'member_status': 'inactive'});
+      await expectation;
+    });
   });
 }
