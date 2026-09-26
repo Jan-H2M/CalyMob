@@ -9,6 +9,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const QRCode = require('qrcode');
+const { hasGonflageRole } = require('../loans/materialLoanRoles');
 const { buildEmailRouting, logEmailHistoryAndCommunication } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
@@ -20,15 +21,8 @@ const callableOptions = {
   maxInstances: 10,
 };
 
-function normalizeRoles(value) {
-  return Array.isArray(value)
-    ? value.map((role) => String(role || '').trim().toLowerCase())
-    : [];
-}
-
 function isMaterialLoanManager(member = {}) {
-  const roles = normalizeRoles(member.clubStatuten);
-  return roles.some((role) => ['gonflage', 'g'].includes(role));
+  return hasGonflageRole(member);
 }
 
 function formatAmount(amount) {

@@ -69,7 +69,7 @@ void main() {
             home: BoutiqueScreen(
               accessService: BoutiqueAccessService(firestore: firestore),
               clubId: clubId,
-              userId: userId,
+              testUserIdOverride: userId,
             ),
           ),
         ),
@@ -129,13 +129,16 @@ void main() {
       );
       expectSections(visible: true);
 
-      // The operational Gonflage responsibility remains case-insensitive.
-      await memberRef.update({
-        'clubStatuten': ['gOnFlAgE'],
-      });
-      await pumpAccessEvent(tester);
-      expect(find.text('Prêts de matériel'), findsOneWidget);
-      expect(find.text('Mon matériel emprunté'), findsNothing);
+      // The operational Gonflage responsibility accepts both codes and any
+      // label casing, just like Functions and Firestore rules.
+      for (final role in const ['G', 'g', 'gOnFlAgE']) {
+        await memberRef.update({
+          'clubStatuten': [role],
+        });
+        await pumpAccessEvent(tester);
+        expect(find.text('Prêts de matériel'), findsOneWidget);
+        expect(find.text('Mon matériel emprunté'), findsNothing);
+      }
 
       // Disabling the module invalidates an already open direct route.
       await flagsRef.update({

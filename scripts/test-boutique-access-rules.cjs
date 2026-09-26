@@ -19,6 +19,7 @@ const {
 const clubId = 'calypso';
 const flagsPath = `clubs/${clubId}/settings/feature_flags`;
 const productPath = `clubs/${clubId}/products/product-1`;
+const materialLoanPath = `clubs/${clubId}/inventory_loans/role-check`;
 
 function memberPath(memberId) {
   return `clubs/${clubId}/members/${memberId}`;
@@ -68,6 +69,26 @@ async function main() {
       member_status: 'inactive',
       clubStatuten: [],
     },
+    'gonflage-code-upper': {
+      app_role: 'user',
+      member_status: 'active',
+      clubStatuten: ['G'],
+    },
+    'gonflage-code-lower': {
+      app_role: 'user',
+      member_status: 'active',
+      clubStatuten: ['g'],
+    },
+    'gonflage-mixed-case': {
+      app_role: 'user',
+      member_status: 'active',
+      clubStatuten: ['gOnFlAgE'],
+    },
+    'gonflage-spaced-mixed': {
+      app_role: 'user',
+      member_status: 'active',
+      clubStatuten: [' GoNfLaGe '],
+    },
   };
 
   try {
@@ -82,6 +103,10 @@ async function main() {
       await setDoc(doc(db, productPath), {
         name: 'Produit publié',
         visibility: 'published',
+      });
+      await setDoc(doc(db, materialLoanPath), {
+        memberId: 'ordinary-active',
+        status: 'active',
       });
       await setDoc(
         doc(db, `clubs/${clubId}/settings/unread_cursor_v1_migration`),
@@ -114,6 +139,26 @@ async function main() {
     await assertFails(readOwnOrder('inactive-rb'));
     await assertFails(readProduct('uppercase-status-rb'));
     await assertFails(readOwnOrder('uppercase-status-rb'));
+
+    // Gonflage authorization uses the same case-insensitive label/code
+    // semantics as Flutter and Functions.
+    for (const memberId of [
+      'gonflage-code-upper',
+      'gonflage-code-lower',
+      'gonflage-mixed-case',
+      'gonflage-spaced-mixed',
+    ]) {
+      await assertSucceeds(
+        updateDoc(doc(memberDb(memberId), materialLoanPath), {
+          lastRoleCheck: memberId,
+        }),
+      );
+    }
+    await assertFails(
+      updateDoc(doc(memberDb('ordinary-active'), materialLoanPath), {
+        lastRoleCheck: 'ordinary-active',
+      }),
+    );
 
     // The explicit admin branches remain available for CalyCompta backoffice;
     // mobile UI and callables do not grant admin-only access.
