@@ -1117,7 +1117,9 @@ class _FullscreenProductGallery extends StatefulWidget {
 
 class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
   late final PageController _pageController;
+  final Map<int, TransformationController> _imageControllers = {};
   late int _selectedIndex;
+  bool _isCurrentImageZoomed = false;
 
   @override
   void initState() {
@@ -1129,7 +1131,34 @@ class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
   @override
   void dispose() {
     _pageController.dispose();
+    for (final controller in _imageControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  TransformationController _controllerFor(int index) {
+    return _imageControllers.putIfAbsent(index, () {
+      final controller = TransformationController();
+      controller.addListener(() => _syncZoomState(index));
+      return controller;
+    });
+  }
+
+  void _syncZoomState(int index) {
+    if (!mounted || index != _selectedIndex) return;
+    final isZoomed = _controllerFor(index).value.getMaxScaleOnAxis() > 1.01;
+    if (_isCurrentImageZoomed != isZoomed) {
+      setState(() => _isCurrentImageZoomed = isZoomed);
+    }
+  }
+
+  void _selectImage(int index) {
+    final isZoomed = _controllerFor(index).value.getMaxScaleOnAxis() > 1.01;
+    setState(() {
+      _selectedIndex = index;
+      _isCurrentImageZoomed = isZoomed;
+    });
   }
 
   void _moveTo(int index) {
@@ -1150,23 +1179,33 @@ class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
           children: [
             PageView.builder(
               controller: _pageController,
+              physics: _isCurrentImageZoomed
+                  ? const NeverScrollableScrollPhysics()
+                  : const PageScrollPhysics(),
               itemCount: widget.images.length,
-              onPageChanged: (index) => setState(() => _selectedIndex = index),
-              itemBuilder: (context, index) => InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Center(
-                  child: Image.network(
-                    widget.images[index],
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white,
-                      size: 64,
+              onPageChanged: _selectImage,
+              itemBuilder: (context, index) {
+                final controller = _controllerFor(index);
+                return InteractiveViewer(
+                  transformationController: controller,
+                  // A regular one-finger drag stays available for PageView.
+                  // Once pinched open, panning belongs to the enlarged image.
+                  panEnabled: index == _selectedIndex && _isCurrentImageZoomed,
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.network(
+                      widget.images[index],
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white,
+                        size: 64,
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
             Positioned(
               top: 8,
