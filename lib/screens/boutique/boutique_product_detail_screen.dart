@@ -930,14 +930,55 @@ class _ZoneDropdown extends StatelessWidget {
   }
 }
 
-class _ProductImages extends StatelessWidget {
+class _ProductImages extends StatefulWidget {
   final List<String> images;
 
   const _ProductImages({required this.images});
 
   @override
+  State<_ProductImages> createState() => _ProductImagesState();
+}
+
+class _ProductImagesState extends State<_ProductImages> {
+  late final PageController _pageController;
+  int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _moveTo(int index, int imageCount) {
+    if (index < 0 || index >= imageCount) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Future<void> _openFullscreen(List<String> images) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _FullscreenProductGallery(
+          images: images,
+          initialIndex: _selectedIndex,
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final networkImages = images
+    final networkImages = widget.images
         .map(_resolveProductImageUrl)
         .whereType<String>()
         .toList(growable: false);
@@ -958,28 +999,305 @@ class _ProductImages extends StatelessWidget {
 
     return SizedBox(
       height: 280,
-      child: PageView.builder(
-        itemCount: networkImages.length,
-        itemBuilder: (context, index) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Image.network(
-                networkImages[index],
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  child: const Icon(
-                    Icons.broken_image_outlined,
-                    color: AppColors.middenblauw,
-                    size: 56,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            itemCount: networkImages.length,
+            onPageChanged: (index) => setState(() => _selectedIndex = index),
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Material(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    child: InkWell(
+                      onTap: () => _openFullscreen(networkImages),
+                      child: Image.network(
+                        networkImages[index],
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: AppColors.middenblauw,
+                          size: 56,
+                        ),
+                      ),
+                    ),
                   ),
+                ),
+              );
+            },
+          ),
+          if (networkImages.length > 1) ...[
+            Positioned(
+              left: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: IconButton.filledTonal(
+                  tooltip: 'Photo précédente',
+                  onPressed: _selectedIndex > 0
+                      ? () => _moveTo(_selectedIndex - 1, networkImages.length)
+                      : null,
+                  icon: const Icon(Icons.chevron_left),
                 ),
               ),
             ),
-          );
-        },
+            Positioned(
+              right: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: IconButton.filledTonal(
+                  tooltip: 'Photo suivante',
+                  onPressed: _selectedIndex < networkImages.length - 1
+                      ? () => _moveTo(_selectedIndex + 1, networkImages.length)
+                      : null,
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 12,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${_selectedIndex + 1} / ${networkImages.length}',
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      networkImages.length,
+                      (index) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        height: 8,
+                        width: index == _selectedIndex ? 20 : 8,
+                        decoration: BoxDecoration(
+                          color: index == _selectedIndex
+                              ? AppColors.middenblauw
+                              : AppColors.middenblauw.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FullscreenProductGallery extends StatefulWidget {
+  final List<String> images;
+  final int initialIndex;
+
+  const _FullscreenProductGallery({
+    required this.images,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_FullscreenProductGallery> createState() =>
+      _FullscreenProductGalleryState();
+}
+
+class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
+  late final PageController _pageController;
+  final Map<int, TransformationController> _imageControllers = {};
+  late int _selectedIndex;
+  bool _isCurrentImageZoomed = false;
+  int? _swipePointer;
+  double? _swipeStartX;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _selectedIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    for (final controller in _imageControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  TransformationController _controllerFor(int index) {
+    return _imageControllers.putIfAbsent(index, () {
+      final controller = TransformationController();
+      controller.addListener(() => _syncZoomState(index));
+      return controller;
+    });
+  }
+
+  void _syncZoomState(int index) {
+    if (!mounted || index != _selectedIndex) return;
+    final isZoomed = _controllerFor(index).value.getMaxScaleOnAxis() > 1.01;
+    if (_isCurrentImageZoomed != isZoomed) {
+      setState(() => _isCurrentImageZoomed = isZoomed);
+    }
+  }
+
+  void _selectImage(int index) {
+    final isZoomed = _controllerFor(index).value.getMaxScaleOnAxis() > 1.01;
+    setState(() {
+      _selectedIndex = index;
+      _isCurrentImageZoomed = isZoomed;
+    });
+  }
+
+  void _startSwipe(PointerDownEvent event) {
+    if (_isCurrentImageZoomed || _swipePointer != null) return;
+    _swipePointer = event.pointer;
+    _swipeStartX = event.localPosition.dx;
+  }
+
+  void _finishSwipe(PointerEvent event) {
+    if (event.pointer != _swipePointer) return;
+    final startX = _swipeStartX;
+    _swipePointer = null;
+    _swipeStartX = null;
+    if (_isCurrentImageZoomed || startX == null) return;
+
+    const minimumSwipeDistance = 48.0;
+    final distance = event.localPosition.dx - startX;
+    if (distance <= -minimumSwipeDistance) {
+      _moveTo(_selectedIndex + 1);
+    } else if (distance >= minimumSwipeDistance) {
+      _moveTo(_selectedIndex - 1);
+    }
+  }
+
+  void _cancelSwipe(PointerEvent event) {
+    if (event.pointer == _swipePointer) {
+      _swipePointer = null;
+      _swipeStartX = null;
+    }
+  }
+
+  void _moveTo(int index) {
+    if (index < 0 || index >= widget.images.length) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Listener(
+              // InteractiveViewer owns its scale gestures. Raw pointer events
+              // keep regular horizontal swipes reliable while the image is at
+              // its normal scale; once zoomed, all dragging belongs to it.
+              onPointerDown: _startSwipe,
+              onPointerUp: _finishSwipe,
+              onPointerCancel: _cancelSwipe,
+              child: PageView.builder(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: widget.images.length,
+                onPageChanged: _selectImage,
+                itemBuilder: (context, index) {
+                  final controller = _controllerFor(index);
+                  return InteractiveViewer(
+                    transformationController: controller,
+                    panEnabled:
+                        index == _selectedIndex && _isCurrentImageZoomed,
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Center(
+                      child: Image.network(
+                        widget.images[index],
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white,
+                          size: 64,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 12,
+              child: IconButton.filled(
+                tooltip: 'Fermer',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+            if (widget.images.length > 1) ...[
+              Positioned(
+                left: 12,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: IconButton.filledTonal(
+                    tooltip: 'Photo précédente',
+                    onPressed: _selectedIndex > 0
+                        ? () => _moveTo(_selectedIndex - 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 12,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: IconButton.filledTonal(
+                    tooltip: 'Photo suivante',
+                    onPressed: _selectedIndex < widget.images.length - 1
+                        ? () => _moveTo(_selectedIndex + 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 20,
+                child: Text(
+                  '${_selectedIndex + 1} / ${widget.images.length}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
