@@ -20,15 +20,17 @@ function evidence(record) {
 }
 
 function validateManifest(manifest, context) {
-  const { platform, action, head, clean, version, build, artifactPath, artifactHash, notes,
+  const { platform, action, head, tree, clean, version, build, artifactPath, artifactHash, notes,
     requestedVersion, requestedBuild, channel = 'public' } = context;
   requireThat(Object.hasOwn(ARTIFACTS, platform), 'unknown platform');
-  requireThat(['upload', 'submit', 'upload-and-submit', 'notes'].includes(action), 'unknown action');
+  requireThat(['upload', 'submit', 'notes'].includes(action), 'unknown action');
   requireThat(['internal', 'public'].includes(channel), 'unknown release channel');
-  const requiredActions = action === 'upload-and-submit' ? ['upload', 'submit'] : [action];
-  requireThat(manifest?.schemaVersion === 1, 'missing/unsupported manifest');
+  const requiredActions = [action];
+  requireThat(manifest?.schemaVersion === 2, 'missing/unsupported manifest');
+  requireThat(manifest.draft === false, 'manifest is still a draft');
   requireThat(clean, 'source checkout is dirty');
   requireThat(/^[a-f0-9]{40}$/.test(head) && manifest.sourceCommit === head, 'source commit mismatch');
+  requireThat(/^[a-f0-9]{40}$/.test(tree) && manifest.sourceTree === tree, 'source tree mismatch');
   requireThat(manifest.version === version && String(manifest.build) === build, 'version/build mismatch');
   requireThat(Array.isArray(manifest.platforms) && manifest.platforms.includes(platform), 'platform not approved');
   requireThat(Array.isArray(manifest.allowedActions?.[platform])
@@ -38,14 +40,14 @@ function validateManifest(manifest, context) {
   const approval = manifest.janApproval;
   requireThat(approval?.approvedBy === 'Jan Andriessens' && evidence(approval)
     && Number.isFinite(Date.parse(approval.approvedAt)), 'explicit Jan approval evidence missing');
-  requireThat(approval.sourceCommit === head && approval.version === version
+  requireThat(approval.sourceCommit === head && approval.sourceTree === tree && approval.version === version
     && String(approval.build) === build && approval.notesSha256 === sha256(notes)
     && Array.isArray(approval.platforms) && approval.platforms.includes(platform)
     && Array.isArray(approval.allowedActions?.[platform])
     && requiredActions.every((entry) => approval.allowedActions[platform].includes(entry)), 'Jan approval not bound to this release');
-  const internalWaiverAllowed = channel === 'internal'
-    && ['upload', 'upload-and-submit'].includes(action);
-  if (internalWaiverAllowed) {
+  const internalUpload = channel === 'internal' && platform === 'ios' && action === 'upload';
+  if (channel === 'internal') {
+    requireThat(internalUpload, 'internal channel is only supported for TestFlight uploads');
     requireThat(Array.isArray(manifest.allowedChannels?.[platform])
       && manifest.allowedChannels[platform].includes('internal')
       && Array.isArray(approval.allowedChannels?.[platform])
@@ -53,22 +55,25 @@ function validateManifest(manifest, context) {
     'internal channel not explicitly approved');
   }
   const code = manifest.codeReview;
-  requireThat(code?.verdict === 'approved' && code.sourceCommit === head
+  requireThat(code?.verdict === 'approved' && code.sourceCommit === head && code.sourceTree === tree
     && typeof code.reviewer === 'string' && code.reviewer.trim() && evidence(code), 'code review missing or stale');
-  requireThat(manifest.testEvidence?.sourceCommit === head
+  requireThat(manifest.testEvidence?.sourceCommit === head && manifest.testEvidence?.sourceTree === tree
     && manifest.testEvidence?.result === 'passed' && evidence(manifest.testEvidence),
   'passing automated test evidence missing or stale');
   const artifact = manifest.artifacts?.[platform];
   requireThat(artifact?.path === ARTIFACTS[platform] && artifactPath === ARTIFACTS[platform]
-    && artifact.sourceCommit === head && artifact.version === version && String(artifact.build) === build,
+    && artifact.sourceCommit === head && artifact.sourceTree === tree
+    && artifact.version === version && String(artifact.build) === build,
   'artifact provenance does not match exact source/version/path');
   requireThat(/^[a-f0-9]{64}$/.test(artifactHash) && artifact.sha256 === artifactHash, 'artifact SHA256 mismatch');
   const native = manifest.nativeReview?.[platform];
   const approvedNativeReview = native?.verdict === 'approved' && native.sourceCommit === head
+    && native.sourceTree === tree
     && native.artifactSha256 === artifactHash && typeof native.reviewer === 'string'
     && native.reviewer.trim() && evidence(native);
-  const waivedInternalNativeReview = internalWaiverAllowed && native?.verdict === 'waived'
+  const waivedInternalNativeReview = internalUpload && native?.verdict === 'waived'
     && native.waivedBy === 'Jan Andriessens' && native.sourceCommit === head
+    && native.sourceTree === tree
     && native.artifactSha256 === artifactHash && typeof native.reason === 'string'
     && native.reason.trim() && evidence(native);
   requireThat(approvedNativeReview || waivedInternalNativeReview,
@@ -80,7 +85,7 @@ function validateManifest(manifest, context) {
     requireThat(uploaded?.version === version && String(uploaded.build) === build
       && uploaded.artifactSha256 === artifactHash && evidence(uploaded), 'uploaded build evidence missing/mismatched');
   }
-  return { sourceCommit: head, version, build, platform, channel, notes, artifactPath, artifactHash };
+  return { sourceCommit: head, sourceTree: tree, version, build, platform, channel, notes, artifactPath, artifactHash };
 }
 
 function main(argv = process.argv.slice(2), env = process.env) {
@@ -111,6 +116,7 @@ function main(argv = process.argv.slice(2), env = process.env) {
     : 'ios/fastlane/metadata/fr-FR/release_notes.txt';
   const result = validateManifest(manifest, {
     platform, action: args['--action'], head: git('rev-parse', 'HEAD'),
+    tree: git('rev-parse', 'HEAD^{tree}'),
     clean: git('status', '--porcelain', '--untracked-files=all') === '', version, build,
     artifactPath, artifactHash: sha256(fs.readFileSync(absoluteArtifact)),
     notes: fs.readFileSync(path.join(root, notesPath), 'utf8').trim(),

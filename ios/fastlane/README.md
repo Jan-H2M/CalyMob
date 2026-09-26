@@ -18,7 +18,7 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 ### ios deploy
 
 ```sh
-[bundle exec] fastlane ios deploy
+./scripts/run_fastlane.sh ios deploy
 ```
 
 Upload IPA to App Store Connect (TestFlight)
@@ -26,15 +26,15 @@ Upload IPA to App Store Connect (TestFlight)
 ### ios release
 
 ```sh
-[bundle exec] fastlane ios release
+./scripts/run_fastlane.sh ios release
 ```
 
-Upload IPA directly to App Store for review
+Upload IPA to the editable App Store version without submitting
 
 ### ios submit
 
 ```sh
-[bundle exec] fastlane ios submit
+./scripts/run_fastlane.sh ios submit version:<version> build:<build>
 ```
 
 Submit uploaded build to App Store Review (uses existing build, no binary upload)
@@ -42,7 +42,7 @@ Submit uploaded build to App Store Review (uses existing build, no binary upload
 ### ios update_notes
 
 ```sh
-[bundle exec] fastlane ios update_notes
+./scripts/run_fastlane.sh ios update_notes
 ```
 
 Update What's New (release notes) on the current editable version via ASC API
@@ -50,7 +50,7 @@ Update What's New (release notes) on the current editable version via ASC API
 ### ios status
 
 ```sh
-[bundle exec] fastlane ios status
+./scripts/run_fastlane.sh ios status
 ```
 
 Show App Store review status (editable + in-review + live versions)
@@ -58,14 +58,16 @@ Show App Store review status (editable + in-review + live versions)
 ### ios validate
 
 ```sh
-[bundle exec] fastlane ios validate
+./scripts/run_fastlane.sh ios validate
 ```
 
 Validate API key connection
 
 ----
 
-This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
+Run these commands from the repository root. Every mutating lane requires the
+external schema-v2 manifest and its Fastfile verifier. `skip_docs` keeps
+Fastlane from replacing these hardened wrapper-only instructions.
 
 More information about _fastlane_ can be found on [fastlane.tools](https://fastlane.tools).
 

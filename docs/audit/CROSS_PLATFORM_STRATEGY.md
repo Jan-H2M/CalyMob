@@ -369,9 +369,14 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: 3.35.7
+      # The trusted runner must pre-provision these two 0600 files outside the
+      # checkout. These variables contain paths/alias only, never the password.
+      vars:
+        CALYMOB_UPLOAD_STORE_FILE: /absolute/runner-private/upload.jks
+        CALYMOB_UPLOAD_PASSWORD_FILE: /absolute/runner-private/upload.password
+        CALYMOB_UPLOAD_KEY_ALIAS: upload-alias
     scripts:
-      - flutter pub get
-      - flutter build apk --release
+      - bash scripts/build_release.sh
     artifacts:
       - build/**/outputs/**/*.apk
 
@@ -383,12 +388,14 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - flutter pub get
-      - pod install --project-directory=ios
-      - flutter build ipa --export-options-plist=/path/to/ExportOptions.plist
+      - bash scripts/build_release_ipa.sh
     artifacts:
       - build/ios/ipa/*.ipa
 ```
+
+The CI examples are build-only and must not contain store publishing blocks.
+Production uploads use the repository Fastlane wrapper plus external schema-v2
+approval and post-build evidence.
 
 ---
 

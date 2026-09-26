@@ -118,14 +118,21 @@ buildTypes {
 
 ### Signing Configuration
 
-**File:** `android/key.properties` (not in git)
+Android release signing is external to the repository. Do not create
+`key.properties`, `*.jks`, or `*.keystore` anywhere in the checkout. Store the
+keystore and its one-line password file outside all repositories with mode
+`0600`, then export only their absolute paths and the non-secret alias:
 
-```properties
-storePassword=<your-keystore-password>
-keyPassword=<your-key-password>
-keyAlias=<your-key-alias>
-storeFile=<path-to-keystore.jks>
+```bash
+export CALYMOB_UPLOAD_STORE_FILE='/absolute/private/path/upload.jks'
+export CALYMOB_UPLOAD_PASSWORD_FILE='/absolute/private/path/upload.password'
+export CALYMOB_UPLOAD_KEY_ALIAS='upload-alias'
 ```
+
+The password itself must not be present in environment variables, command-line
+arguments, logs, Gradle properties, or repository files. Release tasks validate
+file permissions, unlock the keystore, require a private-key entry, check the
+certificate validity and compare it to the pinned public SHA-256 certificate.
 
 ---
 
@@ -264,7 +271,7 @@ Enable in Signing & Capabilities:
 - [ ] GoogleService-Info.plist in ios/Runner/
 - [ ] google-services.json in android/app/
 - [ ] All permissions declared
-- [ ] Signing certificates configured
+- [ ] External Android upload keystore/password file are `0600`; only their absolute paths and alias are exported
 - [ ] App icons for all sizes
 
 ### Build Commands
@@ -276,12 +283,15 @@ flutter build apk --debug
 
 **Release APK (Android):**
 ```bash
-flutter build apk --release
+# Requires CALYMOB_UPLOAD_STORE_FILE, CALYMOB_UPLOAD_PASSWORD_FILE and
+# CALYMOB_UPLOAD_KEY_ALIAS as described above.
+./scripts/build_release.sh
 ```
 
 **App Bundle (Android - recommended):**
 ```bash
-flutter build appbundle --release
+# Uses the same external signing environment; never enable configuration cache.
+./scripts/build_release_aab.sh
 ```
 
 **Debug iOS (Simulator):**
@@ -291,13 +301,16 @@ flutter build ios --debug --simulator
 
 **Release iOS:**
 ```bash
-flutter build ios --release
+./scripts/build_release_ipa.sh
 ```
 
 **IPA for App Store:**
 ```bash
-flutter build ipa --release --export-options-plist=ExportOptions.plist
+./scripts/build_release_ipa.sh
 ```
+
+These are artifact builds only. Upload exclusively through
+`scripts/run_fastlane.sh` after the schema-v2 manifest passes.
 
 ---
 

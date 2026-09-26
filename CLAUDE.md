@@ -18,35 +18,44 @@ is workflow lead; independent Codex/Claude review must identify its exact commit
 After approval, for example:
 ```bash
 cd CalyMob
-./scripts/build_release.sh --bump patch
+./scripts/bump_version.sh patch
+# Review and commit the version bump; the checkout must then be completely clean.
+./scripts/build_release.sh
 ```
 
-This automatically:
-1. ✅ Bumps version in pubspec.yaml (1.0.22+83 → 1.0.23+84)
-2. Runs static analysis, Flutter tests and Cloud Function tests (fail-closed).
-3. Builds APK with version in filename: calymob-1.0.23-build84.apk
+The bump is deliberately separate from the release build. The build script
+runs static analysis, Flutter tests and Cloud Function tests fail-closed, then
+builds the APK with the committed version in its filename. It refuses inline
+`--bump` arguments so an uncommitted version can never be presented as an
+exact-commit artifact.
 
 Never update Firestore `settings/app_version` automatically. Jan publishes it
 manually after both stores are available. Building is not uploading/submitting.
 
 ### Manual Commands (for reference)
 
+Android release commands require the external upload keystore and password file
+described in `docs/guides/BUILD_ANDROID.md`. Export only
+`CALYMOB_UPLOAD_STORE_FILE`, `CALYMOB_UPLOAD_PASSWORD_FILE`, and
+`CALYMOB_UPLOAD_KEY_ALIAS`; never add `key.properties`, `*.jks`, or `*.keystore`
+to the checkout and never place the password itself in an environment variable.
+
 ```bash
 # Flutter
 flutter pub get                      # Install dependencies
 flutter run -d ios                   # Run on iOS simulator
 flutter run -d android               # Run on Android emulator
-flutter build ios                    # Build iOS release (then archive in Xcode)
-flutter build appbundle              # Build Android release
 flutter analyze                      # Run static analysis
 
-# Release APK/AAB met versienummer (GEBRUIK DEZE SCRIPTS!)
+# Release artifacts (gebruik uitsluitend deze geharde scripts)
+./scripts/build_release_ipa.sh       # Bouw de gecontroleerde iOS IPA
 ./scripts/build_release.sh           # Bouw APK met versienummer in bestandsnaam
-./scripts/build_release.sh --bump patch  # Verhoog versie + bouw APK (patch: 1.0.10→1.0.11)
-./scripts/build_release.sh --bump minor  # Minor bump (1.0.10→1.1.0)
-./scripts/build_release.sh --bump major  # Major bump (1.0.10→2.0.0)
 ./scripts/build_release_aab.sh       # Bouw AAB (Android App Bundle) voor Play Store
-./scripts/bump_version.sh patch      # Alleen versie verhogen zonder te bouwen
+./scripts/bump_version.sh patch      # Versie verhogen; daarna reviewen en committen
+
+# Store-uploads vereisen daarnaast het externe schema-v2 manifest en lopen
+# uitsluitend via ./scripts/run_fastlane.sh; nooit via Xcode/Transporter of
+# een handmatige Play Console-upload.
 
 # Versie synchronisatie
 # bump_version.sh update alleen de versie in:

@@ -1,13 +1,27 @@
 default_platform(:ios)
+skip_docs
 
 def calymob_app_store_connect_config
-  key_id = ENV.fetch('APP_STORE_CONNECT_KEY_ID', 'RH75BJ54V4')
+  # Single reviewed CalyMob credential source. Do not duplicate/override these
+  # identifiers in release skills or bypass this Fastfile with xcrun altool.
+  key_id = 'RH75BJ54V4'
+  issuer_id = '280e011a-f492-43fb-b0eb-727ddaa8c6c9'
+  key_filepath = File.expand_path('~/.private_keys/AuthKey_RH75BJ54V4.p8')
+  repo_root = File.realpath(File.expand_path('../..', __dir__))
+
+  UI.user_error!('Canonical App Store Connect key is missing or unreadable') unless File.file?(key_filepath) && File.readable?(key_filepath)
+  UI.user_error!('Canonical App Store Connect key must not be a symlink') if File.symlink?(key_filepath)
+  resolved_key = File.realpath(key_filepath)
+  if resolved_key == repo_root || resolved_key.start_with?("#{repo_root}#{File::SEPARATOR}")
+    UI.user_error!('App Store Connect key must live outside the repository')
+  end
+  key_mode = File.stat(resolved_key).mode & 0o777
+  UI.user_error!('Canonical App Store Connect key must have mode 0600') unless key_mode == 0o600
+
   {
     key_id: key_id,
-    issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID', '280e011a-f492-43fb-b0eb-727ddaa8c6c9'),
-    key_filepath: File.expand_path(
-      ENV.fetch('APP_STORE_CONNECT_KEY_PATH', "~/.private_keys/AuthKey_#{key_id}.p8")
-    ),
+    issuer_id: issuer_id,
+    key_filepath: resolved_key,
     in_house: false
   }
 end
@@ -53,16 +67,15 @@ platform :ios do
     )
   end
 
-  desc "Upload IPA directly to App Store for review"
+  desc "Upload IPA to the editable App Store version without submitting"
   lane :release do
-    release = verify_ios_store_release('upload')
+    verify_ios_store_release('upload')
     api_key = calymob_app_store_connect_api_key
 
     upload_to_app_store(
       api_key: api_key,
       ipa: "../build/ios/ipa/calymob.ipa",
-      skip_metadata: false,
-      release_notes: { 'fr-FR' => release['notes'] },
+      skip_metadata: true,
       skip_screenshots: true,
       submit_for_review: false,
       automatic_release: true,
@@ -73,6 +86,7 @@ platform :ios do
   desc "Submit uploaded build to App Store Review (uses existing build, no binary upload)"
   lane :submit do |options|
     release = verify_ios_store_release('submit', options)
+    verify_ios_store_release('notes')
     api_key = calymob_app_store_connect_api_key
 
     version = release['version']
@@ -89,7 +103,6 @@ platform :ios do
       submit_for_review: true,
       automatic_release: true,
       force: true,
-      reject_if_possible: true,
       precheck_include_in_app_purchases: false,
       run_precheck_before_submit: false,
       submission_information: {
