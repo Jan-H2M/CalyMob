@@ -135,7 +135,7 @@ void main() {
     },
   );
 
-  test('closed and cancelled rows remain navigable for canonical grace window',
+  test('default list excludes past closed and cancelled grace-window rows',
       () async {
     final firestore = FakeFirebaseFirestore();
     final now = DateTime.now();
@@ -164,7 +164,37 @@ void main() {
         .map((item) => item.id)
         .toSet();
 
-    expect(ids, containsAll(['closed-grace', 'cancelled-grace']));
+    expect(ids, isNot(contains('closed-grace')));
+    expect(ids, isNot(contains('cancelled-grace')));
     expect(ids, isNot(contains('closed-expired')));
+  });
+
+  test('Passés mode keeps closed events explicitly reachable', () async {
+    final firestore = FakeFirebaseFirestore();
+    final now = DateTime.now();
+    await addOperation(
+      firestore,
+      'closed-recent',
+      statut: 'ferme',
+      dateFin: now.subtract(const Duration(days: 2)),
+    );
+    await addOperation(
+      firestore,
+      'closed-old',
+      statut: 'ferme',
+      dateFin: now.subtract(const Duration(days: 30)),
+    );
+
+    final ids = (await ActivityService(firestore: firestore)
+            .getAllActivitiesStream(
+              clubId,
+              currentUserId: userId,
+              includeClosed: true,
+            )
+            .first)
+        .map((item) => item.id)
+        .toSet();
+
+    expect(ids, containsAll(['closed-recent', 'closed-old']));
   });
 }

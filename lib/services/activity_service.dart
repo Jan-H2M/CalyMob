@@ -4,7 +4,6 @@ import 'package:rxdart/rxdart.dart';
 import '../models/activity_item.dart';
 import '../models/operation.dart';
 import '../models/piscine_session.dart';
-import '../utils/event_unread_policy.dart';
 
 /// Service voor het ophalen van gecombineerde activiteiten
 /// Combineert operations en piscine sessions in één stream
@@ -32,13 +31,15 @@ class ActivityService {
         .where('statut', isEqualTo: 'annule')
         .snapshots()
         .map((snapshot) => snapshot.docs);
-    // Closed events inside the canonical unread grace window must always be
-    // present: otherwise the aggregate can advertise unread messages without
-    // a row the member can open. includeClosed widens this to older events.
-    final closedStream = baseQuery
-        .where('statut', isEqualTo: 'ferme')
-        .snapshots()
-        .map((snapshot) => snapshot.docs);
+    // Closed events remain available through the explicit Passés/Clôturés
+    // controls, but must not leak into the default upcoming list merely
+    // because their discussion is still inside the unread grace window.
+    final closedStream = includeClosed
+        ? baseQuery
+            .where('statut', isEqualTo: 'ferme')
+            .snapshots()
+            .map((snapshot) => snapshot.docs)
+        : Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
 
     // Draft queries are scoped server-side to the logged-in user. This is
     // intentionally not a broad draft query followed by client-side filtering:
@@ -94,7 +95,6 @@ class ActivityService {
       // Operations → ActivityItems
       for (var doc in ops) {
         try {
-          final raw = doc.data();
           final op = Operation.fromFirestore(doc);
           final isLegacyDraft = op.statut == 'brouillon' &&
               op.creatorUserId == null &&
@@ -102,11 +102,11 @@ class ActivityService {
           final isOwnedDraft =
               op.statut == 'brouillon' && op.creatorUserId == currentUserId;
           // Exclude piscine category operations (we use piscine_sessions instead)
-          final cursorEligible = isUnreadEligibleEvent(raw, DateTime.now());
           if (op.categorie != 'piscine' &&
               (op.statut == 'ouvert' ||
-                  (op.statut == 'ferme' && (includeClosed || cursorEligible)) ||
-                  (op.statut == 'annule' && cursorEligible) ||
+                  (includeClosed && op.statut == 'ferme') ||
+                  (op.statut == 'annule' &&
+                      shouldShowCancelledOperation(op, DateTime.now())) ||
                   isOwnedDraft ||
                   isLegacyDraft)) {
             activities.add(ActivityItem.fromOperation(op));
