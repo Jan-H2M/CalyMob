@@ -85,6 +85,7 @@ export async function sendEventMessage(
     sender_name: senderName,
     message: message.trim(),
     created_at: serverTimestamp(),
+    unread_created_at: serverTimestamp(),
     read_by: [senderId], // Sender has read their own message
   };
 

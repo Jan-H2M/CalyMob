@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../models/piscine_session.dart';
+import '../../models/session_message.dart';
 import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/team_channel_service.dart';
 import '../../services/unread_count_service.dart';
+import '../../services/cursor_unread_count_service.dart';
+import '../../services/piscine_session_service.dart';
+import '../../services/session_message_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -15,13 +20,15 @@ import 'notification_history_screen.dart';
 import '../announcements/announcements_screen.dart';
 import '../home/landing_screen.dart';
 import '../teams/team_chat_screen.dart';
+import '../piscine/session_chat_screen.dart';
 
 enum _CommunicationFilter {
   all('Tout', Icons.forum_outlined),
   unread('Non lus', Icons.mark_chat_unread_outlined),
   notifications('Notif.', Icons.notifications_none_rounded),
   announcements('Annonces', Icons.campaign_outlined),
-  teams('Équipes', Icons.groups_outlined);
+  teams('Équipes', Icons.groups_outlined),
+  sessions('Piscine', Icons.pool_outlined);
 
   final String label;
   final IconData icon;
@@ -45,6 +52,41 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   String? _stableTargetFormationLevel;
   bool _stableFormationActive = false;
   bool _hasStableMemberContext = false;
+
+  Future<void> _markCommunicationSectionAsRead(String section) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tout marquer comme lu ?'),
+        content: Text('Marquer $section comme lu sur tous vos appareils ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final unread = context.read<UnreadCountProvider>();
+    switch (section) {
+      case 'les annonces':
+        await unread.markAnnouncementsSeen();
+        return;
+      case 'les équipes':
+        await unread.markTeamsSeen();
+        return;
+      case 'les séances piscine':
+        await unread.markSessionsSeen();
+        return;
+      default:
+        await unread.markCommunicationSeen();
+    }
+  }
 
   @override
   void initState() {
@@ -100,6 +142,10 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                     _searchQuery = value;
                   });
                 },
+                onMarkAllTap: unreadProvider.usesCursorReadState &&
+                        unreadProvider.isCursorReady
+                    ? _showMarkAllMenu
+                    : null,
               ),
               _CommunicationFilterBar(
                 selectedFilter: _selectedFilter,
@@ -114,6 +160,7 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                   selectedFilter: _selectedFilter,
                   searchQuery: _searchQuery,
                   announcementUnreadCount: unreadProvider.announcements,
+                  sessionUnreadCount: unreadProvider.sessionMessages,
                   roles: roles,
                   includeAllChannels: includeAllChannels,
                   plongeurCode: plongeurCode,
@@ -127,12 +174,46 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
       ),
     );
   }
+
+  Future<void> _showMarkAllMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.campaign_outlined),
+              title: const Text('Tout marquer comme lu'),
+              onTap: () => Navigator.pop(context, 'toute la communication'),
+            ),
+            ListTile(
+              title: const Text('Annonces'),
+              onTap: () => Navigator.pop(context, 'les annonces'),
+            ),
+            ListTile(
+              title: const Text('Équipes'),
+              onTap: () => Navigator.pop(context, 'les équipes'),
+            ),
+            ListTile(
+              title: const Text('Séances piscine'),
+              onTap: () => Navigator.pop(context, 'les séances piscine'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice != null && mounted) {
+      await _markCommunicationSectionAsRead(choice);
+    }
+  }
 }
 
 class _CommunicationInboxList extends StatelessWidget {
   final _CommunicationFilter selectedFilter;
   final String searchQuery;
   final int announcementUnreadCount;
+  final int sessionUnreadCount;
   final List<String> roles;
   final bool includeAllChannels;
   final String? plongeurCode;
@@ -143,6 +224,7 @@ class _CommunicationInboxList extends StatelessWidget {
     required this.selectedFilter,
     required this.searchQuery,
     required this.announcementUnreadCount,
+    required this.sessionUnreadCount,
     required this.roles,
     required this.includeAllChannels,
     this.plongeurCode,
@@ -196,6 +278,18 @@ class _CommunicationInboxList extends StatelessWidget {
             targetFormationLevel: targetFormationLevel,
             formationActive: formationActive,
           ),
+        if (_shows(_CommunicationFilter.sessions) &&
+            (selectedFilter != _CommunicationFilter.unread ||
+                sessionUnreadCount > 0) &&
+            _matchesSearch(searchQuery, const [
+              'Séances piscine',
+              'Piscine',
+              'Discussions',
+            ]))
+          _SessionChatsInboxSection(
+            filter: selectedFilter,
+            searchQuery: searchQuery,
+          ),
         const SizedBox(height: 24),
       ],
     );
@@ -206,11 +300,13 @@ class _CommunicationHeader extends StatefulWidget {
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback? onNotificationsTap;
+  final VoidCallback? onMarkAllTap;
 
   const _CommunicationHeader({
     required this.searchQuery,
     required this.onSearchChanged,
     this.onNotificationsTap,
+    this.onMarkAllTap,
   });
 
   @override
@@ -306,6 +402,16 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
                     Icons.notifications_none_rounded,
                     color: Colors.white,
                     size: 27,
+                  ),
+                ),
+              if (widget.onMarkAllTap != null)
+                IconButton(
+                  tooltip: 'Tout marquer comme lu',
+                  onPressed: widget.onMarkAllTap,
+                  icon: const Icon(
+                    Icons.done_all_outlined,
+                    color: Colors.white,
+                    size: 25,
                   ),
                 ),
             ],
@@ -517,6 +623,7 @@ class _CommunicationChatRow extends StatelessWidget {
   final String timeLabel;
   final String searchQuery;
   final int unreadCount;
+  final bool unreadStatusUnavailable;
   final String? tag;
   final Color tagColor;
   final VoidCallback onTap;
@@ -530,6 +637,7 @@ class _CommunicationChatRow extends StatelessWidget {
     required this.onTap,
     this.searchQuery = '',
     this.unreadCount = 0,
+    this.unreadStatusUnavailable = false,
     this.tag,
     this.tagColor = AppColors.middenblauw,
   });
@@ -550,10 +658,12 @@ class _CommunicationChatRow extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: unreadCount > 0
-                    ? const Color(0xFFB8DCF2)
-                    : const Color(0xFFE4EDF3),
-                width: unreadCount > 0 ? 1.5 : 1,
+                color: unreadStatusUnavailable
+                    ? Colors.orange.shade700
+                    : unreadCount > 0
+                        ? const Color(0xFFB8DCF2)
+                        : const Color(0xFFE4EDF3),
+                width: unreadCount > 0 || unreadStatusUnavailable ? 1.5 : 1,
               ),
             ),
             child: Row(
@@ -594,6 +704,17 @@ class _CommunicationChatRow extends StatelessWidget {
                           if (unreadCount > 0) ...[
                             const SizedBox(width: 8),
                             const _UnreadDot(),
+                          ],
+                          if (unreadStatusUnavailable) ...[
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.sync_problem_rounded,
+                              key: const ValueKey('unread-status-error'),
+                              color: Colors.orange.shade800,
+                              size: 18,
+                              semanticLabel:
+                                  'Statut des messages non lus indisponible',
+                            ),
                           ],
                         ],
                       ),
@@ -794,17 +915,27 @@ class _TeamChannelsInboxSectionState extends State<_TeamChannelsInboxSection> {
                   widget.searchQuery,
                 ))
             .toList();
+        if (channels.isEmpty && snapshot.hasError) {
+          return const _CommunicationLoadError(
+            label: 'Impossible de charger les discussions d’équipe.',
+          );
+        }
         if (channels.isEmpty) return const SizedBox.shrink();
         return Column(
-          children: channels
-              .map(
-                (channel) => _TeamChannelChatRow(
-                  channel: channel,
-                  hideIfRead: widget.filter == _CommunicationFilter.unread,
-                  searchQuery: widget.searchQuery,
-                ),
-              )
-              .toList(),
+          children: [
+            if (snapshot.hasError)
+              const _CommunicationLoadError(
+                label:
+                    'Mise à jour des discussions indisponible. Les données précédentes restent affichées.',
+              ),
+            ...channels.map(
+              (channel) => _TeamChannelChatRow(
+                channel: channel,
+                hideIfRead: widget.filter == _CommunicationFilter.unread,
+                searchQuery: widget.searchQuery,
+              ),
+            ),
+          ],
         );
       },
     );
@@ -816,6 +947,8 @@ class _TeamChannelChatRow extends StatelessWidget {
   final bool hideIfRead;
   final String searchQuery;
   static final UnreadCountService _unreadCountService = UnreadCountService();
+  static final CursorUnreadCountService _cursorUnreadCountService =
+      CursorUnreadCountService();
 
   const _TeamChannelChatRow({
     required this.channel,
@@ -827,12 +960,30 @@ class _TeamChannelChatRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const clubId = FirebaseConfig.defaultClubId;
     final accentColor = _teamChannelAccentColor(channel.type);
+    final unreadProvider = context.watch<UnreadCountProvider>();
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    final cursorAuthority = unreadProvider.usesCursorReadState;
 
     return FutureBuilder<int>(
-      future: _unreadCountService.countUnreadForTeamChannel(clubId, channel.id),
+      future: cursorAuthority
+          ? (!unreadProvider.isCursorReady || userId == null
+              ? null
+              : _cursorUnreadCountService.countTeamChannel(
+                  clubId,
+                  userId,
+                  channel.id,
+                ))
+          : _unreadCountService.countUnreadForTeamChannel(clubId, channel.id),
       builder: (context, snapshot) {
+        final statusUnavailable = snapshot.hasError || !snapshot.hasData;
         final unreadCount = snapshot.data ?? 0;
-        if (hideIfRead && unreadCount == 0) return const SizedBox.shrink();
+        if (shouldHideCommunicationUnreadRow(
+          hideIfRead: hideIfRead,
+          unreadCount: snapshot.data,
+          statusUnavailable: statusUnavailable,
+        )) {
+          return const SizedBox.shrink();
+        }
         return _CommunicationChatRow(
           avatar: _CommunicationAvatar(
             icon: channel.type.iconData,
@@ -846,6 +997,7 @@ class _TeamChannelChatRow extends StatelessWidget {
           preview: channel.description ?? channel.type.description,
           timeLabel: unreadCount > 0 ? '10:22' : '09:55',
           unreadCount: unreadCount,
+          unreadStatusUnavailable: statusUnavailable,
           searchQuery: searchQuery,
           onTap: () {
             Navigator.of(context).push(
@@ -858,6 +1010,202 @@ class _TeamChannelChatRow extends StatelessWidget {
       },
     );
   }
+}
+
+class _SessionChatsInboxSection extends StatelessWidget {
+  const _SessionChatsInboxSection({
+    required this.filter,
+    required this.searchQuery,
+  });
+
+  final _CommunicationFilter filter;
+  final String searchQuery;
+
+  static final PiscineSessionService _sessionService = PiscineSessionService();
+  static final SessionMessageService _messageService = SessionMessageService();
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    if (userId == null) return const SizedBox.shrink();
+
+    return StreamBuilder<List<PiscineSession>>(
+      stream: _sessionService.getPublishedChatSessions(
+        FirebaseConfig.defaultClubId,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const _CommunicationLoadError(
+            label: 'Impossible de charger les discussions de piscine.',
+          );
+        }
+        if (!snapshot.hasData) {
+          return const _CommunicationLoadPending();
+        }
+        final rows = <Widget>[];
+        for (final session in snapshot.data ?? const <PiscineSession>[]) {
+          for (final group in _messageService.getAvailableGroups(
+            session: session,
+            userId: userId,
+          )) {
+            if (!_matchesSearch(searchQuery, [
+              'Séances piscine',
+              session.formattedDate,
+              session.lieu,
+              group.displayName,
+            ])) {
+              continue;
+            }
+            rows.add(
+              _SessionConversationRow(
+                session: session,
+                group: group,
+                hideIfRead: filter == _CommunicationFilter.unread,
+                searchQuery: searchQuery,
+              ),
+            );
+          }
+        }
+        if (rows.isEmpty) return const SizedBox.shrink();
+        return Column(children: rows);
+      },
+    );
+  }
+}
+
+class _SessionConversationRow extends StatelessWidget {
+  const _SessionConversationRow({
+    required this.session,
+    required this.group,
+    required this.hideIfRead,
+    required this.searchQuery,
+  });
+
+  final PiscineSession session;
+  final SessionChatGroup group;
+  final bool hideIfRead;
+  final String searchQuery;
+
+  static final UnreadCountService _legacy = UnreadCountService();
+  static final CursorUnreadCountService _cursor = CursorUnreadCountService();
+
+  @override
+  Widget build(BuildContext context) {
+    const clubId = FirebaseConfig.defaultClubId;
+    final unread = context.watch<UnreadCountProvider>();
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    final scopeLevel =
+        group.type == SessionGroupType.niveau ? group.level : null;
+    final count = unread.usesCursorReadState
+        ? (!unread.isCursorReady || userId == null
+            ? null
+            : _cursor.countSessionChat(
+                clubId,
+                userId,
+                session.id,
+                group.type.value,
+                groupLevel: scopeLevel,
+              ))
+        : _legacy.countUnreadForSessionChat(
+            clubId,
+            session.id,
+            group.type.value,
+            groupLevel: scopeLevel,
+          );
+
+    return FutureBuilder<int>(
+      future: count,
+      builder: (context, snapshot) {
+        final statusUnavailable = snapshot.hasError || !snapshot.hasData;
+        final unreadCount = snapshot.data ?? 0;
+        if (shouldHideCommunicationUnreadRow(
+          hideIfRead: hideIfRead,
+          unreadCount: snapshot.data,
+          statusUnavailable: statusUnavailable,
+        )) {
+          return const SizedBox.shrink();
+        }
+        return _CommunicationChatRow(
+          avatar: const _CommunicationAvatar(
+            icon: Icons.pool_outlined,
+            colors: [Color(0xFF1597BB), Color(0xFF0B5FA5)],
+          ),
+          title: group.displayName,
+          sender: session.formattedDate,
+          preview: session.lieu,
+          timeLabel: '',
+          unreadCount: unreadCount,
+          unreadStatusUnavailable: statusUnavailable,
+          searchQuery: searchQuery,
+          tag: 'Piscine',
+          tagColor: const Color(0xFF0B5FA5),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SessionChatScreen(
+                  session: session,
+                  chatGroup: group,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+bool shouldHideCommunicationUnreadRow({
+  required bool hideIfRead,
+  required int? unreadCount,
+  required bool statusUnavailable,
+}) =>
+    hideIfRead && !statusUnavailable && unreadCount == 0;
+
+class _CommunicationLoadPending extends StatelessWidget {
+  const _CommunicationLoadPending();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+}
+
+class _CommunicationLoadError extends StatelessWidget {
+  const _CommunicationLoadError({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        liveRegion: true,
+        child: Container(
+          key: const ValueKey('communication-load-error'),
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.shade700),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.sync_problem_rounded, color: Colors.orange.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.orange.shade900,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 bool _matchesSearch(String query, Iterable<String?> values) {

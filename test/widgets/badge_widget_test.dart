@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:calymob/providers/unread_count_provider.dart';
+import 'package:calymob/models/unread_cursor_feature_flag.dart';
 
 /// A standalone badge widget that mirrors the badge display logic
 /// used in LandingScreen's _GlossyButton and OperationsListScreen.
@@ -62,8 +63,8 @@ class TestLandingBadges extends StatelessWidget {
           children: [
             const Text('Piscine'),
             TestBadgeWidget(
-              count: unreadProvider.sessionMessages +
-                  unreadProvider.teamMessages,
+              count:
+                  unreadProvider.sessionMessages + unreadProvider.teamMessages,
             ),
           ],
         ),
@@ -95,7 +96,59 @@ class MockUnreadCountProvider extends ChangeNotifier
   @override
   int get medicalCertificates => _medicalCertificates;
   @override
+  int get communication => _announcements + _teamMessages + _sessionMessages;
+  @override
+  UnreadCursorV1Mode get cursorMode => UnreadCursorV1Mode.off;
+  @override
+  bool get isCursorReady => false;
+  @override
+  bool get usesCursorReadState => false;
+  @override
   bool get isListening => false;
+  @override
+  bool get hasReliableBadgeCount => false;
+  @override
+  Object? get lastRefreshError => null;
+  @override
+  bool hasResolvedAuthorityFor(String clubId, String userId) => false;
+
+  @override
+  Future<void> markAnnouncementSeen(
+    String announcementId, {
+    String? visibleReplyId,
+    DateTime? visibleThroughAt,
+  }) async {}
+  @override
+  Future<void> markAnnouncementsSeen() async {}
+  @override
+  Future<void> markCommunicationSeen() async {}
+  @override
+  Future<void> markEventConversationSeen(
+    String operationId, {
+    required String visibleMessageId,
+    DateTime? visibleThroughAt,
+  }) async {}
+  @override
+  Future<void> markEventsSeen() async {}
+  @override
+  Future<void> markSessionChatSeen(
+    String scopeId, {
+    required String visibleMessageId,
+    String? sessionId,
+    String? groupType,
+    String? groupLevel,
+    DateTime? visibleThroughAt,
+  }) async {}
+  @override
+  Future<void> markSessionsSeen() async {}
+  @override
+  Future<void> markTeamChannelSeen(
+    String channelId, {
+    required String visibleMessageId,
+    DateTime? visibleThroughAt,
+  }) async {}
+  @override
+  Future<void> markTeamsSeen() async {}
 
   void setCounts({
     int total = 0,
@@ -132,7 +185,7 @@ class MockUnreadCountProvider extends ChangeNotifier
   void stopListening() {}
 
   @override
-  void clear() {
+  Future<void> clear() async {
     setCounts();
   }
 }
@@ -322,7 +375,8 @@ void main() {
     /// Tests the StreamBuilder pattern used in OperationsListScreen
     /// for per-operation unread counts
     testWidgets('StreamBuilder shows badge from stream data', (tester) async {
-      final controller = Stream<int>.fromIterable([0, 3, 5]).asBroadcastStream();
+      final controller =
+          Stream<int>.fromIterable([0, 3, 5]).asBroadcastStream();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -344,7 +398,7 @@ void main() {
 
     testWidgets('StreamBuilder shows nothing while waiting', (tester) async {
       // Stream that never emits
-      final controller = Stream<int>.empty();
+      const controller = Stream<int>.empty();
 
       await tester.pumpWidget(
         MaterialApp(

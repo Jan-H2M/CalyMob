@@ -8,6 +8,9 @@ enum AnnouncementType {
   urgent,
 }
 
+/// Optional v1 visibility field. Legacy announcements do not have it yet.
+enum AnnouncementVisibility { published, deleted }
+
 /// Modèle pour les annonces du club
 class Announcement {
   final String id;
@@ -21,6 +24,9 @@ class Announcement {
   final int replyCount;
   final DateTime? deletedAt;
   final String? deletedBy;
+  final AnnouncementVisibility? visibility;
+  final DateTime? lastActivityAt;
+  final DateTime? unreadActivityAt;
 
   Announcement({
     required this.id,
@@ -34,6 +40,9 @@ class Announcement {
     this.replyCount = 0,
     this.deletedAt,
     this.deletedBy,
+    this.visibility,
+    this.lastActivityAt,
+    this.unreadActivityAt,
   });
 
   /// Créer depuis Firestore
@@ -59,6 +68,13 @@ class Announcement {
           ? (data['deleted_at'] as Timestamp).toDate()
           : null,
       deletedBy: data['deleted_by'] as String?,
+      visibility: _parseVisibility(data['visibility']),
+      lastActivityAt: data['last_activity_at'] is Timestamp
+          ? (data['last_activity_at'] as Timestamp).toDate()
+          : null,
+      unreadActivityAt: data['unread_activity_at'] is Timestamp
+          ? (data['unread_activity_at'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -71,6 +87,8 @@ class Announcement {
       'sender_name': senderName,
       'type': type.name,
       'created_at': Timestamp.fromDate(createdAt),
+      'visibility': 'published',
+      'last_activity_at': Timestamp.fromDate(createdAt),
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
       'reply_count': replyCount,
@@ -92,6 +110,17 @@ class Announcement {
     }
   }
 
+  static AnnouncementVisibility? _parseVisibility(dynamic visibility) {
+    switch (visibility) {
+      case 'published':
+        return AnnouncementVisibility.published;
+      case 'deleted':
+        return AnnouncementVisibility.deleted;
+      default:
+        return null;
+    }
+  }
+
   /// Copier avec modifications
   Announcement copyWith({
     String? title,
@@ -101,6 +130,9 @@ class Announcement {
     int? replyCount,
     DateTime? deletedAt,
     String? deletedBy,
+    AnnouncementVisibility? visibility,
+    DateTime? lastActivityAt,
+    DateTime? unreadActivityAt,
   }) {
     return Announcement(
       id: id,
@@ -114,12 +146,15 @@ class Announcement {
       replyCount: replyCount ?? this.replyCount,
       deletedAt: deletedAt ?? this.deletedAt,
       deletedBy: deletedBy ?? this.deletedBy,
+      visibility: visibility ?? this.visibility,
+      lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+      unreadActivityAt: unreadActivityAt ?? this.unreadActivityAt,
     );
   }
 
   /// Is soft-deleted
-  bool get isDeleted => deletedAt != null;
-
+  bool get isDeleted =>
+      deletedAt != null || visibility == AnnouncementVisibility.deleted;
 
   /// A des pièces jointes
   bool get hasAttachments => attachments.isNotEmpty;

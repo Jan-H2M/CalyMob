@@ -1,19 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import '../models/unread_cursor_feature_flag.dart';
 
 /// Service voor feature flags — bestuurt of Carnet de Formation of
 /// Boutique zichtbaar is.
 /// Luistert real-time naar clubs/{clubId}/settings/feature_flags.
 class FeatureFlagService extends ChangeNotifier {
   late final FirebaseFirestore _firestore;
-  final String? _clubId;
-  Map<String, dynamic>? _flags;
   bool _isLoading = true;
 
   /// Constructor. Optioneel een [firestore] en [clubId] voor injectie in tests.
   FeatureFlagService({FirebaseFirestore? firestore, String? clubId})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _clubId = clubId;
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   bool get isLoading => _isLoading;
 
@@ -28,7 +26,6 @@ class FeatureFlagService extends ChangeNotifier {
         .snapshots()
         .listen((doc) {
       _isLoading = false;
-      _flags = doc.data();
       notifyListeners();
     });
   }
@@ -110,6 +107,41 @@ class FeatureFlagService extends ChangeNotifier {
         .doc('feature_flags')
         .snapshots()
         .map((doc) => parseBoutiqueVisibility(doc.data()));
+  }
+
+  /// Cursor-v1 rollout flag. A missing document is a real OFF value, but a
+  /// read error remains unknown. Converting an error to OFF could briefly
+  /// expose stale legacy `99+` counts for a member who is effectively ON.
+  Stream<UnreadCursorFeatureFlag> unreadCursorV1(String clubId) async* {
+    try {
+      await for (final doc in _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('settings')
+          .doc('feature_flags')
+          .snapshots()) {
+        yield UnreadCursorFeatureFlag.fromFirestore(doc.data());
+      }
+    } catch (error) {
+      debugPrint('⚠️ unreadCursorV1 feature flag read failed: $error');
+      rethrow;
+    }
+  }
+
+  /// One-shot counterpart for startup paths and tests.
+  Future<UnreadCursorFeatureFlag> getUnreadCursorV1(String clubId) async {
+    try {
+      final doc = await _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('settings')
+          .doc('feature_flags')
+          .get();
+      return UnreadCursorFeatureFlag.fromFirestore(doc.data());
+    } catch (error) {
+      debugPrint('⚠️ unreadCursorV1 feature flag read failed: $error');
+      rethrow;
+    }
   }
 
   /// Eenmalige check (voor use-cases waar stream niet nodig is).

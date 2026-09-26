@@ -68,9 +68,13 @@ class AnnouncementService {
         createdAt: DateTime.now(),
       );
 
-      await _firestore
-          .collection('clubs/$clubId/announcements')
-          .add(announcement.toFirestore());
+      await _firestore.collection('clubs/$clubId/announcements').add({
+        ...announcement.toFirestore(),
+        'created_at': FieldValue.serverTimestamp(),
+        'unread_created_at': FieldValue.serverTimestamp(),
+        'last_activity_at': FieldValue.serverTimestamp(),
+        'unread_activity_at': FieldValue.serverTimestamp(),
+      });
 
       debugPrint('✅ Annonce créée: $title');
     } catch (e) {
@@ -90,6 +94,7 @@ class AnnouncementService {
           .update({
         'deleted_at': FieldValue.delete(),
         'deleted_by': FieldValue.delete(),
+        'visibility': 'published',
       });
 
       debugPrint('✅ Annonce restaurée: $announcementId');
@@ -203,7 +208,11 @@ class AnnouncementService {
 
       final docRef = await _firestore
           .collection('clubs/$clubId/announcements/$announcementId/replies')
-          .add(reply.toFirestore());
+          .add({
+        ...reply.toFirestore(),
+        'created_at': FieldValue.serverTimestamp(),
+        'unread_created_at': FieldValue.serverTimestamp(),
+      });
 
       // Incrémenter le compteur de réponses
       await _firestore

@@ -8,9 +8,12 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
-const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
 const { isEligibleEventMessageRegistration, shouldNotifyForOperation } = require('./eventMessageAudience');
+const { isUnreadEligibleEvent } = require('./canonicalUnreadBadge');
+const { stampUnreadCreatedAt } = require('./unreadTimestampAuthority');
+const { prepareNotificationUnreadTimestamp } = require('./notificationUnreadTimestamp');
+const { advanceSenderUnreadCursorIsolated } = require('./advanceSenderUnreadCursor');
 
 function stripMarkdown(text) {
   // Strip light markdown markers (**bold**, *italic*) for push notification bodies
@@ -51,7 +54,25 @@ exports.onNewEventMessage = onDocumentCreated(
   },
   async (event) => {
     const { clubId, operationId, messageId } = event.params;
-    const message = event.data.data();
+    const authoritativeCreatedAt = await prepareNotificationUnreadTimestamp({
+      snapshot: event.data, eventTime: event.time, label: 'event_message',
+      stamp: () => stampUnreadCreatedAt({
+        snapshot: event.data,
+        eventTime: event.time,
+      }),
+    });
+    const message = {
+      ...event.data.data(),
+      created_at: authoritativeCreatedAt,
+      unread_created_at: authoritativeCreatedAt,
+    };
+    if (message.sender_id) {
+      await advanceSenderUnreadCursorIsolated({
+        db: admin.firestore(), clubId, senderId: message.sender_id,
+        section: 'events', scopeId: operationId,
+        visibleAt: authoritativeCreatedAt,
+      });
+    }
 
     console.log(`New message in club/${clubId}/operations/${operationId}/messages/${messageId}`);
     console.log('Message data:', JSON.stringify(message));
@@ -75,19 +96,11 @@ exports.onNewEventMessage = onDocumentCreated(
         console.log(`Operation ${operationId} is removed, skipping notification`);
         return null;
       }
-      const eventTitle = operation.titre || operation.title || 'Événement';
-
-      // Check of event verlopen is (date_fin + grace period)
-      const dateFin = operation.date_fin?.toDate ? operation.date_fin.toDate() : operation.date_fin;
-      let eventExpired = false;
-      if (dateFin) {
-        const expiryDate = new Date(dateFin);
-        expiryDate.setDate(expiryDate.getDate() + EVENT_EXPIRY_GRACE_DAYS);
-        eventExpired = new Date() > expiryDate;
-        if (eventExpired) {
-          console.log(`Event ${operationId} verlopen sinds ${expiryDate.toISOString()}, skip unread increment`);
-        }
+      if (!isUnreadEligibleEvent(operation, new Date())) {
+        console.log(`Operation ${operationId} is outside the canonical unread window, skipping notification`);
+        return null;
       }
+      const eventTitle = operation.titre || operation.title || 'Événement';
 
       // 2. Get only PARTICIPANTS of this event (not all club members)
       const senderId = message.sender_id;
@@ -199,13 +212,10 @@ exports.onNewEventMessage = onDocumentCreated(
       };
 
       // 5. Increment unread counts FIRST (zodat badge-getal correct is bij verzending)
-      // Skip increment voor verlopen events (date_fin + 5 dagen)
-      if (!eventExpired) {
-        await incrementUnreadCounts(clubId, recipientIds, 'event_messages');
-      }
+      await incrementUnreadCounts(clubId, recipientIds, 'event_messages');
 
       // 6. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'event_messages');
+      const { successCount, failureCount } = await sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, 'event_messages');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

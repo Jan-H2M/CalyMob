@@ -8,7 +8,12 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode, filterByPreference } = require('../utils/badge-helper');
+const { stampUnreadCreatedAt } = require('./unreadTimestampAuthority');
+const { prepareNotificationUnreadTimestamp } = require('./notificationUnreadTimestamp');
+const { sessionMessageRecipientIds } = require('./sessionChatAccess');
+const { readStateSessionScopeId } = require('./canonicalUnreadBadge');
+const { advanceSenderUnreadCursorIsolated } = require('./advanceSenderUnreadCursor');
 
 function buildNotificationBody(message = {}) {
   const text = String(message.message || '').trim();
@@ -41,7 +46,28 @@ exports.onNewSessionMessage = onDocumentCreated(
   },
   async (event) => {
     const { clubId, sessionId, messageId } = event.params;
-    const message = event.data.data();
+    const authoritativeCreatedAt = await prepareNotificationUnreadTimestamp({
+      snapshot: event.data, eventTime: event.time, label: 'session_message',
+      stamp: () => stampUnreadCreatedAt({
+        snapshot: event.data,
+        eventTime: event.time,
+      }),
+    });
+    const message = {
+      ...event.data.data(),
+      created_at: authoritativeCreatedAt,
+      unread_created_at: authoritativeCreatedAt,
+    };
+    if (message.sender_id) {
+      const groupType = message.group_type;
+      const groupLevel = message.group_level;
+      await advanceSenderUnreadCursorIsolated({
+        db: admin.firestore(), clubId, senderId: message.sender_id,
+        section: 'sessions',
+        scopeId: readStateSessionScopeId(sessionId, groupType, groupLevel),
+        visibleAt: authoritativeCreatedAt,
+      });
+    }
 
     console.log(`New message in club/${clubId}/piscine_sessions/${sessionId}/messages/${messageId}`);
     console.log('Message data:', JSON.stringify(message));
@@ -73,52 +99,21 @@ exports.onNewSessionMessage = onDocumentCreated(
       const groupLevel = message.group_level; // Only for 'niveau' type
 
       // 3. Get the members who should receive this notification
-      const recipientIds = new Set();
       const senderId = message.sender_id;
+      const recipientIds = sessionMessageRecipientIds(
+        session,
+        groupType,
+        groupLevel,
+        senderId,
+      );
 
-      if (groupType === 'accueil') {
-        // Notify all accueil members
-        (session.accueil || []).forEach(member => {
-          if (member.membre_id !== senderId) {
-            recipientIds.add(member.membre_id);
-          }
-        });
-      } else if (groupType === 'encadrants') {
-        // Notify all encadrants (from all levels + baptemes)
-        (session.baptemes || []).forEach(member => {
-          if (member.membre_id !== senderId) {
-            recipientIds.add(member.membre_id);
-          }
-        });
-
-        const niveaux = session.niveaux || {};
-        Object.values(niveaux).forEach(level => {
-          (level.encadrants || []).forEach(member => {
-            if (member.membre_id !== senderId) {
-              recipientIds.add(member.membre_id);
-            }
-          });
-        });
-      } else if (groupType === 'niveau' && groupLevel) {
-        // Notify encadrants of this specific level
-        const levelData = session.niveaux?.[groupLevel];
-        if (levelData) {
-          (levelData.encadrants || []).forEach(member => {
-            if (member.membre_id !== senderId) {
-              recipientIds.add(member.membre_id);
-            }
-          });
-        }
-        // TODO: Also notify students enrolled in this level if needed
-      }
-
-      if (recipientIds.size === 0) {
+      if (recipientIds.length === 0) {
         console.log('No recipients found, skipping notification');
         return null;
       }
 
       // 4. Get FCM tokens for all recipients
-      const tokenPromises = Array.from(recipientIds).map(memberId =>
+      const tokenPromises = recipientIds.map(memberId =>
         admin.firestore()
           .collection('clubs')
           .doc(clubId)
@@ -200,7 +195,7 @@ exports.onNewSessionMessage = onDocumentCreated(
       await incrementUnreadCounts(clubId, helperRecipientIds, 'session_messages');
 
       // 7. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'session_messages');
+      const { successCount, failureCount } = await sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, 'session_messages');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

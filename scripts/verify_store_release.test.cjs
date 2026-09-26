@@ -22,6 +22,19 @@ function fixture(platform = 'ios') {
   return { manifest, context };
 }
 
+function applyInternalWaiver(manifest, platform = 'ios') {
+  manifest.allowedChannels = { [platform]: ['internal'] };
+  manifest.janApproval.allowedChannels = { [platform]: ['internal'] };
+  manifest.nativeReview[platform] = {
+    verdict: 'waived',
+    waivedBy: 'Jan Andriessens',
+    reason: 'The internal track is the hands-on review channel.',
+    sourceCommit: manifest.sourceCommit,
+    artifactSha256: manifest.artifacts[platform].sha256,
+    evidence: 'Explicit internal-testing waiver fixture.',
+  };
+}
+
 test('only fully matching approval, review and artifact context is accepted for each platform', () => {
   for (const platform of ['ios', 'android']) {
     const { manifest, context } = fixture(platform);
@@ -75,4 +88,39 @@ test('Android combined release requires separately authorized upload and submiss
   manifest.allowedActions.android = ['upload', 'submit'];
   manifest.janApproval.allowedActions.android = ['upload'];
   assert.throws(() => validateManifest(manifest, combined));
+});
+
+test('internal upload tracks accept an explicitly approved Jan hands-on-review waiver', () => {
+  for (const [platform, action] of [['ios', 'upload'], ['android', 'upload-and-submit']]) {
+    const { manifest, context } = fixture(platform);
+    applyInternalWaiver(manifest, platform);
+    assert.equal(validateManifest(manifest, { ...context, action, channel: 'internal' }).channel, 'internal');
+  }
+});
+
+test('a hands-on-review waiver is rejected for the public channel', () => {
+  const { manifest, context } = fixture();
+  applyInternalWaiver(manifest);
+  assert.throws(() => validateManifest(manifest, { ...context, channel: 'public' }));
+});
+
+test('a hands-on-review waiver is rejected for submit actions', () => {
+  const { manifest, context } = fixture();
+  applyInternalWaiver(manifest);
+  assert.throws(() => validateManifest(manifest, {
+    ...context, action: 'submit', channel: 'internal', requestedVersion: '1.21.0', requestedBuild: '204',
+  }));
+});
+
+test('an internal hands-on-review waiver fails closed for stale provenance or empty reason', () => {
+  for (const mutate of [
+    (m) => { m.nativeReview.ios.sourceCommit = 'c'.repeat(40); },
+    (m) => { m.nativeReview.ios.artifactSha256 = 'c'.repeat(64); },
+    (m) => { m.nativeReview.ios.reason = '   '; },
+  ]) {
+    const { manifest, context } = fixture();
+    applyInternalWaiver(manifest);
+    mutate(manifest);
+    assert.throws(() => validateManifest(manifest, { ...context, channel: 'internal' }));
+  }
 });

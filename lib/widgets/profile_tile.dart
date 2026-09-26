@@ -30,6 +30,10 @@ class ProfileTile extends StatelessWidget {
   /// `0` means hidden. Capped visually at `99+`.
   final int badgeCount;
 
+  /// True when unread authority failed before a reliable count was loaded.
+  /// This is intentionally distinct from a valid zero count.
+  final bool badgeUnavailable;
+
   /// Set true to dim the tile and treat taps as no-op until ready.
   final bool disabled;
 
@@ -45,6 +49,7 @@ class ProfileTile extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.badgeCount = 0,
+    this.badgeUnavailable = false,
     this.disabled = false,
     this.gradientOverride,
   })  : subtitle = null,
@@ -57,6 +62,7 @@ class ProfileTile extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.badgeCount = 0,
+    this.badgeUnavailable = false,
     this.disabled = false,
     this.gradientOverride,
   }) : variant = ProfileTileVariant.list;
@@ -116,6 +122,7 @@ class ProfileTile extends StatelessWidget {
                   children: [
                     Icon(icon, size: 40, color: Colors.white),
                     if (badgeCount > 0) _BadgeBubble(count: badgeCount),
+                    if (badgeUnavailable) const _BadgeUnavailable(),
                   ],
                 ),
               ),
@@ -192,6 +199,8 @@ class ProfileTile extends StatelessWidget {
                         Icon(icon, size: 22, color: Colors.white),
                         if (badgeCount > 0)
                           _BadgeBubble(count: badgeCount, small: true),
+                        if (badgeUnavailable)
+                          const _BadgeUnavailable(small: true),
                       ],
                     ),
                   ),
@@ -282,4 +291,33 @@ class _BadgeBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BadgeUnavailable extends StatelessWidget {
+  final bool small;
+
+  const _BadgeUnavailable({this.small = false});
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+        top: small ? -1 : -2,
+        right: small ? -1 : -2,
+        child: Tooltip(
+          message: 'Compteur temporairement indisponible',
+          child: Container(
+            width: small ? 17 : 23,
+            height: small ? 17 : 23,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF59E0B),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.error_outline,
+              size: small ? 12 : 16,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
 }

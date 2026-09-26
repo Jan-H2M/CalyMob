@@ -222,6 +222,7 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
             type: 'piscine_task_assigned',
             club_id: clubId,
             session_id: sessionId,
+            recipient_id: memberId,
             click_action: 'FLUTTER_NOTIFICATION_CLICK',
           },
           android: {

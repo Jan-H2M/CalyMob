@@ -1285,7 +1285,12 @@ async function sendPromotionNotification(clubId, operationId, operation, memberI
   await admin.messaging().sendEachForMulticast({
     tokens,
     notification: { title: notification.title, body: notification.body },
-    data: { type: notification.type, clubId, operationId },
+    data: {
+      type: notification.type,
+      clubId,
+      operationId,
+      recipient_id: memberId,
+    },
     apns: { payload: { aps: { sound: 'default' } } },
   });
 }

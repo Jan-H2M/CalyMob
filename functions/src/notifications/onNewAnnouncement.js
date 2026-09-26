@@ -8,7 +8,10 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithUnreadCursorMode } = require('../utils/badge-helper');
+const { stampAnnouncementCreated } = require('./unreadTimestampAuthority');
+const { prepareNotificationUnreadTimestamp } = require('./notificationUnreadTimestamp');
+const { advanceSenderUnreadCursorIsolated } = require('./advanceSenderUnreadCursor');
 
 /**
  * Firestore trigger for new announcements (Gen2)
@@ -20,7 +23,27 @@ exports.onNewAnnouncement = onDocumentCreated(
   },
   async (event) => {
     const { clubId, announcementId } = event.params;
-    const announcement = event.data.data();
+    const authoritativeCreatedAt = await prepareNotificationUnreadTimestamp({
+      snapshot: event.data, eventTime: event.time, label: 'announcement',
+      stamp: () => stampAnnouncementCreated({
+        db: admin.firestore(),
+        snapshot: event.data,
+        eventTime: event.time,
+      }),
+    });
+    const announcement = {
+      ...event.data.data(),
+      created_at: authoritativeCreatedAt,
+      unread_created_at: authoritativeCreatedAt,
+      unread_activity_at: authoritativeCreatedAt,
+    };
+    if (announcement.sender_id) {
+      await advanceSenderUnreadCursorIsolated({
+        db: admin.firestore(), clubId, senderId: announcement.sender_id,
+        section: 'announcements', scopeId: announcementId,
+        visibleAt: authoritativeCreatedAt,
+      });
+    }
 
     console.log(`New announcement in club/${clubId}/announcements/${announcementId}`);
     console.log('Announcement data:', JSON.stringify(announcement));
@@ -106,7 +129,7 @@ exports.onNewAnnouncement = onDocumentCreated(
       await incrementUnreadCounts(clubId, recipientIds, 'announcements');
 
       // 6. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'announcements');
+      const { successCount, failureCount } = await sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, basePayload, 'announcements');
 
       console.log(`Announcement notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };
