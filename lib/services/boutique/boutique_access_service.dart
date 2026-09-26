@@ -3,6 +3,45 @@ import 'package:rxdart/rxdart.dart';
 
 import '../feature_flag_service.dart';
 
+/// Eén gedeelde clientpolicy voor de Boutique-module en haar vijf secties.
+class BoutiqueAccessPolicy {
+  static const Set<String> _boutiqueResponsibilityValues = {
+    'Responsable boutique',
+    'Responsable Boutique',
+    'responsable boutique',
+    'RESPONSABLE BOUTIQUE',
+    'RB',
+    'rb',
+    'Rb',
+    'rB',
+  };
+
+  static bool isActiveMember(Map<String, dynamic>? member) {
+    return member?['member_status'] == 'active';
+  }
+
+  static bool hasBoutiqueResponsibility(Map<String, dynamic>? member) {
+    final statuten = member?['clubStatuten'];
+    if (statuten is! Iterable) return false;
+
+    return statuten.any(_boutiqueResponsibilityValues.contains);
+  }
+
+  static bool canAccessMode(String? mode, Map<String, dynamic>? member) {
+    if (!isActiveMember(member)) return false;
+
+    switch (mode) {
+      case FeatureFlagService.modeTous:
+        return true;
+      case FeatureFlagService.modePreparation:
+        return hasBoutiqueResponsibility(member);
+      case FeatureFlagService.modeMasque:
+      default:
+        return false;
+    }
+  }
+}
+
 class BoutiqueAccessService {
   final FirebaseFirestore _firestore;
 
@@ -30,33 +69,20 @@ class BoutiqueAccessService {
         DocumentSnapshot<Map<String, dynamic>>, bool>(
       flagsStream,
       memberStream,
-      (flagsDoc, memberDoc) => _canAccess(flagsDoc.data(), memberDoc.data()),
+      (flagsDoc, memberDoc) =>
+          canAccessFromData(flags: flagsDoc.data(), member: memberDoc.data()),
     );
   }
 
-  bool _canAccess(
-    Map<String, dynamic>? flags,
-    Map<String, dynamic>? member,
-  ) {
-    if (member == null) return false;
-
-    final appRole = member['app_role']?.toString().toLowerCase();
-    final isAdmin = appRole == 'admin' || appRole == 'superadmin';
+  static bool canAccessFromData({
+    required Map<String, dynamic>? flags,
+    required Map<String, dynamic>? member,
+  }) {
     final enabled = flags?['boutiqueEnabled'] == true ||
         flags?['boutiqueMobileEnabled'] == true;
-    final access = member['feature_access'];
-    final hasMemberAccess = access is Map && access['boutique'] == true;
-
     if (!enabled) return false;
 
     final mode = FeatureFlagService.parseBoutiqueVisibility(flags)['access'];
-    switch (mode) {
-      case FeatureFlagService.modeMasque:
-        return false;
-      case FeatureFlagService.modeTous:
-        return true;
-      default:
-        return isAdmin || hasMemberAccess;
-    }
+    return BoutiqueAccessPolicy.canAccessMode(mode, member);
   }
 }

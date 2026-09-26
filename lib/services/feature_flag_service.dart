@@ -64,40 +64,45 @@ class FeatureFlagService extends ChangeNotifier {
   }
 
   /// Standen voor Boutique-zichtbaarheid (CalyCompta > Boutique > Réglages).
-  /// 'tous' = elk lid, 'testeurs' = admins + feature_access.boutique,
-  /// 'masque' = niemand.
+  ///
+  /// `testeurs` blijft de historische wire value voor de voorbereidingsstand:
+  /// alleen actieve leden met de clubfunctie Responsable boutique. `tous` is
+  /// de onlinestand voor alle actieve leden. `masque` wordt alleen nog
+  /// defensief gelezen voor bestaande gegevens en is geen instelbare stand.
   static const String modeTous = 'tous';
-  static const String modeTesteurs = 'testeurs';
+  static const String modePreparation = 'testeurs';
   static const String modeMasque = 'masque';
 
-  static const String defaultBoutiqueAccess = modeTesteurs;
+  static const String defaultBoutiqueAccess = modePreparation;
 
-  static const Map<String, String> defaultBoutiqueSections = {
-    'produits': modeTous,
-    'panier': modeTous,
-    'commandes': modeTous,
-    'cotisation': modeTous,
-    'pretsMateriel': modeMasque,
-  };
+  static const List<String> boutiqueSectionKeys = [
+    'produits',
+    'panier',
+    'commandes',
+    'cotisation',
+    'pretsMateriel',
+  ];
 
   static bool _isValidMode(Object? value) =>
-      value == modeTous || value == modeTesteurs || value == modeMasque;
+      value == modeTous || value == modePreparation || value == modeMasque;
 
   /// Genormaliseerde Boutique-zichtbaarheid uit een feature_flags-document.
   /// Keys: 'access' (module) + alle sectiesleutels.
   static Map<String, String> parseBoutiqueVisibility(
     Map<String, dynamic>? flags,
   ) {
-    final result = <String, String>{
-      'access': _isValidMode(flags?['boutiqueAccess'])
-          ? flags!['boutiqueAccess'] as String
-          : defaultBoutiqueAccess,
-    };
+    final accessMode = _isValidMode(flags?['boutiqueAccess'])
+        ? flags!['boutiqueAccess'] as String
+        : defaultBoutiqueAccess;
+    final result = <String, String>{'access': accessMode};
     final rawSections = flags?['boutiqueSections'];
-    defaultBoutiqueSections.forEach((key, fallback) {
+    for (final key in boutiqueSectionKeys) {
       final value = rawSections is Map ? rawSections[key] : null;
-      result[key] = _isValidMode(value) ? value as String : fallback;
-    });
+      // Een ontbrekende/ongeldige sectiestand volgt altijd de globale stand.
+      // Zo kan een gedeeltelijk oud document nooit een gemengde Boutique
+      // opleveren wanneer de beheerder tussen voorbereiding en online wisselt.
+      result[key] = _isValidMode(value) ? value as String : accessMode;
+    }
     return result;
   }
 
