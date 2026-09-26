@@ -338,6 +338,20 @@ service cloud.firestore {
              (userRole == 'user' && request.auth.uid == ownerId);
     }
 
+    function boutiqueAccessControlFields() {
+      return [
+        'boutiqueEnabled', 'boutiqueMobileEnabled', 'boutiqueAdminOnly',
+        'boutiqueAccess', 'boutiqueSections'
+      ];
+    }
+
+    function isBoutiqueAccessAudit(data) {
+      return data.get('action', '') in [
+        'boutique.access.opened_all',
+        'boutique.access.preparation_enabled'
+      ];
+    }
+
     // Zichtbaarheidsstand Boutique (CalyCompta > Boutique > Réglages):
     // 'testeurs' blijft de historische wire value voor voorbereiding: alleen
     // actieve leden met de clubfunctie Responsable boutique. 'tous' = elk
@@ -444,8 +458,22 @@ service cloud.firestore {
               ? (isAdmin(clubId) && hasValidSession(clubId))
               : isMember(clubId);
 
-        // Only admins can write, and they need a valid session
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        // Boutique access changes are one closed, transactional server command.
+        // Admins may still edit unrelated flags, but cannot bypass its version
+        // gate, five-section alignment or immutable audit. The trusted unread
+        // migration marker is likewise server-owned.
+        allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && settingId != 'unread_cursor_v1_migration'
+          && (settingId != 'feature_flags'
+            || !request.resource.data.keys().hasAny(boutiqueAccessControlFields()));
+        allow update: if isAdmin(clubId) && hasValidSession(clubId)
+          && settingId != 'unread_cursor_v1_migration'
+          && (settingId != 'feature_flags'
+            || !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(boutiqueAccessControlFields()));
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId)
+          && settingId != 'feature_flags'
+          && settingId != 'unread_cursor_v1_migration';
       }
 
       // Email templates - admin management only
@@ -1221,10 +1249,12 @@ service cloud.firestore {
         }
       }
 
-      // Audit logs - admin can read, members can create
+      // Boutique access audits are server-only. Even an admin client cannot
+      // forge the actor or detach the record from its settings transaction.
       match /audit_logs/{auditId} {
         allow read: if isAdmin(clubId) && hasValidSession(clubId);
-        allow create: if isMember(clubId);
+        allow create: if isMember(clubId)
+          && !isBoutiqueAccessAudit(request.resource.data);
         allow update, delete: if false; // Audit logs are immutable
       }
 

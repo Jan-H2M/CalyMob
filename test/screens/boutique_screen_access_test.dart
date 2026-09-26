@@ -129,6 +129,14 @@ void main() {
       );
       expectSections(visible: true);
 
+      // The operational Gonflage responsibility remains case-insensitive.
+      await memberRef.update({
+        'clubStatuten': ['gOnFlAgE'],
+      });
+      await pumpAccessEvent(tester);
+      expect(find.text('Prêts de matériel'), findsOneWidget);
+      expect(find.text('Mon matériel emprunté'), findsNothing);
+
       // Disabling the module invalidates an already open direct route.
       await flagsRef.update({
         'boutiqueEnabled': false,

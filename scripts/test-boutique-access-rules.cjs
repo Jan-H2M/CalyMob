@@ -8,7 +8,13 @@ const {
   assertSucceeds,
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc } = require('firebase/firestore');
+const {
+  deleteDoc,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+} = require('firebase/firestore');
 
 const clubId = 'calypso';
 const flagsPath = `clubs/${clubId}/settings/feature_flags`;
@@ -77,6 +83,10 @@ async function main() {
         name: 'Produit publié',
         visibility: 'published',
       });
+      await setDoc(
+        doc(db, `clubs/${clubId}/settings/unread_cursor_v1_migration`),
+        { state: 'server-owned' },
+      );
       for (const [memberId, data] of Object.entries(members)) {
         await setDoc(doc(db, memberPath(memberId)), data);
         await setDoc(doc(db, orderPath(memberId)), {
@@ -150,8 +160,98 @@ async function main() {
     await assertSucceeds(readProduct('rb-active'));
     await assertFails(readProduct('ordinary-active'));
 
+    const adminDb = memberDb('admin-backoffice');
+    const ordinaryDb = memberDb('ordinary-active');
+
+    // Protected Boutique fields may only be written by the transactional
+    // callable. Direct updates fail for ordinary and admin clients, including
+    // a nested section update; unrelated admin flags remain editable.
+    const protectedUpdates = [
+      { boutiqueEnabled: false },
+      { boutiqueMobileEnabled: false },
+      { boutiqueAdminOnly: true },
+      { boutiqueAccess: 'tous' },
+      { boutiqueSections: { produits: 'tous' } },
+      { 'boutiqueSections.produits': 'tous' },
+    ];
+    for (const update of protectedUpdates) {
+      await assertFails(updateDoc(doc(ordinaryDb, flagsPath), update));
+      await assertFails(updateDoc(doc(adminDb, flagsPath), update));
+    }
+    await assertFails(deleteDoc(doc(ordinaryDb, flagsPath)));
+    await assertFails(deleteDoc(doc(adminDb, flagsPath)));
+    await assertSucceeds(
+      updateDoc(doc(adminDb, flagsPath), { carnetFormationEnabled: false }),
+    );
+
+    // A missing feature_flags document still cannot be client-created with
+    // any protected field, for either role. Restore/delete here is Admin SDK
+    // test setup and bypasses the client rules under test.
+    await env.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), flagsPath));
+    });
+    const protectedCreates = [
+      { boutiqueEnabled: true },
+      { boutiqueMobileEnabled: true },
+      { boutiqueAdminOnly: true },
+      { boutiqueAccess: 'tous' },
+      { boutiqueSections: { produits: 'tous' } },
+    ];
+    for (const protectedData of protectedCreates) {
+      const payload = {
+        carnetFormationEnabled: true,
+        ...protectedData,
+      };
+      await assertFails(setDoc(doc(ordinaryDb, flagsPath), payload));
+      await assertFails(setDoc(doc(adminDb, flagsPath), payload));
+    }
+    await assertSucceeds(
+      setDoc(doc(adminDb, flagsPath), { carnetFormationEnabled: true }),
+    );
+
+    // The migration marker keeps its member read policy but is server-owned.
+    const markerPath = `clubs/${clubId}/settings/unread_cursor_v1_migration`;
+    await assertSucceeds(getDoc(doc(ordinaryDb, markerPath)));
+    await assertSucceeds(getDoc(doc(adminDb, markerPath)));
+    await assertFails(setDoc(doc(ordinaryDb, markerPath), { state: 'forged' }));
+    await assertFails(setDoc(doc(adminDb, markerPath), { state: 'forged' }));
+    await assertFails(deleteDoc(doc(ordinaryDb, markerPath)));
+    await assertFails(deleteDoc(doc(adminDb, markerPath)));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), markerPath));
+    });
+    await assertFails(setDoc(doc(ordinaryDb, markerPath), { state: 'forged' }));
+    await assertFails(setDoc(doc(adminDb, markerPath), { state: 'forged' }));
+
+    // Reserved Boutique access audits are callable-only; ordinary audit
+    // entries remain available and every server-created audit is immutable.
+    const auditPath = `clubs/${clubId}/audit_logs/access-change-1`;
+    const forgedAudit = {
+      action: 'boutique.access.preparation_enabled',
+      userId: 'admin-backoffice',
+      timestamp: new Date(),
+    };
+    await assertFails(setDoc(doc(ordinaryDb, `${auditPath}-ordinary`), {
+      ...forgedAudit,
+      action: 'boutique.access.opened_all',
+      userId: 'ordinary-active',
+    }));
+    await assertFails(setDoc(doc(adminDb, auditPath), forgedAudit));
+    await assertSucceeds(
+      setDoc(doc(ordinaryDb, `clubs/${clubId}/audit_logs/ordinary-entry`), {
+        action: 'member_updated',
+        userId: 'ordinary-active',
+        timestamp: new Date(),
+      }),
+    );
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), auditPath), forgedAudit);
+    });
+    await assertFails(updateDoc(doc(adminDb, auditPath), { action: 'changed' }));
+    await assertFails(deleteDoc(doc(adminDb, auditPath)));
+
     console.log(
-      'PASS Boutique rules: preparation/online, active status, legacy flag removal, owner orders and admin backoffice verified',
+      'PASS Boutique rules: preparation/online, callable-only access fields, unread marker, reserved audit, owner orders and admin backoffice verified',
     );
   } finally {
     await env.cleanup();

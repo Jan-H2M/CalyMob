@@ -5,10 +5,10 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/boutique/boutique_product.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -33,87 +33,32 @@ class BoutiqueScreen extends StatefulWidget {
 }
 
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
-  late BoutiqueAccessService _accessService;
-  String? _accessStreamKey;
-  Stream<BoutiqueAccessState>? _accessStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _accessService = widget.accessService ?? BoutiqueAccessService();
-  }
-
-  @override
-  void didUpdateWidget(covariant BoutiqueScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.accessService != widget.accessService) {
-      _accessService = widget.accessService ?? BoutiqueAccessService();
-      _accessStreamKey = null;
-      _accessStream = null;
-    }
-  }
-
-  Stream<BoutiqueAccessState>? _watchAccess(String? userId) {
-    if (userId == null) {
-      _accessStreamKey = null;
-      _accessStream = null;
-      return null;
-    }
-
-    final streamKey = '${widget.clubId}/$userId';
-    if (_accessStreamKey != streamKey) {
-      _accessStreamKey = streamKey;
-      _accessStream = _accessService.watchBoutiqueAccess(
-        clubId: widget.clubId,
-        userId: userId,
-      );
-    }
-    return _accessStream;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final userId =
-        widget.userId ?? context.watch<AuthProvider>().currentUser?.uid;
+    return BoutiqueAccessGuard(
+      accessService: widget.accessService,
+      clubId: widget.clubId,
+      userId: widget.userId,
+      builder: (context, access) {
+        bool showSection(String key) => access.canAccessSection(key);
+        final showMaterialLoans = showSection('pretsMateriel');
+        final canOpenReturns = _canOpenMaterialReturns(access.member);
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text(
-          'Boutique',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: OceanGradientBackground(
-        creatures: CreatureSet.fishAndBubbles,
-        child: SafeArea(
-          child: StreamBuilder<BoutiqueAccessState>(
-            key: ValueKey('${widget.clubId}/$userId'),
-            stream: _watchAccess(userId),
-            builder: (context, snapshot) {
-              if (userId == null || snapshot.hasError) {
-                return const _BoutiqueAccessUnavailable();
-              }
-              if (!snapshot.hasData) {
-                return const Center(
-                  child: CircularProgressIndicator(
-                    key: Key('boutique-access-loading'),
-                  ),
-                );
-              }
-
-              final access = snapshot.requireData;
-              if (!access.canAccess) {
-                return const _BoutiqueAccessUnavailable();
-              }
-
-              bool showSection(String key) => access.canAccessSection(key);
-              final showMaterialLoans = showSection('pretsMateriel');
-              final canOpenReturns = _canOpenMaterialReturns(access.member);
-              return ListView(
+        return Scaffold(
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            title: const Text(
+              'Boutique',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: OceanGradientBackground(
+            creatures: CreatureSet.fishAndBubbles,
+            child: SafeArea(
+              child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                 children: [
                   Text(
@@ -133,7 +78,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'produits',
                             builder: (_) => const BoutiqueProductsScreen(),
                           ),
                         );
@@ -149,7 +96,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'cotisation',
                             builder: (_) => const MaCotisationScreen(),
                           ),
                         );
@@ -169,7 +118,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'pretsMateriel',
                             builder: (_) => const MaterialReturnsScreen(),
                           ),
                         );
@@ -190,7 +141,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                           badge: cart.isEmpty ? null : '${cart.itemCount}',
                           onTap: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(
+                              boutiqueAccessGuardedRoute(
+                                sourceContext: context,
+                                requiredSection: 'panier',
                                 builder: (_) => const BoutiqueCartScreen(),
                               ),
                             );
@@ -208,47 +161,29 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                           'Suivre les commandes et retrouver les paiements.',
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'commandes',
                             builder: (_) => const MesCommandesScreen(),
                           ),
                         );
                       },
                     ),
                 ],
-              );
-            },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   bool _canOpenMaterialReturns(Map<String, dynamic>? member) {
     final statuten = member?['clubStatuten'];
     return statuten is Iterable &&
-        statuten.any((value) => value == 'gonflage' || value == 'Gonflage');
-  }
-}
-
-class _BoutiqueAccessUnavailable extends StatelessWidget {
-  const _BoutiqueAccessUnavailable();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      key: const Key('boutique-access-unavailable'),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'La Boutique n’est pas disponible pour le moment.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.9),
-            fontSize: 16,
-          ),
-        ),
-      ),
-    );
+        statuten.any(
+          (value) => value.toString().trim().toLowerCase() == 'gonflage',
+        );
   }
 }
 
@@ -285,7 +220,9 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                   tooltip: 'Panier',
                   icon: const Icon(Icons.shopping_cart_outlined),
                   onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
+                    boutiqueAccessGuardedRoute(
+                      sourceContext: context,
+                      requiredSection: 'panier',
                       builder: (_) => const BoutiqueCartScreen(),
                     ),
                   ),
@@ -380,7 +317,9 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                                 product: product,
                                 onTap: () {
                                   Navigator.of(context).push(
-                                    MaterialPageRoute(
+                                    boutiqueAccessGuardedRoute(
+                                      sourceContext: context,
+                                      requiredSection: 'produits',
                                       builder: (_) =>
                                           BoutiqueProductDetailScreen(
                                         product: product,

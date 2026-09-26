@@ -7,6 +7,7 @@ import '../../config/firebase_config.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_checkout_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -127,7 +128,9 @@ class BoutiqueCartScreen extends StatelessWidget {
                             child: FilledButton.icon(
                               onPressed: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(
+                                  boutiqueAccessGuardedRoute(
+                                    sourceContext: context,
+                                    requiredSection: 'panier',
                                     builder: (_) =>
                                         const BoutiqueCheckoutScreen(),
                                   ),
@@ -175,7 +178,9 @@ class BoutiqueCartScreen extends StatelessWidget {
       return;
     }
     await Navigator.of(context).push(
-      MaterialPageRoute(
+      boutiqueAccessGuardedRoute(
+        sourceContext: context,
+        requiredSection: 'produits',
         builder: (_) => BoutiqueProductDetailScreen(
           product: product!,
           editingItem: item,
