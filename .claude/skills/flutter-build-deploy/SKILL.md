@@ -58,7 +58,7 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 
 ### Android Workflow (fully automated)
 1. **Environment Check** - Verify Android SDK, Java, Flutter are ready
-2. **Version Bump** (optional) - Increment version in pubspec.yaml + sync to Firestore
+2. **Version Bump** (optional) - Increment version in `pubspec.yaml`, review and commit it
 3. **Build AAB** - Run `flutter build appbundle --release`
 4. **Upload to Play Store** - `fastlane supply` uploads AAB via Google Play Developer API
 5. **Submit for Review** - Browser automation in Play Console: Edit draft → Next → Save → Send for review
@@ -99,6 +99,8 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 - Google Play manages app signing ("Releases signed by Google Play")
 - The upload keystore and one-line password file live outside every repository
   with mode `0600`; never restore `key.properties` or a keystore into the checkout.
+- `android/local.properties` is generated machine state and must remain
+  untracked and ignored so Flutter cannot dirty release provenance.
 - Before a release build, export only `CALYMOB_UPLOAD_STORE_FILE`,
   `CALYMOB_UPLOAD_PASSWORD_FILE`, and `CALYMOB_UPLOAD_KEY_ALIAS`. The password
   itself must never be placed in an environment variable, command, log, Gradle
@@ -157,7 +159,8 @@ If `flutter doctor` shows issues, resolve them before proceeding. Common fixes:
 
 Ask the user if they want to bump the version. If yes, ask which type (patch/minor/major).
 
-The project already has a bump script that handles both pubspec.yaml AND Firestore sync:
+The project has a bump script for `pubspec.yaml`; it deliberately does not
+publish the Firestore app version:
 
 ```bash
 cd /Users/jan/Dev/GitHub/Calypso/CalyMob
@@ -168,7 +171,11 @@ This script:
 - Reads current version from `pubspec.yaml` (format: `MAJOR.MINOR.PATCH+BUILD`)
 - Increments the specified part + always increments build number
 - Updates `pubspec.yaml`
-- Syncs version to Firestore (for CalyCompta maintenance page)
+- Leaves Firestore publication for Jan's separate post-store action
+
+Review and commit the version change before building. Release builds must start
+from a completely clean checkout; never describe an uncommitted bump as an
+artifact built from the current commit.
 
 If the user doesn't want to bump, read the current version:
 ```bash
@@ -207,6 +214,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
+require_clean_checkout() {
+  local checkout_status
+  if ! checkout_status=$(git status --porcelain=v1 --untracked-files=all); then
+    echo "Unable to verify Git checkout cleanliness." >&2
+    return 1
+  fi
+  if [ -n "$checkout_status" ]; then
+    echo "Release build requires a completely clean Git checkout." >&2
+    exit 1
+  fi
+}
+
+require_source_unchanged() {
+  local phase="$1"
+  local current_commit current_tree checkout_status
+  if ! current_commit=$(git rev-parse --verify HEAD) \
+    || ! current_tree=$(git rev-parse --verify 'HEAD^{tree}'); then
+    echo "Unable to verify Git source during $phase." >&2
+    return 1
+  fi
+  if [ "$current_commit" != "$SOURCE_COMMIT" ] || [ "$current_tree" != "$SOURCE_TREE" ]; then
+    echo "Git HEAD/tree changed during $phase." >&2
+    return 1
+  fi
+  if ! checkout_status=$(git status --porcelain=v1 --untracked-files=all); then
+    echo "Unable to verify Git checkout during $phase." >&2
+    return 1
+  fi
+  if [ -n "$checkout_status" ]; then
+    echo "Git checkout changed during $phase." >&2
+    return 1
+  fi
+}
+
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
@@ -216,7 +257,9 @@ export CALYMOB_UPLOAD_PASSWORD_FILE="$HOME/.private_keys/android-upload-2026-09-
 export CALYMOB_UPLOAD_KEY_ALIAS="upload-2026-09-26"
 
 cd "$PROJECT_ROOT"
+require_clean_checkout
 SOURCE_COMMIT=$(git rev-parse --verify HEAD)
+SOURCE_TREE=$(git rev-parse --verify 'HEAD^{tree}')
 VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
 if [[ ! "$VERSION_LINE" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)$ ]]; then
   echo "Invalid pubspec version: $VERSION_LINE" >&2
@@ -258,14 +301,11 @@ if [ "$ARTIFACT_VERSION" != "$EXPECTED_VERSION" ] || [ "$ARTIFACT_BUILD" != "$EX
   echo "AAB version/build does not match pubspec.yaml." >&2
   exit 1
 fi
-if [ "$(git rev-parse --verify HEAD)" != "$SOURCE_COMMIT" ]; then
-  echo "Git source commit changed during the build." >&2
-  exit 1
-fi
 if [ "$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)" != "$VERSION_LINE" ]; then
   echo "pubspec version changed during the build." >&2
   exit 1
 fi
+require_source_unchanged "the release build"
 
 AAB_SHA256=$(shasum -a 256 "$AAB_PATH" | awk '{print $1}')
 if [[ ! "$AAB_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
@@ -273,8 +313,8 @@ if [[ ! "$AAB_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 AAB_MTIME=$(stat -f '%m' "$AAB_PATH")
-printf 'SOURCE_COMMIT=%s\nVERSION=%s\nBUILD=%s\nAAB_MTIME_EPOCH=%s\nAAB_SHA256=%s\n' \
-  "$SOURCE_COMMIT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$AAB_MTIME" "$AAB_SHA256" >> "$LOG_PATH"
+printf 'SOURCE_COMMIT=%s\nSOURCE_TREE=%s\nVERSION=%s\nBUILD=%s\nAAB_MTIME_EPOCH=%s\nAAB_SHA256=%s\n' \
+  "$SOURCE_COMMIT" "$SOURCE_TREE" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$AAB_MTIME" "$AAB_SHA256" >> "$LOG_PATH"
 SCRIPT
 chmod +x /tmp/build_calymob.sh
 ```
@@ -292,10 +332,11 @@ Monitor progress by checking the log:
 tail -20 /tmp/build_calymob.log 2>/dev/null
 ```
 
-Only `EXIT_CODE=0` together with matching `SOURCE_COMMIT`, `VERSION`, `BUILD`,
-`AAB_MTIME_EPOCH`, and `AAB_SHA256` lines is success. A Flutter or `tee` failure
-is propagated and removes the release AAB, so a stale artifact cannot pass. The
-AAB output will be at:
+Only `EXIT_CODE=0` together with matching `SOURCE_COMMIT`, `SOURCE_TREE`,
+`VERSION`, `BUILD`, `AAB_MTIME_EPOCH`, and `AAB_SHA256` lines is success. The
+checkout must have been completely clean before the build and remain clean of
+nonignored drift afterwards. A Flutter or `tee` failure removes the
+release AAB, so a stale artifact cannot pass. The AAB output will be at:
 ```
 /Users/jan/Dev/GitHub/Calypso/CalyMob/build/app/outputs/bundle/release/app-release.aab
 ```
@@ -313,6 +354,13 @@ tail -10 /tmp/build_calymob.log
 Fastlane is configured in `CalyMob/android/fastlane/` with:
 - `Appfile` - package name + JSON key path
 - `Fastfile` - upload lanes (deploy, internal, validate)
+
+The upload lane runs the fail-closed store gate. It requires a clean checkout
+and external approval/artifact evidence bound to both the exact Git commit and
+its tree; a build log alone never authorizes an upload.
+`CALYMOB_RELEASE_MANIFEST` must use schema version 2 and carry both
+`sourceCommit` and `sourceTree` on the manifest, approval, reviews, test
+evidence, and platform artifact record.
 
 ### Option A: Quick upload (single command)
 
@@ -495,7 +543,8 @@ This uses the JDK bundled with Android Studio. Do NOT try to install a separate 
 If fastlane fails with "Google Api Error: forbidden":
 1. Verify service account exists: Check Google Cloud Console > IAM > Service Accounts
 2. Verify Play Console access: Check Play Console > Users and permissions
-3. Verify JSON key: `cat ~/.private_keys/google-play-deploy.json | head -5`
+3. Verify the JSON key without printing it:
+   `node -e 'JSON.parse(require("fs").readFileSync(process.env.HOME + "/.private_keys/google-play-deploy.json", "utf8")); console.log("key file is readable JSON")'`
 4. Re-validate: `cd android && fastlane validate`
 
 ### Fastlane Version Code Conflict
@@ -559,12 +608,48 @@ cleanup() {
 }
 trap cleanup EXIT
 
+require_clean_checkout() {
+  local checkout_status
+  if ! checkout_status=$(git status --porcelain=v1 --untracked-files=all); then
+    echo "Unable to verify Git checkout cleanliness." >&2
+    return 1
+  fi
+  if [ -n "$checkout_status" ]; then
+    echo "Release build requires a completely clean Git checkout." >&2
+    exit 1
+  fi
+}
+
+require_source_unchanged() {
+  local phase="$1"
+  local current_commit current_tree checkout_status
+  if ! current_commit=$(git rev-parse --verify HEAD) \
+    || ! current_tree=$(git rev-parse --verify 'HEAD^{tree}'); then
+    echo "Unable to verify Git source during $phase." >&2
+    return 1
+  fi
+  if [ "$current_commit" != "$SOURCE_COMMIT" ] || [ "$current_tree" != "$SOURCE_TREE" ]; then
+    echo "Git HEAD/tree changed during $phase." >&2
+    return 1
+  fi
+  if ! checkout_status=$(git status --porcelain=v1 --untracked-files=all); then
+    echo "Unable to verify Git checkout during $phase." >&2
+    return 1
+  fi
+  if [ -n "$checkout_status" ]; then
+    echo "Git checkout changed during $phase." >&2
+    return 1
+  fi
+}
+
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="/Users/jan/flutter/bin:$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
 
 cd "$PROJECT_ROOT"
+require_clean_checkout
 SOURCE_COMMIT=$(git rev-parse --verify HEAD)
+SOURCE_TREE=$(git rev-parse --verify 'HEAD^{tree}')
 VERSION_LINE=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
 if [[ ! "$VERSION_LINE" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)$ ]]; then
   echo "Invalid pubspec version: $VERSION_LINE" >&2
@@ -582,6 +667,7 @@ flutter pub get 2>&1
 echo "=== Pod Install ==="
 cd ios && pod install --repo-update 2>&1
 cd ..
+require_source_unchanged "dependency setup"
 
 echo "=== Flutter Build IPA ==="
 rm -f -- "$IPA_PATH"
@@ -614,22 +700,19 @@ if [ "$ARTIFACT_VERSION" != "$EXPECTED_VERSION" ] || [ "$ARTIFACT_BUILD" != "$EX
   echo "IPA version/build does not match pubspec.yaml." >&2
   exit 1
 fi
-if [ "$(git rev-parse --verify HEAD)" != "$SOURCE_COMMIT" ]; then
-  echo "Git source commit changed during the build." >&2
-  exit 1
-fi
 if [ "$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)" != "$VERSION_LINE" ]; then
   echo "pubspec version changed during the build." >&2
   exit 1
 fi
+require_source_unchanged "the release build"
 IPA_SHA256=$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')
 if [[ ! "$IPA_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not calculate the IPA SHA-256." >&2
   exit 1
 fi
 IPA_MTIME=$(stat -f '%m' "$IPA_PATH")
-printf 'SOURCE_COMMIT=%s\nVERSION=%s\nBUILD=%s\nIPA_MTIME_EPOCH=%s\nIPA_SHA256=%s\n' \
-  "$SOURCE_COMMIT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_MTIME" "$IPA_SHA256" >> "$LOG_PATH"
+printf 'SOURCE_COMMIT=%s\nSOURCE_TREE=%s\nVERSION=%s\nBUILD=%s\nIPA_MTIME_EPOCH=%s\nIPA_SHA256=%s\n' \
+  "$SOURCE_COMMIT" "$SOURCE_TREE" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_MTIME" "$IPA_SHA256" >> "$LOG_PATH"
 SCRIPT
 chmod +x /tmp/build_ios.sh
 ```
@@ -647,8 +730,8 @@ Monitor progress:
 tail -20 /tmp/build_ios.log 2>/dev/null
 ```
 
-Only final `EXIT_CODE=0` with matching source/version/build, fresh mtime and
-SHA-256 evidence is success. Output files:
+Only final `EXIT_CODE=0` with matching clean `SOURCE_COMMIT`/`SOURCE_TREE`,
+version/build, fresh mtime and SHA-256 evidence is success. Output files:
 - **Archive**: `build/ios/archive/Runner.xcarchive` (~556MB)
 - **IPA**: `build/ios/ipa/calymob.ipa` (~62-67MB)
 
@@ -788,7 +871,8 @@ If the version doesn't exist yet:
 These are already saved in App Store Connect:
 - **Sign-in required**: Yes
 - **Username**: demo.reviewer@calypsodc.be
-- **Password**: CalyMob2025!
+- **Password**: use the existing saved App Store Connect review credential;
+  never copy it into Git, logs, skills, or chat
 - **Contact**: Jan Andriessens, +32476441837, jan@h2m.ai
 
 ## iOS Important Notes
@@ -843,15 +927,17 @@ For a complete deploy to both stores, run these steps in order:
 cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 ./scripts/bump_version.sh patch
 
-# 2. Build Android AAB (in Terminal via AppleScript, wait for completion)
-# 3. Upload Android to Play Store
+# 2. Review and commit the bump; verify `git status --porcelain` is empty
+
+# 3. Build Android AAB (in Terminal via AppleScript, wait for completion)
+# 4. Upload Android to Play Store
 ./scripts/run_fastlane.sh android deploy
 
-# 4. Build iOS IPA (in Terminal via AppleScript, wait for completion)
-# 5. Upload iOS to App Store Connect
+# 5. Build iOS IPA (in Terminal via AppleScript, wait for completion)
+# 6. Upload iOS to App Store Connect
 ./scripts/run_fastlane.sh ios release
 
-# 6. Submit iOS for review (browser automation in App Store Connect)
+# 7. Submit iOS for review (browser automation in App Store Connect)
 ```
 
 **Android**: Build, upload and review submission are automated via Fastlane.

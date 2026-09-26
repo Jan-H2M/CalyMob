@@ -56,7 +56,7 @@ ios/.symlinks/
 # Android
 android/.gradle/
 android/.kotlin/
-android/local.properties
+/android/local.properties
 android/app/src/debug/
 android/app/src/profile/
 
