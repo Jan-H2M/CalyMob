@@ -334,12 +334,22 @@ async function main() {
 
     await assertSucceeds(setDoc(
       doc(adminDb, `${clubPath}/announcements/announcement-legacy-optional`),
-      {title: 'legacy'},
+      {title: 'legacy', sender_id: 'member-admin'},
     ));
     await assertSucceeds(setDoc(
       doc(adminDb, `${clubPath}/announcements/announcement-modern-optional`),
       {
         title: 'modern',
+        sender_id: 'member-admin',
+        unread_created_at: serverTimestamp(),
+        unread_activity_at: serverTimestamp(),
+      },
+    ));
+    await assertFails(setDoc(
+      doc(adminDb, `${clubPath}/announcements/announcement-forged-sender`),
+      {
+        title: 'forged sender',
+        sender_id: 'member-a',
         unread_created_at: serverTimestamp(),
         unread_activity_at: serverTimestamp(),
       },
@@ -409,12 +419,13 @@ async function main() {
     ));
     await assertFails(setDoc(
       doc(adminDb, `${clubPath}/announcements/announcement-missing-required`),
-      {title: 'missing'},
+      {title: 'missing', sender_id: 'member-admin'},
     ));
     await assertSucceeds(setDoc(
       doc(adminDb, `${clubPath}/announcements/announcement-modern-required`),
       {
         title: 'modern',
+        sender_id: 'member-admin',
         unread_created_at: serverTimestamp(),
         unread_activity_at: serverTimestamp(),
       },

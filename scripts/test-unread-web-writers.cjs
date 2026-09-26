@@ -28,3 +28,17 @@ test('all CalyCompta event and announcement creates send canonical server timest
     2,
   );
 });
+
+test('CalyCompta announcement creates use the authenticated Firebase uid as sender', () => {
+  const announcementSource = source('src/services/annonceService.ts');
+  const announcementPageSource = source('src/pages/PushNotificationsPage.tsx');
+
+  assert.match(
+    announcementSource,
+    /createAnnonce\([\s\S]*?annonce:\s*Omit<Annonce,\s*'id'\s*\|\s*'created_at'>/,
+  );
+  assert.match(
+    announcementPageSource,
+    /createAnnonce\(clubId,\s*\{[\s\S]*?sender_id:\s*user\.uid,/,
+  );
+});

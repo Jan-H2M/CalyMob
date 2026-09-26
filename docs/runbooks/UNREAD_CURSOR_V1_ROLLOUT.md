@@ -192,6 +192,10 @@ rules file; do not copy the whole mobile mirror:
 - timestamp creates remain optional unless the server-only timestamp marker is
   `enforcing|complete` and `writer_contract=required`; supplied canonical
   timestamps must always equal `request.time`, and clients cannot update them;
+- announcement root creates require
+  `request.resource.data.sender_id == request.auth.uid`; retain this exact
+  binding in the canonical CalyCompta port because sender reconciliation uses
+  that identity to advance the author's server-owned read-state cursor;
 - session chat uses server-derived `chat_acl` per concrete accueil/encadrant/
   level assignment and clients cannot edit that ACL;
 - Bureau is BS-only with no admin/CA bypass; team channel id/type and exact
@@ -285,7 +289,14 @@ Rollback is fail-safe and ordered:
      --backup-dir <backup-dir> --confirm-production <project>
    ```
 
-5. restore session ACL only with the exact command in step 4;
+5. restore session ACL only with the exact restore command from rollout §4:
+
+   ```sh
+   node scripts/backfill-session-chat-acl.cjs --restore \
+     --manifest <exact-manifest-path> --project <project> --club <club> \
+     --backup-dir <backup-dir> --confirm-production <project>
+   ```
+
 6. roll back Functions/web code last, after rules accept the older writers.
 
 Never lower a real user acknowledgement, manually edit a migration marker, or

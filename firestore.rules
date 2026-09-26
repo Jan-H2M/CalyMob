@@ -1557,8 +1557,11 @@ service cloud.firestore {
         // Read: All authenticated club members
         allow read: if isAuthenticated() &&
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-        // Create: Admin/Superadmin with valid session
+        // Create: Admin/Superadmin with valid session. Bind the sender to the
+        // authenticated writer because server-side unread reconciliation uses
+        // sender_id to acknowledge the author's own announcement.
         allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && request.resource.data.sender_id == request.auth.uid
           && hasValidUnreadTimestamp(clubId, request.resource.data)
           && hasValidAnnouncementActivity(clubId, request.resource.data);
         // Read state/activity is server-maintained; do not widen announcement
