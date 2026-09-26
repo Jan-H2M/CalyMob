@@ -314,24 +314,26 @@ De `codemagic.yaml` is al geconfigureerd. Activeer de `ios-manual-build` workflo
 
 ### 2.4 iOS App Uploaden
 
-#### Optie 1: Via Xcode
-1. Open Xcode
-2. **Window** > **Organizer**
-3. Selecteer je archive
-4. **Distribute App** > **App Store Connect** > **Upload**
+Gebruik voor CalyMob-productiereleases uitsluitend de repository-Fastlane lane.
+Die voert eerst de fail-closed storeverificatie uit en gebruikt daarna de enige
+gevalideerde App Store Connect-credential uit `ios/fastlane/Fastfile`.
 
-#### Optie 2: Via Transporter App
-1. Download Transporter uit Mac App Store
-2. Sleep de .ipa file erin
-3. Klik **Deliver**
-
-#### Optie 3: Via xcrun (command line)
 ```bash
-xcrun altool --upload-app --type ios \
-  --file build/ios/ipa/CalyMob.ipa \
-  --apiKey YOUR_API_KEY \
-  --apiIssuer YOUR_ISSUER_ID
+export CALYMOB_RELEASE_MANIFEST="$HOME/.private_keys/calymob-release-<version>-<build>.json"
+./scripts/run_fastlane.sh ios deploy   # TestFlight
+# of, voor de bewerkbare App Store-versie:
+./scripts/run_fastlane.sh ios release
 ```
+
+Het externe manifest moet schema v2 zijn, `draft: false` bevatten en door
+`scripts/verify_store_release.cjs` aan de exacte commit, tree, artifacthash,
+expliciete goedkeuring, onafhankelijke reviews en echte testbewijzen zijn
+gebonden. Maak eerst een fail-closed ontwerp met
+`scripts/scaffold_release_manifest.cjs`; vul geen goedkeuring of bewijs in dat
+niet werkelijk en toewijsbaar bestaat.
+
+Xcode Organizer, Transporter en rechtstreekse `xcrun altool`-uploads omzeilen
+deze gate en zijn daarom niet toegestaan voor de CalyMob-productieworkflow.
 
 ---
 
@@ -1724,9 +1726,10 @@ feature is for actual club activity fees only.
 5. [ ] Alle metadata invullen (kopieer uit sectie 7)
 6. [ ] App Privacy labels invullen (sectie 7.8)
 7. [ ] Build maken: `flutter build ipa --release`
-8. [ ] Upload via Xcode/Transporter
-9. [ ] TestFlight: Test met demo account
-10. [ ] Submit for Review
+8. [ ] Extern schema-v2 manifest met echte goedkeuring/review/testbewijzen voltooien
+9. [ ] Upload via de geverifieerde Fastlane-lane (`./scripts/run_fastlane.sh ios deploy`)
+10. [ ] TestFlight: Test met demo account
+11. [ ] Submit for Review via de geverifieerde Fastlane-lane
 
 ### Google Play Store (in volgorde)
 

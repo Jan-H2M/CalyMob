@@ -8,7 +8,7 @@ function fixture(platform = 'ios') {
   const hash = 'b'.repeat(64);
   const context = { platform, action: 'upload', head, tree, clean: true, version: '1.21.0', build: '204',
     artifactPath: ARTIFACTS[platform], artifactHash: hash, notes: 'Texte approuvé.' };
-  const manifest = { schemaVersion: 2, sourceCommit: head, sourceTree: tree,
+  const manifest = { schemaVersion: 2, draft: false, sourceCommit: head, sourceTree: tree,
     version: context.version, build: context.build,
     platforms: [platform], allowedActions: { [platform]: ['upload', 'submit', 'notes'] },
     notes: { 'fr-FR': context.notes },

@@ -18,13 +18,16 @@ is workflow lead; independent Codex/Claude review must identify its exact commit
 After approval, for example:
 ```bash
 cd CalyMob
-./scripts/build_release.sh --bump patch
+./scripts/bump_version.sh patch
+# Review and commit the version bump; the checkout must then be completely clean.
+./scripts/build_release.sh
 ```
 
-This automatically:
-1. ✅ Bumps version in pubspec.yaml (1.0.22+83 → 1.0.23+84)
-2. Runs static analysis, Flutter tests and Cloud Function tests (fail-closed).
-3. Builds APK with version in filename: calymob-1.0.23-build84.apk
+The bump is deliberately separate from the release build. The build script
+runs static analysis, Flutter tests and Cloud Function tests fail-closed, then
+builds the APK with the committed version in its filename. It refuses inline
+`--bump` arguments so an uncommitted version can never be presented as an
+exact-commit artifact.
 
 Never update Firestore `settings/app_version` automatically. Jan publishes it
 manually after both stores are available. Building is not uploading/submitting.
@@ -48,11 +51,8 @@ flutter analyze                      # Run static analysis
 
 # Release APK/AAB met versienummer (GEBRUIK DEZE SCRIPTS!)
 ./scripts/build_release.sh           # Bouw APK met versienummer in bestandsnaam
-./scripts/build_release.sh --bump patch  # Verhoog versie + bouw APK (patch: 1.0.10→1.0.11)
-./scripts/build_release.sh --bump minor  # Minor bump (1.0.10→1.1.0)
-./scripts/build_release.sh --bump major  # Major bump (1.0.10→2.0.0)
 ./scripts/build_release_aab.sh       # Bouw AAB (Android App Bundle) voor Play Store
-./scripts/bump_version.sh patch      # Alleen versie verhogen zonder te bouwen
+./scripts/bump_version.sh patch      # Versie verhogen; daarna reviewen en committen
 
 # Versie synchronisatie
 # bump_version.sh update alleen de versie in:
