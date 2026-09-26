@@ -2,11 +2,21 @@ import '../models/team_channel.dart';
 import 'permission_helper.dart';
 
 class ClubRoleUtils {
+  static String normalizeRole(Object? rawRole) =>
+      rawRole?.toString().trim().toLowerCase() ?? '';
+
+  static bool hasGonflageRole(Iterable<Object?> roles) {
+    return roles.any((rawRole) {
+      final role = normalizeRole(rawRole);
+      return role == 'g' || role == 'gonflage';
+    });
+  }
+
   static Set<String> normalizeRoles(List<String> roles) {
     final normalized = <String>{};
 
     for (final rawRole in roles) {
-      final role = rawRole.trim().toLowerCase();
+      final role = normalizeRole(rawRole);
       if (role.isEmpty) continue;
 
       if (role == 'm' || role == 'membre' || role == 'member') {

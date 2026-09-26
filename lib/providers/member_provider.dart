@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/member_name.dart';
+import '../utils/club_role_utils.dart';
 
 /// Provider voor member data caching
 /// Laadt en cached member data na login voor snelle toegang
@@ -100,8 +101,7 @@ class MemberProvider with ChangeNotifier {
       hasClubFunction('accueil') || hasClubFunction('Accueil');
 
   /// Check if user is gonflage
-  bool get isGonflage =>
-      hasClubFunction('gonflage') || hasClubFunction('Gonflage');
+  bool get isGonflage => ClubRoleUtils.hasGonflageRole(clubStatuten);
 
   /// Check if user can approve expenses (validateur, admin, or superadmin)
   bool get canApproveExpenses {

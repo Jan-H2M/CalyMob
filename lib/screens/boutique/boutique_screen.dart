@@ -8,6 +8,7 @@ import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../utils/club_role_utils.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
@@ -19,13 +20,14 @@ import '../profile/ma_cotisation_screen.dart';
 class BoutiqueScreen extends StatefulWidget {
   final BoutiqueAccessService? accessService;
   final String clubId;
-  final String? userId;
+  @visibleForTesting
+  final String? testUserIdOverride;
 
   const BoutiqueScreen({
     super.key,
     this.accessService,
     this.clubId = FirebaseConfig.defaultClubId,
-    this.userId,
+    this.testUserIdOverride,
   });
 
   @override
@@ -38,7 +40,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
     return BoutiqueAccessGuard(
       accessService: widget.accessService,
       clubId: widget.clubId,
-      userId: widget.userId,
+      testUserIdOverride: widget.testUserIdOverride,
       builder: (context, access) {
         bool showSection(String key) => access.canAccessSection(key);
         final showMaterialLoans = showSection('pretsMateriel');
@@ -180,10 +182,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
 
   bool _canOpenMaterialReturns(Map<String, dynamic>? member) {
     final statuten = member?['clubStatuten'];
-    return statuten is Iterable &&
-        statuten.any(
-          (value) => value.toString().trim().toLowerCase() == 'gonflage',
-        );
+    return statuten is Iterable && ClubRoleUtils.hasGonflageRole(statuten);
   }
 }
 

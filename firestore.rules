@@ -117,7 +117,14 @@ service cloud.firestore {
     }
 
     function hasGonflageRole(clubId) {
-      return hasClubStatut(clubId, ['gonflage', 'Gonflage', 'G']);
+      let userData = getUserData(clubId);
+      let statuten = userData.get('clubStatuten', []);
+      let normalized = statuten is list
+        ? ('|' + statuten.join('|').lower() + '|')
+        : '';
+      return isMember(clubId)
+        && statuten is list
+        && normalized.matches('.*[|] *(g|gonflage) *[|].*');
     }
 
     function hasBureauRole(clubId) {
