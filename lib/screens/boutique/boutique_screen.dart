@@ -7,6 +7,7 @@ import '../../config/firebase_config.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
 import '../../services/feature_flag_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -26,33 +27,18 @@ class BoutiqueScreen extends StatefulWidget {
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
   final FeatureFlagService _flagService = FeatureFlagService();
 
-  bool _isTesterOrAdmin(MemberProvider memberProvider) {
-    final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin') return true;
-    final access = memberProvider.memberData?['feature_access'];
-    return access is Map && access['boutique'] == true;
-  }
-
   bool _sectionVisible(
     Map<String, String> visibility,
     String key,
-    bool canSeeTesteurs,
+    Map<String, dynamic>? member,
   ) {
-    switch (visibility[key]) {
-      case FeatureFlagService.modeTous:
-        return true;
-      case FeatureFlagService.modeTesteurs:
-        return canSeeTesteurs;
-      default:
-        return false;
-    }
+    return BoutiqueAccessPolicy.canAccessMode(visibility[key], member);
   }
 
   @override
   Widget build(BuildContext context) {
     final memberProvider = context.watch<MemberProvider>();
     final canOpenReturns = _canOpenMaterialReturns(memberProvider);
-    final canSeeTesteurs = _isTesterOrAdmin(memberProvider);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -76,7 +62,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
               final visibility = snapshot.data ??
                   FeatureFlagService.parseBoutiqueVisibility(null);
               bool showSection(String key) =>
-                  _sectionVisible(visibility, key, canSeeTesteurs);
+                  _sectionVisible(visibility, key, memberProvider.memberData);
               final showMaterialLoans = showSection('pretsMateriel');
               return ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
