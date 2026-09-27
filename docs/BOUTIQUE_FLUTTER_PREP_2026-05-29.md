@@ -3,6 +3,15 @@
 Datum: 2026-05-29  
 Scope: CalyMob leden-app, nog niet algemeen zichtbaar maken.
 
+> **Historische status — deels superseded op 2026-09-27.** Dit document blijft
+> behouden als voorbereidingsplan. De uitspraken dat er nog geen echte
+> Boutique-module bestaat en dat de hieronder beschreven MVP nog moet starten,
+> zijn vervangen door de geïmplementeerde Boutique-flow. De actuele kleine
+> robuustheidsaanpassing: CalyMob gebruikt bij een lege opgeslagen variantnaam
+> `size · color · coupe` uit de variantattributen, met `Standard` als laatste
+> fallback. Dit beschermt bestaande appversies zodra productdata geen label
+> bevat; de brondata blijft bij voorkeur een expliciet label bewaren.
+
 ## Huidige stand
 
 - In CalyMob is nog geen echte boutique-module aanwezig.

@@ -34,6 +34,59 @@ void main() {
     cart = _RecordingBoutiqueCartProvider();
   });
 
+  test('blank variant label falls back to populated attributes', () {
+    const fallbackVariant = BoutiqueVariant(
+      id: 'orange',
+      label: '  ',
+      attributes: {'size': 'Unique', 'color': 'Orange', 'coupe': 'Unisexe'},
+      stockCount: 1,
+      allowBackorder: false,
+    );
+
+    expect(fallbackVariant.displayLabel, 'Unique · Orange · Unisexe');
+    expect(
+      const BoutiqueVariant(
+        id: 'standard',
+        label: '',
+        attributes: {},
+        allowBackorder: false,
+      ).displayLabel,
+      'Standard',
+    );
+  });
+
+  test('missing stored variant label falls back to populated attributes', () {
+    final variant = BoutiqueVariant.fromMap({
+      'id': 'orange',
+      'attributes': {
+        'size': 'Unique',
+        'color': 'Orange',
+        'coupe': 'Unisexe',
+      },
+      'allowBackorder': false,
+    });
+
+    expect(variant.label, isEmpty);
+    expect(variant.displayLabel, 'Unique · Orange · Unisexe');
+  });
+
+  testWidgets('picker uses the fallback variant label', (tester) async {
+    await _pumpProduct(
+      tester,
+      cart: cart,
+      product: _productWithBlankVariantLabels(),
+    );
+
+    expect(find.text('Unique · Orange · Unisexe'), findsOneWidget);
+    await tester.tap(find.text('Unique · Orange · Unisexe'));
+    await tester.pump();
+    expect(find.text('Unique · Rose · Unisexe'), findsOneWidget);
+    expect(find.text('Unique · Rouge · Unisexe'), findsOneWidget);
+
+    await tester.tap(find.text('Unique · Orange · Unisexe').last);
+    await tester.pump();
+  });
+
   testWidgets(
     'personalization card keeps logo mandatory and separates toggles, count and price',
     (tester) async {
@@ -369,5 +422,41 @@ BoutiqueProduct _product({bool personalization = true}) {
             ),
           )
         : null,
+  );
+}
+
+BoutiqueProduct _productWithBlankVariantLabels() {
+  return const BoutiqueProduct(
+    id: 'mask-strap',
+    name: 'Protège-sangle de masque personnalisé',
+    description: '',
+    category: BoutiqueProductCategory.vetements,
+    supplierId: 'supplier',
+    images: [],
+    pricing: BoutiquePrice(salePrice: 20, currency: 'EUR'),
+    inventoryMode: BoutiqueInventoryMode.preorder,
+    variants: [
+      BoutiqueVariant(
+        id: 'orange',
+        label: '',
+        attributes: {'size': 'Unique', 'color': 'Orange', 'coupe': 'Unisexe'},
+        allowBackorder: false,
+      ),
+      BoutiqueVariant(
+        id: 'rose',
+        label: '',
+        attributes: {'size': 'Unique', 'color': 'Rose', 'coupe': 'Unisexe'},
+        allowBackorder: false,
+      ),
+      BoutiqueVariant(
+        id: 'rouge',
+        label: '',
+        attributes: {'size': 'Unique', 'color': 'Rouge', 'coupe': 'Unisexe'},
+        allowBackorder: false,
+      ),
+    ],
+    deliveryModes: [BoutiqueDeliveryMode.poolPickup],
+    deliverySurcharges: {},
+    visibility: 'published',
   );
 }
