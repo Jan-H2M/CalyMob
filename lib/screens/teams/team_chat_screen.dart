@@ -58,6 +58,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
   final GlobalKey _newMessagesDividerKey = GlobalKey();
   bool _appIsForeground = true;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
@@ -81,23 +82,37 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
     final unreadProvider = context.read<UnreadCountProvider>();
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    final usesCursorAuthority = unreadProvider.usesCursorReadState;
-    final canonicalCursor = usesCursorAuthority
-        ? await unreadProvider.getEffectiveReadCursor(
-            ReadStateSection.teams,
-            scopeId: widget.channel.id,
-          )
-        : null;
-    final lastRead = initialConversationReadCursor(
-      usesCursorAuthority: usesCursorAuthority,
-      canonicalCursor: canonicalCursor,
-      legacyCursor: tracker.getLastRead('team_${widget.channel.id}'),
-      installBaseline: tracker.installBaseline,
-    );
-    if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(
+          FirebaseConfig.defaultClubId,
+          userId,
+        )) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.teams,
+              scopeId: widget.channel.id,
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead('team_${widget.channel.id}'),
+        installBaseline: tracker.installBaseline,
+      );
+      if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    } finally {
+      _capturingReadCursor = false;
+    }
   }
 
   @override
@@ -561,6 +576,11 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     if (userId == null) {
       return const Scaffold(body: Center(child: Text('Niet verbonden')));
     }
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
+    }
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -695,6 +715,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
 
                     return ListView.builder(
                       controller: _scrollController,
+                      cacheExtent: messages.length * 500.0,
                       padding: const EdgeInsets.all(16),
                       itemCount: messages.length + (hasNewDivider ? 1 : 0),
                       itemBuilder: (context, index) {

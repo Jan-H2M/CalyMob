@@ -68,6 +68,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   bool _isUploading = false;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
   bool _appIsForeground = true;
   String? _latestVisibleMessageId;
@@ -150,26 +151,37 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
     final unreadProvider = context.read<UnreadCountProvider>();
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    final key = 'operation_${widget.operationId}';
-    final usesCursorAuthority = unreadProvider.usesCursorReadState;
-    final canonicalCursor = usesCursorAuthority
-        ? await unreadProvider.getEffectiveReadCursor(
-            ReadStateSection.events,
-            scopeId: widget.operationId,
-          )
-        : null;
-    final lastRead = initialConversationReadCursor(
-      usesCursorAuthority: usesCursorAuthority,
-      canonicalCursor: canonicalCursor,
-      legacyCursor: tracker.getLastRead(key),
-      installBaseline: tracker.installBaseline,
-    );
-    if (!mounted) return;
-    setState(() => _lastReadBeforeOpen = lastRead);
-    _scheduleVisibleMessagesAcknowledgement();
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId)) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final key = 'operation_${widget.operationId}';
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.events,
+              scopeId: widget.operationId,
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead(key),
+        installBaseline: tracker.installBaseline,
+      );
+      if (!mounted) return;
+      setState(() => _lastReadBeforeOpen = lastRead);
+      _scheduleVisibleMessagesAcknowledgement();
+    } finally {
+      _capturingReadCursor = false;
+    }
   }
 
   @override
@@ -645,6 +657,12 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     final canWrite = _hasCheckedParticipation &&
         messageProvider.isParticipant(widget.operationId);
 
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
+    }
+
     return Column(
       children: [
         Expanded(
@@ -724,6 +742,11 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
 
               return ListView.builder(
                 controller: _scrollController,
+                // The unread divider can be far outside the initial viewport.
+                // Keep the complete finite conversation laid out for the one
+                // initial anchor pass; otherwise GlobalKey has no context and
+                // the fallback incorrectly wins.
+                cacheExtent: messages.length * 500.0,
                 padding: const EdgeInsets.all(16),
                 itemCount: totalItems,
                 itemBuilder: (context, index) {

@@ -60,6 +60,7 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
   final GlobalKey _newMessagesDividerKey = GlobalKey();
   bool _appIsForeground = true;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
@@ -89,32 +90,46 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
     final unreadProvider = context.read<UnreadCountProvider>();
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    final legacyKey = unreadSessionReadKey(
-      widget.session.id,
-      widget.chatGroup.type.value,
-      widget.chatGroup.level,
-    );
-    final usesCursorAuthority = unreadProvider.usesCursorReadState;
-    final canonicalCursor = usesCursorAuthority
-        ? await unreadProvider.getEffectiveReadCursor(
-            ReadStateSection.sessions,
-            scopeId: readStateSessionScopeId(
-              widget.session.id,
-              widget.chatGroup.type.value,
-              widget.chatGroup.level,
-            ),
-          )
-        : null;
-    final lastRead = initialConversationReadCursor(
-      usesCursorAuthority: usesCursorAuthority,
-      canonicalCursor: canonicalCursor,
-      legacyCursor: tracker.getLastRead(legacyKey),
-      installBaseline: tracker.installBaseline,
-    );
-    if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(
+          FirebaseConfig.defaultClubId,
+          userId,
+        )) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final legacyKey = unreadSessionReadKey(
+        widget.session.id,
+        widget.chatGroup.type.value,
+        widget.chatGroup.level,
+      );
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.sessions,
+              scopeId: readStateSessionScopeId(
+                widget.session.id,
+                widget.chatGroup.type.value,
+                widget.chatGroup.level,
+              ),
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead(legacyKey),
+        installBaseline: tracker.installBaseline,
+      );
+      if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    } finally {
+      _capturingReadCursor = false;
+    }
   }
 
   @override
@@ -540,6 +555,11 @@ class _SessionChatScreenState extends State<SessionChatScreen>
         body: Center(child: Text('Niet verbonden')),
       );
     }
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
+    }
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -684,6 +704,7 @@ class _SessionChatScreenState extends State<SessionChatScreen>
 
                     return ListView.builder(
                       controller: _scrollController,
+                      cacheExtent: messages.length * 500.0,
                       padding: const EdgeInsets.all(16),
                       itemCount: messages.length + (hasNewDivider ? 1 : 0),
                       itemBuilder: (context, index) {

@@ -59,6 +59,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
 
   // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
   DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
 
   // Auto-scroll vers le bas à l'ouverture pour voir les dernières communications
   bool _initialScrollDone = false;
@@ -136,25 +137,36 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
     final unreadProvider = context.read<UnreadCountProvider>();
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    final itemKey = 'announcement_${widget.announcement.id}';
-    final usesCursorAuthority = unreadProvider.usesCursorReadState;
-    final canonicalCursor = usesCursorAuthority
-        ? await unreadProvider.getEffectiveReadCursor(
-            ReadStateSection.announcements,
-            scopeId: widget.announcement.id,
-          )
-        : null;
-    final lastRead = initialConversationReadCursor(
-      usesCursorAuthority: usesCursorAuthority,
-      canonicalCursor: canonicalCursor,
-      legacyCursor:
-          tracker.getLastRead(itemKey) ?? tracker.getLastRead('announcements'),
-      installBaseline: tracker.installBaseline,
-    );
-    if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId)) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final itemKey = 'announcement_${widget.announcement.id}';
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.announcements,
+              scopeId: widget.announcement.id,
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead(itemKey) ??
+            tracker.getLastRead('announcements'),
+        installBaseline: tracker.installBaseline,
+      );
+      if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    } finally {
+      _capturingReadCursor = false;
+    }
   }
 
   Future<void> _acknowledgeLoadedCursorContent() async {
@@ -355,6 +367,12 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
 
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
+    }
+
     return Scaffold(
       body: OceanGradientBackground(
         creatures: CreatureSet.bubbles,
@@ -475,6 +493,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
 
                           return ListView.builder(
                             controller: _scrollController,
+                            cacheExtent: replies.length * 500.0,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
                             itemCount: totalItems,
