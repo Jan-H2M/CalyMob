@@ -71,6 +71,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   bool _capturingReadCursor = false;
   int? _initialUnreadIndex;
   int _initialItemCount = 0;
+  final ChatAnchorRegistry _anchorRegistry = ChatAnchorRegistry();
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
   bool _appIsForeground = true;
   String? _latestVisibleMessageId;
@@ -628,6 +629,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     await anchorToIndex(
       controller: _scrollController,
       targetKey: _newMessagesDividerKey,
+      registry: _anchorRegistry,
       targetIndex: _initialUnreadIndex,
       itemCount: _initialItemCount,
     );
@@ -735,7 +737,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                 itemCount: totalItems,
                 itemBuilder: (context, index) {
                   if (hasNewDivider && index == newMessagesDividerIndex) {
-                    return _buildNewMessagesDivider();
+                    return ChatAnchorRow(
+                        index: index,
+                        registry: _anchorRegistry,
+                        child: _buildNewMessagesDivider());
                   }
 
                   final messageIndex =
@@ -745,11 +750,13 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                   final message = messages[messageIndex];
                   final isOwnMessage = message.senderId == currentUserId;
 
-                  return _buildMessageBubble(
-                    message: message,
-                    isOwnMessage: isOwnMessage,
-                    currentUserId: currentUserId,
-                  );
+                  return ChatAnchorRow(
+                      index: index,
+                      registry: _anchorRegistry,
+                      child: _buildMessageBubble(
+                          message: message,
+                          isOwnMessage: isOwnMessage,
+                          currentUserId: currentUserId));
                 },
               );
             },

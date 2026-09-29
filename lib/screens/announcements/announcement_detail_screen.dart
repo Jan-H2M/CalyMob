@@ -62,6 +62,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   bool _capturingReadCursor = false;
   int? _initialUnreadIndex;
   int _initialItemCount = 0;
+  final ChatAnchorRegistry _anchorRegistry = ChatAnchorRegistry();
 
   // Auto-scroll vers le bas à l'ouverture pour voir les dernières communications
   bool _initialScrollDone = false;
@@ -507,7 +508,11 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                             itemBuilder: (context, index) {
                               // First item is the announcement header
                               if (index == 0) {
-                                return _buildAnnouncementHeader(dateFormat);
+                                return ChatAnchorRow(
+                                    index: index,
+                                    registry: _anchorRegistry,
+                                    child:
+                                        _buildAnnouncementHeader(dateFormat));
                               }
 
                               // Adjust index for replies (subtract 1 for header)
@@ -516,7 +521,10 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                               // Insérer le divider "Nouveaux messages" à la bonne position
                               if (hasNewDivider &&
                                   replyIndex == newMessagesDividerIndex) {
-                                return _buildNewMessagesDivider();
+                                return ChatAnchorRow(
+                                    index: index,
+                                    registry: _anchorRegistry,
+                                    child: _buildNewMessagesDivider());
                               }
 
                               // Ajuster l'index pour les replies après le divider
@@ -528,8 +536,11 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                               final reply = replies[actualReplyIndex];
                               final isOwnReply =
                                   reply.senderId == currentUserId;
-                              return _buildReplyBubble(
-                                  reply, isOwnReply, dateFormat);
+                              return ChatAnchorRow(
+                                  index: index,
+                                  registry: _anchorRegistry,
+                                  child: _buildReplyBubble(
+                                      reply, isOwnReply, dateFormat));
                             },
                           );
                         },
@@ -710,6 +721,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     await anchorToIndex(
         controller: _scrollController,
         targetKey: _newMessagesDividerKey,
+        registry: _anchorRegistry,
         targetIndex: _initialUnreadIndex,
         itemCount: _initialItemCount);
   }

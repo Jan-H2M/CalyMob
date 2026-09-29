@@ -7,6 +7,7 @@ void main() {
       (tester) async {
     final controller = ScrollController();
     final dividerKey = GlobalKey();
+    final registry = ChatAnchorRegistry();
     const unreadIndex = 150;
     const itemCount = 301;
 
@@ -16,37 +17,46 @@ void main() {
           body: ListView.builder(
             controller: controller,
             itemCount: itemCount,
-            itemBuilder: (context, index) => SizedBox(
-              key: index == unreadIndex ? dividerKey : null,
-              height: 48,
-              child:
-                  Text(index == unreadIndex ? 'Nouveaux messages' : '$index'),
+            itemBuilder: (context, index) => ChatAnchorRow(
+              index: index,
+              registry: registry,
+              child: SizedBox(
+                key: index == unreadIndex ? dividerKey : null,
+                height: 40 + ((index * 37) % 361),
+                child:
+                    Text(index == unreadIndex ? 'Nouveaux messages' : '$index'),
+              ),
             ),
           ),
         ),
       ),
     );
 
-    final anchor = anchorToIndex(
+    var done = false;
+    anchorToIndex(
       controller: controller,
       targetKey: dividerKey,
+      registry: registry,
       targetIndex: unreadIndex,
       itemCount: itemCount,
-    );
-    await tester.pump();
-    await tester.pump();
-    await anchor;
-    await tester.pump();
+    ).then((_) => done = true);
+    for (var i = 0; i < 40 && !done; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(done, isTrue);
 
     expect(find.text('Nouveaux messages'), findsOneWidget);
-    expect(
-        tester.getTopLeft(find.text('Nouveaux messages')).dy, greaterThan(0));
+    final rect = tester.getRect(find.text('Nouveaux messages'));
+    final viewport = tester.getRect(find.byType(ListView));
+    expect(rect.top, greaterThanOrEqualTo(viewport.top));
+    expect(rect.bottom, lessThanOrEqualTo(viewport.bottom));
   });
 
   testWidgets('uses the latest-message fallback when there is no unread item',
       (tester) async {
     final controller = ScrollController();
     final dividerKey = GlobalKey();
+    final registry = ChatAnchorRegistry();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -62,6 +72,7 @@ void main() {
     await anchorToIndex(
       controller: controller,
       targetKey: dividerKey,
+      registry: registry,
       targetIndex: null,
       itemCount: 100,
     );

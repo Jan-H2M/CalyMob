@@ -61,6 +61,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   bool _capturingReadCursor = false;
   int? _initialUnreadIndex;
   int _initialItemCount = 0;
+  final ChatAnchorRegistry _anchorRegistry = ChatAnchorRegistry();
   final GlobalKey _newMessagesDividerKey = GlobalKey();
   bool _appIsForeground = true;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
@@ -556,6 +557,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     await anchorToIndex(
         controller: _scrollController,
         targetKey: _newMessagesDividerKey,
+        registry: _anchorRegistry,
         targetIndex: _initialUnreadIndex,
         itemCount: _initialItemCount);
   }
@@ -717,13 +719,17 @@ class _TeamChatScreenState extends State<TeamChatScreen>
                       itemCount: messages.length + (hasNewDivider ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (hasNewDivider && index == newMessagesDividerIndex) {
-                          return Container(
-                            key: _newMessagesDividerKey,
-                            margin: const EdgeInsets.symmetric(vertical: 12),
-                            child: const Center(
-                              child: Text('Nouveaux messages'),
-                            ),
-                          );
+                          return ChatAnchorRow(
+                              index: index,
+                              registry: _anchorRegistry,
+                              child: Container(
+                                key: _newMessagesDividerKey,
+                                margin:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                child: const Center(
+                                  child: Text('Nouveaux messages'),
+                                ),
+                              ));
                         }
                         final messageIndex =
                             hasNewDivider && index > newMessagesDividerIndex
@@ -737,35 +743,38 @@ class _TeamChatScreenState extends State<TeamChatScreen>
                               message.createdAt,
                             );
 
-                        return Column(
-                          children: [
-                            if (showDateHeader)
-                              _DateHeader(date: message.createdAt),
-                            FutureBuilder<String?>(
-                              future: isOwn
-                                  ? Future.value(null)
-                                  : _getPhotoUrl(message.senderId),
-                              builder: (context, snapshot) {
-                                return _MessageBubble(
-                                  message: message,
-                                  isOwn: isOwn,
-                                  teamColor: _teamColor,
-                                  currentUserId: userId,
-                                  senderPhotoUrl: snapshot.data,
-                                  onLongPress: () =>
-                                      _showMessageOptions(message, isOwn),
-                                  onToggleReaction: (emoji) =>
-                                      _toggleReaction(message.id, emoji),
-                                  onVote: (optionId) =>
-                                      _togglePollVote(message.id, optionId),
-                                  onClosePoll: isOwn && message.hasPoll
-                                      ? () => _closePoll(message.id)
-                                      : null,
-                                );
-                              },
-                            ),
-                          ],
-                        );
+                        return ChatAnchorRow(
+                            index: index,
+                            registry: _anchorRegistry,
+                            child: Column(
+                              children: [
+                                if (showDateHeader)
+                                  _DateHeader(date: message.createdAt),
+                                FutureBuilder<String?>(
+                                  future: isOwn
+                                      ? Future.value(null)
+                                      : _getPhotoUrl(message.senderId),
+                                  builder: (context, snapshot) {
+                                    return _MessageBubble(
+                                      message: message,
+                                      isOwn: isOwn,
+                                      teamColor: _teamColor,
+                                      currentUserId: userId,
+                                      senderPhotoUrl: snapshot.data,
+                                      onLongPress: () =>
+                                          _showMessageOptions(message, isOwn),
+                                      onToggleReaction: (emoji) =>
+                                          _toggleReaction(message.id, emoji),
+                                      onVote: (optionId) =>
+                                          _togglePollVote(message.id, optionId),
+                                      onClosePoll: isOwn && message.hasPoll
+                                          ? () => _closePoll(message.id)
+                                          : null,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ));
                       },
                     );
                   },

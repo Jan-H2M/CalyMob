@@ -42,9 +42,10 @@ DateTime initialConversationReadCursor({
 Future<void> anchorToIndex({
   required ScrollController controller,
   required GlobalKey targetKey,
+  required ChatAnchorRegistry registry,
   required int? targetIndex,
   required int itemCount,
-  int maxAttempts = 6,
+  int maxAttempts = 16,
 }) async {
   if (!controller.hasClients) return;
   if (targetIndex == null || itemCount <= 0) {
@@ -52,10 +53,11 @@ Future<void> anchorToIndex({
     return;
   }
 
-  final fraction = (targetIndex / itemCount).clamp(0.0, 1.0);
+  var lower = 0.0;
+  var upper = controller.position.maxScrollExtent;
+  var target = upper * (targetIndex / itemCount).clamp(0.0, 1.0);
   for (var attempt = 0; attempt < maxAttempts; attempt++) {
     if (!controller.hasClients) return;
-    final target = controller.position.maxScrollExtent * fraction;
     controller.jumpTo(target);
     await WidgetsBinding.instance.endOfFrame;
 
@@ -68,5 +70,78 @@ Future<void> anchorToIndex({
       );
       return;
     }
+    final range = registry.builtRange;
+    if (range == null) continue;
+    if (targetIndex > range.$2) {
+      lower = target;
+      // [maxScrollExtent] is only an estimate while ListView lazily lays out
+      // variable-height rows. Refresh the upper bound after every forward
+      // seek, otherwise the initial short-row estimate can permanently keep
+      // the target outside the search interval.
+      upper = upper < controller.position.maxScrollExtent
+          ? controller.position.maxScrollExtent
+          : upper;
+      target = lower >= upper - 1 ? upper : (lower + upper) / 2;
+    } else if (targetIndex < range.$1) {
+      upper = target;
+      target = (lower + upper) / 2;
+    }
+  }
+  final context = targetKey.currentContext;
+  if (context != null && context.mounted) {
+    await Scrollable.ensureVisible(context,
+        alignment: 0.15, duration: Duration.zero);
+    return;
+  }
+  controller.jumpTo(controller.position.maxScrollExtent);
+}
+
+class ChatAnchorRegistry {
+  final Map<int, BuildContext> _contexts = {};
+  void register(int index, BuildContext context) => _contexts[index] = context;
+  void unregister(int index, BuildContext context) {
+    if (identical(_contexts[index], context)) _contexts.remove(index);
+  }
+
+  (int, int)? get builtRange {
+    if (_contexts.isEmpty) return null;
+    final keys = _contexts.keys;
+    return (
+      keys.reduce((a, b) => a < b ? a : b),
+      keys.reduce((a, b) => a > b ? a : b)
+    );
+  }
+}
+
+class ChatAnchorRow extends StatefulWidget {
+  const ChatAnchorRow(
+      {super.key,
+      required this.index,
+      required this.registry,
+      required this.child});
+  final int index;
+  final ChatAnchorRegistry registry;
+  final Widget child;
+  @override
+  State<ChatAnchorRow> createState() => _ChatAnchorRowState();
+}
+
+class _ChatAnchorRowState extends State<ChatAnchorRow> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    widget.registry.register(widget.index, context);
+  }
+
+  @override
+  void dispose() {
+    widget.registry.unregister(widget.index, context);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    widget.registry.register(widget.index, context);
+    return widget.child;
   }
 }
