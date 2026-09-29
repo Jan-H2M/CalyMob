@@ -69,6 +69,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
   bool _capturingReadCursor = false;
+  int? _initialUnreadIndex;
+  int _initialItemCount = 0;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
   bool _appIsForeground = true;
   String? _latestVisibleMessageId;
@@ -155,7 +157,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     final unreadProvider = context.read<UnreadCountProvider>();
     final userId = context.read<AuthProvider>().currentUser?.uid;
     if (userId == null ||
-        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId)) {
+        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId) ||
+        (unreadProvider.usesCursorReadState &&
+            !unreadProvider.isCursorReadStateReady)) {
       return;
     }
     _capturingReadCursor = true;
@@ -613,14 +617,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     );
   }
 
-  /// Saute immédiatement à la fin de la liste, sans animation. Utilisé à
-  /// l'ouverture pour éviter qu'on voie un scroll parasite quand la liste
-  /// est encore en train de mesurer ses items (avatars async).
-  void _jumpToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-  }
-
   /// Scroll initial à l'ouverture du chat:
   /// - s'il y a un divider "Nouveaux messages", on aligne ce divider en haut
   ///   du viewport pour que le membre commence sa lecture aux non-lus.
@@ -629,21 +625,12 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   /// On répète l'opération sur quelques frames pour absorber les changements
   /// de hauteur dus aux avatars / images qui arrivent en async.
   Future<void> _performInitialScroll() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
-      if (!mounted) return;
-      final dividerContext = _newMessagesDividerKey.currentContext;
-      if (dividerContext != null && dividerContext.mounted) {
-        await Scrollable.ensureVisible(
-          dividerContext,
-          alignment: 0.15,
-          duration: Duration.zero,
-          curve: Curves.linear,
-        );
-      } else {
-        _jumpToBottom();
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-    }
+    await anchorToIndex(
+      controller: _scrollController,
+      targetKey: _newMessagesDividerKey,
+      targetIndex: _initialUnreadIndex,
+      itemCount: _initialItemCount,
+    );
   }
 
   @override
@@ -729,6 +716,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
 
               final hasNewDivider = newMessagesDividerIndex != null;
               final totalItems = messages.length + (hasNewDivider ? 1 : 0);
+              _initialUnreadIndex = newMessagesDividerIndex;
+              _initialItemCount = totalItems;
 
               // The read timestamp is loaded asynchronously. Scheduling before
               // it is available loses the divider and makes the old top/bottom
@@ -742,11 +731,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
 
               return ListView.builder(
                 controller: _scrollController,
-                // The unread divider can be far outside the initial viewport.
-                // Keep the complete finite conversation laid out for the one
-                // initial anchor pass; otherwise GlobalKey has no context and
-                // the fallback incorrectly wins.
-                cacheExtent: messages.length * 500.0,
                 padding: const EdgeInsets.all(16),
                 itemCount: totalItems,
                 itemBuilder: (context, index) {

@@ -61,6 +61,8 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
   bool _capturingReadCursor = false;
+  int? _initialUnreadIndex;
+  int _initialItemCount = 0;
   final GlobalKey _newMessagesDividerKey = GlobalKey();
   bool _appIsForeground = true;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
@@ -97,7 +99,9 @@ class _SessionChatScreenState extends State<SessionChatScreen>
         !unreadProvider.hasResolvedAuthorityFor(
           FirebaseConfig.defaultClubId,
           userId,
-        )) {
+        ) ||
+        (unreadProvider.usesCursorReadState &&
+            !unreadProvider.isCursorReadStateReady)) {
       return;
     }
     _capturingReadCursor = true;
@@ -526,20 +530,11 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   }
 
   Future<void> _performInitialScroll() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
-      if (!mounted) return;
-      final dividerContext = _newMessagesDividerKey.currentContext;
-      if (dividerContext != null && dividerContext.mounted) {
-        await Scrollable.ensureVisible(
-          dividerContext,
-          alignment: 0.15,
-          duration: Duration.zero,
-        );
-      } else if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-    }
+    await anchorToIndex(
+        controller: _scrollController,
+        targetKey: _newMessagesDividerKey,
+        targetIndex: _initialUnreadIndex,
+        itemCount: _initialItemCount);
   }
 
   @override
@@ -695,6 +690,9 @@ class _SessionChatScreenState extends State<SessionChatScreen>
                       _lastReadBeforeOpen,
                     );
                     final hasNewDivider = newMessagesDividerIndex != null;
+                    _initialUnreadIndex = newMessagesDividerIndex;
+                    _initialItemCount =
+                        messages.length + (hasNewDivider ? 1 : 0);
                     if (!_initialScrollDone && _lastReadBeforeOpen != null) {
                       _initialScrollDone = true;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -704,7 +702,6 @@ class _SessionChatScreenState extends State<SessionChatScreen>
 
                     return ListView.builder(
                       controller: _scrollController,
-                      cacheExtent: messages.length * 500.0,
                       padding: const EdgeInsets.all(16),
                       itemCount: messages.length + (hasNewDivider ? 1 : 0),
                       itemBuilder: (context, index) {

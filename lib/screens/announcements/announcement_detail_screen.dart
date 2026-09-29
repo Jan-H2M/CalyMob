@@ -60,6 +60,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
   DateTime? _lastReadBeforeOpen;
   bool _capturingReadCursor = false;
+  int? _initialUnreadIndex;
+  int _initialItemCount = 0;
 
   // Auto-scroll vers le bas à l'ouverture pour voir les dernières communications
   bool _initialScrollDone = false;
@@ -141,7 +143,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     final unreadProvider = context.read<UnreadCountProvider>();
     final userId = context.read<AuthProvider>().currentUser?.uid;
     if (userId == null ||
-        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId)) {
+        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId) ||
+        (unreadProvider.usesCursorReadState &&
+            !unreadProvider.isCursorReadStateReady)) {
       return;
     }
     _capturingReadCursor = true;
@@ -490,10 +494,13 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                           // +1 for header at index 0
                           final totalItems =
                               1 + replies.length + (hasNewDivider ? 1 : 0);
+                          _initialUnreadIndex = newMessagesDividerIndex == null
+                              ? null
+                              : newMessagesDividerIndex + 1;
+                          _initialItemCount = totalItems;
 
                           return ListView.builder(
                             controller: _scrollController,
-                            cacheExtent: replies.length * 500.0,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
                             itemCount: totalItems,
@@ -693,13 +700,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     );
   }
 
-  /// Saute à la fin de la liste sans animation. Utilisé en fallback quand
-  /// il n'y a pas de divider "Nouveaux messages".
-  void _jumpToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-  }
-
   /// Scroll initial robuste à l'ouverture du chat:
   /// - cible le divider "Nouveaux messages" si présent (alignement haut),
   /// - sinon saute au dernier message.
@@ -707,21 +707,11 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   /// L'opération est répétée sur quelques frames pour absorber les changements
   /// de hauteur dus aux avatars / images qui chargent en async.
   Future<void> _performInitialScroll() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
-      if (!mounted) return;
-      final dividerContext = _newMessagesDividerKey.currentContext;
-      if (dividerContext != null && dividerContext.mounted) {
-        await Scrollable.ensureVisible(
-          dividerContext,
-          alignment: 0.15,
-          duration: Duration.zero,
-          curve: Curves.linear,
-        );
-      } else {
-        _jumpToBottom();
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-    }
+    await anchorToIndex(
+        controller: _scrollController,
+        targetKey: _newMessagesDividerKey,
+        targetIndex: _initialUnreadIndex,
+        itemCount: _initialItemCount);
   }
 
   Widget _buildReplyBubble(

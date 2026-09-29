@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 /// Returns the first message that was created strictly after [lastRead].
 ///
 /// A null result means the conversation has no unread messages; callers then
@@ -30,3 +32,41 @@ DateTime initialConversationReadCursor({
     usesCursorAuthority && canonicalCursor != null
         ? canonicalCursor
         : legacyCursor ?? installBaseline ?? DateTime(2024);
+
+/// Brings an initially off-screen unread divider into the viewport.
+///
+/// A lazily built list has no [targetKey] context until it is near the
+/// viewport. Start at a proportional estimate, let the list build that area,
+/// then use [Scrollable.ensureVisible] once the divider exists. A chat with no
+/// unread target retains the established latest-message fallback.
+Future<void> anchorToIndex({
+  required ScrollController controller,
+  required GlobalKey targetKey,
+  required int? targetIndex,
+  required int itemCount,
+  int maxAttempts = 6,
+}) async {
+  if (!controller.hasClients) return;
+  if (targetIndex == null || itemCount <= 0) {
+    controller.jumpTo(controller.position.maxScrollExtent);
+    return;
+  }
+
+  final fraction = (targetIndex / itemCount).clamp(0.0, 1.0);
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    if (!controller.hasClients) return;
+    final target = controller.position.maxScrollExtent * fraction;
+    controller.jumpTo(target);
+    await WidgetsBinding.instance.endOfFrame;
+
+    final context = targetKey.currentContext;
+    if (context != null && context.mounted) {
+      await Scrollable.ensureVisible(
+        context,
+        alignment: 0.15,
+        duration: Duration.zero,
+      );
+      return;
+    }
+  }
+}

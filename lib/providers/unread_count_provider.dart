@@ -152,6 +152,10 @@ class UnreadCountProvider extends ChangeNotifier {
   bool get usesCursorReadState =>
       _isListening && (!_flagResolved || _cursorMode == UnreadCursorV1Mode.on);
 
+  /// True only when cursor authority is both selected and bootstrapped.
+  bool get isCursorReadStateReady =>
+      usesCursorReadState && _flagResolved && _contextReady && _cursorReady;
+
   /// Reads the canonical server-owned cursor for an opening conversation.
   /// Screens use this only while cursor mode is authoritative; the legacy
   /// tracker remains a rollback mirror, not the cross-device source of truth.
