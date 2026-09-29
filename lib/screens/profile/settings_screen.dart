@@ -51,9 +51,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _checkForUpdate();
   }
 
-  Future<void> _checkForUpdate() async {
+  Future<void> _checkForUpdate({bool forceCheck = false}) async {
     try {
-      final status = await AppUpdateService.checkForUpdate();
+      final status =
+          await AppUpdateService.checkForUpdate(forceCheck: forceCheck);
       if (mounted) {
         setState(() => _updateStatus = status);
       }
@@ -1151,8 +1152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _forceCheckForUpdate() async {
-    AppUpdateService.clearCache();
-    await _checkForUpdate();
+    await _checkForUpdate(forceCheck: true);
   }
 
   Widget _buildAppearanceSection() {
@@ -1202,7 +1202,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             trailing: hasUpdate
                 ? ElevatedButton.icon(
-                    onPressed: () => AppUpdateService.openStore(),
+                    onPressed: () =>
+                        AppUpdateService.openStore(status: _updateStatus),
                     icon: const Icon(Icons.download, size: 16),
                     label: const Text('Mettre à jour'),
                     style: ElevatedButton.styleFrom(
