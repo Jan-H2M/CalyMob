@@ -13,11 +13,12 @@
   Google Play-productietrack met status **`completed`** en volledige rollout.
   De Play-listing bestaat alleen in `fr-FR`; uitsluitend de Franse release note
   is verstuurd. Er is geen nieuwe `nl-NL`-listing aangemaakt.
-- iOS: build `1.23.2 (216)` blijft **`PREPARE_FOR_SUBMISSION`**. De
-  submitpoging heeft de `nl-NL`-lokalisatie met enkel release notes aangemaakt,
-  maar App Store Connect weigert review zonder Nederlandse beschrijving,
-  keywords en support-URL. Niet verwijderen of invullen zonder een expliciete
-  beslissing van Jan.
+- iOS: **superseded** — de eerdere toestand `PREPARE_FOR_SUBMISSION` met een
+  onvolledige `nl-NL`-lokalisatie gold vóór Jan’s Option-B-beslissing om 14:53.
+  Die versie-lokalisatie is daarna gericht verwijderd; het repo bevat geen
+  `ios/fastlane/metadata/nl-NL` meer. De bestaande build `1.23.2 (216)` is met
+  uitsluitend de Franse release note opnieuw ingediend en staat nu op
+  **`WAITING_FOR_REVIEW`**, met automatische release na Apple-goedkeuring.
 - De eerdere uitvoering “TestFlight internal only” van 12:47 is
   **superseded** door de productiegoedkeuring om 13:42; de TestFlight-record
   blijft auditgeschiedenis.
