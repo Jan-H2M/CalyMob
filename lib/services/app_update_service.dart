@@ -8,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'app_update_prompt_policy.dart';
+
 /// Status van een app update check
 class AppUpdateStatus {
   final bool updateAvailable;
@@ -76,6 +78,7 @@ class AppUpdateStatus {
 class AppUpdateService {
   static AppUpdateStatus? _cachedStatus;
   static DateTime? _lastCheck;
+  static Future<void>? _activePromptPresentation;
 
   // Cache geldig voor 1 uur (voorkomt onnodige Firestore reads)
   static const _cacheDuration = Duration(hours: 1);
@@ -89,6 +92,8 @@ class AppUpdateService {
   // SharedPreferences keys
   static const _prefKeyLastStatus = 'app_update_last_status';
   static const _prefKeyLastCheckTime = 'app_update_last_check_time';
+  static const _prefKeySnoozedVersion = 'app_update_snoozed_version';
+  static const _prefKeySnoozedUntil = 'app_update_snoozed_until';
 
   // Store URLs
   static const _playStoreUrl =
@@ -329,7 +334,13 @@ class AppUpdateService {
   }
 
   /// Open de juiste store (Play Store of App Store) om de app te updaten.
-  static Future<void> openStore() async {
+  static Future<void> openStore({AppUpdateStatus? status}) async {
+    // Bewaar de snooze voor de store-handoff. Zo kan een lifecycle-resume de
+    // optionele prompt niet opnieuw tonen terwijl de gebruiker terugkeert.
+    if (status != null && status.updateAvailable && !status.forceUpdate) {
+      await _snoozeOptionalUpdate(status.latestVersion);
+    }
+
     final urlString = Platform.isIOS ? _appStoreUrl : _playStoreUrl;
     final uri = Uri.parse(urlString);
 
@@ -369,24 +380,83 @@ class AppUpdateService {
   /// Check voor update en toon dialoog indien nodig.
   /// Kan vanuit elke screen aangeroepen worden — dialoog-logica zit hier centraal.
   static Future<void> showUpdateDialogIfNeeded(BuildContext context) async {
+    // Landing, Home en de lifecycle observer kunnen vrijwel tegelijk checken.
+    // Laat ze dezelfde presentatie afwachten in plaats van meerdere dialogs te
+    // openen. Bij een verplichte update blijft deze future actief zolang de
+    // niet-sluitbare dialog zichtbaar is.
+    final activePresentation = _activePromptPresentation;
+    if (activePresentation != null) {
+      await activePresentation;
+      return;
+    }
+
+    final presentation = _showUpdateDialogIfNeeded(context);
+    _activePromptPresentation = presentation;
+
+    try {
+      await presentation;
+    } finally {
+      if (identical(_activePromptPresentation, presentation)) {
+        _activePromptPresentation = null;
+      }
+    }
+  }
+
+  static Future<void> _showUpdateDialogIfNeeded(BuildContext context) async {
     try {
       final status = await checkForUpdate();
       if (!status.updateAvailable) return;
 
-      if (!context.mounted) return;
+      final shouldPresent = await _shouldPresentPrompt(status);
+      if (!shouldPresent || !context.mounted) return;
 
       if (status.forceUpdate) {
-        _showForceUpdateDialog(context, status);
+        await _showForceUpdateDialog(context, status);
       } else {
-        _showUpdateDialog(context, status);
+        await _showUpdateDialog(context, status);
       }
     } catch (e) {
       debugPrint('⚠️ AppUpdateService: Failed to check for update: $e');
     }
   }
 
-  static void _showUpdateDialog(BuildContext context, AppUpdateStatus status) {
-    showDialog(
+  static Future<bool> _shouldPresentPrompt(AppUpdateStatus status) async {
+    if (status.forceUpdate) return true;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final snoozedUntilMillis = prefs.getInt(_prefKeySnoozedUntil);
+      return AppUpdatePromptPolicy.shouldPresent(
+        updateAvailable: status.updateAvailable,
+        forceUpdate: status.forceUpdate,
+        latestVersion: status.latestVersion,
+        snoozedVersion: prefs.getString(_prefKeySnoozedVersion),
+        snoozedUntil: snoozedUntilMillis == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(snoozedUntilMillis),
+        now: DateTime.now(),
+      );
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: Could not read update snooze: $e');
+      return true;
+    }
+  }
+
+  static Future<void> _snoozeOptionalUpdate(String version) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final until = AppUpdatePromptPolicy.snoozedUntil(DateTime.now());
+      await prefs.setString(_prefKeySnoozedVersion, version);
+      await prefs.setInt(
+          _prefKeySnoozedUntil, until.millisecondsSinceEpoch);
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: Could not save update snooze: $e');
+    }
+  }
+
+  static Future<void> _showUpdateDialog(
+      BuildContext context, AppUpdateStatus status) async {
+    final action = await showDialog<_UpdatePromptAction>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Row(
@@ -413,14 +483,12 @@ class AppUpdateService {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () =>
+                Navigator.pop(ctx, _UpdatePromptAction.remindLater),
             child: const Text('Plus tard'),
           ),
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              openStore();
-            },
+            onPressed: () => Navigator.pop(ctx, _UpdatePromptAction.openStore),
             icon: const Icon(Icons.download, size: 18),
             label: const Text('Mettre à jour'),
             style: ElevatedButton.styleFrom(
@@ -431,11 +499,18 @@ class AppUpdateService {
         ],
       ),
     );
+
+    // Ook een tik buiten de optionele dialog (null action) is een bewuste
+    // dismiss en krijgt dezelfde versiegebonden snooze.
+    await _snoozeOptionalUpdate(status.latestVersion);
+    if (action == _UpdatePromptAction.openStore) {
+      await openStore();
+    }
   }
 
-  static void _showForceUpdateDialog(
-      BuildContext context, AppUpdateStatus status) {
-    showDialog(
+  static Future<void> _showForceUpdateDialog(
+      BuildContext context, AppUpdateStatus status) async {
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => PopScope(
@@ -480,3 +555,5 @@ class AppUpdateService {
     );
   }
 }
+
+enum _UpdatePromptAction { remindLater, openStore }
