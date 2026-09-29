@@ -52,31 +52,45 @@ void main() {
     expect(rect.bottom, lessThanOrEqualTo(viewport.bottom));
   });
 
-  testWidgets('uses the latest-message fallback when there is no unread item',
+  testWidgets(
+      'uses the actual latest-message fallback for variable-height lazy rows',
       (tester) async {
     final controller = ScrollController();
     final dividerKey = GlobalKey();
     final registry = ChatAnchorRegistry();
+    const itemCount = 300;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: ListView.builder(
             controller: controller,
-            itemCount: 100,
-            itemBuilder: (context, index) => const SizedBox(height: 48),
+            itemCount: itemCount,
+            itemBuilder: (context, index) => SizedBox(
+              height: 40 + ((index * 37) % 361),
+              child: Text('message $index'),
+            ),
           ),
         ),
       ),
     );
 
-    await anchorToIndex(
+    var done = false;
+    anchorToIndex(
       controller: controller,
       targetKey: dividerKey,
       registry: registry,
       targetIndex: null,
-      itemCount: 100,
-    );
+      itemCount: itemCount,
+    ).then((_) => done = true);
+    for (var i = 0; i < 40 && !done; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(done, isTrue);
     expect(controller.offset, controller.position.maxScrollExtent);
+    expect(find.text('message ${itemCount - 1}'), findsOneWidget);
+    final rect = tester.getRect(find.text('message ${itemCount - 1}'));
+    final viewport = tester.getRect(find.byType(ListView));
+    expect(rect.bottom, lessThanOrEqualTo(viewport.bottom));
   });
 
   testWidgets('an appended reply does not move an existing scroll offset',

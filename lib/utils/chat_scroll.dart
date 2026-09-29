@@ -49,7 +49,7 @@ Future<void> anchorToIndex({
 }) async {
   if (!controller.hasClients) return;
   if (targetIndex == null || itemCount <= 0) {
-    controller.jumpTo(controller.position.maxScrollExtent);
+    await _settleAtBottom(controller, maxAttempts: maxAttempts);
     return;
   }
 
@@ -93,7 +93,33 @@ Future<void> anchorToIndex({
         alignment: 0.15, duration: Duration.zero);
     return;
   }
-  controller.jumpTo(controller.position.maxScrollExtent);
+  await _settleAtBottom(controller, maxAttempts: maxAttempts);
+}
+
+/// Reaches the real bottom of a finite, lazily built variable-height list.
+///
+/// `maxScrollExtent` begins as an estimate and may grow after a jump reveals
+/// later rows. Re-read it after each frame until it settles, rather than
+/// leaving an all-read conversation short of its latest message.
+Future<void> _settleAtBottom(
+  ScrollController controller, {
+  required int maxAttempts,
+}) async {
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    if (!controller.hasClients) return;
+    final before = controller.position.maxScrollExtent;
+    controller.jumpTo(before);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!controller.hasClients) return;
+    final after = controller.position.maxScrollExtent;
+    if ((after - before).abs() < 1) {
+      controller.jumpTo(after);
+      return;
+    }
+  }
+  if (controller.hasClients) {
+    controller.jumpTo(controller.position.maxScrollExtent);
+  }
 }
 
 class ChatAnchorRegistry {
