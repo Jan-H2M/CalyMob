@@ -688,7 +688,8 @@ class _SessionChatScreenState extends State<SessionChatScreen>
                     }
 
                     final newMessagesDividerIndex = firstUnreadMessageIndex(
-                      messages.map((message) => message.createdAt),
+                      messages.map((message) =>
+                          message.unreadCreatedAt ?? message.createdAt),
                       _lastReadBeforeOpen,
                     );
                     final hasNewDivider = newMessagesDividerIndex != null;

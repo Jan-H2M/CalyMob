@@ -18,6 +18,23 @@ void main() {
     expect(firstUnreadMessageIndex([first, second], null), isNull);
   });
 
+  test('uses the server-normalized unread timestamp for a skewed message', () {
+    final cursor = DateTime(2026, 9, 29, 11);
+    final legacyCreatedAt = DateTime(2026, 9, 29, 10);
+    final unreadCreatedAt = DateTime(2026, 9, 29, 12);
+
+    expect(
+      firstUnreadMessageIndex([legacyCreatedAt], cursor),
+      isNull,
+      reason: 'The legacy client timestamp is before the server cursor.',
+    );
+    expect(
+      firstUnreadMessageIndex([unreadCreatedAt], cursor),
+      0,
+      reason: 'The canonical unread timestamp must place the divider.',
+    );
+  });
+
   test('cursor authority prefers the server cursor over a stale device mirror',
       () {
     expect(

@@ -486,7 +486,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                           // Chercher l'index du premier reply non lu
                           final newMessagesDividerIndex =
                               firstUnreadMessageIndex(
-                            replies.map((reply) => reply.createdAt),
+                            replies.map((reply) =>
+                                reply.unreadCreatedAt ?? reply.createdAt),
                             _lastReadBeforeOpen,
                           );
 

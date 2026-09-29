@@ -712,7 +712,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
               }
 
               final newMessagesDividerIndex = firstUnreadMessageIndex(
-                messages.map((message) => message.createdAt),
+                messages.map(
+                    (message) => message.unreadCreatedAt ?? message.createdAt),
                 _lastReadBeforeOpen,
               );
 
