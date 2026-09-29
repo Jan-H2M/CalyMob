@@ -152,6 +152,33 @@ class UnreadCountProvider extends ChangeNotifier {
   bool get usesCursorReadState =>
       _isListening && (!_flagResolved || _cursorMode == UnreadCursorV1Mode.on);
 
+  /// True only when cursor authority is both selected and bootstrapped.
+  bool get isCursorReadStateReady =>
+      usesCursorReadState && _flagResolved && _contextReady && _cursorReady;
+
+  /// Reads the canonical server-owned cursor for an opening conversation.
+  /// Screens use this only while cursor mode is authoritative; the legacy
+  /// tracker remains a rollback mirror, not the cross-device source of truth.
+  Future<DateTime?> getEffectiveReadCursor(
+    ReadStateSection section, {
+    String? scopeId,
+  }) async {
+    final clubId = _clubId;
+    final userId = _userId;
+    if (!usesCursorReadState ||
+        !_flagResolved ||
+        !_contextReady ||
+        !_cursorReady ||
+        clubId == null ||
+        userId == null ||
+        _readState == null) {
+      return null;
+    }
+    return (await _readState!
+            .getEffectiveCursor(clubId, userId, section, scopeId: scopeId))
+        ?.toDate();
+  }
+
   Future<void> markAnnouncementSeen(
     String announcementId, {
     String? visibleReplyId,

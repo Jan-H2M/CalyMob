@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,12 +7,14 @@ import 'package:intl/intl.dart';
 import '../../utils/date_formatter.dart';
 import '../../models/announcement.dart';
 import '../../models/announcement_reply.dart';
+import '../../models/read_state.dart';
 import '../../models/session_message.dart' show MessageAttachment;
 import '../../widgets/message_hover_caret.dart';
 import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
 import '../../services/local_read_tracker.dart';
 import '../../services/visible_read_ack_gate.dart';
+import '../../utils/chat_scroll.dart';
 import '../../utils/search_highlight.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -56,6 +59,10 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
 
   // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
   DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
+  int? _initialUnreadIndex;
+  int _initialItemCount = 0;
+  final ChatAnchorRegistry _anchorRegistry = ChatAnchorRegistry();
 
   // Auto-scroll vers le bas à l'ouverture pour voir les dernières communications
   bool _initialScrollDone = false;
@@ -79,6 +86,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     WidgetsBinding.instance.addObserver(this);
     _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_captureLastReadBeforeOpen());
     // Both authorities wait for a successful visible replies snapshot. This
     // avoids acknowledging a covered/background route or failed load.
   }
@@ -131,10 +139,46 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     });
   }
 
+  Future<void> _captureLastReadBeforeOpen() async {
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
+    final unreadProvider = context.read<UnreadCountProvider>();
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId) ||
+        (unreadProvider.usesCursorReadState &&
+            !unreadProvider.isCursorReadStateReady)) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final itemKey = 'announcement_${widget.announcement.id}';
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.announcements,
+              scopeId: widget.announcement.id,
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead(itemKey) ??
+            tracker.getLastRead('announcements'),
+        installBaseline: tracker.installBaseline,
+      );
+      if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    } finally {
+      _capturingReadCursor = false;
+    }
+  }
+
   Future<void> _acknowledgeLoadedCursorContent() async {
     if (!_appIsForeground ||
         !isCurrentRouteForReadAcknowledgement(context) ||
         !_hasLoadedContent ||
+        _lastReadBeforeOpen == null ||
         _cursorAcknowledgementInFlight ||
         _acknowledgedContentRevision >= _loadedContentRevision) {
       return;
@@ -196,10 +240,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
       context,
       listen: false,
     );
-    // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
-    // pour pouvoir afficher le divider "Nouveaux messages"
-    final tracker = LocalReadTracker();
-    await tracker.init();
+    // The pre-open cursor is captured in initState, before any acknowledgement
+    // can update local legacy state.
     if (!mounted ||
         !_appIsForeground ||
         !isCurrentRouteForReadAcknowledgement(context) ||
@@ -207,11 +249,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
       throw StateError(
           'Announcement visibility changed before acknowledgement.');
     }
-    final itemKey = 'announcement_${widget.announcement.id}';
-    _lastReadBeforeOpen ??= tracker.getLastRead(itemKey) ??
-        tracker.getLastRead('announcements') ??
-        tracker.installBaseline ??
-        DateTime(2024);
     await unreadProvider.markAnnouncementSeen(
       widget.announcement.id,
       visibleReplyId: _latestVisibleReplyId,
@@ -269,13 +306,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
         _pendingAttachments.clear();
       });
 
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      // Do not force a post-send scroll. The ListView keeps the reader at the
+      // reply position; a forced bottom jump made threaded replies lose their
+      // context.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -338,6 +371,12 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
+    }
 
     return Scaffold(
       body: OceanGradientBackground(
@@ -432,7 +471,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                             // Premier rendu avec données : scroll vers la première
                             // communication non-lue (divider "Nouveaux messages") ;
                             // sinon vers le dernier reply.
-                            if (!_initialScrollDone) {
+                            if (!_initialScrollDone &&
+                                _lastReadBeforeOpen != null) {
                               _initialScrollDone = true;
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _performInitialScroll();
@@ -444,23 +484,22 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                               '📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
 
                           // Chercher l'index du premier reply non lu
-                          int? newMessagesDividerIndex;
-                          if (_lastReadBeforeOpen != null) {
-                            for (int i = 0; i < replies.length; i++) {
-                              if (replies[i]
-                                  .createdAt
-                                  .isAfter(_lastReadBeforeOpen!)) {
-                                newMessagesDividerIndex = i;
-                                break;
-                              }
-                            }
-                          }
+                          final newMessagesDividerIndex =
+                              firstUnreadMessageIndex(
+                            replies.map((reply) =>
+                                reply.unreadCreatedAt ?? reply.createdAt),
+                            _lastReadBeforeOpen,
+                          );
 
                           // Calculer le nombre total d'items (header + replies + divider éventuel)
                           final hasNewDivider = newMessagesDividerIndex != null;
                           // +1 for header at index 0
                           final totalItems =
                               1 + replies.length + (hasNewDivider ? 1 : 0);
+                          _initialUnreadIndex = newMessagesDividerIndex == null
+                              ? null
+                              : newMessagesDividerIndex + 1;
+                          _initialItemCount = totalItems;
 
                           return ListView.builder(
                             controller: _scrollController,
@@ -470,7 +509,11 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                             itemBuilder: (context, index) {
                               // First item is the announcement header
                               if (index == 0) {
-                                return _buildAnnouncementHeader(dateFormat);
+                                return ChatAnchorRow(
+                                    index: index,
+                                    registry: _anchorRegistry,
+                                    child:
+                                        _buildAnnouncementHeader(dateFormat));
                               }
 
                               // Adjust index for replies (subtract 1 for header)
@@ -479,20 +522,26 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                               // Insérer le divider "Nouveaux messages" à la bonne position
                               if (hasNewDivider &&
                                   replyIndex == newMessagesDividerIndex) {
-                                return _buildNewMessagesDivider();
+                                return ChatAnchorRow(
+                                    index: index,
+                                    registry: _anchorRegistry,
+                                    child: _buildNewMessagesDivider());
                               }
 
                               // Ajuster l'index pour les replies après le divider
                               final actualReplyIndex = hasNewDivider &&
-                                      replyIndex > newMessagesDividerIndex!
+                                      replyIndex > newMessagesDividerIndex
                                   ? replyIndex - 1
                                   : replyIndex;
 
                               final reply = replies[actualReplyIndex];
                               final isOwnReply =
                                   reply.senderId == currentUserId;
-                              return _buildReplyBubble(
-                                  reply, isOwnReply, dateFormat);
+                              return ChatAnchorRow(
+                                  index: index,
+                                  registry: _anchorRegistry,
+                                  child: _buildReplyBubble(
+                                      reply, isOwnReply, dateFormat));
                             },
                           );
                         },
@@ -663,13 +712,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     );
   }
 
-  /// Saute à la fin de la liste sans animation. Utilisé en fallback quand
-  /// il n'y a pas de divider "Nouveaux messages".
-  void _jumpToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-  }
-
   /// Scroll initial robuste à l'ouverture du chat:
   /// - cible le divider "Nouveaux messages" si présent (alignement haut),
   /// - sinon saute au dernier message.
@@ -677,21 +719,12 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   /// L'opération est répétée sur quelques frames pour absorber les changements
   /// de hauteur dus aux avatars / images qui chargent en async.
   Future<void> _performInitialScroll() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
-      if (!mounted) return;
-      final dividerContext = _newMessagesDividerKey.currentContext;
-      if (dividerContext != null && dividerContext.mounted) {
-        await Scrollable.ensureVisible(
-          dividerContext,
-          alignment: 0.15,
-          duration: Duration.zero,
-          curve: Curves.linear,
-        );
-      } else {
-        _jumpToBottom();
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-    }
+    await anchorToIndex(
+        controller: _scrollController,
+        targetKey: _newMessagesDividerKey,
+        registry: _anchorRegistry,
+        targetIndex: _initialUnreadIndex,
+        itemCount: _initialItemCount);
   }
 
   Widget _buildReplyBubble(

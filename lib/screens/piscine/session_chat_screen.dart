@@ -15,7 +15,10 @@ import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
+import '../../services/unread_count_service.dart';
 import '../../services/visible_read_ack_gate.dart';
+import '../../services/local_read_tracker.dart';
+import '../../utils/chat_scroll.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 import '../../widgets/message_edit_sheet.dart';
@@ -56,6 +59,12 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   String? _latestVisibleMessageId;
   DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
+  DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
+  int? _initialUnreadIndex;
+  int _initialItemCount = 0;
+  final ChatAnchorRegistry _anchorRegistry = ChatAnchorRegistry();
+  final GlobalKey _newMessagesDividerKey = GlobalKey();
   bool _appIsForeground = true;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
   final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
@@ -80,6 +89,52 @@ class _SessionChatScreenState extends State<SessionChatScreen>
     WidgetsBinding.instance.addObserver(this);
     _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_captureLastReadBeforeOpen());
+  }
+
+  Future<void> _captureLastReadBeforeOpen() async {
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
+    final unreadProvider = context.read<UnreadCountProvider>();
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(
+          FirebaseConfig.defaultClubId,
+          userId,
+        ) ||
+        (unreadProvider.usesCursorReadState &&
+            !unreadProvider.isCursorReadStateReady)) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final legacyKey = unreadSessionReadKey(
+        widget.session.id,
+        widget.chatGroup.type.value,
+        widget.chatGroup.level,
+      );
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.sessions,
+              scopeId: readStateSessionScopeId(
+                widget.session.id,
+                widget.chatGroup.type.value,
+                widget.chatGroup.level,
+              ),
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead(legacyKey),
+        installBaseline: tracker.installBaseline,
+      );
+      if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+    } finally {
+      _capturingReadCursor = false;
+    }
   }
 
   @override
@@ -140,7 +195,7 @@ class _SessionChatScreenState extends State<SessionChatScreen>
     }
     final cursor = unreadProvider.usesCursorReadState;
     final revision = _readAckGate.begin(
-      ready: _hasLoadedMessageSnapshot,
+      ready: _hasLoadedMessageSnapshot && _lastReadBeforeOpen != null,
       cursor: cursor,
     );
     if (revision == null) return;
@@ -232,7 +287,7 @@ class _SessionChatScreenState extends State<SessionChatScreen>
         _pendingPoll = null;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      // Preserve the reply context instead of forcing a jump to the end.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -475,26 +530,13 @@ class _SessionChatScreenState extends State<SessionChatScreen>
     });
   }
 
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
-  }
-
-  /// Scroll robuste à la fin de la liste à l'ouverture. On répète l'opération
-  /// sur quelques frames pour absorber les changements de hauteur dus aux
-  /// avatars qui se chargent en async.
-  Future<void> _performInitialScrollToBottom() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
-      if (!mounted) return;
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-    }
+  Future<void> _performInitialScroll() async {
+    await anchorToIndex(
+        controller: _scrollController,
+        targetKey: _newMessagesDividerKey,
+        registry: _anchorRegistry,
+        targetIndex: _initialUnreadIndex,
+        itemCount: _initialItemCount);
   }
 
   @override
@@ -509,6 +551,11 @@ class _SessionChatScreenState extends State<SessionChatScreen>
       return const Scaffold(
         body: Center(child: Text('Niet verbonden')),
       );
+    }
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
     }
 
     return Scaffold(
@@ -640,54 +687,83 @@ class _SessionChatScreenState extends State<SessionChatScreen>
                       );
                     }
 
-                    if (!_initialScrollDone) {
+                    final newMessagesDividerIndex = firstUnreadMessageIndex(
+                      messages.map((message) =>
+                          message.unreadCreatedAt ?? message.createdAt),
+                      _lastReadBeforeOpen,
+                    );
+                    final hasNewDivider = newMessagesDividerIndex != null;
+                    _initialUnreadIndex = newMessagesDividerIndex;
+                    _initialItemCount =
+                        messages.length + (hasNewDivider ? 1 : 0);
+                    if (!_initialScrollDone && _lastReadBeforeOpen != null) {
                       _initialScrollDone = true;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _performInitialScrollToBottom();
+                        _performInitialScroll();
                       });
                     }
 
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: messages.length,
+                      itemCount: messages.length + (hasNewDivider ? 1 : 0),
                       itemBuilder: (context, index) {
-                        final message = messages[index];
+                        if (hasNewDivider && index == newMessagesDividerIndex) {
+                          return ChatAnchorRow(
+                              index: index,
+                              registry: _anchorRegistry,
+                              child: Container(
+                                key: _newMessagesDividerKey,
+                                margin:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                child: const Center(
+                                  child: Text('Nouveaux messages'),
+                                ),
+                              ));
+                        }
+                        final messageIndex =
+                            hasNewDivider && index > newMessagesDividerIndex
+                                ? index - 1
+                                : index;
+                        final message = messages[messageIndex];
                         final isOwn = message.senderId == userId;
-                        final showDateHeader = index == 0 ||
+                        final showDateHeader = messageIndex == 0 ||
                             !_isSameDay(
-                              messages[index - 1].createdAt,
+                              messages[messageIndex - 1].createdAt,
                               message.createdAt,
                             );
 
-                        return Column(
-                          children: [
-                            if (showDateHeader)
-                              _DateHeader(date: message.createdAt),
-                            FutureBuilder<String?>(
-                              future: isOwn
-                                  ? Future.value(null)
-                                  : _getPhotoUrl(message.senderId),
-                              builder: (context, snapshot) {
-                                return _MessageBubble(
-                                  message: message,
-                                  isOwn: isOwn,
-                                  currentUserId: userId,
-                                  senderPhotoUrl: snapshot.data,
-                                  onLongPress: () =>
-                                      _showMessageOptions(message, isOwn),
-                                  onToggleReaction: (emoji) =>
-                                      _toggleReaction(message.id, emoji),
-                                  onVote: (optionId) =>
-                                      _togglePollVote(message.id, optionId),
-                                  onClosePoll: isOwn && message.hasPoll
-                                      ? () => _closePoll(message.id)
-                                      : null,
-                                );
-                              },
-                            ),
-                          ],
-                        );
+                        return ChatAnchorRow(
+                            index: index,
+                            registry: _anchorRegistry,
+                            child: Column(
+                              children: [
+                                if (showDateHeader)
+                                  _DateHeader(date: message.createdAt),
+                                FutureBuilder<String?>(
+                                  future: isOwn
+                                      ? Future.value(null)
+                                      : _getPhotoUrl(message.senderId),
+                                  builder: (context, snapshot) {
+                                    return _MessageBubble(
+                                      message: message,
+                                      isOwn: isOwn,
+                                      currentUserId: userId,
+                                      senderPhotoUrl: snapshot.data,
+                                      onLongPress: () =>
+                                          _showMessageOptions(message, isOwn),
+                                      onToggleReaction: (emoji) =>
+                                          _toggleReaction(message.id, emoji),
+                                      onVote: (optionId) =>
+                                          _togglePollVote(message.id, optionId),
+                                      onClosePoll: isOwn && message.hasPoll
+                                          ? () => _closePoll(message.id)
+                                          : null,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ));
                       },
                     );
                   },

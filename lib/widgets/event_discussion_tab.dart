@@ -11,6 +11,7 @@ import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
 import '../models/event_message.dart';
 import '../models/poll.dart';
+import '../models/read_state.dart';
 import 'message_hover_caret.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../providers/auth_provider.dart';
@@ -19,6 +20,7 @@ import '../providers/unread_count_provider.dart';
 import '../services/local_read_tracker.dart';
 import '../services/profile_service.dart';
 import '../services/visible_read_ack_gate.dart';
+import '../utils/chat_scroll.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
 import 'message_edit_sheet.dart';
@@ -66,6 +68,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   bool _isUploading = false;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+  bool _capturingReadCursor = false;
+  int? _initialUnreadIndex;
+  int _initialItemCount = 0;
+  final ChatAnchorRegistry _anchorRegistry = ChatAnchorRegistry();
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
   bool _appIsForeground = true;
   String? _latestVisibleMessageId;
@@ -148,14 +154,39 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
-    final tracker = LocalReadTracker();
-    await tracker.init();
-    final key = 'operation_${widget.operationId}';
-    final lastRead =
-        tracker.getLastRead(key) ?? tracker.installBaseline ?? DateTime(2024);
-    if (!mounted) return;
-    setState(() => _lastReadBeforeOpen = lastRead);
-    _scheduleVisibleMessagesAcknowledgement();
+    if (_capturingReadCursor || _lastReadBeforeOpen != null) return;
+    final unreadProvider = context.read<UnreadCountProvider>();
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null ||
+        !unreadProvider.hasResolvedAuthorityFor(widget.clubId, userId) ||
+        (unreadProvider.usesCursorReadState &&
+            !unreadProvider.isCursorReadStateReady)) {
+      return;
+    }
+    _capturingReadCursor = true;
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      final key = 'operation_${widget.operationId}';
+      final usesCursorAuthority = unreadProvider.usesCursorReadState;
+      final canonicalCursor = usesCursorAuthority
+          ? await unreadProvider.getEffectiveReadCursor(
+              ReadStateSection.events,
+              scopeId: widget.operationId,
+            )
+          : null;
+      final lastRead = initialConversationReadCursor(
+        usesCursorAuthority: usesCursorAuthority,
+        canonicalCursor: canonicalCursor,
+        legacyCursor: tracker.getLastRead(key),
+        installBaseline: tracker.installBaseline,
+      );
+      if (!mounted) return;
+      setState(() => _lastReadBeforeOpen = lastRead);
+      _scheduleVisibleMessagesAcknowledgement();
+    } finally {
+      _capturingReadCursor = false;
+    }
   }
 
   @override
@@ -315,14 +346,12 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
         _pendingPoll = null;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      // Do not move the member away from the message they were replying to.
+      // The stream will render the new message without resetting this controller.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -394,9 +423,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   Future<void> _copyMessage(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Message copié')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Message copié')));
   }
 
   Future<void> _editMessage(EventMessage message) async {
@@ -453,9 +482,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Message modifié')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Message modifié')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -503,10 +532,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -571,8 +597,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                 if (isOwn)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading:
-                        const Icon(Icons.delete_outline, color: Colors.red),
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.red,
+                    ),
                     title: const Text(
                       'Supprimer',
                       style: TextStyle(color: Colors.red),
@@ -590,23 +618,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     );
   }
 
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
-  }
-
-  /// Saute immédiatement à la fin de la liste, sans animation. Utilisé à
-  /// l'ouverture pour éviter qu'on voie un scroll parasite quand la liste
-  /// est encore en train de mesurer ses items (avatars async).
-  void _jumpToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-  }
-
   /// Scroll initial à l'ouverture du chat:
   /// - s'il y a un divider "Nouveaux messages", on aligne ce divider en haut
   ///   du viewport pour que le membre commence sa lecture aux non-lus.
@@ -615,21 +626,13 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   /// On répète l'opération sur quelques frames pour absorber les changements
   /// de hauteur dus aux avatars / images qui arrivent en async.
   Future<void> _performInitialScroll() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
-      if (!mounted) return;
-      final dividerContext = _newMessagesDividerKey.currentContext;
-      if (dividerContext != null && dividerContext.mounted) {
-        await Scrollable.ensureVisible(
-          dividerContext,
-          alignment: 0.15,
-          duration: Duration.zero,
-          curve: Curves.linear,
-        );
-      } else {
-        _jumpToBottom();
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-    }
+    await anchorToIndex(
+      controller: _scrollController,
+      targetKey: _newMessagesDividerKey,
+      registry: _anchorRegistry,
+      targetIndex: _initialUnreadIndex,
+      itemCount: _initialItemCount,
+    );
   }
 
   @override
@@ -642,6 +645,12 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final canWrite = _hasCheckedParticipation &&
         messageProvider.isParticipant(widget.operationId);
+
+    if (_lastReadBeforeOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_captureLastReadBeforeOpen());
+      });
+    }
 
     return Column(
       children: [
@@ -661,8 +670,11 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline,
-                          size: 64, color: Colors.red),
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red,
+                      ),
                       const SizedBox(height: 16),
                       Text('Erreur: ${snapshot.error}'),
                     ],
@@ -692,35 +704,33 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                       const SizedBox(height: 16),
                       Text(
                         'Aucun message',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                       ),
                     ],
                   ),
                 );
               }
 
-              if (!_initialScrollDone) {
+              final newMessagesDividerIndex = firstUnreadMessageIndex(
+                messages.map(
+                    (message) => message.unreadCreatedAt ?? message.createdAt),
+                _lastReadBeforeOpen,
+              );
+
+              final hasNewDivider = newMessagesDividerIndex != null;
+              final totalItems = messages.length + (hasNewDivider ? 1 : 0);
+              _initialUnreadIndex = newMessagesDividerIndex;
+              _initialItemCount = totalItems;
+
+              // The read timestamp is loaded asynchronously. Scheduling before
+              // it is available loses the divider and makes the old top/bottom
+              // fallback win permanently.
+              if (!_initialScrollDone && _lastReadBeforeOpen != null) {
                 _initialScrollDone = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _performInitialScroll();
                 });
               }
-
-              int? newMessagesDividerIndex;
-              if (_lastReadBeforeOpen != null) {
-                for (var i = 0; i < messages.length; i++) {
-                  if (messages[i].createdAt.isAfter(_lastReadBeforeOpen!)) {
-                    newMessagesDividerIndex = i;
-                    break;
-                  }
-                }
-              }
-
-              final hasNewDivider = newMessagesDividerIndex != null;
-              final totalItems = messages.length + (hasNewDivider ? 1 : 0);
 
               return ListView.builder(
                 controller: _scrollController,
@@ -728,21 +738,26 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                 itemCount: totalItems,
                 itemBuilder: (context, index) {
                   if (hasNewDivider && index == newMessagesDividerIndex) {
-                    return _buildNewMessagesDivider();
+                    return ChatAnchorRow(
+                        index: index,
+                        registry: _anchorRegistry,
+                        child: _buildNewMessagesDivider());
                   }
 
                   final messageIndex =
-                      hasNewDivider && index > newMessagesDividerIndex!
+                      hasNewDivider && index > newMessagesDividerIndex
                           ? index - 1
                           : index;
                   final message = messages[messageIndex];
                   final isOwnMessage = message.senderId == currentUserId;
 
-                  return _buildMessageBubble(
-                    message: message,
-                    isOwnMessage: isOwnMessage,
-                    currentUserId: currentUserId,
-                  );
+                  return ChatAnchorRow(
+                      index: index,
+                      registry: _anchorRegistry,
+                      child: _buildMessageBubble(
+                          message: message,
+                          isOwnMessage: isOwnMessage,
+                          currentUserId: currentUserId));
                 },
               );
             },
@@ -823,8 +838,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
               ],
               Flexible(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.75,
                   ),
@@ -862,17 +879,23 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                           },
                           styleSheet: MarkdownStyleSheet(
                             p: const TextStyle(
-                                fontSize: 15, color: Colors.black87),
+                              fontSize: 15,
+                              color: Colors.black87,
+                            ),
                             strong: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w700),
+                              fontSize: 15,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w700,
+                            ),
                             em: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.black87,
-                                fontStyle: FontStyle.italic),
+                              fontSize: 15,
+                              color: Colors.black87,
+                              fontStyle: FontStyle.italic,
+                            ),
                             listBullet: const TextStyle(
-                                fontSize: 15, color: Colors.black87),
+                              fontSize: 15,
+                              color: Colors.black87,
+                            ),
                             blockSpacing: 4,
                           ),
                         ),
@@ -924,9 +947,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(color: Colors.blue.shade400, width: 3),
-        ),
+        border: Border(left: BorderSide(color: Colors.blue.shade400, width: 3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1126,10 +1147,7 @@ class _PendingPollCard extends StatelessWidget {
   final Poll poll;
   final VoidCallback onRemove;
 
-  const _PendingPollCard({
-    required this.poll,
-    required this.onRemove,
-  });
+  const _PendingPollCard({required this.poll, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -1147,10 +1165,7 @@ class _PendingPollCard extends StatelessWidget {
           Expanded(
             child: Text(
               poll.question,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
           IconButton(onPressed: onRemove, icon: const Icon(Icons.close)),
