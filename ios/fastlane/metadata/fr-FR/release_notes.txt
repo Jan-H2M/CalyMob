@@ -1,1 +1,1 @@
-Les discussions s’ouvrent désormais au premier message non lu. Après l’envoi d’une réponse, vous restez à votre position de lecture.
+Correction de la notification de mise à jour afin qu’elle ne s’affiche plus de manière répétée après l’ouverture de l’App Store ou du Play Store.
