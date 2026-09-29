@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../utils/date_formatter.dart';
 import '../../models/announcement.dart';
 import '../../models/announcement_reply.dart';
+import '../../models/read_state.dart';
 import '../../models/session_message.dart' show MessageAttachment;
 import '../../widgets/message_hover_caret.dart';
 import '../../models/event_message.dart' show ReplyPreview;
@@ -135,13 +136,24 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    final unreadProvider = context.read<UnreadCountProvider>();
     final tracker = LocalReadTracker();
     await tracker.init();
     final itemKey = 'announcement_${widget.announcement.id}';
-    final lastRead = tracker.getLastRead(itemKey) ??
-        tracker.getLastRead('announcements') ??
-        tracker.installBaseline ??
-        DateTime(2024);
+    final usesCursorAuthority = unreadProvider.usesCursorReadState;
+    final canonicalCursor = usesCursorAuthority
+        ? await unreadProvider.getEffectiveReadCursor(
+            ReadStateSection.announcements,
+            scopeId: widget.announcement.id,
+          )
+        : null;
+    final lastRead = initialConversationReadCursor(
+      usesCursorAuthority: usesCursorAuthority,
+      canonicalCursor: canonicalCursor,
+      legacyCursor:
+          tracker.getLastRead(itemKey) ?? tracker.getLastRead('announcements'),
+      installBaseline: tracker.installBaseline,
+    );
     if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
   }
 

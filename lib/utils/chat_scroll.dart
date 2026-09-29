@@ -15,3 +15,18 @@ int? firstUnreadMessageIndex(
   }
   return null;
 }
+
+/// Selects the authority that was in force when the conversation was opened.
+///
+/// Cursor v1 is server-owned, so its value must win over this device's legacy
+/// rollback mirror. The local value remains the fallback while the rollout is
+/// explicitly in legacy mode or when the server has no cursor for this scope.
+DateTime initialConversationReadCursor({
+  required bool usesCursorAuthority,
+  DateTime? canonicalCursor,
+  DateTime? legacyCursor,
+  DateTime? installBaseline,
+}) =>
+    usesCursorAuthority && canonicalCursor != null
+        ? canonicalCursor
+        : legacyCursor ?? installBaseline ?? DateTime(2024);

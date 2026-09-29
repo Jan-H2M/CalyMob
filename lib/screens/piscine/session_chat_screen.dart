@@ -89,17 +89,31 @@ class _SessionChatScreenState extends State<SessionChatScreen>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    final unreadProvider = context.read<UnreadCountProvider>();
     final tracker = LocalReadTracker();
     await tracker.init();
-    final lastRead = tracker.getLastRead(
-          unreadSessionReadKey(
-            widget.session.id,
-            widget.chatGroup.type.value,
-            widget.chatGroup.level,
-          ),
-        ) ??
-        tracker.installBaseline ??
-        DateTime(2024);
+    final legacyKey = unreadSessionReadKey(
+      widget.session.id,
+      widget.chatGroup.type.value,
+      widget.chatGroup.level,
+    );
+    final usesCursorAuthority = unreadProvider.usesCursorReadState;
+    final canonicalCursor = usesCursorAuthority
+        ? await unreadProvider.getEffectiveReadCursor(
+            ReadStateSection.sessions,
+            scopeId: readStateSessionScopeId(
+              widget.session.id,
+              widget.chatGroup.type.value,
+              widget.chatGroup.level,
+            ),
+          )
+        : null;
+    final lastRead = initialConversationReadCursor(
+      usesCursorAuthority: usesCursorAuthority,
+      canonicalCursor: canonicalCursor,
+      legacyCursor: tracker.getLastRead(legacyKey),
+      installBaseline: tracker.installBaseline,
+    );
     if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
   }
 

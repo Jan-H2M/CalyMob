@@ -11,6 +11,7 @@ import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
 import '../models/event_message.dart';
 import '../models/poll.dart';
+import '../models/read_state.dart';
 import 'message_hover_caret.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../providers/auth_provider.dart';
@@ -149,11 +150,23 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    final unreadProvider = context.read<UnreadCountProvider>();
     final tracker = LocalReadTracker();
     await tracker.init();
     final key = 'operation_${widget.operationId}';
-    final lastRead =
-        tracker.getLastRead(key) ?? tracker.installBaseline ?? DateTime(2024);
+    final usesCursorAuthority = unreadProvider.usesCursorReadState;
+    final canonicalCursor = usesCursorAuthority
+        ? await unreadProvider.getEffectiveReadCursor(
+            ReadStateSection.events,
+            scopeId: widget.operationId,
+          )
+        : null;
+    final lastRead = initialConversationReadCursor(
+      usesCursorAuthority: usesCursorAuthority,
+      canonicalCursor: canonicalCursor,
+      legacyCursor: tracker.getLastRead(key),
+      installBaseline: tracker.installBaseline,
+    );
     if (!mounted) return;
     setState(() => _lastReadBeforeOpen = lastRead);
     _scheduleVisibleMessagesAcknowledgement();

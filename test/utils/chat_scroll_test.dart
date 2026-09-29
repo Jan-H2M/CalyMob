@@ -17,4 +17,37 @@ void main() {
   test('does not infer an unread divider before the pre-open cursor loads', () {
     expect(firstUnreadMessageIndex([first, second], null), isNull);
   });
+
+  test('cursor authority prefers the server cursor over a stale device mirror',
+      () {
+    expect(
+      initialConversationReadCursor(
+        usesCursorAuthority: true,
+        canonicalCursor: second,
+        legacyCursor: first,
+      ),
+      second,
+    );
+  });
+
+  test('legacy authority keeps the device mirror during the rollout', () {
+    expect(
+      initialConversationReadCursor(
+        usesCursorAuthority: false,
+        canonicalCursor: third,
+        legacyCursor: first,
+      ),
+      first,
+    );
+  });
+
+  test('falls back to the install baseline only with no usable cursor', () {
+    expect(
+      initialConversationReadCursor(
+        usesCursorAuthority: true,
+        installBaseline: second,
+      ),
+      second,
+    );
+  });
 }

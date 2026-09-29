@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/poll.dart';
+import '../../models/read_state.dart';
 import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -80,11 +81,22 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   }
 
   Future<void> _captureLastReadBeforeOpen() async {
+    final unreadProvider = context.read<UnreadCountProvider>();
     final tracker = LocalReadTracker();
     await tracker.init();
-    final lastRead = tracker.getLastRead('team_${widget.channel.id}') ??
-        tracker.installBaseline ??
-        DateTime(2024);
+    final usesCursorAuthority = unreadProvider.usesCursorReadState;
+    final canonicalCursor = usesCursorAuthority
+        ? await unreadProvider.getEffectiveReadCursor(
+            ReadStateSection.teams,
+            scopeId: widget.channel.id,
+          )
+        : null;
+    final lastRead = initialConversationReadCursor(
+      usesCursorAuthority: usesCursorAuthority,
+      canonicalCursor: canonicalCursor,
+      legacyCursor: tracker.getLastRead('team_${widget.channel.id}'),
+      installBaseline: tracker.installBaseline,
+    );
     if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
   }
 
