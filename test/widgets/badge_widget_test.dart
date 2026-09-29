@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:calymob/providers/unread_count_provider.dart';
 import 'package:calymob/models/unread_cursor_feature_flag.dart';
+import 'package:calymob/models/read_state.dart';
 
 /// A standalone badge widget that mirrors the badge display logic
 /// used in LandingScreen's _GlossyButton and OperationsListScreen.
@@ -104,6 +105,8 @@ class MockUnreadCountProvider extends ChangeNotifier
   @override
   bool get usesCursorReadState => false;
   @override
+  bool get isCursorReadStateReady => false;
+  @override
   bool get isListening => false;
   @override
   bool get hasReliableBadgeCount => false;
@@ -111,6 +114,11 @@ class MockUnreadCountProvider extends ChangeNotifier
   Object? get lastRefreshError => null;
   @override
   bool hasResolvedAuthorityFor(String clubId, String userId) => false;
+  @override
+  Future<DateTime?> getEffectiveReadCursor(
+    ReadStateSection section, {
+    String? scopeId,
+  }) async => null;
 
   @override
   Future<void> markAnnouncementSeen(
