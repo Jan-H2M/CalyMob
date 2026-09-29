@@ -1,8 +1,8 @@
 # Chat scroll regression — 2026-09-29
 
-Status: merged to `main` through PR #94 on 2026-09-29; included in the
-1.23.2+216 internal-TestFlight build. Public-store submission remains a
-separate approval.
+Status: merged to `main` through PR #94 on 2026-09-29; included in
+1.23.2+216. Android is released to Google Play production. iOS remains
+`PREPARE_FOR_SUBMISSION` pending App Store metadata completion.
 
 Related work: MOB-027 cursor-v1 unread state and the 1.23.x rollout.
 
@@ -33,9 +33,10 @@ the reader's current context after the stream adds the new item.
 
 > **Superseded (2026-09-29):** The earlier statement that this issue had no
 > release/store work was correct when written. Jan subsequently approved an
-> internal-only TestFlight candidate, 1.23.2+216. It does not authorize public
-> App Store submission, Google Play upload, a Firebase app-version publication,
-> or any production-data change.
+> internal-only TestFlight candidate, 1.23.2+216. That limited approval has in
+> turn been superseded by Jan’s explicit production approval below. It did not
+> and does not authorize a Firebase app-version publication or any
+> production-data change.
 
 ## Internal TestFlight execution — 1.23.2+216
 
@@ -49,4 +50,40 @@ publication, rules deployment, or production-data change was made.
 App Store Connect subsequently reported build `1.23.2 (216)` as `VALID` with
 `IN_BETA_TESTING`. Jan is an internal beta tester and the **CalyMob Testing
 team** has automatic access to all builds, so the build is available to him
-for internal testing. Public release remains separately gated.
+for internal testing.
+
+> **Superseded (2026-09-29):** “TestFlight internal only” was the correct
+> approval and execution scope at 12:47. Jan later approved production release
+> at 13:42; the record is retained for audit history.
+
+## Production execution — 1.23.2+216
+
+Jan approved the public store scope at 13:42 with the exact evidence:
+**“Jan 29/9 13:42: production iOS + Android”.** This approval applies to the
+already-reviewed release source `0561f699d9bbc089d0f610b340e9e7a501e8fd58`.
+
+### Android — completed
+
+The signed AAB was verified as `versionName 1.23.2` / `versionCode 216` before
+upload. Google Play production accepted versionCode **216** and the production
+track readback reports status **`completed`**. The edit was committed at full
+rollout (`1.0`); Google’s API represents a completed release with a null
+`userFraction`.
+
+Google Play currently has only an **`fr-FR`** store-listing language. Therefore
+only the approved French release note was sent; no `nl-NL` Play listing or
+release-note localization was created.
+
+### iOS — blocked, left intact
+
+The existing TestFlight build `1.23.2 (216)` was selected for an App Store
+submission attempt. Fastlane `deliver` created the `nl-NL` App Store
+localization and uploaded its release note, but App Store Connect rejected the
+review request because that localization has no required **description**,
+**keywords**, or **support URL**. The version remains
+**`PREPARE_FOR_SUBMISSION`**.
+
+Do not delete the `nl-NL` localization or invent Dutch metadata. Submission is
+pending Jan’s decision on those three localized values. No new IPA was built or
+uploaded, and no Firebase app-version publication, rules deployment, boutique
+setting, or production-data change was made.

@@ -2,6 +2,29 @@
 
 ## Overzicht
 
+## Uitvoeringslog — CalyMob 1.23.2+216 (29 september 2026)
+
+> Deze uitvoeringlog is actuele releasehistoriek. De oudere statusvelden in
+> dit document blijven als historisch plan behouden en zijn geen bewijs van de
+> huidige storestatus.
+
+- Goedkeuring: **“Jan 29/9 13:42: production iOS + Android”**.
+- Android: de door het manifest bewaakte AAB `1.23.2 (216)` staat op de
+  Google Play-productietrack met status **`completed`** en volledige rollout.
+  De Play-listing bestaat alleen in `fr-FR`; uitsluitend de Franse release note
+  is verstuurd. Er is geen nieuwe `nl-NL`-listing aangemaakt.
+- iOS: build `1.23.2 (216)` blijft **`PREPARE_FOR_SUBMISSION`**. De
+  submitpoging heeft de `nl-NL`-lokalisatie met enkel release notes aangemaakt,
+  maar App Store Connect weigert review zonder Nederlandse beschrijving,
+  keywords en support-URL. Niet verwijderen of invullen zonder een expliciete
+  beslissing van Jan.
+- De eerdere uitvoering “TestFlight internal only” van 12:47 is
+  **superseded** door de productiegoedkeuring om 13:42; de TestFlight-record
+  blijft auditgeschiedenis.
+- Geen Firebase app-version-publicatie, minSupportedVersion-wijziging,
+  boutique-instelling, rules-deploy of productiedatawijziging hoort bij deze
+  release-uitvoering.
+
 Dit plan beschrijft alle stappen om CalyMob te publiceren in de Apple App Store en Google Play Store.
 
 **Huidige status (februari 2026):**
