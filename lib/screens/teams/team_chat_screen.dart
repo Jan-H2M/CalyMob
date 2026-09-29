@@ -13,6 +13,8 @@ import '../../providers/unread_count_provider.dart';
 import '../../services/profile_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../services/visible_read_ack_gate.dart';
+import '../../services/local_read_tracker.dart';
+import '../../utils/chat_scroll.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/message_hover_caret.dart';
 import '../../widgets/attachment_picker.dart';
@@ -54,6 +56,8 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   String? _latestVisibleMessageId;
   DateTime? _latestVisibleMessageAt;
   bool _initialScrollDone = false;
+  DateTime? _lastReadBeforeOpen;
+  final GlobalKey _newMessagesDividerKey = GlobalKey();
   bool _appIsForeground = true;
   final VisibleReadAckGate _readAckGate = VisibleReadAckGate();
   final VisibleReadAckRetryScheduler _ackRetry = VisibleReadAckRetryScheduler();
@@ -67,11 +71,21 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     WidgetsBinding.instance.addObserver(this);
     _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_captureLastReadBeforeOpen());
     if (widget.openPollComposer) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _createPoll();
       });
     }
+  }
+
+  Future<void> _captureLastReadBeforeOpen() async {
+    final tracker = LocalReadTracker();
+    await tracker.init();
+    final lastRead = tracker.getLastRead('team_${widget.channel.id}') ??
+        tracker.installBaseline ??
+        DateTime(2024);
+    if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
   }
 
   @override
@@ -156,7 +170,10 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     }
     final cursor = unreadProvider.usesCursorReadState;
     final revision = _readAckGate.begin(
-      ready: _hasLoadedMessageSnapshot,
+      // Capture the pre-open cursor before an acknowledgement can update the
+      // local legacy tracker. Otherwise the first snapshot wins the race and
+      // the unread divider is lost.
+      ready: _hasLoadedMessageSnapshot && _lastReadBeforeOpen != null,
       cursor: cursor,
     );
     if (revision == null) return;
@@ -249,14 +266,12 @@ class _TeamChatScreenState extends State<TeamChatScreen>
         _pendingPoll = null;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      // Keep the viewport anchored at the replied-to message. A stream update
+      // must not turn a reply into a jump to a different part of the thread.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -358,9 +373,9 @@ class _TeamChatScreenState extends State<TeamChatScreen>
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Message modifié')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Message modifié')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -400,10 +415,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -424,10 +436,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
               children: [
                 const Text(
                   'Réagir',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
@@ -473,8 +482,10 @@ class _TeamChatScreenState extends State<TeamChatScreen>
                 if (isOwn)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading:
-                        const Icon(Icons.delete_outline, color: Colors.red),
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.red,
+                    ),
                     title: const Text(
                       'Supprimer',
                       style: TextStyle(color: Colors.red),
@@ -510,22 +521,17 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     });
   }
 
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
-  }
-
-  /// Scroll robuste à la fin de la liste à l'ouverture. On répète l'opération
-  /// sur quelques frames pour absorber les changements de hauteur dus aux
-  /// avatars qui se chargent en async.
-  Future<void> _performInitialScrollToBottom() async {
+  Future<void> _performInitialScroll() async {
     for (var attempt = 0; attempt < 4; attempt++) {
       if (!mounted) return;
-      if (_scrollController.hasClients) {
+      final dividerContext = _newMessagesDividerKey.currentContext;
+      if (dividerContext != null && dividerContext.mounted) {
+        await Scrollable.ensureVisible(
+          dividerContext,
+          alignment: 0.15,
+          duration: Duration.zero,
+        );
+      } else if (_scrollController.hasClients) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
       await Future<void>.delayed(const Duration(milliseconds: 90));
@@ -541,9 +547,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     final userId = authProvider.currentUser?.uid;
 
     if (userId == null) {
-      return const Scaffold(
-        body: Center(child: Text('Niet verbonden')),
-      );
+      return const Scaffold(body: Center(child: Text('Niet verbonden')));
     }
 
     return Scaffold(
@@ -553,11 +557,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
         elevation: 0,
         title: Row(
           children: [
-            Icon(
-              widget.channel.type.iconData,
-              color: Colors.white,
-              size: 24,
-            ),
+            Icon(widget.channel.type.iconData, color: Colors.white, size: 24),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -592,8 +592,10 @@ class _TeamChatScreenState extends State<TeamChatScreen>
             children: [
               Expanded(
                 child: StreamBuilder<List<TeamMessage>>(
-                  stream:
-                      _channelService.getMessages(clubId, widget.channel.id),
+                  stream: _channelService.getMessages(
+                    clubId,
+                    widget.channel.id,
+                  ),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
@@ -667,23 +669,41 @@ class _TeamChatScreenState extends State<TeamChatScreen>
                       );
                     }
 
-                    if (!_initialScrollDone) {
+                    final newMessagesDividerIndex = firstUnreadMessageIndex(
+                      messages.map((message) => message.createdAt),
+                      _lastReadBeforeOpen,
+                    );
+                    final hasNewDivider = newMessagesDividerIndex != null;
+                    if (!_initialScrollDone && _lastReadBeforeOpen != null) {
                       _initialScrollDone = true;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _performInitialScrollToBottom();
+                        _performInitialScroll();
                       });
                     }
 
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: messages.length,
+                      itemCount: messages.length + (hasNewDivider ? 1 : 0),
                       itemBuilder: (context, index) {
-                        final message = messages[index];
+                        if (hasNewDivider && index == newMessagesDividerIndex) {
+                          return Container(
+                            key: _newMessagesDividerKey,
+                            margin: const EdgeInsets.symmetric(vertical: 12),
+                            child: const Center(
+                              child: Text('Nouveaux messages'),
+                            ),
+                          );
+                        }
+                        final messageIndex =
+                            hasNewDivider && index > newMessagesDividerIndex
+                                ? index - 1
+                                : index;
+                        final message = messages[messageIndex];
                         final isOwn = message.senderId == userId;
-                        final showDateHeader = index == 0 ||
+                        final showDateHeader = messageIndex == 0 ||
                             !_isSameDay(
-                              messages[index - 1].createdAt,
+                              messages[messageIndex - 1].createdAt,
                               message.createdAt,
                             );
 
@@ -817,8 +837,11 @@ class _TeamChatScreenState extends State<TeamChatScreen>
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Icon(Icons.send,
-                              color: Colors.white, size: 24),
+                          : const Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 24,
+                            ),
                     ),
                   ),
                 ),
@@ -949,8 +972,10 @@ class _MessageBubble extends StatelessWidget {
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.78,
                   ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: bubbleColor,
                     borderRadius: BorderRadius.only(
@@ -1035,10 +1060,7 @@ class _PendingPollCard extends StatelessWidget {
   final Poll poll;
   final VoidCallback onRemove;
 
-  const _PendingPollCard({
-    required this.poll,
-    required this.onRemove,
-  });
+  const _PendingPollCard({required this.poll, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -1056,16 +1078,10 @@ class _PendingPollCard extends StatelessWidget {
           Expanded(
             child: Text(
               poll.question,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
-          IconButton(
-            onPressed: onRemove,
-            icon: const Icon(Icons.close),
-          ),
+          IconButton(onPressed: onRemove, icon: const Icon(Icons.close)),
         ],
       ),
     );
@@ -1076,8 +1092,5 @@ class _PendingAttachment {
   final File file;
   final String type;
 
-  _PendingAttachment({
-    required this.file,
-    required this.type,
-  });
+  _PendingAttachment({required this.file, required this.type});
 }

@@ -19,6 +19,7 @@ import '../providers/unread_count_provider.dart';
 import '../services/local_read_tracker.dart';
 import '../services/profile_service.dart';
 import '../services/visible_read_ack_gate.dart';
+import '../utils/chat_scroll.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
 import 'message_edit_sheet.dart';
@@ -315,14 +316,12 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
         _pendingPoll = null;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      // Do not move the member away from the message they were replying to.
+      // The stream will render the new message without resetting this controller.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -394,9 +393,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
   Future<void> _copyMessage(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Message copié')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Message copié')));
   }
 
   Future<void> _editMessage(EventMessage message) async {
@@ -453,9 +452,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Message modifié')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Message modifié')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -503,10 +502,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -571,8 +567,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                 if (isOwn)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading:
-                        const Icon(Icons.delete_outline, color: Colors.red),
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.red,
+                    ),
                     title: const Text(
                       'Supprimer',
                       style: TextStyle(color: Colors.red),
@@ -587,15 +585,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
           ),
         );
       },
-    );
-  }
-
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
     );
   }
 
@@ -661,8 +650,11 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline,
-                          size: 64, color: Colors.red),
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red,
+                      ),
                       const SizedBox(height: 16),
                       Text('Erreur: ${snapshot.error}'),
                     ],
@@ -692,35 +684,30 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                       const SizedBox(height: 16),
                       Text(
                         'Aucun message',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                       ),
                     ],
                   ),
                 );
               }
 
-              if (!_initialScrollDone) {
+              final newMessagesDividerIndex = firstUnreadMessageIndex(
+                messages.map((message) => message.createdAt),
+                _lastReadBeforeOpen,
+              );
+
+              final hasNewDivider = newMessagesDividerIndex != null;
+              final totalItems = messages.length + (hasNewDivider ? 1 : 0);
+
+              // The read timestamp is loaded asynchronously. Scheduling before
+              // it is available loses the divider and makes the old top/bottom
+              // fallback win permanently.
+              if (!_initialScrollDone && _lastReadBeforeOpen != null) {
                 _initialScrollDone = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _performInitialScroll();
                 });
               }
-
-              int? newMessagesDividerIndex;
-              if (_lastReadBeforeOpen != null) {
-                for (var i = 0; i < messages.length; i++) {
-                  if (messages[i].createdAt.isAfter(_lastReadBeforeOpen!)) {
-                    newMessagesDividerIndex = i;
-                    break;
-                  }
-                }
-              }
-
-              final hasNewDivider = newMessagesDividerIndex != null;
-              final totalItems = messages.length + (hasNewDivider ? 1 : 0);
 
               return ListView.builder(
                 controller: _scrollController,
@@ -732,7 +719,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                   }
 
                   final messageIndex =
-                      hasNewDivider && index > newMessagesDividerIndex!
+                      hasNewDivider && index > newMessagesDividerIndex
                           ? index - 1
                           : index;
                   final message = messages[messageIndex];
@@ -823,8 +810,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
               ],
               Flexible(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.75,
                   ),
@@ -862,17 +851,23 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
                           },
                           styleSheet: MarkdownStyleSheet(
                             p: const TextStyle(
-                                fontSize: 15, color: Colors.black87),
+                              fontSize: 15,
+                              color: Colors.black87,
+                            ),
                             strong: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w700),
+                              fontSize: 15,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w700,
+                            ),
                             em: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.black87,
-                                fontStyle: FontStyle.italic),
+                              fontSize: 15,
+                              color: Colors.black87,
+                              fontStyle: FontStyle.italic,
+                            ),
                             listBullet: const TextStyle(
-                                fontSize: 15, color: Colors.black87),
+                              fontSize: 15,
+                              color: Colors.black87,
+                            ),
                             blockSpacing: 4,
                           ),
                         ),
@@ -924,9 +919,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab>
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(color: Colors.blue.shade400, width: 3),
-        ),
+        border: Border(left: BorderSide(color: Colors.blue.shade400, width: 3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1126,10 +1119,7 @@ class _PendingPollCard extends StatelessWidget {
   final Poll poll;
   final VoidCallback onRemove;
 
-  const _PendingPollCard({
-    required this.poll,
-    required this.onRemove,
-  });
+  const _PendingPollCard({required this.poll, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -1147,10 +1137,7 @@ class _PendingPollCard extends StatelessWidget {
           Expanded(
             child: Text(
               poll.question,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
           IconButton(onPressed: onRemove, icon: const Icon(Icons.close)),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
 import '../../services/local_read_tracker.dart';
 import '../../services/visible_read_ack_gate.dart';
+import '../../utils/chat_scroll.dart';
 import '../../utils/search_highlight.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -79,6 +81,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     WidgetsBinding.instance.addObserver(this);
     _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    unawaited(_captureLastReadBeforeOpen());
     // Both authorities wait for a successful visible replies snapshot. This
     // avoids acknowledging a covered/background route or failed load.
   }
@@ -131,10 +134,22 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
     });
   }
 
+  Future<void> _captureLastReadBeforeOpen() async {
+    final tracker = LocalReadTracker();
+    await tracker.init();
+    final itemKey = 'announcement_${widget.announcement.id}';
+    final lastRead = tracker.getLastRead(itemKey) ??
+        tracker.getLastRead('announcements') ??
+        tracker.installBaseline ??
+        DateTime(2024);
+    if (mounted) setState(() => _lastReadBeforeOpen = lastRead);
+  }
+
   Future<void> _acknowledgeLoadedCursorContent() async {
     if (!_appIsForeground ||
         !isCurrentRouteForReadAcknowledgement(context) ||
         !_hasLoadedContent ||
+        _lastReadBeforeOpen == null ||
         _cursorAcknowledgementInFlight ||
         _acknowledgedContentRevision >= _loadedContentRevision) {
       return;
@@ -196,10 +211,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
       context,
       listen: false,
     );
-    // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
-    // pour pouvoir afficher le divider "Nouveaux messages"
-    final tracker = LocalReadTracker();
-    await tracker.init();
+    // The pre-open cursor is captured in initState, before any acknowledgement
+    // can update local legacy state.
     if (!mounted ||
         !_appIsForeground ||
         !isCurrentRouteForReadAcknowledgement(context) ||
@@ -207,11 +220,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
       throw StateError(
           'Announcement visibility changed before acknowledgement.');
     }
-    final itemKey = 'announcement_${widget.announcement.id}';
-    _lastReadBeforeOpen ??= tracker.getLastRead(itemKey) ??
-        tracker.getLastRead('announcements') ??
-        tracker.installBaseline ??
-        DateTime(2024);
     await unreadProvider.markAnnouncementSeen(
       widget.announcement.id,
       visibleReplyId: _latestVisibleReplyId,
@@ -269,13 +277,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
         _pendingAttachments.clear();
       });
 
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      // Do not force a post-send scroll. The ListView keeps the reader at the
+      // reply position; a forced bottom jump made threaded replies lose their
+      // context.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -432,7 +436,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                             // Premier rendu avec données : scroll vers la première
                             // communication non-lue (divider "Nouveaux messages") ;
                             // sinon vers le dernier reply.
-                            if (!_initialScrollDone) {
+                            if (!_initialScrollDone &&
+                                _lastReadBeforeOpen != null) {
                               _initialScrollDone = true;
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _performInitialScroll();
@@ -444,17 +449,11 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
                               '📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
 
                           // Chercher l'index du premier reply non lu
-                          int? newMessagesDividerIndex;
-                          if (_lastReadBeforeOpen != null) {
-                            for (int i = 0; i < replies.length; i++) {
-                              if (replies[i]
-                                  .createdAt
-                                  .isAfter(_lastReadBeforeOpen!)) {
-                                newMessagesDividerIndex = i;
-                                break;
-                              }
-                            }
-                          }
+                          final newMessagesDividerIndex =
+                              firstUnreadMessageIndex(
+                            replies.map((reply) => reply.createdAt),
+                            _lastReadBeforeOpen,
+                          );
 
                           // Calculer le nombre total d'items (header + replies + divider éventuel)
                           final hasNewDivider = newMessagesDividerIndex != null;
@@ -484,7 +483,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen>
 
                               // Ajuster l'index pour les replies après le divider
                               final actualReplyIndex = hasNewDivider &&
-                                      replyIndex > newMessagesDividerIndex!
+                                      replyIndex > newMessagesDividerIndex
                                   ? replyIndex - 1
                                   : replyIndex;
 
