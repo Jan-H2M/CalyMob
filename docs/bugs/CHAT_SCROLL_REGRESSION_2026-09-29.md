@@ -87,3 +87,16 @@ Do not delete the `nl-NL` localization or invent Dutch metadata. Submission is
 pending Jan’s decision on those three localized values. No new IPA was built or
 uploaded, and no Firebase app-version publication, rules deployment, boutique
 setting, or production-data change was made.
+
+> **Superseded (2026-09-29 14:53):** Jan chose French-only App Store metadata
+> (Option B): “Schrap de Nederlandse pagina en stuur de app opnieuw naar Apple,
+> alleen in het Frans.” The `nl-NL` *version* localization was deleted through
+> App Store Connect, leaving only `fr-FR`. The repository copy under
+> `ios/fastlane/metadata/nl-NL` is removed so a future `deliver` submit cannot
+> recreate it.
+
+The prior Dutch release-note text is retained here for audit only; it is not
+App Store metadata and must not be uploaded by `deliver`:
+
+> Gesprekken openen nu bij het eerste ongelezen bericht. Na het versturen van
+> een antwoord blijft u op uw huidige leespositie.
