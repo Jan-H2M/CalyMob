@@ -1,8 +1,8 @@
 # Chat scroll regression — 2026-09-29
 
 Status: merged to `main` through PR #94 on 2026-09-29; included in
-1.23.2+216. Android is released to Google Play production. iOS remains
-`PREPARE_FOR_SUBMISSION` pending App Store metadata completion.
+1.23.2+216. Android is released to Google Play production; iOS build 216 is
+`WAITING_FOR_REVIEW` with French-only App Store metadata.
 
 Related work: MOB-027 cursor-v1 unread state and the 1.23.x rollout.
 
@@ -100,3 +100,21 @@ App Store metadata and must not be uploaded by `deliver`:
 
 > Gesprekken openen nu bij het eerste ongelezen bericht. Na het versturen van
 > een antwoord blijft u op uw huidige leespositie.
+
+> **Superseded (2026-09-29):** The earlier iOS state
+> `PREPARE_FOR_SUBMISSION` and its “do not delete” instruction were accurate
+> before Jan chose Option B. The `nl-NL` version localization has now been
+> deleted with Jan’s explicit approval.
+
+### iOS — French-only resubmission completed
+
+The French-only Fastlane metadata change was merged through PR #98. To preserve
+the already-uploaded IPA’s exact source/artifact provenance, the guarded submit
+ran from the clean build-216 source worktree with `DELIVER_METADATA_PATH` set
+to an external directory containing only `fr-FR/release_notes.txt`; it cannot
+discover or recreate an `nl-NL` metadata page.
+
+Fastlane selected the existing build `1.23.2 (216)` and submitted it with
+automatic release after approval—no new binary was built or uploaded. App Store
+Connect readback reports version `1.23.2` as **`WAITING_FOR_REVIEW`**, with
+attached build **216** and exactly one version localization: **`fr-FR`**.
