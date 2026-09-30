@@ -40,7 +40,7 @@ platform :android do
       skip_upload_images: true,
       skip_upload_screenshots: true,
       skip_upload_changelogs: true,
-      rollout: 1.0,
+      rollout: '1.0',
       release_status: 'completed'
     )
   end

@@ -66,6 +66,12 @@ test('both store submission lanes are manifest-gated', () => {
   assert.doesNotMatch(ios, /reject_if_possible:\s*true/);
 });
 
+test('Android completed release uses a Fastlane-compatible string rollout', () => {
+  const android = read('android/fastlane/Fastfile');
+  assert.match(android, /rollout:\s*'1\.0'/);
+  assert.doesNotMatch(android, /rollout:\s*1\.0/);
+});
+
 test('reviewer credential is external and never printed or embedded', () => {
   const script = read('scripts/create-demo-account.js');
   assert.match(script, /CALYMOB_REVIEWER_PASSWORD_FILE/);
