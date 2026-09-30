@@ -8,6 +8,7 @@ import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../services/boutique/boutique_service.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_product_image.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_checkout_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -274,19 +275,10 @@ class _CartItemCard extends StatelessWidget {
                 width: 72,
                 height: 72,
                 color: AppColors.surfaceGrey,
-                child: item.imageUrl == null
-                    ? const Icon(
-                        Icons.shopping_bag_outlined,
-                        color: AppColors.middenblauw,
-                      )
-                    : Image.network(
-                        item.imageUrl!,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.shopping_bag_outlined,
-                          color: AppColors.middenblauw,
-                        ),
-                      ),
+                child: BoutiqueProductImage(
+                  imageUrl: item.imageUrl,
+                  errorIconSize: 24,
+                ),
               ),
             ),
             const SizedBox(width: 12),

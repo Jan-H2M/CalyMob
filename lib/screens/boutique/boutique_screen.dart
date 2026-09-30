@@ -10,6 +10,7 @@ import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_product_image.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -556,7 +557,7 @@ class _ProductCard extends StatelessWidget {
       symbol: '€',
       decimalDigits: 2,
     );
-    final imageUrl = _firstNetworkImage(product.images);
+    final imageUrl = BoutiqueProductImage.firstUrl(product.images);
 
     return Material(
       color: Colors.white,
@@ -574,21 +575,7 @@ class _ProductCard extends StatelessWidget {
                   width: 84,
                   height: 84,
                   color: AppColors.surfaceGrey,
-                  child: imageUrl == null
-                      ? const Icon(
-                          Icons.shopping_bag_outlined,
-                          color: AppColors.middenblauw,
-                          size: 34,
-                        )
-                      : Image.network(
-                          imageUrl,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.shopping_bag_outlined,
-                            color: AppColors.middenblauw,
-                            size: 34,
-                          ),
-                        ),
+                  child: BoutiqueProductImage(imageUrl: imageUrl),
                 ),
               ),
               const SizedBox(width: 14),
@@ -672,24 +659,4 @@ class _EmptyBoutiqueState extends StatelessWidget {
       ),
     );
   }
-}
-
-String? _firstNetworkImage(List<String> images) {
-  for (final imageUrl in images) {
-    final resolved = _resolveProductImageUrl(imageUrl);
-    if (resolved != null) return resolved;
-  }
-  return null;
-}
-
-String? _resolveProductImageUrl(String imageUrl) {
-  final trimmed = imageUrl.trim();
-  if (trimmed.isEmpty) return null;
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-  if (trimmed.startsWith('/')) {
-    return 'https://caly.club$trimmed';
-  }
-  return null;
 }
