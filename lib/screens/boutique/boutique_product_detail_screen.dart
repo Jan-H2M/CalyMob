@@ -6,6 +6,7 @@ import '../../config/app_colors.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_product_image.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class BoutiqueProductDetailScreen extends StatefulWidget {
@@ -336,7 +337,7 @@ class _BoutiqueProductDetailScreenState
       ),
       productId: widget.product.id,
       productName: widget.product.name,
-      imageUrl: _firstNetworkImage(widget.product.images),
+      imageUrl: BoutiqueProductImage.firstUrl(widget.product.images),
       supplierId: widget.product.supplierId,
       variantId: variant?.id ?? 'standard',
       variantLabel: variant?.label ?? 'Standard',
@@ -982,7 +983,7 @@ class _ProductImagesState extends State<_ProductImages> {
   @override
   Widget build(BuildContext context) {
     final networkImages = widget.images
-        .map(_resolveProductImageUrl)
+        .map(BoutiqueProductImage.resolveUrl)
         .whereType<String>()
         .toList(growable: false);
     if (networkImages.isEmpty) {
@@ -1017,14 +1018,11 @@ class _ProductImagesState extends State<_ProductImages> {
                     color: Colors.white.withValues(alpha: 0.92),
                     child: InkWell(
                       onTap: () => _openFullscreen(networkImages),
-                      child: Image.network(
-                        networkImages[index],
+                      child: BoutiqueProductImage(
+                        imageUrl: networkImages[index],
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.broken_image_outlined,
-                          color: AppColors.middenblauw,
-                          size: 56,
-                        ),
+                        errorIcon: Icons.broken_image_outlined,
+                        errorIconSize: 56,
                       ),
                     ),
                   ),
@@ -1232,14 +1230,12 @@ class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
                     minScale: 1,
                     maxScale: 4,
                     child: Center(
-                      child: Image.network(
-                        widget.images[index],
+                      child: BoutiqueProductImage(
+                        imageUrl: widget.images[index],
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.broken_image_outlined,
-                          color: Colors.white,
-                          size: 64,
-                        ),
+                        errorIcon: Icons.broken_image_outlined,
+                        placeholderColor: Colors.white,
+                        errorIconSize: 64,
                       ),
                     ),
                   );
@@ -1347,24 +1343,4 @@ class _StockLine extends StatelessWidget {
     if (stock <= 3) return 'Plus que $stock en stock';
     return 'En stock';
   }
-}
-
-String? _firstNetworkImage(List<String> images) {
-  for (final imageUrl in images) {
-    final resolved = _resolveProductImageUrl(imageUrl);
-    if (resolved != null) return resolved;
-  }
-  return null;
-}
-
-String? _resolveProductImageUrl(String imageUrl) {
-  final trimmed = imageUrl.trim();
-  if (trimmed.isEmpty) return null;
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-  if (trimmed.startsWith('/')) {
-    return 'https://caly.club$trimmed';
-  }
-  return null;
 }
