@@ -42,6 +42,19 @@ function applyInternalWaiver(manifest, platform = 'ios') {
   };
 }
 
+function applyOwnerWaiver(manifest, platform = 'ios') {
+  manifest.nativeReview[platform] = {
+    verdict: 'owner-waived',
+    owner: 'Jan Andriessens',
+    waivedAt: '2026-10-02T19:17:00+02:00',
+    verbatimQuote: 'zet life / doe die regel weg',
+    sourceCommit: manifest.sourceCommit,
+    sourceTree: manifest.sourceTree,
+    artifactSha256: manifest.artifacts[platform].sha256,
+    evidence: 'Synthetic explicit owner-waiver fixture.',
+  };
+}
+
 test('only fully matching approval, review and artifact context is accepted for each platform', () => {
   for (const platform of ['ios', 'android']) {
     const { manifest, context } = fixture(platform);
@@ -119,12 +132,49 @@ test('a hands-on-review waiver is rejected for the public channel', () => {
   assert.throws(() => validateManifest(manifest, { ...context, channel: 'public' }));
 });
 
-test('a hands-on-review waiver is rejected for submit actions', () => {
+test('an internal hands-on-review waiver is rejected for submit actions', () => {
   const { manifest, context } = fixture();
   applyInternalWaiver(manifest);
   assert.throws(() => validateManifest(manifest, {
     ...context, action: 'submit', channel: 'internal', requestedVersion: '1.21.0', requestedBuild: '204',
   }));
+});
+
+test('an exact owner waiver is accepted for public uploads and submissions on both platforms', () => {
+  for (const platform of ['ios', 'android']) {
+    const { manifest, context } = fixture(platform);
+    applyOwnerWaiver(manifest, platform);
+    assert.equal(validateManifest(manifest, { ...context, channel: 'public' }).channel, 'public');
+    assert.equal(validateManifest(manifest, {
+      ...context, action: 'submit', channel: 'public', requestedVersion: '1.21.0', requestedBuild: '204',
+    }).platform, platform);
+  }
+});
+
+test('an owner waiver is rejected for internal uploads', () => {
+  const { manifest, context } = fixture();
+  applyOwnerWaiver(manifest);
+  manifest.allowedChannels = { ios: ['internal'] };
+  manifest.janApproval.allowedChannels = { ios: ['internal'] };
+  assert.throws(() => validateManifest(manifest, { ...context, channel: 'internal' }));
+});
+
+test('an owner waiver fails closed unless owner, timestamp, quote and exact provenance are present', () => {
+  for (const mutate of [
+    (m) => { m.nativeReview.ios.owner = 'agent'; },
+    (m) => { m.nativeReview.ios.waivedAt = 'not-a-timestamp'; },
+    (m) => { m.nativeReview.ios.waivedAt = '2026-10-02T19:17:00'; },
+    (m) => { m.nativeReview.ios.verbatimQuote = '   '; },
+    (m) => { m.nativeReview.ios.sourceCommit = 'c'.repeat(40); },
+    (m) => { m.nativeReview.ios.sourceTree = 'c'.repeat(40); },
+    (m) => { m.nativeReview.ios.artifactSha256 = 'c'.repeat(64); },
+    (m) => { m.nativeReview.ios.evidence = ''; },
+  ]) {
+    const { manifest, context } = fixture();
+    applyOwnerWaiver(manifest);
+    mutate(manifest);
+    assert.throws(() => validateManifest(manifest, { ...context, channel: 'public' }));
+  }
 });
 
 test('an internal hands-on-review waiver fails closed for stale provenance or empty reason', () => {

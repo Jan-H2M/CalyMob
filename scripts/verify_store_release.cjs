@@ -76,8 +76,15 @@ function validateManifest(manifest, context) {
     && native.sourceTree === tree
     && native.artifactSha256 === artifactHash && typeof native.reason === 'string'
     && native.reason.trim() && evidence(native);
-  requireThat(approvedNativeReview || waivedInternalNativeReview,
-    'native visual/functional review missing, stale, or not eligible for an internal waiver');
+  const ownerWaivedPublicNativeReview = channel === 'public' && native?.verdict === 'owner-waived'
+    && native.owner === 'Jan Andriessens' && typeof native.waivedAt === 'string'
+    && /(?:Z|[+-]\d{2}:\d{2})$/.test(native.waivedAt.trim())
+    && Number.isFinite(Date.parse(native.waivedAt))
+    && typeof native.verbatimQuote === 'string' && native.verbatimQuote.trim()
+    && native.sourceCommit === head && native.sourceTree === tree
+    && native.artifactSha256 === artifactHash && evidence(native);
+  requireThat(approvedNativeReview || waivedInternalNativeReview || ownerWaivedPublicNativeReview,
+    'native visual/functional review missing, stale, or not eligible for the requested waiver');
   if (action === 'submit') {
     requireThat(requestedVersion === version && requestedBuild === build,
       'submit requires explicit matching version and build; no defaults');

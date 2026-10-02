@@ -10,7 +10,7 @@ Set `CALYMOB_RELEASE_MANIFEST` to an absolute JSON path outside this repository.
 For every platform/action, the manifest must bind all of the following to the
 current clean checkout:
 
-- `schemaVersion: 1`, `sourceCommit`, `version`, `build`, `platforms`, and
+- `schemaVersion: 2`, `sourceCommit`, `version`, `build`, `platforms`, and
   `allowedActions`;
 - the exact French release notes in `notes['fr-FR']`;
 - `janApproval`, with Jan Andriessens' explicit, timestamped evidence and the
@@ -25,8 +25,8 @@ current clean checkout:
 
 ## Channels and native review
 
-The default channel is `public`.  Public uploads and all `submit` actions
-require a full native visual/functional review:
+The default channel is `public`. Public uploads and all `submit` actions require
+either a full native visual/functional review:
 
 ```json
 {
@@ -37,6 +37,25 @@ require a full native visual/functional review:
   "evidence": "…"
 }
 ```
+
+or Jan's exact owner waiver for that artifact:
+
+```json
+{
+  "verdict": "owner-waived",
+  "owner": "Jan Andriessens",
+  "waivedAt": "<timestamp with timezone>",
+  "verbatimQuote": "<Jan's verbatim instruction>",
+  "sourceCommit": "<current SHA>",
+  "sourceTree": "<current tree SHA>",
+  "artifactSha256": "<current artifact SHA-256>",
+  "evidence": "<attributable owner-waiver evidence>"
+}
+```
+
+The owner waiver is accepted only for the `public` channel. It does not loosen
+the clean-checkout, source tree, artifact provenance, French notes, explicit
+action approval, code-review, automated-test, or uploaded-build checks.
 
 Only an internal testing upload may replace that review with an explicit waiver.
 This is limited to iOS TestFlight upload and Android Google Play internal-track
@@ -64,9 +83,15 @@ This is limited to iOS TestFlight upload and Android Google Play internal-track
 Both channel opt-ins are required so an internal waiver cannot silently apply
 to a public release.  All other release evidence remains mandatory.
 
-This exception implements Jan's 2026-09-25 11:18 instruction: internal testing
-tracks may record a waived hands-on review with a reason; public store releases
-still require a full hands-on review.
+> **SUPERSEDED (2026-10-02 19:17 Europe/Paris):** The 25 September rule below
+> prohibited owner waivers for public releases. Jan superseded it after deciding
+> to release without the phone test: “zet life” and “doe die regel weg”. Public
+> releases may now use the exact owner-waiver record above. The former rule is
+> retained below for audit history and must not be applied as current policy.
+
+Historical 2026-09-25 rule: internal testing tracks may record a waived
+hands-on review with a reason; public store releases still require a full
+hands-on review.
 
 ## Fastlane mapping
 
@@ -75,4 +100,5 @@ still require a full hands-on review.
 - `android fastlane internal` passes `--channel internal` and uses the Google
   Play internal track.
 - iOS release/submit and Android deploy/release keep the default public
-  channel and cannot use the waiver.
+  channel. They accept either an approved native review or an exact owner
+  waiver; the less-specific internal waiver remains ineligible.
