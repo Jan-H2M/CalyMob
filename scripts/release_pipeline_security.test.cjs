@@ -108,3 +108,10 @@ test('Fastlane wrapper resolves a working locked bundle or supported Homebrew la
   assert.match(wrapper, /\/usr\/local\/bin\/fastlane/);
   assert.doesNotMatch(wrapper, /command -v fastlane/);
 });
+
+test('secret scan limits a newly created branch to its tip commit', () => {
+  const workflow = read('.github/workflows/secret-scan.yml');
+  assert.match(workflow, /BASE_SHA.*github\.event\.before/);
+  assert.match(workflow, /git cat-file -e "\$\{HEAD_SHA\}\^"/);
+  assert.match(workflow, /range="\$\{HEAD_SHA\}\^\.\.\$\{HEAD_SHA\}"/);
+});
