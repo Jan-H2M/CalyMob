@@ -173,7 +173,7 @@ class _BoutiqueProductDetailScreenState
                               .map(
                                 (variant) => DropdownMenuItem(
                                   value: variant,
-                                  child: Text(variant.label),
+                                  child: Text(variant.displayLabel),
                                 ),
                               )
                               .toList(),
@@ -340,7 +340,7 @@ class _BoutiqueProductDetailScreenState
       imageUrl: BoutiqueProductImage.firstUrl(widget.product.images),
       supplierId: widget.product.supplierId,
       variantId: variant?.id ?? 'standard',
-      variantLabel: variant?.label ?? 'Standard',
+      variantLabel: variant?.displayLabel ?? 'Standard',
       deliveryMode: boutiqueDeliveryModeWireValue(_selectedDeliveryMode),
       deliveryLabel: boutiqueDeliveryModeLabel(_selectedDeliveryMode),
       qty: _quantity,
