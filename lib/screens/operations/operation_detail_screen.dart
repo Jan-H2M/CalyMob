@@ -18,6 +18,7 @@ import '../../utils/exercice_selection_policy.dart';
 import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
+import '../../utils/organizer_contact_policy.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/dive_location_service.dart';
@@ -85,6 +86,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   MemberProfile? _userProfile;
   MemberProfile? _organisateurProfile;
+  int _organisateurProfileLoadGeneration = 0;
   DiveLocation? _diveLocation;
   String? _diveLocationLoadedFor;
   List<ExerciceLIFRAS> _availableExercices = [];
@@ -264,10 +266,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _loadOperation() async {
+    if (!mounted) return;
+    _invalidateOrganisateurProfile();
+
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
 
-    await context.read<OperationProvider>().selectOperation(
+    final operationLoaded =
+        await context.read<OperationProvider>().selectOperation(
           widget.clubId,
           widget.operationId,
           userId,
@@ -276,6 +282,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     // Fix Sentry CALYMOB-1S/19/Q (2026-07-19): na de await kan het scherm al
     // gesloten zijn — State.context gooit dan een null-check TypeError.
     if (!mounted) return;
+    if (!operationLoaded) return;
 
     // Load organiser profile (for phone number display)
     _loadOrganisateurProfile();
@@ -335,17 +342,38 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   Future<void> _loadOrganisateurProfile() async {
     if (!mounted) return;
+    final generation = _invalidateOrganisateurProfile();
     final operation = context.read<OperationProvider>().selectedOperation;
-    final orgId = operation?.organisateurId;
+    final orgId = operation?.organisateurId?.trim();
+
+    // Never keep showing a previously loaded phone while a reassigned
+    // organiser is being resolved. A failed or missing lookup must also stay
+    // empty instead of falling back to the former organiser's cached profile.
+    setState(() => _organisateurProfile = null);
     if (orgId == null || orgId.isEmpty) return;
 
     final profile =
         await _profileService.getDirectoryProfile(widget.clubId, orgId);
-    if (mounted) {
-      setState(() {
-        _organisateurProfile = profile;
-      });
-    }
+    if (!mounted || generation != _organisateurProfileLoadGeneration) return;
+
+    final currentOperation =
+        context.read<OperationProvider>().selectedOperation;
+    if (currentOperation?.organisateurId?.trim() != orgId) return;
+
+    final verifiedProfile = organizerNameMatchesProfile(
+      storedOrganizerName: currentOperation?.organisateurNom,
+      profileName: profile?.fullName,
+    )
+        ? profile
+        : null;
+
+    setState(() => _organisateurProfile = verifiedProfile);
+  }
+
+  int _invalidateOrganisateurProfile() {
+    final generation = ++_organisateurProfileLoadGeneration;
+    if (mounted) setState(() => _organisateurProfile = null);
+    return generation;
   }
 
   Future<void> _loadUserProfile() async {
@@ -2247,11 +2275,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   Expanded(
                     child: RefreshIndicator(
                       onRefresh: () async {
-                        // Force reload participants and operation data
-                        await operationProvider.reloadParticipants(
-                          widget.clubId,
-                          widget.operationId,
-                        );
+                        // Reload the operation identity as well as participants;
+                        // a reassigned responsable must invalidate the cached
+                        // directory profile and phone immediately.
+                        await _loadOperation();
                       },
                       color: AppColors.primary,
                       child: SingleChildScrollView(
@@ -2299,10 +2326,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                             fontSize: 14, color: Colors.white),
                                       ),
                                     ),
-                                    if (_organisateurProfile?.phoneNumber !=
-                                            null &&
-                                        _organisateurProfile!
-                                            .phoneNumber!.isNotEmpty) ...[
+                                    if (_organisateurProfile != null &&
+                                        canDisplayOrganizerPhone(
+                                          sharePhone: _organisateurProfile!
+                                              .sharePhone,
+                                          phoneNumber: _organisateurProfile!
+                                              .phoneNumber,
+                                        )) ...[
                                       const SizedBox(width: 12),
                                       GestureDetector(
                                         onTap: () => launchUrl(
