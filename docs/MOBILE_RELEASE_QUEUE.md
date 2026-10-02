@@ -1,5 +1,24 @@
 # CalyMob — geconsolideerde releasekandidaat
 
+> **Superseded (2026-10-02):** De status, versie en publicatievolgorde van de
+> kandidaat van 12 september hieronder blijven behouden als historisch verslag,
+> maar zijn niet meer de actieve release-instructies.
+
+## Release 1.23.5+219 — 2 oktober 2026
+
+- Storebasis vóór deze release: **1.23.4+218** in Google Play production en
+  **1.23.4** live in de App Store.
+- Releasebron: samengevoegde `main` met MOB-028 (uitsluitend echte encadrants
+  krijgen het encadrantentarief) en MOB-026 (telefoon van de actuele
+  organisator, zonder verouderde evenementkopie).
+- Doel: Google Play production met volledige uitrol en App Store-review met
+  automatische release, uitsluitend Franse releasenotities.
+- Franse releasenotitie: “Correction du tarif encadrants/assistants et
+  affichage du téléphone de l'organisateur.”
+- `registerForEvent` is afzonderlijk vanuit samengevoegde `main` naar Firebase
+  project `calycompta` uitgerold; deze mobiele release wijzigt geen
+  `minSupportedVersion`, boutique-instellingen of productiegegevens.
+
 Dit document is de actuele releasebron voor de gezamenlijke CalyMob-release van
 12 september 2026. Het vervangt de oude wachtrijstatussen in dit bestand; die
 beschreven afzonderlijke branches en oudere versievoorstellen, niet de huidige
