@@ -1,0 +1,1 @@
+Correction du tarif encadrants/assistants et affichage du téléphone de l'organisateur.
