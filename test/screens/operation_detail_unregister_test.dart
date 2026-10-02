@@ -82,11 +82,12 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   bool isUserWaitlisted(String operationId) => _isWaitlisted;
 
   @override
-  Future<void> selectOperation(
+  Future<bool> selectOperation(
     String clubId,
     String operationId,
     String userId,
-  ) async {}
+  ) async =>
+      true;
 
   @override
   Future<ParticipantOperation?> unregisterFromOperation({

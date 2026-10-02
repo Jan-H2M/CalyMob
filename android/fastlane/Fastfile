@@ -1,9 +1,18 @@
 default_platform(:android)
 skip_docs
 
-def verify_android_store_release(action = 'upload', options = {})
+def verify_android_store_release(action = 'upload', options = {}, external_submit: false)
   require 'json'
-  script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
+  tooling_root = File.expand_path('../..', __dir__)
+  script = File.join(tooling_root, 'scripts', 'verify_store_release.cjs')
+  external_root = ENV['CALYMOB_RELEASE_ROOT']
+  if external_root && !external_root.empty?
+    UI.user_error!('External release root is only allowed for Android submit') unless external_submit
+    gate = File.join(tooling_root, 'scripts', 'verify_release_tooling.cjs')
+    gate_args = ['node', gate, '--platform', 'android', '--action', 'submit', '--release-root', external_root]
+    tooling = JSON.parse(sh(*gate_args, log: false))
+    script = tooling.fetch('verifierPath')
+  end
   args = ['node', script, '--platform', 'android', '--action', action]
   if action == 'submit'
     UI.user_error!('Explicit version and build are required') unless options[:version] && options[:build]
@@ -29,8 +38,8 @@ platform :android do
 
   desc "Submit an existing draft production release after manifest verification"
   lane :submit do |options|
-    release = verify_android_store_release('submit', options)
-    verify_android_store_release('notes')
+    release = verify_android_store_release('submit', options, external_submit: true)
+    verify_android_store_release('notes', {}, external_submit: true)
     upload_to_play_store(
       track: 'production',
       version_code: release['build'].to_i,
@@ -40,7 +49,7 @@ platform :android do
       skip_upload_images: true,
       skip_upload_screenshots: true,
       skip_upload_changelogs: true,
-      rollout: 1.0,
+      rollout: '1.0',
       release_status: 'completed'
     )
   end

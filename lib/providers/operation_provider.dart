@@ -33,6 +33,7 @@ class OperationProvider with ChangeNotifier {
       []; // User's registrations across all operations
   bool _isLoading = false;
   String? _errorMessage;
+  int _selectionGeneration = 0;
 
   // Getters
   List<Operation> get operations => _operations;
@@ -116,25 +117,25 @@ class OperationProvider with ChangeNotifier {
   }
 
   /// Sélectionner une opération (pour détail)
-  Future<void> selectOperation(
+  Future<bool> selectOperation(
       String clubId, String operationId, String userId) async {
+    final generation = ++_selectionGeneration;
     try {
       _isLoading = true;
+      _errorMessage = null;
       // Use Future.microtask to delay notification until after the build phase
       await Future.microtask(() => notifyListeners());
 
       // Charger l'opération
-      _selectedOperation =
+      final selectedOperation =
           await _operationService.getOperationById(clubId, operationId);
+      if (generation != _selectionGeneration) return false;
 
       // Charger compteur participants
-      if (_selectedOperation != null) {
+      if (selectedOperation != null) {
         final count =
             await _operationService.countParticipants(clubId, operationId);
-        _participantCounts[operationId] = count;
-
-        // Écouter la liste des participants en temps réel (payment status updates)
-        _listenToParticipants(clubId, operationId);
+        if (generation != _selectionGeneration) return false;
 
         // Vérifier si utilisateur inscrit
         final isRegistered = await _operationService.isUserRegistered(
@@ -142,20 +143,34 @@ class OperationProvider with ChangeNotifier {
           operationId,
           userId,
         );
-        _userRegistrationStatus[operationId] = isRegistered;
+        if (generation != _selectionGeneration) return false;
         final inscription = await _operationService.getUserInscription(
             clubId: clubId, operationId: operationId, userId: userId);
+        if (generation != _selectionGeneration) return false;
+
+        _selectedOperation = selectedOperation;
+        _participantCounts[operationId] = count;
+        _userRegistrationStatus[operationId] = isRegistered;
         _userWaitlistStatus[operationId] = inscription?.isWaitlisted ?? false;
+
+        // Écouter la liste des participants en temps réel (payment status updates)
+        _listenToParticipants(clubId, operationId);
+      } else {
+        _selectedOperation = null;
       }
 
       _isLoading = false;
       notifyListeners();
+      return selectedOperation != null;
     } catch (e) {
+      if (generation != _selectionGeneration) return false;
+      _selectedOperation = null;
       _isLoading = false;
       _errorMessage = e.toString();
       notifyListeners();
 
       debugPrint('❌ Erreur selectOperation: $e');
+      return false;
     }
   }
 
@@ -274,12 +289,12 @@ class OperationProvider with ChangeNotifier {
       // Reload the member's current active registration. Historical data can
       // contain more than one active document, so cancelling one exact ID does
       // not necessarily mean that the member is no longer registered.
-      final remainingInscription = await _operationService
-          .getUserInscriptionStrict(
-            clubId: clubId,
-            operationId: operationId,
-            userId: userId,
-          );
+      final remainingInscription =
+          await _operationService.getUserInscriptionStrict(
+        clubId: clubId,
+        operationId: operationId,
+        userId: userId,
+      );
       _userRegistrationStatus[operationId] =
           remainingInscription != null && !remainingInscription.isWaitlisted;
       _userWaitlistStatus[operationId] =

@@ -205,6 +205,12 @@ function tariffCategory(tariff) {
   return label;
 }
 
+const OFFICIAL_ENCADRANT_FUNCTIONS = new Set([
+  'encadrant',
+  'e',
+  'encadrant carriere',
+]);
+
 function bestMemberFunction(member) {
   const clubFunctions = Array.isArray(member.clubStatuten)
     ? member.clubStatuten.map(normalizedFunction).filter(Boolean)
@@ -213,7 +219,9 @@ function bestMemberFunction(member) {
     ...clubFunctions,
     normalizedFunction(member.fonction_defaut),
   ].filter(Boolean);
-  if (functions.some(value => value.includes('encadrant'))) return 'encadrant';
+  // Pool assistants share planning access, but only official career
+  // encadrants qualify for an encadrant event tariff.
+  if (functions.some(value => OFFICIAL_ENCADRANT_FUNCTIONS.has(value))) return 'encadrant';
   if (functions.some(value => value === 'ca' || value.includes('comite'))) return 'ca';
   if (functions.some(value => value.includes('membre'))) return 'membre';
   return functions[0] || 'membre';
