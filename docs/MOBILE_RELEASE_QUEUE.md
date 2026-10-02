@@ -22,7 +22,8 @@
 > **Superseded status (2026-10-02 12:13 CEST):** het bovenstaande storedoel
 > blijft de goedgekeurde bestemming, maar is nog niet volledig uitgevoerd. De
 > exacte iOS-IPA (`1.23.5+219`) is via de interne waiver naar TestFlight
-> geüpload, door App Store Connect verwerkt en uitsluitend van de Franse
+> geüpload, door App Store Connect verwerkt (`VALID`, intern
+> `IN_BETA_TESTING`) en uitsluitend van de Franse
 > releasenotitie voorzien; er is geen App Store-review ingediend. De exacte
 > Android-AAB doorstond `bundletool validate`, installatie en cold launch op
 > een Google `sdk_gphone64_arm64`-emulator (API 35, `arm64-v8a`), maar de
