@@ -19,6 +19,20 @@
   project `calycompta` uitgerold; deze mobiele release wijzigt geen
   `minSupportedVersion`, boutique-instellingen of productiegegevens.
 
+> **Superseded status (2026-10-02 12:13 CEST):** het bovenstaande storedoel
+> blijft de goedgekeurde bestemming, maar is nog niet volledig uitgevoerd. De
+> exacte iOS-IPA (`1.23.5+219`) is via de interne waiver naar TestFlight
+> geüpload, door App Store Connect verwerkt (`VALID`, intern
+> `IN_BETA_TESTING`) en uitsluitend van de Franse
+> releasenotitie voorzien; er is geen App Store-review ingediend. De exacte
+> Android-AAB doorstond `bundletool validate`, installatie en cold launch op
+> een Google `sdk_gphone64_arm64`-emulator (API 35, `arm64-v8a`), maar de
+> onafhankelijke native review is **niet goedgekeurd**: er was geen bestaande
+> QA-sessie, zodat MOB-026 en MOB-028/COM-141 niet read-only konden worden
+> bekeken. Daarom is build 219 niet naar Google Play geüpload. Vervolg vereist
+> een bestaande QA-account/sessie zonder nieuwe credentials of
+> productiegegevens te schrijven.
+
 Dit document is de actuele releasebron voor de gezamenlijke CalyMob-release van
 12 september 2026. Het vervangt de oude wachtrijstatussen in dit bestand; die
 beschreven afzonderlijke branches en oudere versievoorstellen, niet de huidige
