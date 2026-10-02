@@ -22,6 +22,35 @@
 - Deze release wijzigt geen `minSupportedVersion`, boutique-instellingen,
   signingmateriaal of productiegegevens.
 
+### Publicatie uitgevoerd — 2 oktober 2026
+
+- Release-gate PR [#109](https://github.com/Jan-H2M/CalyMob/pull/109) is met
+  groene CI en onafhankelijke review samengevoegd als `e511d39`; release-PR
+  [#110](https://github.com/Jan-H2M/CalyMob/pull/110) is eveneens groen en
+  samengevoegd als exact releasecommit `09ad1202` (tree `4db43f30`).
+- Er is geen native toestelreview uitgevoerd of als uitgevoerd geregistreerd.
+  De publieke release gebruikte Jan Andriessens' owner waiver met de letterlijke
+  instructies van 11:55 (“Sla de telefoontest over en zet 1.23.5 meteen live op
+  Android en dien hem in bij Apple”) en 19:17 (“zet life” / “doe die regel
+  weg”), exact gebonden aan commit, tree en beide artefacthashes.
+- Android-AAB SHA-256:
+  `9ae04deb591b03f42b8325604cdea7c9a2e5c5075a0c71a0e0a4fdd5a252a2dd`.
+  Google Play bevestigt release **1.23.5**, versionCode **220**, track
+  **production**, status **completed**, rollout **1.0 (100%)**. Alleen de
+  Franse build-220-releasenotitie werd aangeleverd; er bestaat geen
+  `nl-NL/changelogs/220.txt`.
+- iOS-IPA SHA-256:
+  `c06c8448d5cefbb4cc0b1f43fb8fe99f23307c6954f02c905b0d6987fa37d123`.
+  App Store Connect valideerde build **1.23.5 (220)**, selecteerde hem voor de
+  storeversie en accepteerde de reviewinzending met automatische release. De
+  gecontroleerde status na indiening is **WAITING_FOR_REVIEW**; de enige
+  versie-localisatie is **fr-FR** en er is geen `nl-NL`-pagina aangemaakt.
+- De volledige releasepoort liep op het exacte mergecommit: Flutter **820
+  geslaagd** met 1 expliciete skip, Functions **583 geslaagd** met 5 expliciete
+  skips en release-tooling **24 geslaagd**. Er waren geen wijzigingen aan
+  `minSupportedVersion`, boutique-instellingen, signingbestanden of
+  productiegegevens.
+
 > **Superseded (2026-10-02 19:17 Europe/Paris):** Releasekandidaat
 > **1.23.5+219** hieronder blijft bewaard als auditverslag. De kandidaat kan
 > niet met de nieuwe owner-waiverpoort worden gepubliceerd omdat zijn commit en
