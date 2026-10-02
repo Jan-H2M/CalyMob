@@ -805,6 +805,83 @@ describe('member pricing policy', () => {
       })).toThrow('Aucun tarif membre');
     },
   );
+
+  test.each([
+    [['Encadrant']],
+    [['Encadrants']],
+    [['E']],
+    [['Encadrant Carrière']],
+  ])('grants the encadrant tariff only to official role %j', clubStatuten => {
+    const operation = {
+      event_tariffs: [
+        { id: 'member', category: 'membre', price: 6 },
+        { id: 'encadrant', category: 'encadrant', price: 2 },
+      ],
+    };
+
+    expect(memberRegistrationPrice(operation, { clubStatuten })).toEqual({
+      tariff: operation.event_tariffs[1],
+      price: 2,
+    });
+  });
+
+  test.each([
+    [['Membre', 'Encadrants et assistants']],
+    [['Membre', 'Encadrant Piscine']],
+    [['Membre', 'P']],
+  ])('keeps pool-only assistant role %j on the member tariff', clubStatuten => {
+    const operation = {
+      event_tariffs: [
+        { id: 'member', category: 'membre', price: 6 },
+        { id: 'encadrant', category: 'encadrant', price: 2 },
+      ],
+    };
+
+    expect(memberRegistrationPrice(operation, { clubStatuten })).toEqual({
+      tariff: operation.event_tariffs[0],
+      price: 6,
+    });
+  });
+
+  test.each(['E', 'Encadrant Carrière'])(
+    'recognizes official default role %s alongside member statutes',
+    fonctionDefaut => {
+      const operation = {
+        event_tariffs: [
+          { id: 'member', category: 'membre', price: 6 },
+          { id: 'encadrant', category: 'encadrant', price: 2 },
+        ],
+      };
+
+      expect(memberRegistrationPrice(operation, {
+        clubStatuten: ['Membre'],
+        fonction_defaut: fonctionDefaut,
+      })).toEqual({
+        tariff: operation.event_tariffs[1],
+        price: 2,
+      });
+    },
+  );
+
+  test.each(['P', 'Encadrants et assistants'])(
+    'keeps pool-only default role %s on the member tariff',
+    fonctionDefaut => {
+      const operation = {
+        event_tariffs: [
+          { id: 'member', category: 'membre', price: 6 },
+          { id: 'encadrant', category: 'encadrant', price: 2 },
+        ],
+      };
+
+      expect(memberRegistrationPrice(operation, {
+        clubStatuten: ['Membre'],
+        fonction_defaut: fonctionDefaut,
+      })).toEqual({
+        tariff: operation.event_tariffs[0],
+        price: 6,
+      });
+    },
+  );
 });
 
 test('guest payload fingerprint matches the CalyMob canonical contract', () => {
