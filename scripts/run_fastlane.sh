@@ -8,6 +8,13 @@ fi
 
 platform="$1"
 shift
+lane="$1"
+
+if [[ -n "${CALYMOB_RELEASE_ROOT:-}" \
+  && ( "$platform" != "android" || "$lane" != "submit" ) ]]; then
+  echo "CALYMOB_RELEASE_ROOT is only allowed for Android submit." >&2
+  exit 64
+fi
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 export LANG="${LANG:-en_US.UTF-8}"
