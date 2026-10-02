@@ -1,6 +1,7 @@
 import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/tariff.dart';
+import 'permission_helper.dart';
 
 /// Utilitaires pour le calcul des tarifs
 class TariffUtils {
@@ -8,15 +9,14 @@ class TariffUtils {
   /// Retourne null si aucun tarif trouvé
   static Tariff? getTariffForFunction(List<Tariff> tariffs, String fonction) {
     // Normaliser la fonction pour la comparaison (lowercase, sans 's' final)
-    final normalizedFonction = fonction.toLowerCase().replaceAll(RegExp(r's$'), '');
+    final normalizedFonction =
+        fonction.toLowerCase().replaceAll(RegExp(r's$'), '');
 
-    return tariffs.cast<Tariff?>().firstWhere(
-      (t) {
-        final normalizedCategory = t!.category.toLowerCase().replaceAll(RegExp(r's$'), '');
-        return normalizedCategory == normalizedFonction;
-      },
-      orElse: () => null,
-    );
+    return tariffs.cast<Tariff?>().firstWhere((t) {
+      final normalizedCategory =
+          t!.category.toLowerCase().replaceAll(RegExp(r's$'), '');
+      return normalizedCategory == normalizedFonction;
+    }, orElse: () => null);
   }
 
   /// Calcule le prix d'inscription pour un membre à un événement
@@ -43,7 +43,10 @@ class TariffUtils {
 
       // Si pas de tarif trouvé pour cette fonction, essayer "membre" par défaut
       if (fonction != 'membre') {
-        final membreTariff = getTariffForFunction(operation.eventTariffs, 'membre');
+        final membreTariff = getTariffForFunction(
+          operation.eventTariffs,
+          'membre',
+        );
         if (membreTariff != null) {
           return membreTariff.price;
         }
@@ -66,25 +69,28 @@ class TariffUtils {
   /// Détermine la meilleure fonction à utiliser pour le calcul du tarif
   /// Priorité: encadrant > ca > membre (car encadrant/ca ont souvent des réductions)
   static String _getBestFunction(MemberProfile profile) {
-    // Si clubStatuten contient des fonctions, les utiliser
-    if (profile.clubStatuten.isNotEmpty) {
+    final functions = <String>[
+      ...profile.clubStatuten,
+      if (profile.fonctionDefaut?.trim().isNotEmpty ?? false)
+        profile.fonctionDefaut!,
+    ];
+
+    if (functions.isNotEmpty) {
       // Chercher dans l'ordre de priorité (tarif le plus avantageux généralement)
-      if (_hasFunction(profile.clubStatuten, 'encadrant')) {
+      // Pool assistants deliberately share planning access with encadrants,
+      // but they do not inherit the career/encadrant event tariff. Reuse the
+      // exact career-role gate instead of matching the "encadrant" substring.
+      if (PermissionHelper.isEncadrant(functions)) {
         return 'encadrant';
       }
-      if (_hasFunction(profile.clubStatuten, 'ca')) {
+      if (_hasFunction(functions, 'ca')) {
         return 'ca';
       }
-      if (_hasFunction(profile.clubStatuten, 'membre')) {
+      if (_hasFunction(functions, 'membre')) {
         return 'membre';
       }
       // Retourner la première fonction trouvée
-      return profile.clubStatuten.first.toLowerCase();
-    }
-
-    // Utiliser fonction_defaut si disponible
-    if (profile.fonctionDefaut != null && profile.fonctionDefaut!.isNotEmpty) {
-      return profile.fonctionDefaut!.toLowerCase();
+      return functions.first.toLowerCase().trim();
     }
 
     // Par défaut: membre
@@ -93,8 +99,8 @@ class TariffUtils {
 
   /// Vérifie si une liste contient une fonction (insensible à la casse)
   static bool _hasFunction(List<String> functions, String target) {
-    final normalizedTarget = target.toLowerCase();
-    return functions.any((f) => f.toLowerCase().contains(normalizedTarget));
+    final normalizedTarget = target.toLowerCase().trim();
+    return functions.any((f) => f.toLowerCase().trim() == normalizedTarget);
   }
 
   /// Affiche le libellé de la fonction d'un membre
