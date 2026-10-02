@@ -57,7 +57,8 @@ test('both store submission lanes are manifest-gated', () => {
   const ios = read('ios/fastlane/Fastfile');
   assert.match(android, /^skip_docs$/m);
   assert.match(ios, /^skip_docs$/m);
-  assert.match(android, /lane :submit do \|options\|[\s\S]*verify_android_store_release\('submit', options\)/);
+  assert.match(android,
+    /lane :submit do \|options\|[\s\S]*verify_android_store_release\('submit', options, external_submit: true\)/);
   assert.match(android, /skip_upload_aab: true/);
   assert.match(android, /version_code: release\['build'\]\.to_i/);
   assert.doesNotMatch(android, /upload-and-submit|lane :release|lane :internal/);
@@ -70,6 +71,17 @@ test('Android completed release uses a Fastlane-compatible string rollout', () =
   const android = read('android/fastlane/Fastfile');
   assert.match(android, /rollout:\s*'1\.0'/);
   assert.doesNotMatch(android, /rollout:\s*1\.0/);
+});
+
+test('external release source is restricted to reviewed Android submit tooling', () => {
+  const android = read('android/fastlane/Fastfile');
+  const wrapper = read('scripts/run_fastlane.sh');
+  assert.match(android, /CALYMOB_RELEASE_ROOT/);
+  assert.match(android, /verify_release_tooling\.cjs/);
+  assert.match(android, /script = tooling\.fetch\('verifierPath'\)/);
+  assert.match(android, /verify_android_store_release\('submit', options, external_submit: true\)/);
+  assert.match(android, /verify_android_store_release\('notes', \{\}, external_submit: true\)/);
+  assert.match(wrapper, /"\$platform" != "android" \|\| "\$lane" != "submit"/);
 });
 
 test('reviewer credential is external and never printed or embedded', () => {
