@@ -4,7 +4,31 @@
 > kandidaat van 12 september hieronder blijven behouden als historisch verslag,
 > maar zijn niet meer de actieve release-instructies.
 
-## Release 1.23.5+219 — 2 oktober 2026
+## Release 1.23.5+220 — 2 oktober 2026
+
+- Storebasis vóór deze release: **1.23.4+218** in Google Play production en
+  **1.23.4** live in de App Store.
+- Build 220 vervangt build 219 uitsluitend omdat de samengevoegde release-gate
+  het broncommit en de source tree exact aan beide nieuw gebouwde artefacten
+  bindt. Versie 1.23.5, productcode en release-inhoud blijven ongewijzigd.
+- Doel: Google Play production met volledige uitrol en App Store-review met
+  automatische release, uitsluitend Franse releasenotities.
+- Franse releasenotitie: “Correction du tarif encadrants/assistants et
+  affichage du téléphone de l'organisateur.”
+- Voor de native-reviewpoort wordt geen uitgevoerde toesteltest geclaimd. Jan
+  Andriessens gebruikt de publiek-release owner waiver met zijn exacte
+  instructies van 2 oktober 2026 om 11:55 en 19:17; de externe release-manifest
+  bindt die waiver aan het uiteindelijke commit, de tree en beide artefacthashes.
+- Deze release wijzigt geen `minSupportedVersion`, boutique-instellingen,
+  signingmateriaal of productiegegevens.
+
+> **Superseded (2026-10-02 19:17 Europe/Paris):** Releasekandidaat
+> **1.23.5+219** hieronder blijft bewaard als auditverslag. De kandidaat kan
+> niet met de nieuwe owner-waiverpoort worden gepubliceerd omdat zijn commit en
+> tree van de samengevoegde gate verschillen; iOS-build 219 is bovendien al als
+> TestFlight-build geüpload. Build 220 is de actieve kandidaat.
+
+## Release 1.23.5+219 — 2 oktober 2026 (historisch)
 
 - Storebasis vóór deze release: **1.23.4+218** in Google Play production en
   **1.23.4** live in de App Store.
