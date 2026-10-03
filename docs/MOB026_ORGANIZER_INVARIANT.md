@@ -44,6 +44,11 @@ canonical display name; clients cannot supply `organisateur_nom` or mutate
 `creator_user_id`. Handover authorization is limited to admins/validators, the
 current organizer, and the immutable original creator.
 
+Because the callable uses the Admin SDK, it also reproduces the progressive
+fiscal-year lock (`open`: all authorized writers; `closed`: admins;
+`permanently_closed`: superadmins). An existing operation's `fiscal_year_id`
+cannot be changed or removed through this writer.
+
 `onOperationOrganizerWritten` remains active for older clients that still write
 operations directly. It repairs a stale name projection when the member exists,
 using equality as its re-trigger guard. Unknown/missing organizer ids are never
@@ -54,6 +59,8 @@ metadata are explicitly marked unattributed.
 Member renames propagate to every operation whose `organisateur_id` references
 that member via `onMemberOrganizerNameUpdated`. This keeps the denormalized name
 canonical without changing the original creator or the organizer id.
+Deleting a referenced member is never guessed or silently repaired: the same
+write trigger emits a critical orphan alert for each affected operation.
 
 ## Phase 4 mobile alignment
 

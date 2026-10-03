@@ -1,5 +1,6 @@
 const {
   canonicalMemberName,
+  memberOrganizerNameTriggerHandler,
   operationOrganizerTriggerHandler,
   writeOperationHandler,
 } = require('./operationOrganizer');
@@ -27,10 +28,32 @@ class Ref {
 class Collection {
   constructor(db, path) { this.db = db; this.path = path; }
   doc(id = `auto-${++this.db.autoId}`) { return new Ref(this.db, `${this.path}/${id}`); }
+  where(field, operator, value) { return new Query(this.db, this.path, field, operator, value); }
+}
+
+class Query {
+  constructor(db, path, field, operator, value) {
+    this.db = db;
+    this.path = path;
+    this.field = field;
+    this.operator = operator;
+    this.value = value;
+  }
+  async get() {
+    if (this.operator !== '==') throw new Error(`Unsupported operator ${this.operator}`);
+    const prefix = `${this.path}/`;
+    const docs = [...this.db.docs.entries()]
+      .filter(([path, value]) => path.startsWith(prefix)
+        && !path.slice(prefix.length).includes('/')
+        && value[this.field] === this.value)
+      .map(([path, value]) => new Snapshot(new Ref(this.db, path), value));
+    return { docs, size: docs.length };
+  }
 }
 
 class Snapshot {
   constructor(ref, value) { this.ref = ref; this.value = value; this.exists = value !== undefined; }
+  get id() { return this.ref.id; }
   data() { return this.value; }
 }
 
@@ -105,6 +128,58 @@ describe('writeOperation server authority', () => {
       auth: { uid: 'ordinary' },
       data: { action: 'create', clubId: 'calypso', organizerId: 'target', fields: baseFields },
     }, deps(db))).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  test('validators cannot create in a closed fiscal year while admins can', async () => {
+    const seed = {
+      'clubs/calypso/members/validator': member('validateur', 'Val', 'Idator'),
+      'clubs/calypso/members/admin': member('admin', 'Ada', 'Admin'),
+      'clubs/calypso/members/target': member('membre', 'Target', 'Member'),
+      'clubs/calypso/fiscal_years/fy-closed': { status: 'closed' },
+    };
+    await expect(writeOperationHandler({
+      auth: { uid: 'validator' },
+      data: {
+        action: 'create',
+        clubId: 'calypso',
+        organizerId: 'target',
+        fields: { ...baseFields, fiscal_year_id: 'fy-closed' },
+      },
+    }, deps(new MemoryDb(seed)))).rejects.toMatchObject({ code: 'permission-denied' });
+
+    await expect(writeOperationHandler({
+      auth: { uid: 'admin' },
+      data: {
+        action: 'create',
+        clubId: 'calypso',
+        organizerId: 'target',
+        fields: { ...baseFields, fiscal_year_id: 'fy-closed' },
+      },
+    }, deps(new MemoryDb(seed)))).resolves.toMatchObject({ success: true });
+  });
+
+  test('updates cannot move an operation to another fiscal year', async () => {
+    const db = new MemoryDb({
+      'clubs/calypso/members/admin': member('admin', 'Ada', 'Admin'),
+      'clubs/calypso/fiscal_years/fy-open': { status: 'open' },
+      'clubs/calypso/operations/event-locked': {
+        ...baseFields,
+        fiscal_year_id: 'fy-open',
+        organisateur_id: 'admin',
+        organisateur_nom: 'Ada Admin',
+        creator_user_id: 'admin',
+      },
+    });
+    await expect(writeOperationHandler({
+      auth: { uid: 'admin' },
+      data: {
+        action: 'update',
+        clubId: 'calypso',
+        operationId: 'event-locked',
+        organizerId: 'admin',
+        fields: { titre: 'Changed', fiscal_year_id: 'another-year' },
+      },
+    }, deps(db))).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 
   test('handover is narrow, canonical and keeps creator unchanged', async () => {
@@ -209,6 +284,50 @@ describe('organizer integrity trigger', () => {
     expect(db.docs.get('clubs/calypso/audit_logs/organizer-integrity-event-orphan')).toMatchObject({
       severity: 'critical',
       details: { reason: 'unknown_organizer_id', organisateur_id: 'missing' },
+    });
+  });
+
+  test('malformed ids are alerted before member dereference', async () => {
+    const operation = { ...baseFields, organisateur_id: 'bad/id', organisateur_nom: 'Stored' };
+    const db = new MemoryDb({ 'clubs/calypso/operations/event-3': operation });
+    const ref = new Ref(db, 'clubs/calypso/operations/event-3');
+    await operationOrganizerTriggerHandler({
+      id: 'event-malformed',
+      time: '2026-10-03T14:00:00.000Z',
+      params: { clubId: 'calypso', operationId: 'event-3' },
+      data: { before: new Snapshot(ref, operation), after: new Snapshot(ref, operation) },
+    }, { db });
+    expect(db.docs.get('clubs/calypso/audit_logs/organizer-integrity-event-malformed')).toMatchObject({
+      severity: 'critical',
+      details: { reason: 'invalid_organizer_id' },
+    });
+  });
+});
+
+describe('member organizer integrity trigger', () => {
+  test('deleting a referenced member creates an orphan alert per operation', async () => {
+    const memberRef = new Ref(new MemoryDb(), 'clubs/calypso/members/target');
+    const db = memberRef.db;
+    db.docs.set('clubs/calypso/operations/event-4', {
+      ...baseFields,
+      organisateur_id: 'target',
+      organisateur_nom: 'Former Member',
+    });
+    await memberOrganizerNameTriggerHandler({
+      id: 'member-delete',
+      time: '2026-10-03T14:00:00.000Z',
+      params: { clubId: 'calypso', memberId: 'target' },
+      data: {
+        before: new Snapshot(memberRef, member('membre', 'Former', 'Member')),
+        after: new Snapshot(memberRef, undefined),
+      },
+    }, { db });
+    expect(db.docs.get(
+      'clubs/calypso/audit_logs/organizer-integrity-member-delete-event-4',
+    )).toMatchObject({
+      targetId: 'event-4',
+      severity: 'critical',
+      details: { reason: 'organizer_member_deleted', organisateur_id: 'target' },
     });
   });
 });
