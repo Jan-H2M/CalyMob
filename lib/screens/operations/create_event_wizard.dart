@@ -28,10 +28,8 @@ class CreateEventWizard extends StatefulWidget {
   /// Event category: 'plongee' ou 'sortie'
   final String eventCategory;
 
-  const CreateEventWizard({
-    Key? key,
-    required this.eventCategory,
-  }) : super(key: key);
+  const CreateEventWizard({Key? key, required this.eventCategory})
+      : super(key: key);
 
   @override
   State<CreateEventWizard> createState() => _CreateEventWizardState();
@@ -78,8 +76,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   List<_EditableTariff> _editableTariffs = [];
   bool _saving = false;
   bool _paymentRequired = EventPaymentDefaults.paymentRequired;
-  Set<String> _allowedPaymentMethods =
-      Set.of(EventPaymentDefaults.allowedPaymentMethods);
+  Set<String> _allowedPaymentMethods = Set.of(
+    EventPaymentDefaults.allowedPaymentMethods,
+  );
   String _registrationConfirmationPolicy =
       EventPaymentDefaults.registrationConfirmationPolicy;
   int _paymentDeadlineDays = EventPaymentDefaults.paymentDeadlineDays;
@@ -129,12 +128,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   }
 
   // ============================================================
-  // RESPONSABLE PICKER (encadrants)
+  // RESPONSABLE PICKER (club member directory)
   // ============================================================
 
-  /// Charge la liste des encadrants du club pour le picker.
-  /// Même logique que edit_event_screen.dart — on filtre sur `clubStatuten`
-  /// contenant "encadrant"/"encadrants" (case-insensitive).
+  /// Charge la projection annuaire de tous les membres du club. Organizer
+  /// status is an authorization concern, not a filter on possible assignees.
   Future<void> _loadEncadrants() async {
     if (_loadingEncadrants) return;
     setState(() => _loadingEncadrants = true);
@@ -148,25 +146,16 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       final options = <_EncadrantOption>[];
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        final statuten = data['clubStatuten'];
-        final isEncadrant = statuten is List &&
-            statuten.any((s) {
-              final v = s.toString().toLowerCase().trim();
-              return v == 'encadrant' || v == 'encadrants';
-            });
-        if (!isEncadrant) continue;
-
-        final displayName = memberDisplayName(data, fallback: '');
+        final displayName = memberCanonicalOrganizerName(data);
         if (displayName.isEmpty) continue;
 
-        options.add(_EncadrantOption(
-          id: doc.id,
-          displayName: displayName,
-        ));
+        options.add(_EncadrantOption(id: doc.id, displayName: displayName));
       }
 
-      options.sort((a, b) =>
-          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+      options.sort(
+        (a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+      );
 
       if (mounted) {
         setState(() {
@@ -224,11 +213,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Encadrants du club',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                    'Membres du club',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 8),
                   const Divider(height: 1),
@@ -255,8 +241,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                           final isCurrent = enc.id == _organisateurId;
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor:
-                                  AppColors.lichtblauw.withOpacity(0.3),
+                              backgroundColor: AppColors.lichtblauw.withOpacity(
+                                0.3,
+                              ),
                               child: Text(
                                 enc.displayName.isNotEmpty
                                     ? enc.displayName[0].toUpperCase()
@@ -269,8 +256,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                             ),
                             title: Text(enc.displayName),
                             trailing: isCurrent
-                                ? Icon(Icons.check_circle,
-                                    color: AppColors.middenblauw)
+                                ? Icon(
+                                    Icons.check_circle,
+                                    color: AppColors.middenblauw,
+                                  )
                                 : null,
                             onTap: () => Navigator.of(ctx).pop(enc),
                           );
@@ -312,11 +301,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         ),
         child: Row(
           children: [
-            Icon(
-              Icons.account_circle,
-              size: 20,
-              color: AppColors.middenblauw,
-            ),
+            Icon(Icons.account_circle, size: 20, color: AppColors.middenblauw),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -356,29 +341,36 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     switch (_locationLoadState) {
       case DiveLocationLoadState.offline:
         return _buildLocationStatusBanner(
-            Icons.cloud_off,
-            'Hors connexion : les lieux affichés viennent du cache local.',
-            Colors.orange.shade50,
-            Colors.orange.shade900);
+          Icons.cloud_off,
+          'Hors connexion : les lieux affichés viennent du cache local.',
+          Colors.orange.shade50,
+          Colors.orange.shade900,
+        );
       case DiveLocationLoadState.cached:
         return _buildLocationStatusBanner(
-            Icons.history,
-            'Catalogue en cache — il sera actualisé dès la reconnexion.',
-            Colors.blue.shade50,
-            Colors.blue.shade900);
+          Icons.history,
+          'Catalogue en cache — il sera actualisé dès la reconnexion.',
+          Colors.blue.shade50,
+          Colors.blue.shade900,
+        );
       case DiveLocationLoadState.error:
         return _buildLocationStatusBanner(
-            Icons.error_outline,
-            'Impossible de charger le catalogue. Réessaie quand la connexion est disponible.',
-            Colors.red.shade50,
-            Colors.red.shade900);
+          Icons.error_outline,
+          'Impossible de charger le catalogue. Réessaie quand la connexion est disponible.',
+          Colors.red.shade50,
+          Colors.red.shade900,
+        );
       default:
         return const SizedBox.shrink();
     }
   }
 
   Widget _buildLocationStatusBanner(
-      IconData icon, String message, Color background, Color foreground) {
+    IconData icon,
+    String message,
+    Color background,
+    Color foreground,
+  ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
       child: Container(
@@ -393,8 +385,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             Icon(icon, size: 18, color: foreground),
             const SizedBox(width: 8),
             Expanded(
-                child: Text(message,
-                    style: TextStyle(color: foreground, fontSize: 12))),
+              child: Text(
+                message,
+                style: TextStyle(color: foreground, fontSize: 12),
+              ),
+            ),
           ],
         ),
       ),
@@ -437,14 +432,16 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     // Converteer editeerbare tarieven naar Tariff objecten voor de berekening
     final tariffObjects = _editableTariffs
         .where((t) => t.label.trim().isNotEmpty)
-        .map((t) => Tariff(
-              id: t.id,
-              label: t.label,
-              category: t.category,
-              price: t.price,
-              isDefault: t.isDefault,
-              displayOrder: t.displayOrder,
-            ))
+        .map(
+          (t) => Tariff(
+            id: t.id,
+            label: t.label,
+            category: t.category,
+            price: t.price,
+            isDefault: t.isDefault,
+            displayOrder: t.displayOrder,
+          ),
+        )
         .toList();
     final budget = OperationService.computeBudgetPrevu(tariffObjects, capacity);
     _budgetController.text = budget.toStringAsFixed(2);
@@ -481,8 +478,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       // `fiscal_years/{id}` existe et ait `status == 'open'`. Hardcoder
       // `FY${year}` provoque permission-denied si l'ID diffère ou si l'année
       // n'est pas encore ouverte.
-      final fiscalYearId =
-          await FiscalYearService().getCurrentOpenFiscalYearId(_clubId);
+      final fiscalYearId = await FiscalYearService().getCurrentOpenFiscalYearId(
+        _clubId,
+      );
       if (fiscalYearId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -500,20 +498,24 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       }
 
       // Generate event number
-      final eventNumber =
-          await _operationService.generateEventNumber(_clubId, isDive);
+      final eventNumber = await _operationService.generateEventNumber(
+        _clubId,
+        isDive,
+      );
 
       // Build tariffs data vanuit editeerbare tarieven
       final tariffsData = _editableTariffs
           .where((t) => t.label.trim().isNotEmpty)
-          .map((t) => {
-                'id': t.id,
-                'label': t.label.trim(),
-                'category': t.category,
-                'price': t.price,
-                'is_default': t.isDefault,
-                'display_order': t.displayOrder,
-              })
+          .map(
+            (t) => {
+              'id': t.id,
+              'label': t.label.trim(),
+              'category': t.category,
+              'price': t.price,
+              'is_default': t.isDefault,
+              'display_order': t.displayOrder,
+            },
+          )
           .toList();
 
       final data = {
@@ -533,11 +535,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         if (_capaciteController.text.isNotEmpty)
           'capacite_max': int.tryParse(_capaciteController.text),
         'allow_waitlist': _allowWaitlist,
-        // Écrire id + nom ensemble depuis le picker pour que le lookup du
-        // numéro de téléphone (keyed sur organisateur_id) reste cohérent
-        // avec le nom affiché. Fallback sur userId si le picker n'a pas
-        // encore été initialisé (edge case très rare).
-        'organisateur_nom': (_organisateurNom ?? '').trim(),
+        // The callable reads this member and derives organisateur_nom. The
+        // client sends only the selected identity key.
         'organisateur_id':
             (_organisateurId != null && _organisateurId!.isNotEmpty)
                 ? _organisateurId
@@ -547,9 +546,6 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         'fiscal_year_id': fiscalYearId,
         // Source tag (keep 'manual' for consistency with CalyCompta).
         'created_by': 'manual',
-        // Firebase UID of the original creator — used to authorize later
-        // responsable changes. Distinct from created_by source tag above.
-        'creator_user_id': userId,
         'payment_required': _paymentRequired,
         'allowed_payment_methods': _allowedPaymentMethods.toList(),
         'registration_confirmation_policy': _registrationConfirmationPolicy,
@@ -746,10 +742,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
             'Sélectionnez un lieu pour pré-remplir les tarifs et les informations de l\'événement.',
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[700],
-            ),
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
           ),
         ),
 
@@ -812,10 +805,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
           final label = Text(
             'Événement hors plongée ou lieu non répertorié ?',
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[700],
-            ),
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
           );
 
           final button = ElevatedButton(
@@ -838,11 +828,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           if (stacked) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                label,
-                const SizedBox(height: 12),
-                button,
-              ],
+              children: [label, const SizedBox(height: 12), button],
             );
           }
 
@@ -851,10 +837,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               Expanded(child: label),
               const SizedBox(width: 12),
               Flexible(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: button,
-                ),
+                child: Align(alignment: Alignment.centerRight, child: button),
               ),
             ],
           );
@@ -866,10 +849,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Widget _buildSearchBar() {
     return TextField(
       onChanged: (value) => setState(() => _searchQuery = value),
-      style: const TextStyle(
-        color: AppColors.donkerblauw,
-        fontSize: 15,
-      ),
+      style: const TextStyle(color: AppColors.donkerblauw, fontSize: 15),
       cursorColor: AppColors.middenblauw,
       decoration: InputDecoration(
         hintText: 'Rechercher un lieu…',
@@ -892,8 +872,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.middenblauw, width: 2),
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
       ),
     );
   }
@@ -969,8 +951,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                   // Name + country
                   Row(
                     children: [
-                      Icon(Icons.location_on,
-                          size: 18, color: AppColors.middenblauw),
+                      Icon(
+                        Icons.location_on,
+                        size: 18,
+                        color: AppColors.middenblauw,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -984,10 +969,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                       ),
                       Text(
                         location.country,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                       ),
                     ],
                   ),
@@ -1011,7 +993,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                       children: location.tariffs.map((tariff) {
                         return Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.lichtblauw.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(8),
@@ -1091,8 +1075,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           // Titre *
           _buildSectionCard(
             children: [
-              _buildLabel('Titre de l\'événement',
-                  required: true, icon: Icons.edit_note),
+              _buildLabel(
+                'Titre de l\'événement',
+                required: true,
+                icon: Icons.edit_note,
+              ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _titreController,
@@ -1122,8 +1109,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           // Dates
           _buildSectionCard(
             children: [
-              _buildLabel('Date et heure de début',
-                  required: true, icon: Icons.calendar_today),
+              _buildLabel(
+                'Date et heure de début',
+                required: true,
+                icon: Icons.calendar_today,
+              ),
               const SizedBox(height: 8),
               _buildDateTimeRow(
                 date: _dateDebut,
@@ -1147,8 +1137,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 }),
               ),
               const SizedBox(height: 16),
-              _buildLabel('Date et heure de fin (optionnel)',
-                  icon: Icons.event),
+              _buildLabel(
+                'Date et heure de fin (optionnel)',
+                icon: Icons.event,
+              ),
               const SizedBox(height: 8),
               _buildDateTimeRow(
                 date: _dateFin,
@@ -1212,7 +1204,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                           controller: _budgetController,
                           decoration: _inputDecoration('0.00'),
                           keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
+                            decimal: true,
+                          ),
                         ),
                       ],
                     ),
@@ -1245,11 +1238,12 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             allowedMethods: _allowedPaymentMethods,
             confirmationPolicy: _registrationConfirmationPolicy,
             deadlineDays: _paymentDeadlineDays,
-            onChanged: (
-                    {paymentRequired,
-                    allowedMethods,
-                    confirmationPolicy,
-                    deadlineDays}) =>
+            onChanged: ({
+              paymentRequired,
+              allowedMethods,
+              confirmationPolicy,
+              deadlineDays,
+            }) =>
                 setState(() {
               if (paymentRequired != null) _paymentRequired = paymentRequired;
               if (allowedMethods != null)
@@ -1318,37 +1312,39 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Widget _buildAllowWaitlistSection() {
     final hasCapacity =
         (int.tryParse(_capaciteController.text.trim()) ?? 0) > 0;
-    return _buildSectionCard(children: [
-      SwitchListTile.adaptive(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Autoriser la liste d’attente'),
-        subtitle: const Text(
-          'Les membres pourront rejoindre la liste quand l’événement est complet ou fermé.',
-        ),
-        value: _allowWaitlist,
-        onChanged: (value) => setState(() => _allowWaitlistChoice = value),
-        activeThumbColor: AppColors.middenblauw,
-      ),
-      if (_allowWaitlist && !hasCapacity)
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.amber.shade300),
+    return _buildSectionCard(
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Autoriser la liste d’attente'),
+          subtitle: const Text(
+            'Les membres pourront rejoindre la liste quand l’événement est complet ou fermé.',
           ),
-          child: Text(
-            'Définissez une capacité maximale pour que la liste d’attente puisse gérer les places disponibles.',
-            style: TextStyle(
-              color: Colors.amber.shade900,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          value: _allowWaitlist,
+          onChanged: (value) => setState(() => _allowWaitlistChoice = value),
+          activeThumbColor: AppColors.middenblauw,
+        ),
+        if (_allowWaitlist && !hasCapacity)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.shade300),
+            ),
+            child: Text(
+              'Définissez une capacité maximale pour que la liste d’attente puisse gérer les places disponibles.',
+              style: TextStyle(
+                color: Colors.amber.shade900,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ),
-    ]);
+      ],
+    );
   }
 
   // ============================================================
@@ -1357,14 +1353,16 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
   void _addTariff() {
     setState(() {
-      _editableTariffs.add(_EditableTariff(
-        id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_editableTariffs.length}',
-        label: '',
-        category: 'membre',
-        price: 0,
-        isDefault: _editableTariffs.isEmpty,
-        displayOrder: _editableTariffs.length,
-      ));
+      _editableTariffs.add(
+        _EditableTariff(
+          id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_editableTariffs.length}',
+          label: '',
+          category: 'membre',
+          price: 0,
+          isDefault: _editableTariffs.isEmpty,
+          displayOrder: _editableTariffs.length,
+        ),
+      );
     });
   }
 
@@ -1409,8 +1407,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               label: const Text('Ajouter'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.middenblauw,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
               ),
             ),
           ],
@@ -1482,8 +1482,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -1516,8 +1518,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -1528,8 +1532,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 ),
               ),
               style: const TextStyle(fontSize: 14),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               onChanged: (v) => _updateTariffPrice(index, v),
             ),
           ),
@@ -1605,10 +1610,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 children: [
                   Text(
                     'Créer l\'événement',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   SizedBox(width: 8),
                   Icon(Icons.chevron_right, size: 22),
@@ -1657,8 +1659,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.calendar_today,
-                      size: 16, color: AppColors.middenblauw),
+                  Icon(
+                    Icons.calendar_today,
+                    size: 16,
+                    color: AppColors.middenblauw,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     dateText,

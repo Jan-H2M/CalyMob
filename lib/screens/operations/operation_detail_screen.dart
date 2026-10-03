@@ -19,6 +19,7 @@ import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
 import '../../utils/organizer_contact_policy.dart';
+import '../../utils/operation_organizer_permissions.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/dive_location_service.dart';
@@ -138,11 +139,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// Check if the current user can edit event settings. Admins can always edit;
   /// otherwise the original creator or current responsable can edit.
   bool _canEditEvent(Operation operation) {
-    if (_isCurrentUserCreator(operation)) return true;
-    if (_isCurrentUserResponsable(operation)) return true;
     final memberProvider = context.read<MemberProvider>();
-    final role = memberProvider.appRole?.toLowerCase();
-    return role == 'admin' || role == 'superadmin';
+    return canOpenOperationEditor(
+      appRole: memberProvider.appRole,
+      isOriginalCreator: _isCurrentUserCreator(operation),
+      isCurrentOrganizer: _isCurrentUserResponsable(operation),
+    );
   }
 
   /// Duik-events mogen door de huidige organisator of door beheerders worden
@@ -274,10 +276,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     final operationLoaded =
         await context.read<OperationProvider>().selectOperation(
-          widget.clubId,
-          widget.operationId,
-          userId,
-        );
+              widget.clubId,
+              widget.operationId,
+              userId,
+            );
 
     // Fix Sentry CALYMOB-1S/19/Q (2026-07-19): na de await kan het scherm al
     // gesloten zijn — State.context gooit dan een null-check TypeError.
@@ -2175,7 +2177,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Edit button - visible to the original creator and to admins
+          // Edit button - visible to handover-authorized actors.
           if (operation != null && _canEditEvent(operation))
             IconButton(
               icon: const Icon(Icons.edit, color: Colors.white, size: 22),
@@ -2328,10 +2330,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                     ),
                                     if (_organisateurProfile != null &&
                                         canDisplayOrganizerPhone(
-                                          sharePhone: _organisateurProfile!
-                                              .sharePhone,
-                                          phoneNumber: _organisateurProfile!
-                                              .phoneNumber,
+                                          sharePhone:
+                                              _organisateurProfile!.sharePhone,
+                                          phoneNumber:
+                                              _organisateurProfile!.phoneNumber,
                                         )) ...[
                                       const SizedBox(width: 12),
                                       GestureDetector(

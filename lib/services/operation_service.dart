@@ -24,6 +24,8 @@ typedef RegisterForEventInvoker = Future<Map<String, dynamic>> Function(
     Map<String, dynamic> payload);
 typedef AddGuestToEventInvoker = Future<void> Function(
     Map<String, dynamic> payload);
+typedef WriteOperationInvoker = Future<Map<String, dynamic>> Function(
+    Map<String, dynamic> payload);
 
 const int registrationGuestNameMaxLength = 80;
 
@@ -165,12 +167,14 @@ class EventRegistrationResult {
       if (id != guestInscriptionIds[index]) {
         throw const FormatException('Ordre des montants invités invalide.');
       }
-      guests.add(RegistrationGuestAmount(
-        inscriptionId: id,
-        base: breakdown.base,
-        supplements: breakdown.supplements,
-        total: breakdown.total,
-      ));
+      guests.add(
+        RegistrationGuestAmount(
+          inscriptionId: id,
+          base: breakdown.base,
+          supplements: breakdown.supplements,
+          total: breakdown.total,
+        ),
+      );
     }
     final groupTotal = _receiptAmount(amounts['groupTotal']);
     final computedTotal = member.total +
@@ -276,16 +280,19 @@ class OperationService {
   final FirebaseFunctions? _injectedFunctions;
   final RegisterForEventInvoker? _registerForEventInvoker;
   final AddGuestToEventInvoker? _addGuestToEventInvoker;
+  final WriteOperationInvoker? _writeOperationInvoker;
 
   OperationService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     RegisterForEventInvoker? registerForEventInvoker,
     AddGuestToEventInvoker? addGuestToEventInvoker,
+    WriteOperationInvoker? writeOperationInvoker,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _injectedFunctions = functions,
         _registerForEventInvoker = registerForEventInvoker,
-        _addGuestToEventInvoker = addGuestToEventInvoker;
+        _addGuestToEventInvoker = addGuestToEventInvoker,
+        _writeOperationInvoker = writeOperationInvoker;
 
   FirebaseFunctions get _functions =>
       _injectedFunctions ??
@@ -1035,7 +1042,9 @@ class OperationService {
         .where('membre_id', isEqualTo: userId)
         .get();
     final activeDocuments = snapshot.docs
-        .where((document) => document.data()['registration_status'] != 'canceled')
+        .where(
+          (document) => document.data()['registration_status'] != 'canceled',
+        )
         .toList()
       ..sort(_compareCanonicalUserInscriptions);
     if (activeDocuments.isEmpty) return null;
@@ -1053,9 +1062,9 @@ class OperationService {
     final byClass = leftWaitlisted.compareTo(rightWaitlisted);
     if (byClass != 0) return byClass;
 
-    final byDate = _registrationDateSortKey(right.data()).compareTo(
-      _registrationDateSortKey(left.data()),
-    );
+    final byDate = _registrationDateSortKey(
+      right.data(),
+    ).compareTo(_registrationDateSortKey(left.data()));
     if (byDate != 0) return byDate;
     return left.id.compareTo(right.id);
   }
@@ -1617,7 +1626,9 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) => participant.registrationStatus != 'canceled')
+          .where(
+            (participant) => participant.registrationStatus != 'canceled',
+          )
           .toList();
 
       // Sort by presentAt descending (newest first)
@@ -1635,22 +1646,128 @@ class OperationService {
   // EVENT CREATION & UPDATE
   // ============================================================
 
-  /// Mettre à jour une opération/événement dans Firestore
+  dynamic _encodeOperationCallableValue(dynamic value) {
+    if (value is Timestamp) {
+      return {'__timestamp_ms': value.millisecondsSinceEpoch};
+    }
+    if (value is DateTime) {
+      return {'__timestamp_ms': value.millisecondsSinceEpoch};
+    }
+    if (value is List) {
+      return value.map(_encodeOperationCallableValue).toList(growable: false);
+    }
+    if (value is Map) {
+      return value.map(
+        (key, item) =>
+            MapEntry(key.toString(), _encodeOperationCallableValue(item)),
+      );
+    }
+    return value;
+  }
+
+  Map<String, dynamic> _operationCallablePayload(Map<String, dynamic> data) {
+    const serverOwned = {
+      'id',
+      'club_id',
+      'organisateur_id',
+      'organisateur_nom',
+      'creator_user_id',
+      'created_at',
+      'updated_at',
+    };
+    final fields = <String, dynamic>{};
+    final deleteFields = <String>[];
+    for (final entry in data.entries) {
+      if (serverOwned.contains(entry.key)) continue;
+      if (entry.value is FieldValue) {
+        deleteFields.add(entry.key);
+      } else {
+        fields[entry.key] = _encodeOperationCallableValue(entry.value);
+      }
+    }
+    return {'fields': fields, 'deleteFields': deleteFields};
+  }
+
+  Future<Map<String, dynamic>> _writeOperationCallable({
+    required String action,
+    required String clubId,
+    required String organizerId,
+    String? operationId,
+    Map<String, dynamic> data = const {},
+  }) async {
+    final payload = <String, dynamic>{
+      'action': action,
+      'clubId': clubId,
+      if (operationId != null) 'operationId': operationId,
+      'organizerId': organizerId,
+      ..._operationCallablePayload(data),
+      'source': 'calymob',
+    };
+    final injectedWriter = _writeOperationInvoker;
+    if (injectedWriter != null) return injectedWriter(payload);
+    final result =
+        await _functions.httpsCallable('writeOperation').call(payload);
+    return Map<String, dynamic>.from(result.data as Map);
+  }
+
+  /// Update through the server-authoritative writer. Organizer handover is a
+  /// separate action so unrelated edits can never be silently combined with it.
   Future<void> updateOperation({
     required String clubId,
     required String operationId,
     required Map<String, dynamic> data,
   }) async {
     try {
-      await _firestore
+      final currentSnapshot = await _firestore
           .collection('clubs/$clubId/operations')
           .doc(operationId)
-          .update({...data, 'updated_at': FieldValue.serverTimestamp()});
+          .get();
+      if (!currentSnapshot.exists) {
+        throw StateError('Opération introuvable: $operationId');
+      }
+      final current = currentSnapshot.data()!;
+      final currentOrganizerId = current['organisateur_id'] as String?;
+      final requestedOrganizerId = data['organisateur_id'] as String?;
+      if (currentOrganizerId == null || currentOrganizerId.isEmpty) {
+        throw StateError('Organisateur manquant pour l’opération.');
+      }
+      if (requestedOrganizerId != null &&
+          requestedOrganizerId != currentOrganizerId) {
+        throw StateError(
+          'Utilisez le transfert de responsable dédié avant de modifier l’opération.',
+        );
+      }
+      await _writeOperationCallable(
+        action: 'update',
+        clubId: clubId,
+        operationId: operationId,
+        organizerId: currentOrganizerId,
+        data: data,
+      );
       debugPrint('✅ Opération mise à jour: $operationId');
     } catch (e) {
       debugPrint('❌ Erreur mise à jour opération: $e');
       rethrow;
     }
+  }
+
+  /// Transfer organizer identity as one independently authorized and audited
+  /// server action. The original creator remains immutable.
+  Future<void> handoverOperation({
+    required String clubId,
+    required String operationId,
+    required String organizerId,
+  }) async {
+    if (organizerId.isEmpty) {
+      throw StateError('Organisateur manquant pour le transfert.');
+    }
+    await _writeOperationCallable(
+      action: 'handover',
+      clubId: clubId,
+      operationId: operationId,
+      organizerId: organizerId,
+    );
+    debugPrint('✅ Responsable transféré: $operationId');
   }
 
   /// Annuler une opération sans supprimer son contexte ni ses sous-collections.
@@ -1683,22 +1800,31 @@ class OperationService {
     }
   }
 
-  /// Créer une opération/événement dans Firestore
+  /// Create through the server-authoritative writer. The server reads the
+  /// member record, derives the canonical name and stamps creator_user_id.
   /// Returns the document ID of the created operation
   Future<String> createOperation({
     required String clubId,
     required Map<String, dynamic> data,
   }) async {
     try {
-      final docRef =
-          await _firestore.collection('clubs/$clubId/operations').add({
-        ...data,
-        'created_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+      final organizerId = data['organisateur_id'] as String?;
+      if (organizerId == null || organizerId.isEmpty) {
+        throw StateError('Organisateur manquant pour la création.');
+      }
+      final response = await _writeOperationCallable(
+        action: 'create',
+        clubId: clubId,
+        organizerId: organizerId,
+        data: data,
+      );
+      final operationId = response['operationId'] as String?;
+      if (operationId == null || operationId.isEmpty) {
+        throw const FormatException('Réponse de création incomplète.');
+      }
 
-      debugPrint('✅ Opération créée: ${docRef.id} - ${data['titre']}');
-      return docRef.id;
+      debugPrint('✅ Opération créée: $operationId - ${data['titre']}');
+      return operationId;
     } catch (e) {
       debugPrint('❌ Erreur création opération: $e');
       rethrow;
@@ -1899,8 +2025,10 @@ class OperationService {
                 .where('present', isEqualTo: true)
                 .limit(1)
                 .get();
-            return inscriptionSnap.docs.any((document) =>
-                    document.data()['registration_status'] != 'canceled')
+            return inscriptionSnap.docs.any(
+              (document) =>
+                  document.data()['registration_status'] != 'canceled',
+            )
                 ? op
                 : null;
           } catch (_) {
@@ -1911,9 +2039,11 @@ class OperationService {
                 .limit(1)
                 .get();
             if (all.docs.isEmpty) return null;
-            return all.docs.any((document) =>
-                    document.data()['present'] == true &&
-                    document.data()['registration_status'] != 'canceled')
+            return all.docs.any(
+              (document) =>
+                  document.data()['present'] == true &&
+                  document.data()['registration_status'] != 'canceled',
+            )
                 ? op
                 : null;
           }

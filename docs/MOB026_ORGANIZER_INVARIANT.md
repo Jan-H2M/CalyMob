@@ -64,3 +64,15 @@ that member via `onMemberOrganizerNameUpdated`. This keeps the denormalized name
 canonical without changing the original creator or the organizer id.
 Deleting a referenced member is never guessed or silently repaired: the same
 write trigger emits a critical orphan alert for each affected operation.
+
+## Phase 4 mobile alignment
+
+CalyMob create and edit now use `writeOperation` instead of writing operation
+identity directly. The picker lists the privacy-safe full member directory,
+never free text or an Encadrant-only subset. A handover requires confirmation;
+admins/validators, the current organizer and the original creator see the flow.
+The handover is a dedicated callable action and closes the edit screen after a
+successful transfer, so unrelated edits cannot be combined with it. The server
+derives the name, keeps `creator_user_id` unchanged, and the audit trigger
+records the completed id transition. No minimum-supported-version or boutique
+setting changes are part of this phase.
