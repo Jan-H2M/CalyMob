@@ -1,5 +1,5 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { onDocumentWritten, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 
 const REGION = 'europe-west1';
@@ -128,6 +128,15 @@ function canHandoverOperation(actorId, actor, operation) {
   );
 }
 
+function canModifyFiscalYear(actor, fiscalYear) {
+  if (!fiscalYear) return true;
+  const status = cleanString(fiscalYear.status);
+  if (status === 'open') return true;
+  if (status === 'closed') return ['superadmin', 'admin'].includes(actor.app_role);
+  if (status === 'permanently_closed') return actor.app_role === 'superadmin';
+  return false;
+}
+
 function validateRequest(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new HttpsError('invalid-argument', 'Requête opération invalide.');
@@ -159,6 +168,9 @@ async function writeOperationHandler(request, dependencies = {}) {
 
   const fields = data.action === 'handover' ? {} : sanitizeFields(data.fields, Timestamp);
   const deleteFields = data.action === 'handover' ? [] : sanitizeDeleteFields(data.deleteFields);
+  if (data.action === 'create' && deleteFields.length > 0) {
+    throw new HttpsError('invalid-argument', 'Une création ne peut pas supprimer de champs.');
+  }
   const clubRef = db.collection('clubs').doc(data.clubId);
   const actorRef = clubRef.collection('members').doc(actorId);
   const sessionRef = clubRef.collection('sessions').doc(actorId);
@@ -199,6 +211,16 @@ async function writeOperationHandler(request, dependencies = {}) {
       if (!canCreateFor(actorId, actor, data.organizerId, fields)) {
         throw new HttpsError('permission-denied', 'Création pour cet organisateur interdite.');
       }
+      const fiscalYearId = fields.fiscal_year_id;
+      if (fiscalYearId !== undefined && fiscalYearId !== null) {
+        if (!isValidDocumentId(fiscalYearId)) {
+          throw new HttpsError('invalid-argument', 'Exercice fiscal invalide.');
+        }
+        const fiscalYearSnapshot = await transaction.get(clubRef.collection('fiscal_years').doc(fiscalYearId));
+        if (!fiscalYearSnapshot.exists || !canModifyFiscalYear(actor, fiscalYearSnapshot.data() || {})) {
+          throw new HttpsError('permission-denied', 'Exercice fiscal verrouillé ou introuvable.');
+        }
+      }
       const created = {
         ...fields,
         club_id: data.clubId,
@@ -214,6 +236,21 @@ async function writeOperationHandler(request, dependencies = {}) {
 
     if (!operationSnapshot.exists) throw new HttpsError('not-found', 'Opération introuvable.');
     const operation = operationSnapshot.data() || {};
+    if (deleteFields.includes('fiscal_year_id')
+      || (Object.prototype.hasOwnProperty.call(fields, 'fiscal_year_id')
+        && fields.fiscal_year_id !== operation.fiscal_year_id)) {
+      throw new HttpsError('invalid-argument', 'L’exercice fiscal d’une opération est immuable.');
+    }
+    const fiscalYearId = operation.fiscal_year_id;
+    if (fiscalYearId !== undefined && fiscalYearId !== null) {
+      if (!isValidDocumentId(fiscalYearId)) {
+        throw new HttpsError('failed-precondition', 'Exercice fiscal existant invalide.');
+      }
+      const fiscalYearSnapshot = await transaction.get(clubRef.collection('fiscal_years').doc(fiscalYearId));
+      if (!fiscalYearSnapshot.exists || !canModifyFiscalYear(actor, fiscalYearSnapshot.data() || {})) {
+        throw new HttpsError('permission-denied', 'Exercice fiscal verrouillé ou introuvable.');
+      }
+    }
     const organizerChanged = data.organizerId !== operation.organisateur_id;
     if (data.action === 'handover') {
       if (!canHandoverOperation(actorId, actor, operation)) {
@@ -310,11 +347,16 @@ async function operationOrganizerTriggerHandler(event, dependencies = {}) {
       }, { merge: false });
   }
 
-  const organizerId = cleanString(after.organisateur_id);
-  if (!organizerId) {
+  const rawOrganizerId = after.organisateur_id;
+  if (rawOrganizerId === undefined || rawOrganizerId === null || rawOrganizerId === '') {
     await writeIntegrityAlert(db, event, 'missing_organizer_id', after);
     return null;
   }
+  if (!isValidDocumentId(rawOrganizerId)) {
+    await writeIntegrityAlert(db, event, 'invalid_organizer_id', after);
+    return null;
+  }
+  const organizerId = rawOrganizerId;
   const memberSnapshot = await db.collection('clubs').doc(clubId)
     .collection('members').doc(organizerId).get();
   if (!memberSnapshot.exists) {
@@ -338,12 +380,25 @@ async function operationOrganizerTriggerHandler(event, dependencies = {}) {
 
 async function memberOrganizerNameTriggerHandler(event, dependencies = {}) {
   const db = dependencies.db || admin.firestore();
-  const before = event.data.before.data() || {};
-  const after = event.data.after.data() || {};
+  const beforeSnapshot = event.data && event.data.before;
+  const afterSnapshot = event.data && event.data.after;
+  if (!beforeSnapshot || !beforeSnapshot.exists) return null;
+  const before = beforeSnapshot.data() || {};
+  const { clubId, memberId } = event.params;
+  if (!afterSnapshot || !afterSnapshot.exists) {
+    const operations = await db.collection('clubs').doc(clubId)
+      .collection('operations').where('organisateur_id', '==', memberId).get();
+    await Promise.all(operations.docs.map((operation) => writeIntegrityAlert(db, {
+      ...event,
+      id: `${event.id}-${operation.id}`,
+      params: { clubId, operationId: operation.id },
+    }, 'organizer_member_deleted', operation.data() || {})));
+    return null;
+  }
+  const after = afterSnapshot.data() || {};
   const beforeName = canonicalMemberName(before);
   const afterName = canonicalMemberName(after);
   if (beforeName === afterName) return null;
-  const { clubId, memberId } = event.params;
   if (!afterName) {
     await writeIntegrityAlert(db, {
       ...event,
@@ -382,7 +437,7 @@ const onOperationOrganizerWritten = onDocumentWritten(
   { document: 'clubs/{clubId}/operations/{operationId}', region: REGION },
   (event) => operationOrganizerTriggerHandler(event),
 );
-const onMemberOrganizerNameUpdated = onDocumentUpdated(
+const onMemberOrganizerNameUpdated = onDocumentWritten(
   { document: 'clubs/{clubId}/members/{memberId}', region: REGION },
   (event) => memberOrganizerNameTriggerHandler(event),
 );
@@ -393,6 +448,7 @@ module.exports = {
   canCreateFor,
   canEditOperation,
   canHandoverOperation,
+  canModifyFiscalYear,
   decodeClientValue,
   hasOrganizerBadge,
   hasValidSession,
