@@ -868,6 +868,10 @@ service cloud.firestore {
           && request.resource.data.organisateur_id is string
           && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.organisateur_id))
           && (
+            !('creator_user_id' in request.resource.data) ||
+            request.resource.data.creator_user_id == request.auth.uid
+          )
+          && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (
               request.resource.data.organisateur_id == request.auth.uid &&
@@ -900,15 +904,18 @@ service cloud.firestore {
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.organisateur_id == request.auth.uid &&
+              request.resource.data.organisateur_id == resource.data.organisateur_id &&
               request.resource.data.get('type', '') == 'evenement'
             ) ||
             (
               isOrganisateurForClub(clubId) &&
               resource.data.organisateur_id == request.auth.uid &&
+              request.resource.data.organisateur_id == resource.data.organisateur_id &&
               request.resource.data.get('type', '') == 'evenement'
             ) ||
             (
               request.resource.data.get('type', '') == 'evenement' &&
+              request.resource.data.organisateur_id != resource.data.organisateur_id &&
               (
                 resource.data.organisateur_id == request.auth.uid ||
                 resource.data.get('creator_user_id', resource.data.organisateur_id) == request.auth.uid
