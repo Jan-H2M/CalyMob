@@ -868,6 +868,10 @@ service cloud.firestore {
           && request.resource.data.organisateur_id is string
           && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.organisateur_id))
           && (
+            !('creator_user_id' in request.resource.data) ||
+            request.resource.data.creator_user_id == request.auth.uid
+          )
+          && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (
               request.resource.data.organisateur_id == request.auth.uid &&
@@ -879,23 +883,48 @@ service cloud.firestore {
           )
           && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
 
-        // Update: same access tiers as create — owner-only for non-admin tiers.
+        // Update: normal event edits keep the existing access tiers. Organizer
+        // handover is a narrower operation allowed to elevated roles, the
+        // current organizer, or the immutable original creator.
         // NOTE: .get('type', '') instead of bare access — legacy operations
         // could in theory be missing the `type` field, which would deny
         // owner-updates otherwise.
         allow update: if isAuthenticated()
           && hasValidSession(clubId)
+          && request.resource.data.get('creator_user_id', null) == resource.data.get('creator_user_id', null)
+          && (
+            request.resource.data.organisateur_id == resource.data.organisateur_id ||
+            (
+              request.resource.data.organisateur_id is string &&
+              exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.organisateur_id))
+            )
+          )
           && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.organisateur_id == request.auth.uid &&
+              request.resource.data.organisateur_id == resource.data.organisateur_id &&
               request.resource.data.get('type', '') == 'evenement'
             ) ||
             (
               isOrganisateurForClub(clubId) &&
               resource.data.organisateur_id == request.auth.uid &&
+              request.resource.data.organisateur_id == resource.data.organisateur_id &&
               request.resource.data.get('type', '') == 'evenement'
+            ) ||
+            (
+              request.resource.data.get('type', '') == 'evenement' &&
+              request.resource.data.organisateur_id != resource.data.organisateur_id &&
+              (
+                resource.data.organisateur_id == request.auth.uid ||
+                resource.data.get('creator_user_id', resource.data.organisateur_id) == request.auth.uid
+              ) &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'organisateur_id',
+                'organisateur_nom',
+                'updated_at'
+              ])
             )
           )
           && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
