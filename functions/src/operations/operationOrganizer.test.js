@@ -251,6 +251,33 @@ describe('writeOperation server authority', () => {
     }
   });
 
+  test('cancellation metadata is derived by the server', async () => {
+    const db = new MemoryDb({
+      'clubs/calypso/members/owner': member('user', 'Current', 'Owner'),
+      'clubs/calypso/operations/event-cancel': {
+        ...baseFields,
+        organisateur_id: 'owner',
+        organisateur_nom: 'Current Owner',
+        creator_user_id: 'owner',
+      },
+    });
+    await writeOperationHandler({
+      auth: { uid: 'owner' },
+      data: {
+        action: 'update', clubId: 'calypso', operationId: 'event-cancel',
+        organizerId: 'owner', fields: { statut: 'annule' },
+        source: 'calycompta_settings', cancellationReason: 'bulk_operation_cancellation',
+      },
+    }, deps(db));
+    expect(db.docs.get('clubs/calypso/operations/event-cancel')).toMatchObject({
+      statut: 'annule',
+      canceled_by: 'owner',
+      canceled_by_name: 'Current Owner',
+      canceled_source: 'calycompta_settings',
+      canceled_reason: 'bulk_operation_cancellation',
+    });
+  });
+
   test('handover is narrow, canonical and keeps creator unchanged', async () => {
     const db = new MemoryDb({
       'clubs/calypso/members/current': member('user', 'Current', 'Owner'),
