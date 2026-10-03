@@ -137,6 +137,14 @@ exports.onInscriptionPaymentAudit = onInscriptionPaymentAudit;
 const { onInscriptionChangeAudit } = require('./src/audit/onInscriptionChangeAudit');
 exports.onInscriptionChangeAudit = onInscriptionChangeAudit;
 
+// MOB-026 — server-authoritative operation identity. The callable derives the
+// organizer name from members/{organisateur_id}; triggers repair legacy direct
+// writes, log handovers, and propagate member renames.
+const operationOrganizer = require('./src/operations/operationOrganizer');
+exports.writeOperation = operationOrganizer.writeOperation;
+exports.onOperationOrganizerWritten = operationOrganizer.onOperationOrganizerWritten;
+exports.onMemberOrganizerNameUpdated = operationOrganizer.onMemberOrganizerNameUpdated;
+
 // =============================================================================
 // PISCINE SESSION NOTIFICATIONS (Gen2)
 // =============================================================================

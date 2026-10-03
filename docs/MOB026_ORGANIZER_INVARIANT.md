@@ -35,3 +35,32 @@ authorization boundaries for direct clients:
 Name equality is deliberately not enforced in this phase. Older CalyMob
 versions still write the denormalized name directly; Phase 3 will canonicalize
 it server-side without locking those clients out.
+
+## Phase 3 server authority
+
+`writeOperation` is the canonical create, update, and handover writer. It reads
+the selected member inside the same transaction and writes that member's
+canonical display name; clients cannot supply `organisateur_nom` or mutate
+`creator_user_id`. Handover authorization is limited to admins/validators, the
+current organizer, and the immutable original creator.
+
+Because the callable uses the Admin SDK, it also reproduces the progressive
+fiscal-year lock (`open`: all authorized writers; `closed`: admins;
+`permanently_closed`: superadmins). An existing operation's `fiscal_year_id`
+cannot be changed or removed through this writer.
+Operation status and document-metadata edits use the same writer. Cancellation
+and a transition to the retained-history `supprime` status receive server-owned
+actor/source metadata; `supprime` is superadmin-only in both directions.
+
+`onOperationOrganizerWritten` remains active for older clients that still write
+operations directly. It repairs a stale name projection when the member exists,
+using equality as its re-trigger guard. Unknown/missing organizer ids are never
+guessed or replaced: they produce a critical `audit_logs` alert. Every id change
+creates an idempotent `organizer_audit` entry; legacy writes without fresh actor
+metadata are explicitly marked unattributed.
+
+Member renames propagate to every operation whose `organisateur_id` references
+that member via `onMemberOrganizerNameUpdated`. This keeps the denormalized name
+canonical without changing the original creator or the organizer id.
+Deleting a referenced member is never guessed or silently repaired: the same
+write trigger emits a critical orphan alert for each affected operation.
