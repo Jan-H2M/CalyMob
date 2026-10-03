@@ -269,6 +269,9 @@ async function writeOperationHandler(request, dependencies = {}) {
     const removingOperation = data.action === 'update'
       && fields.statut === 'supprime'
       && operation.statut !== 'supprime';
+    const cancellingOperation = data.action === 'update'
+      && fields.statut === 'annule'
+      && operation.statut !== 'annule';
     const touchesRemovedOperation = operation.statut === 'supprime'
       || fields.statut === 'supprime';
     if (touchesRemovedOperation && actor.app_role !== 'superadmin') {
@@ -287,14 +290,16 @@ async function writeOperationHandler(request, dependencies = {}) {
       patch.organizer_last_action_at = serverTimestamp();
       patch.organizer_last_action_source = cleanString(data.source) || 'server_writer';
     }
-    if (removingOperation) {
+    if (removingOperation || cancellingOperation) {
       patch.canceled_at = serverTimestamp();
       patch.canceled_by = actorId;
       patch.canceled_by_name = canonicalMemberName(actor) || 'Administration';
       patch.canceled_by_role = actor.app_role;
       patch.canceled_source = cleanString(data.source) || 'server_writer';
       patch.canceled_app_version = cleanString(data.clientVersion) || 'unknown';
-      patch.canceled_reason = 'explicit_event_removal';
+      patch.canceled_reason = removingOperation
+        ? 'explicit_event_removal'
+        : cleanString(data.cancellationReason) || 'status_change_to_annule';
     }
     transaction.update(operationRef, patch);
     return { success: true, operationId: operationRef.id, organizerName, handover: organizerChanged };
