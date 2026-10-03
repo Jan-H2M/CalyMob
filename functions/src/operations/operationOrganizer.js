@@ -167,10 +167,11 @@ async function writeOperationHandler(request, dependencies = {}) {
     || (() => admin.firestore.FieldValue.delete());
 
   const fields = data.action === 'handover' ? {} : sanitizeFields(data.fields, Timestamp);
-  const deleteFields = data.action === 'handover' ? [] : sanitizeDeleteFields(data.deleteFields);
-  if (data.action === 'create' && deleteFields.length > 0) {
-    throw new HttpsError('invalid-argument', 'Une création ne peut pas supprimer de champs.');
-  }
+  const requestedDeleteFields = data.action === 'handover' ? [] : sanitizeDeleteFields(data.deleteFields);
+  // Web/mobile serializers use deleteFields for explicit undefined optional
+  // values. On create there is no existing field to delete, so validated
+  // deletion hints are intentionally ignored.
+  const deleteFields = data.action === 'create' ? [] : requestedDeleteFields;
   const clubRef = db.collection('clubs').doc(data.clubId);
   const actorRef = clubRef.collection('members').doc(actorId);
   const sessionRef = clubRef.collection('sessions').doc(actorId);

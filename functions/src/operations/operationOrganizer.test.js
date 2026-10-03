@@ -108,7 +108,14 @@ describe('writeOperation server authority', () => {
     });
     const result = await writeOperationHandler({
       auth: { uid: 'admin' },
-      data: { action: 'create', clubId: 'calypso', organizerId: 'target', fields: baseFields },
+      data: {
+        action: 'create',
+        clubId: 'calypso',
+        organizerId: 'target',
+        fields: baseFields,
+        // Matches the web serializer for unset optional wizard fields.
+        deleteFields: ['date_fin', 'capacite_max'],
+      },
     }, deps(db));
     const stored = db.docs.get(`clubs/calypso/operations/${result.operationId}`);
     expect(stored).toMatchObject({
