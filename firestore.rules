@@ -858,17 +858,24 @@ service cloud.firestore {
         allow read: if isMember(clubId);
 
         // Create: app_role 'user' OR clubStatuten 'O' (Organisateur badge) can create their
-        //   own events (type 'evenement'). Validateur+ can create any operation type.
+        //   own events (type 'evenement'). Validateur+ can create any operation type and
+        //   may assign another existing club member as organizer.
         //   The Organisateur clause lets 'membre'-tier users (no CalyCompta admin access)
         //   still organize events when their clubStatuten includes the O-badge.
         // Note: uses .get() for fiscal_year_id to handle mobile app creating events without it
         allow create: if isAuthenticated()
           && hasValidSession(clubId)
-          && request.resource.data.organisateur_id == request.auth.uid
+          && request.resource.data.organisateur_id is string
+          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.organisateur_id))
           && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-            (getUserData(clubId).app_role == 'user' && request.resource.data.type == 'evenement') ||
-            (isOrganisateurForClub(clubId) && request.resource.data.type == 'evenement')
+            (
+              request.resource.data.organisateur_id == request.auth.uid &&
+              (
+                (getUserData(clubId).app_role == 'user' && request.resource.data.type == 'evenement') ||
+                (isOrganisateurForClub(clubId) && request.resource.data.type == 'evenement')
+              )
+            )
           )
           && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
 
