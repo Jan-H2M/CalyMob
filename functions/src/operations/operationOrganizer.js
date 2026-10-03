@@ -167,10 +167,11 @@ async function writeOperationHandler(request, dependencies = {}) {
     || (() => admin.firestore.FieldValue.delete());
 
   const fields = data.action === 'handover' ? {} : sanitizeFields(data.fields, Timestamp);
-  const deleteFields = data.action === 'handover' ? [] : sanitizeDeleteFields(data.deleteFields);
-  if (data.action === 'create' && deleteFields.length > 0) {
-    throw new HttpsError('invalid-argument', 'Une création ne peut pas supprimer de champs.');
-  }
+  const requestedDeleteFields = data.action === 'handover' ? [] : sanitizeDeleteFields(data.deleteFields);
+  // Web/mobile serializers use deleteFields for explicit undefined optional
+  // values. On create there is no existing field to delete, so validated
+  // deletion hints are intentionally ignored.
+  const deleteFields = data.action === 'create' ? [] : requestedDeleteFields;
   const clubRef = db.collection('clubs').doc(data.clubId);
   const actorRef = clubRef.collection('members').doc(actorId);
   const sessionRef = clubRef.collection('sessions').doc(actorId);
@@ -265,6 +266,13 @@ async function writeOperationHandler(request, dependencies = {}) {
       }
     }
 
+    const removingOperation = data.action === 'update'
+      && fields.statut === 'supprime'
+      && operation.statut !== 'supprime';
+    if (removingOperation && actor.app_role !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Suppression réservée au superadministrateur.');
+    }
+
     const patch = {
       ...fields,
       organisateur_id: data.organizerId,
@@ -276,6 +284,15 @@ async function writeOperationHandler(request, dependencies = {}) {
       patch.organizer_last_action_by = actorId;
       patch.organizer_last_action_at = serverTimestamp();
       patch.organizer_last_action_source = cleanString(data.source) || 'server_writer';
+    }
+    if (removingOperation) {
+      patch.canceled_at = serverTimestamp();
+      patch.canceled_by = actorId;
+      patch.canceled_by_name = canonicalMemberName(actor) || 'Administration';
+      patch.canceled_by_role = actor.app_role;
+      patch.canceled_source = cleanString(data.source) || 'server_writer';
+      patch.canceled_app_version = cleanString(data.clientVersion) || 'unknown';
+      patch.canceled_reason = 'explicit_event_removal';
     }
     transaction.update(operationRef, patch);
     return { success: true, operationId: operationRef.id, organizerName, handover: organizerChanged };

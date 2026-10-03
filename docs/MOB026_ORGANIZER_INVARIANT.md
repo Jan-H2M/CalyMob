@@ -48,6 +48,9 @@ Because the callable uses the Admin SDK, it also reproduces the progressive
 fiscal-year lock (`open`: all authorized writers; `closed`: admins;
 `permanently_closed`: superadmins). An existing operation's `fiscal_year_id`
 cannot be changed or removed through this writer.
+Operation status and document-metadata edits use the same writer. A transition
+to the retained-history `supprime` status is superadmin-only and receives
+server-owned cancellation actor/source metadata.
 
 `onOperationOrganizerWritten` remains active for older clients that still write
 operations directly. It repairs a stale name projection when the member exists,
