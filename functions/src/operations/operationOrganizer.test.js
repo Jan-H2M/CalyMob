@@ -229,6 +229,28 @@ describe('writeOperation server authority', () => {
     });
   });
 
+  test('non-superadmins cannot restore or edit an already removed operation', async () => {
+    const seed = {
+      'clubs/calypso/members/owner': member('user', 'Current', 'Owner'),
+      'clubs/calypso/operations/event-removed': {
+        ...baseFields,
+        statut: 'supprime',
+        organisateur_id: 'owner',
+        organisateur_nom: 'Current Owner',
+        creator_user_id: 'owner',
+      },
+    };
+    for (const fields of [{ statut: 'ouvert' }, { titre: 'Edited after removal' }]) {
+      await expect(writeOperationHandler({
+        auth: { uid: 'owner' },
+        data: {
+          action: 'update', clubId: 'calypso', operationId: 'event-removed',
+          organizerId: 'owner', fields,
+        },
+      }, deps(new MemoryDb(seed)))).rejects.toMatchObject({ code: 'permission-denied' });
+    }
+  });
+
   test('handover is narrow, canonical and keeps creator unchanged', async () => {
     const db = new MemoryDb({
       'clubs/calypso/members/current': member('user', 'Current', 'Owner'),

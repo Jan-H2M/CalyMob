@@ -269,8 +269,10 @@ async function writeOperationHandler(request, dependencies = {}) {
     const removingOperation = data.action === 'update'
       && fields.statut === 'supprime'
       && operation.statut !== 'supprime';
-    if (removingOperation && actor.app_role !== 'superadmin') {
-      throw new HttpsError('permission-denied', 'Suppression réservée au superadministrateur.');
+    const touchesRemovedOperation = operation.statut === 'supprime'
+      || fields.statut === 'supprime';
+    if (touchesRemovedOperation && actor.app_role !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Activité supprimée réservée au superadministrateur.');
     }
 
     const patch = {
