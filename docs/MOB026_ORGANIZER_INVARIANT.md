@@ -86,7 +86,7 @@ callable-only rules before compatible mobile clients are released would lock
 out older CalyMob versions still in the field. The replacement is the staged
 server-writer plus repair-trigger model below.
 
-Released CalyMob `1.23.5+220` still creates and edits operations with direct
+CalyMob release build `1.23.5+220` still creates and edits operations with direct
 Firestore writes. It sends `organisateur_id` and its locally formatted
 `organisateur_nom` together, but that formatting is not guaranteed to equal
 the Phase 3 server canonicalization for every legacy member record. Rules that
@@ -96,8 +96,8 @@ Firestore rules cannot distinguish a trustworthy app version from another
 client, and this project is not raising `minSupportedVersion` as part of
 MOB-026.
 
-Consequently, Phase 5 makes **no stricter Firestore-rule change** now. The
-effective production protection remains:
+Consequently, Phase 5 makes **no stricter Firestore-rule change** now. Once the
+preceding phases are merged and deployed, the staged protection is:
 
 - Phase 2 rules keep `creator_user_id` immutable, constrain handover fields and
   actors, and require a handover target to be an existing member;
