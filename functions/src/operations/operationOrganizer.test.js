@@ -216,3 +216,11 @@ describe('organizer integrity trigger', () => {
 test('canonical member name never falls back to email', () => {
   expect(canonicalMemberName({ email: 'private@example.test' })).toBeNull();
 });
+
+test('canonical member name prefers first and last over a stale display label', () => {
+  expect(canonicalMemberName({
+    first_name: 'Juan Antonio',
+    last_name: 'MARQUEZ SEQUEIRA',
+    display_name: 'Legacy label',
+  })).toBe('Juan Antonio MARQUEZ SEQUEIRA');
+});

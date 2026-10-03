@@ -25,15 +25,15 @@ function cleanString(value) {
 }
 
 function canonicalMemberName(member) {
-  const explicit = cleanString(member.display_name) || cleanString(member.displayName);
-  if (explicit) return explicit;
   const first = cleanString(member.first_name)
     || cleanString(member.firstName)
     || cleanString(member.prenom);
   const last = cleanString(member.last_name)
     || cleanString(member.lastName)
     || cleanString(member.nom);
-  return [first, last].filter(Boolean).join(' ') || null;
+  const constructed = [first, last].filter(Boolean).join(' ');
+  if (constructed) return constructed;
+  return cleanString(member.display_name) || cleanString(member.displayName);
 }
 
 function isValidDocumentId(value) {
