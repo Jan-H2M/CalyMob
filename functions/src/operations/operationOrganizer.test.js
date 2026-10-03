@@ -189,6 +189,46 @@ describe('writeOperation server authority', () => {
     }, deps(db))).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 
+  test('only a superadmin can mark an operation removed and metadata is server-owned', async () => {
+    const operation = {
+      ...baseFields,
+      organisateur_id: 'admin',
+      organisateur_nom: 'Ada Admin',
+      creator_user_id: 'admin',
+    };
+    const seed = {
+      'clubs/calypso/members/admin': member('admin', 'Ada', 'Admin'),
+      'clubs/calypso/members/super': member('superadmin', 'Sue', 'Super'),
+      'clubs/calypso/operations/event-remove': operation,
+    };
+    await expect(writeOperationHandler({
+      auth: { uid: 'admin' },
+      data: {
+        action: 'update', clubId: 'calypso', operationId: 'event-remove',
+        organizerId: 'admin', fields: { statut: 'supprime' },
+      },
+    }, deps(new MemoryDb(seed)))).rejects.toMatchObject({ code: 'permission-denied' });
+
+    const db = new MemoryDb(seed);
+    await writeOperationHandler({
+      auth: { uid: 'super' },
+      data: {
+        action: 'update', clubId: 'calypso', operationId: 'event-remove',
+        organizerId: 'admin', fields: { statut: 'supprime' },
+        source: 'calycompta_web', clientVersion: 'test',
+      },
+    }, deps(db));
+    expect(db.docs.get('clubs/calypso/operations/event-remove')).toMatchObject({
+      statut: 'supprime',
+      canceled_by: 'super',
+      canceled_by_name: 'Sue Super',
+      canceled_by_role: 'superadmin',
+      canceled_source: 'calycompta_web',
+      canceled_app_version: 'test',
+      canceled_reason: 'explicit_event_removal',
+    });
+  });
+
   test('handover is narrow, canonical and keeps creator unchanged', async () => {
     const db = new MemoryDb({
       'clubs/calypso/members/current': member('user', 'Current', 'Owner'),
