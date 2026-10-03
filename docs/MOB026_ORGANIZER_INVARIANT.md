@@ -76,3 +76,40 @@ successful transfer, so unrelated edits cannot be combined with it. The server
 derives the name, keeps `creator_user_id` unchanged, and the audit trigger
 records the completed id transition. No minimum-supported-version or boutique
 setting changes are part of this phase.
+
+## Phase 5 compatibility decision
+
+### SUPERSEDED — enable strict organizer rules immediately
+
+**Superseded on 2026-10-03:** enabling strict canonical-name or
+callable-only rules before compatible mobile clients are released would lock
+out older CalyMob versions still in the field. The replacement is the staged
+server-writer plus repair-trigger model below.
+
+CalyMob release build `1.23.5+220` still creates and edits operations with direct
+Firestore writes. It sends `organisateur_id` and its locally formatted
+`organisateur_nom` together, but that formatting is not guaranteed to equal
+the Phase 3 server canonicalization for every legacy member record. Rules that
+require the canonical name, or rules that reject every direct operation write,
+would therefore reject otherwise valid creates/edits from that released app.
+Firestore rules cannot distinguish a trustworthy app version from another
+client, and this project is not raising `minSupportedVersion` as part of
+MOB-026.
+
+Consequently, Phase 5 makes **no stricter Firestore-rule change** now. Once the
+preceding phases are merged and deployed, the staged protection is:
+
+- Phase 2 rules keep `creator_user_id` immutable, constrain handover fields and
+  actors, and require a handover target to be an existing member;
+- Phase 3 web and Phase 4 mobile clients use the server writer, which derives
+  the canonical organizer name from the selected member id;
+- `onOperationOrganizerWritten` repairs legacy direct-write name mismatches,
+  records handovers, and raises a critical alert for unknown/orphan ids without
+  guessing;
+- `onMemberOrganizerNameUpdated` propagates canonical member renames.
+
+Strict direct-write rejection may be reconsidered only after the Phase 4 app is
+released on both stores and field adoption is verified. It must still remain
+compatible with any supported older build; otherwise the repair trigger stays
+the compatibility boundary. No store build, upload, minimum-version change, or
+historical-event cleanup is authorized by this decision.
