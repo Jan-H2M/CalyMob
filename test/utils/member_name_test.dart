@@ -35,5 +35,22 @@ void main() {
 
       expect(memberDisplayName(data), 'Legacy Member');
     });
+
+    test('organizer label prefers structured names over a stale display label', () {
+      final data = {
+        'first_name': 'Juan Antonio',
+        'last_name': 'MARQUEZ SEQUEIRA',
+        'display_name': 'Legacy label',
+      };
+
+      expect(
+        memberCanonicalOrganizerName(data),
+        'Juan Antonio MARQUEZ SEQUEIRA',
+      );
+    });
+
+    test('organizer label never falls back to email', () {
+      expect(memberCanonicalOrganizerName({'email': 'hidden@example.test'}), '');
+    });
   });
 }

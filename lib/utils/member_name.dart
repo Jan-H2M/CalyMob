@@ -35,6 +35,22 @@ String memberDisplayName(
   return _readNameValue(data, const ['email']) ?? fallback;
 }
 
+/// Stable organizer label written by the authoritative operation writer.
+/// Prefer structured identity fields; directory display labels are only a
+/// legacy fallback and email is never an organizer name.
+String memberCanonicalOrganizerName(
+  Map<String, dynamic> data, {
+  String fallback = '',
+}) {
+  final constructed = [memberFirstName(data), memberLastName(data)]
+      .whereType<String>()
+      .join(' ')
+      .trim();
+  if (constructed.isNotEmpty) return constructed;
+  return _readNameValue(data, const ['display_name', 'displayName']) ??
+      fallback;
+}
+
 List<String> memberNameSearchValues(Map<String, dynamic> data) {
   final firstName = memberFirstName(data) ?? '';
   final lastName = memberLastName(data) ?? '';

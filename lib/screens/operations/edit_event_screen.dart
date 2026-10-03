@@ -113,7 +113,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   /// Check whether the current user can change the responsable. Admins can
-  /// always edit; otherwise only the original creator of the event. Falls
+  /// always edit; otherwise the current organizer or original creator. Falls
   /// back to `organisateur_id` for legacy events where `creator_user_id`
   /// wasn't recorded.
   bool get _canEditResponsable {
@@ -123,17 +123,17 @@ class _EditEventScreenState extends State<EditEventScreen> {
     if (currentUserId == null) return false;
 
     final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin') return true;
+    if (role == 'admin' || role == 'superadmin' || role == 'validateur') {
+      return true;
+    }
 
     final creatorId =
         widget.operation.creatorUserId ?? widget.operation.organisateurId;
-    return creatorId != null && creatorId == currentUserId;
+    return widget.operation.organisateurId == currentUserId ||
+        (creatorId != null && creatorId == currentUserId);
   }
 
-  /// Query Firestore for all members flagged as "Encadrants" and cache them
-  /// for the picker. We prefer the `clubStatuten` array (canonical in the
-  /// rest of the codebase) and match case-insensitively on both the
-  /// singular and plural forms.
+  /// Query the privacy-safe directory for every possible handover target.
   Future<void> _loadEncadrants() async {
     if (_loadingEncadrants) return;
     setState(() => _loadingEncadrants = true);
@@ -147,25 +147,16 @@ class _EditEventScreenState extends State<EditEventScreen> {
       final options = <_EncadrantOption>[];
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        final statuten = data['clubStatuten'];
-        final isEncadrant = statuten is List &&
-            statuten.any((s) {
-              final v = s.toString().toLowerCase().trim();
-              return v == 'encadrant' || v == 'encadrants';
-            });
-        if (!isEncadrant) continue;
-
-        final displayName = memberDisplayName(data, fallback: '');
+        final displayName = memberCanonicalOrganizerName(data);
         if (displayName.isEmpty) continue;
 
-        options.add(_EncadrantOption(
-          id: doc.id,
-          displayName: displayName,
-        ));
+        options.add(_EncadrantOption(id: doc.id, displayName: displayName));
       }
 
-      options.sort((a, b) =>
-          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+      options.sort(
+        (a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+      );
 
       if (mounted) {
         setState(() {
@@ -224,11 +215,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Encadrants du club',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                    'Membres du club',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 8),
                   const Divider(height: 1),
@@ -255,8 +243,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
                           final isCurrent = enc.id == _organisateurId;
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor:
-                                  AppColors.lichtblauw.withOpacity(0.3),
+                              backgroundColor: AppColors.lichtblauw.withOpacity(
+                                0.3,
+                              ),
                               child: Text(
                                 enc.displayName.isNotEmpty
                                     ? enc.displayName[0].toUpperCase()
@@ -269,8 +258,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
                             ),
                             title: Text(enc.displayName),
                             trailing: isCurrent
-                                ? Icon(Icons.check_circle,
-                                    color: AppColors.middenblauw)
+                                ? Icon(
+                                    Icons.check_circle,
+                                    color: AppColors.middenblauw,
+                                  )
                                 : null,
                             onTap: () => Navigator.of(ctx).pop(enc),
                           );
@@ -285,12 +276,61 @@ class _EditEventScreenState extends State<EditEventScreen> {
       },
     );
 
-    if (selected != null && selected.id != _organisateurId) {
-      setState(() {
-        _organisateurId = selected.id;
-        _organisateurNom = selected.displayName;
-        _hasChanges = true;
-      });
+    if (selected != null && selected.id != _organisateurId && mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Confirmer le transfert'),
+          content: Text(
+            'Transférer la responsabilité à ${selected.displayName} ? '
+            'Le téléphone affiché et les droits suivront ce membre. '
+            'Le créateur original ne change pas.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Transférer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true && mounted) {
+        setState(() => _saving = true);
+        try {
+          await _operationService.handoverOperation(
+            clubId: widget.clubId,
+            operationId: widget.operation.id,
+            organizerId: selected.id,
+          );
+          if (!mounted) return;
+          setState(() {
+            _organisateurId = selected.id;
+            _organisateurNom = selected.displayName;
+          });
+          context.read<ActivityProvider>().refresh(widget.clubId);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Responsable transféré'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          Navigator.of(context).pop(true);
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text('Erreur: $e'),
+                  backgroundColor: AppColors.error),
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _saving = false);
+        }
+      }
     }
   }
 
@@ -317,14 +357,16 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
   void _addTariff() {
     setState(() {
-      _tariffs.add(_EditableTariff(
-        id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_tariffs.length}',
-        label: '',
-        category: 'membre',
-        price: 0,
-        isDefault: _tariffs.isEmpty,
-        displayOrder: _tariffs.length,
-      ));
+      _tariffs.add(
+        _EditableTariff(
+          id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_tariffs.length}',
+          label: '',
+          category: 'membre',
+          price: 0,
+          isDefault: _tariffs.isEmpty,
+          displayOrder: _tariffs.length,
+        ),
+      );
       _hasChanges = true;
     });
   }
@@ -383,26 +425,30 @@ class _EditEventScreenState extends State<EditEventScreen> {
       // flag zodat de "Invité" markering correct in Firestore terechtkomt.
       final tariffsData = _tariffs
           .where((t) => t.label.trim().isNotEmpty)
-          .map((t) => {
-                'id': t.id,
-                'label': t.label.trim(),
-                'category': t.category,
-                'price': t.price,
-                'is_default': t.isDefault,
-                'is_guest_tariff': t.isGuestTariff,
-                'display_order': t.displayOrder,
-              })
+          .map(
+            (t) => {
+              'id': t.id,
+              'label': t.label.trim(),
+              'category': t.category,
+              'price': t.price,
+              'is_default': t.isDefault,
+              'is_guest_tariff': t.isGuestTariff,
+              'display_order': t.displayOrder,
+            },
+          )
           .toList();
 
       // Construire les suppléments pour Firestore
       final supplementsData = _supplements
           .where((s) => s.name.trim().isNotEmpty)
-          .map((s) => {
-                'id': s.id,
-                'name': s.name.trim(),
-                'price': s.price,
-                'display_order': s.displayOrder,
-              })
+          .map(
+            (s) => {
+              'id': s.id,
+              'name': s.name.trim(),
+              'price': s.price,
+              'display_order': s.displayOrder,
+            },
+          )
           .toList();
 
       // Calculer budget prévisionnel — alleen op niet-gast-tarieven, want
@@ -410,17 +456,21 @@ class _EditEventScreenState extends State<EditEventScreen> {
       final capacity = int.tryParse(_capaciteController.text);
       final tariffObjects = _tariffs
           .where((t) => t.label.trim().isNotEmpty && !t.isGuestTariff)
-          .map((t) => Tariff(
-                id: t.id,
-                label: t.label,
-                category: t.category,
-                price: t.price,
-                isDefault: t.isDefault,
-                displayOrder: t.displayOrder,
-              ))
+          .map(
+            (t) => Tariff(
+              id: t.id,
+              label: t.label,
+              category: t.category,
+              price: t.price,
+              isDefault: t.isDefault,
+              displayOrder: t.displayOrder,
+            ),
+          )
           .toList();
-      final budget =
-          OperationService.computeBudgetPrevu(tariffObjects, capacity);
+      final budget = OperationService.computeBudgetPrevu(
+        tariffObjects,
+        capacity,
+      );
 
       final data = <String, dynamic>{
         'titre': _titreController.text.trim(),
@@ -449,22 +499,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
       // rule valt dan terug op date_debut - 24u). Schrijf delete weg
       // wanneer leeg zodat het veld effectief verdwijnt uit het doc.
       if (_registrationDeadline != null) {
-        data['registration_deadline'] =
-            Timestamp.fromDate(_registrationDeadline!);
+        data['registration_deadline'] = Timestamp.fromDate(
+          _registrationDeadline!,
+        );
       } else {
         data['registration_deadline'] = FieldValue.delete();
-      }
-
-      // Persist organisateur change only if we have a valid id — and always
-      // rewrite id + nom together so the phone-number lookup (keyed on id)
-      // stays in sync with the label the user sees. Guarded by
-      // `_canEditResponsable` on the UI side; the service layer / Firestore
-      // rules enforce the same invariant server-side.
-      if (_canEditResponsable &&
-          _organisateurId != null &&
-          _organisateurId!.isNotEmpty) {
-        data['organisateur_id'] = _organisateurId;
-        data['organisateur_nom'] = _organisateurNom ?? '';
       }
 
       // Date fin optionnelle
@@ -583,75 +622,104 @@ class _EditEventScreenState extends State<EditEventScreen> {
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 100),
               children: [
                 // Titre
-                _buildSectionCard(children: [
-                  _buildLabel('Titre', required: true, icon: Icons.edit_note),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _titreController,
-                    decoration: _inputDecoration('Titre de l\'événement'),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Le titre est requis'
-                        : null,
-                  ),
-                ]),
+                _buildSectionCard(
+                  children: [
+                    _buildLabel('Titre', required: true, icon: Icons.edit_note),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _titreController,
+                      decoration: _inputDecoration('Titre de l\'événement'),
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Le titre est requis'
+                          : null,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // Description
-                _buildSectionCard(children: [
-                  _buildLabel('Description', icon: Icons.description),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _descriptionController,
-                    decoration: _inputDecoration('Description...'),
-                    maxLines: 3,
-                  ),
-                ]),
+                _buildSectionCard(
+                  children: [
+                    _buildLabel('Description', icon: Icons.description),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _descriptionController,
+                      decoration: _inputDecoration('Description...'),
+                      maxLines: 3,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // Dates
-                _buildSectionCard(children: [
-                  _buildLabel('Date de début',
-                      required: true, icon: Icons.calendar_today),
-                  const SizedBox(height: 8),
-                  _buildDateTimeRow(
-                    date: _dateDebut,
-                    onDateChanged: (d) => setState(() {
-                      _dateDebut = DateTime(d.year, d.month, d.day,
-                          _dateDebut.hour, _dateDebut.minute);
-                      _hasChanges = true;
-                    }),
-                    onTimeChanged: (t) => setState(() {
-                      _dateDebut = DateTime(_dateDebut.year, _dateDebut.month,
-                          _dateDebut.day, t.hour, t.minute);
-                      _hasChanges = true;
-                    }),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildLabel('Date de fin (optionnel)', icon: Icons.event),
-                  const SizedBox(height: 8),
-                  _buildDateTimeRow(
-                    date: _dateFin,
-                    onDateChanged: (d) => setState(() {
-                      _dateFin = DateTime(d.year, d.month, d.day,
-                          _dateFin?.hour ?? 18, _dateFin?.minute ?? 0);
-                      _hasChanges = true;
-                    }),
-                    onTimeChanged: (t) {
-                      if (_dateFin != null) {
-                        setState(() {
-                          _dateFin = DateTime(_dateFin!.year, _dateFin!.month,
-                              _dateFin!.day, t.hour, t.minute);
-                          _hasChanges = true;
-                        });
-                      }
-                    },
-                    allowClear: true,
-                    onClear: () => setState(() {
-                      _dateFin = null;
-                      _hasChanges = true;
-                    }),
-                  ),
-                ]),
+                _buildSectionCard(
+                  children: [
+                    _buildLabel(
+                      'Date de début',
+                      required: true,
+                      icon: Icons.calendar_today,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDateTimeRow(
+                      date: _dateDebut,
+                      onDateChanged: (d) => setState(() {
+                        _dateDebut = DateTime(
+                          d.year,
+                          d.month,
+                          d.day,
+                          _dateDebut.hour,
+                          _dateDebut.minute,
+                        );
+                        _hasChanges = true;
+                      }),
+                      onTimeChanged: (t) => setState(() {
+                        _dateDebut = DateTime(
+                          _dateDebut.year,
+                          _dateDebut.month,
+                          _dateDebut.day,
+                          t.hour,
+                          t.minute,
+                        );
+                        _hasChanges = true;
+                      }),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildLabel('Date de fin (optionnel)', icon: Icons.event),
+                    const SizedBox(height: 8),
+                    _buildDateTimeRow(
+                      date: _dateFin,
+                      onDateChanged: (d) => setState(() {
+                        _dateFin = DateTime(
+                          d.year,
+                          d.month,
+                          d.day,
+                          _dateFin?.hour ?? 18,
+                          _dateFin?.minute ?? 0,
+                        );
+                        _hasChanges = true;
+                      }),
+                      onTimeChanged: (t) {
+                        if (_dateFin != null) {
+                          setState(() {
+                            _dateFin = DateTime(
+                              _dateFin!.year,
+                              _dateFin!.month,
+                              _dateFin!.day,
+                              t.hour,
+                              t.minute,
+                            );
+                            _hasChanges = true;
+                          });
+                        }
+                      },
+                      allowClear: true,
+                      onClear: () => setState(() {
+                        _dateFin = null;
+                        _hasChanges = true;
+                      }),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // Responsable (organisateur)
@@ -659,15 +727,17 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 const SizedBox(height: 16),
 
                 // Capacité
-                _buildSectionCard(children: [
-                  _buildLabel('Capacité max', icon: Icons.group),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _capaciteController,
-                    decoration: _inputDecoration('Illimité'),
-                    keyboardType: TextInputType.number,
-                  ),
-                ]),
+                _buildSectionCard(
+                  children: [
+                    _buildLabel('Capacité max', icon: Icons.group),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _capaciteController,
+                      decoration: _inputDecoration('Illimité'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // ========== DATE BUTOIR D'INSCRIPTION ==========
@@ -675,16 +745,22 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 const SizedBox(height: 16),
 
                 // Communication (message organisateur)
-                _buildSectionCard(children: [
-                  _buildLabel('Message aux participants', icon: Icons.campaign),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _communicationController,
-                    decoration:
-                        _inputDecoration('Communication pour les inscrits...'),
-                    maxLines: 4,
-                  ),
-                ]),
+                _buildSectionCard(
+                  children: [
+                    _buildLabel(
+                      'Message aux participants',
+                      icon: Icons.campaign,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _communicationController,
+                      decoration: _inputDecoration(
+                        'Communication pour les inscrits...',
+                      ),
+                      maxLines: 4,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // ========== PRIX À CONFIRMER ==========
@@ -701,11 +777,12 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   allowedMethods: _allowedPaymentMethods,
                   confirmationPolicy: _registrationConfirmationPolicy,
                   deadlineDays: _paymentDeadlineDays,
-                  onChanged: (
-                          {paymentRequired,
-                          allowedMethods,
-                          confirmationPolicy,
-                          deadlineDays}) =>
+                  onChanged: ({
+                    paymentRequired,
+                    allowedMethods,
+                    confirmationPolicy,
+                    deadlineDays,
+                  }) =>
                       setState(() {
                     if (paymentRequired != null)
                       _paymentRequired = paymentRequired;
@@ -729,11 +806,13 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 const SizedBox(height: 16),
 
                 // Statut
-                _buildSectionCard(children: [
-                  _buildLabel('Statut', icon: Icons.flag),
-                  const SizedBox(height: 8),
-                  _buildStatusDropdown(),
-                ]),
+                _buildSectionCard(
+                  children: [
+                    _buildLabel('Statut', icon: Icons.flag),
+                    const SizedBox(height: 8),
+                    _buildStatusDropdown(),
+                  ],
+                ),
                 const SizedBox(height: 24),
               ],
             ),
@@ -754,63 +833,65 @@ class _EditEventScreenState extends State<EditEventScreen> {
         : 'Non défini';
     final hasId = (_organisateurId?.trim().isNotEmpty ?? false);
 
-    return _buildSectionCard(children: [
-      _buildLabel('Responsable', icon: Icons.person),
-      const SizedBox(height: 8),
-      InkWell(
-        onTap: canEdit ? _pickResponsable : null,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          decoration: BoxDecoration(
-            color: canEdit ? Colors.grey[50] : Colors.grey[100],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.account_circle,
-                size: 20,
-                color: AppColors.middenblauw,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: hasId ? AppColors.donkerblauw : Colors.grey[500],
-                    fontWeight: hasId ? FontWeight.w500 : FontWeight.normal,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (canEdit)
+    return _buildSectionCard(
+      children: [
+        _buildLabel('Responsable', icon: Icons.person),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: canEdit ? _pickResponsable : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: canEdit ? Colors.grey[50] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Row(
+              children: [
                 Icon(
-                  _loadingEncadrants
-                      ? Icons.hourglass_empty
-                      : Icons.arrow_drop_down,
-                  color: Colors.grey[600],
-                )
-              else
-                Icon(Icons.lock_outline, size: 16, color: Colors.grey[400]),
-            ],
+                  Icons.account_circle,
+                  size: 20,
+                  color: AppColors.middenblauw,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: hasId ? AppColors.donkerblauw : Colors.grey[500],
+                      fontWeight: hasId ? FontWeight.w500 : FontWeight.normal,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (canEdit)
+                  Icon(
+                    _loadingEncadrants
+                        ? Icons.hourglass_empty
+                        : Icons.arrow_drop_down,
+                    color: Colors.grey[600],
+                  )
+                else
+                  Icon(Icons.lock_outline, size: 16, color: Colors.grey[400]),
+              ],
+            ),
           ),
         ),
-      ),
-      if (!canEdit) ...[
-        const SizedBox(height: 6),
-        Text(
-          'Seul l\'organisateur initial ou un admin peut modifier le responsable.',
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.grey[600],
-            fontStyle: FontStyle.italic,
+        if (!canEdit) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Transfert réservé aux admins/validateurs, au responsable actuel ou au créateur original.',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           ),
-        ),
+        ],
       ],
-    ]);
+    );
   }
 
   // ============================================================
@@ -818,50 +899,55 @@ class _EditEventScreenState extends State<EditEventScreen> {
   // ============================================================
 
   Widget _buildTariffsSection() {
-    return _buildSectionCard(children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _buildLabel('Tarifs', icon: Icons.receipt_long),
-          TextButton.icon(
-            onPressed: _addTariff,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Ajouter'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.middenblauw,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    return _buildSectionCard(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildLabel('Tarifs', icon: Icons.receipt_long),
+            TextButton.icon(
+              onPressed: _addTariff,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Ajouter'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.middenblauw,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
+          ],
+        ),
+        const SizedBox(height: 8),
 
-      if (_tariffs.isEmpty)
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Center(
-            child: Text(
-              'Aucun tarif défini.\nAppuyez sur "Ajouter" pour créer un tarif.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[500],
-                fontStyle: FontStyle.italic,
+        if (_tariffs.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Center(
+              child: Text(
+                'Aucun tarif défini.\nAppuyez sur "Ajouter" pour créer un tarif.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[500],
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ),
           ),
-        ),
 
-      // Liste des tarifs éditables
-      ...List.generate(_tariffs.length, (index) {
-        return _buildTariffRow(index);
-      }),
-    ]);
+        // Liste des tarifs éditables
+        ...List.generate(_tariffs.length, (index) {
+          return _buildTariffRow(index);
+        }),
+      ],
+    );
   }
 
   Widget _buildTariffRow(int index) {
@@ -888,8 +974,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -922,8 +1010,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -934,8 +1024,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 ),
               ),
               style: const TextStyle(fontSize: 14),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               onChanged: (v) => _updateTariffPrice(index, v),
             ),
           ),
@@ -985,12 +1076,14 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
   void _addSupplement() {
     setState(() {
-      _supplements.add(_EditableSupplement(
-        id: 'supp_${DateTime.now().millisecondsSinceEpoch}_${_supplements.length}',
-        name: '',
-        price: 0,
-        displayOrder: _supplements.length,
-      ));
+      _supplements.add(
+        _EditableSupplement(
+          id: 'supp_${DateTime.now().millisecondsSinceEpoch}_${_supplements.length}',
+          name: '',
+          price: 0,
+          displayOrder: _supplements.length,
+        ),
+      );
       _hasChanges = true;
     });
   }
@@ -1014,136 +1107,155 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   Widget _buildSupplementsSection() {
-    return _buildSectionCard(children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _buildLabel('Suppléments optionnels', icon: Icons.add_box_outlined),
-          TextButton.icon(
-            onPressed: _addSupplement,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Ajouter'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.middenblauw,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            ),
-          ),
-        ],
-      ),
-      Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 6),
-        child: Text(
-          'Options additionnelles que les membres peuvent sélectionner lors de l\'inscription (ex: Réservation Hamburger, location de matériel).',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      ),
-      const SizedBox(height: 4),
-      if (_supplements.isEmpty)
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Center(
-            child: Text(
-              'Aucun supplément défini.\nAppuyez sur "Ajouter" pour en créer un.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[500],
-                fontStyle: FontStyle.italic,
+    return _buildSectionCard(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildLabel('Suppléments optionnels', icon: Icons.add_box_outlined),
+            TextButton.icon(
+              onPressed: _addSupplement,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Ajouter'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.middenblauw,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
               ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 6),
+          child: Text(
+            'Options additionnelles que les membres peuvent sélectionner lors de l\'inscription (ex: Réservation Hamburger, location de matériel).',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
             ),
           ),
         ),
-      ...List.generate(_supplements.length, (index) {
-        final s = _supplements[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.blue.shade100),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  initialValue: s.name,
-                  decoration: InputDecoration(
-                    hintText: 'Nom (ex: Réservation Hamburger viande)',
-                    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                    filled: true,
-                    fillColor: Colors.white,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 10),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey[300]!),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey[300]!),
-                    ),
-                  ),
-                  style: const TextStyle(fontSize: 14),
-                  onChanged: (v) => _updateSupplementName(index, v),
+        const SizedBox(height: 4),
+        if (_supplements.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Center(
+              child: Text(
+                'Aucun supplément défini.\nAppuyez sur "Ajouter" pour en créer un.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[500],
+                  fontStyle: FontStyle.italic,
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: TextFormField(
-                  initialValue: s.price > 0 ? s.price.toStringAsFixed(2) : '',
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                    suffixText: '€',
-                    suffixStyle: TextStyle(
-                      color: AppColors.middenblauw,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 10),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey[300]!),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey[300]!),
-                    ),
-                  ),
-                  style: const TextStyle(fontSize: 14),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (v) => _updateSupplementPrice(index, v),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
-                onPressed: () => _removeSupplement(index),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-            ],
+            ),
           ),
-        );
-      }),
-    ]);
+        ...List.generate(_supplements.length, (index) {
+          final s = _supplements[index];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    initialValue: s.name,
+                    decoration: InputDecoration(
+                      hintText: 'Nom (ex: Réservation Hamburger viande)',
+                      hintStyle: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 13,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                    ),
+                    style: const TextStyle(fontSize: 14),
+                    onChanged: (v) => _updateSupplementName(index, v),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    initialValue: s.price > 0 ? s.price.toStringAsFixed(2) : '',
+                    decoration: InputDecoration(
+                      hintText: '0.00',
+                      hintStyle: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 13,
+                      ),
+                      suffixText: '€',
+                      suffixStyle: TextStyle(
+                        color: AppColors.middenblauw,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                    ),
+                    style: const TextStyle(fontSize: 14),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (v) => _updateSupplementPrice(index, v),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
+                  onPressed: () => _removeSupplement(index),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
   }
 
   // ============================================================
@@ -1154,45 +1266,95 @@ class _EditEventScreenState extends State<EditEventScreen> {
   /// de date_debut/date_fin velden, plus een 'Effacer' knop om terug te
   /// vallen op de Firestore-default (date_debut - 24u).
   Widget _buildDeadlineSection() {
-    return _buildSectionCard(children: [
-      _buildLabel('Date butoir d\'inscription', icon: Icons.lock_clock),
-      Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 8),
-        child: Text(
-          'Optionnel — par défaut, 24h avant le début. Après cette date, '
-          'les membres ne peuvent plus s\'inscrire, modifier ou se désinscrire '
-          'depuis l\'app.',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontStyle: FontStyle.italic,
+    return _buildSectionCard(
+      children: [
+        _buildLabel('Date butoir d\'inscription', icon: Icons.lock_clock),
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 8),
+          child: Text(
+            'Optionnel — par défaut, 24h avant le début. Après cette date, '
+            'les membres ne peuvent plus s\'inscrire, modifier ou se désinscrire '
+            'depuis l\'app.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           ),
         ),
-      ),
-      Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              onTap: _pickDeadlineDate,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: _pickDeadlineDate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 18,
+                        color: AppColors.middenblauw,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _registrationDeadline != null
+                              ? DateFormat(
+                                  'dd/MM/yyyy',
+                                ).format(_registrationDeadline!)
+                              : 'Sélectionner',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: _registrationDeadline != null
+                                ? Colors.black87
+                                : Colors.grey[500],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.calendar_today,
-                        size: 18, color: AppColors.middenblauw),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: InkWell(
+                onTap: _registrationDeadline != null ? _pickDeadlineTime : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _registrationDeadline != null
+                        ? Colors.grey[50]
+                        : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.schedule,
+                        size: 18,
+                        color: _registrationDeadline != null
+                            ? AppColors.middenblauw
+                            : Colors.grey[400],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
                         _registrationDeadline != null
-                            ? DateFormat('dd/MM/yyyy')
-                                .format(_registrationDeadline!)
-                            : 'Sélectionner',
+                            ? DateFormat('HH:mm').format(_registrationDeadline!)
+                            : '--:--',
                         style: TextStyle(
                           fontSize: 14,
                           color: _registrationDeadline != null
@@ -1200,68 +1362,31 @@ class _EditEventScreenState extends State<EditEventScreen> {
                               : Colors.grey[500],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: InkWell(
-              onTap: _registrationDeadline != null ? _pickDeadlineTime : null,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _registrationDeadline != null
-                      ? Colors.grey[50]
-                      : Colors.grey[100],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.schedule,
-                        size: 18,
-                        color: _registrationDeadline != null
-                            ? AppColors.middenblauw
-                            : Colors.grey[400]),
-                    const SizedBox(width: 8),
-                    Text(
-                      _registrationDeadline != null
-                          ? DateFormat('HH:mm').format(_registrationDeadline!)
-                          : '--:--',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _registrationDeadline != null
-                            ? Colors.black87
-                            : Colors.grey[500],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
+              onPressed: _registrationDeadline == null
+                  ? null
+                  : () {
+                      setState(() {
+                        _registrationDeadline = null;
+                        _hasChanges = true;
+                      });
+                    },
+              tooltip:
+                  'Effacer la date butoir (revient à la valeur par défaut)',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
-            onPressed: _registrationDeadline == null
-                ? null
-                : () {
-                    setState(() {
-                      _registrationDeadline = null;
-                      _hasChanges = true;
-                    });
-                  },
-            tooltip: 'Effacer la date butoir (revient à la valeur par défaut)',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
-    ]);
+          ],
+        ),
+      ],
+    );
   }
 
   Future<void> _pickDeadlineDate() async {
@@ -1311,41 +1436,43 @@ class _EditEventScreenState extends State<EditEventScreen> {
   /// Toggle "Prix à confirmer" — wanneer aan, blijft het tarief verborgen
   /// voor leden tot de organisator een definitief bedrag communiceert.
   Widget _buildPriceTbdSection() {
-    return _buildSectionCard(children: [
-      Row(
-        children: [
-          const Text('💰', style: TextStyle(fontSize: 18)),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Prix à confirmer',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    return _buildSectionCard(
+      children: [
+        Row(
+          children: [
+            const Text('💰', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Prix à confirmer',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              value: _priceTbd,
+              onChanged: (v) {
+                setState(() {
+                  _priceTbd = v;
+                  _hasChanges = true;
+                });
+              },
+              activeColor: AppColors.middenblauw,
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'Les inscriptions restent ouvertes. Le prix sera communiqué ultérieurement aux inscrits.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
             ),
           ),
-          Switch(
-            value: _priceTbd,
-            onChanged: (v) {
-              setState(() {
-                _priceTbd = v;
-                _hasChanges = true;
-              });
-            },
-            activeColor: AppColors.middenblauw,
-          ),
-        ],
-      ),
-      Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(
-          'Les inscriptions restent ouvertes. Le prix sera communiqué ultérieurement aux inscrits.',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontStyle: FontStyle.italic,
-          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 
   /// Toggle "Autoriser les invités externes" — laat leden via CalyMob
@@ -1353,79 +1480,83 @@ class _EditEventScreenState extends State<EditEventScreen> {
   /// worden. Werkt enkel wanneer minstens 1 tarief is gemarkeerd als
   /// 'Invité' (zie checkbox op de tarief-rijen).
   Widget _buildAllowGuestsSection() {
-    return _buildSectionCard(children: [
-      Row(
-        children: [
-          const Text('👥', style: TextStyle(fontSize: 18)),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Autoriser les invités externes',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    return _buildSectionCard(
+      children: [
+        Row(
+          children: [
+            const Text('👥', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Autoriser les invités externes',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              value: _allowGuests,
+              onChanged: (v) {
+                setState(() {
+                  _allowGuests = v;
+                  _hasChanges = true;
+                });
+              },
+              activeColor: AppColors.middenblauw,
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'Les membres pourront ajouter famille / amis depuis CalyMob et tout payer en un seul QR. Cochez « Invité » sur les tarifs ci-dessous qui s\'appliquent à eux.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
             ),
           ),
-          Switch(
-            value: _allowGuests,
-            onChanged: (v) {
-              setState(() {
-                _allowGuests = v;
-                _hasChanges = true;
-              });
-            },
-            activeColor: AppColors.middenblauw,
-          ),
-        ],
-      ),
-      Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(
-          'Les membres pourront ajouter famille / amis depuis CalyMob et tout payer en un seul QR. Cochez « Invité » sur les tarifs ci-dessous qui s\'appliquent à eux.',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontStyle: FontStyle.italic,
-          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 
   Widget _buildAllowWaitlistSection() {
     final hasCapacity = (int.tryParse(_capaciteController.text) ?? 0) > 0;
-    return _buildSectionCard(children: [
-      SwitchListTile.adaptive(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Autoriser la liste d’attente'),
-        subtitle: const Text(
-          'Les membres pourront rejoindre la liste quand l’événement est complet ou fermé.',
-        ),
-        value: _allowWaitlist,
-        onChanged: (value) => setState(() {
-          _allowWaitlist = value;
-          _hasChanges = true;
-        }),
-        activeColor: AppColors.middenblauw,
-      ),
-      if (_allowWaitlist && !hasCapacity)
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.amber.shade300),
+    return _buildSectionCard(
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Autoriser la liste d’attente'),
+          subtitle: const Text(
+            'Les membres pourront rejoindre la liste quand l’événement est complet ou fermé.',
           ),
-          child: Text(
-            'Définissez une capacité maximale pour que la liste d’attente puisse gérer les places disponibles.',
-            style: TextStyle(
-              color: Colors.amber.shade900,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          value: _allowWaitlist,
+          onChanged: (value) => setState(() {
+            _allowWaitlist = value;
+            _hasChanges = true;
+          }),
+          activeColor: AppColors.middenblauw,
+        ),
+        if (_allowWaitlist && !hasCapacity)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.shade300),
+            ),
+            child: Text(
+              'Définissez une capacité maximale pour que la liste d’attente puisse gérer les places disponibles.',
+              style: TextStyle(
+                color: Colors.amber.shade900,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ),
-    ]);
+      ],
+    );
   }
 
   // ============================================================
@@ -1438,7 +1569,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Abandonner les modifications ?'),
         content: const Text(
-            'Vous avez des modifications non enregistrées. Voulez-vous les abandonner ?'),
+          'Vous avez des modifications non enregistrées. Voulez-vous les abandonner ?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -1526,8 +1658,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.calendar_today,
-                      size: 16, color: AppColors.middenblauw),
+                  Icon(
+                    Icons.calendar_today,
+                    size: 16,
+                    color: AppColors.middenblauw,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     dateText,
