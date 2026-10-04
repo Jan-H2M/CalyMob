@@ -1,4 +1,7 @@
-const { createBoutiqueOrderHandler } = require('./createOrder');
+const {
+  buildBoutiqueOrderTemplateData,
+  createBoutiqueOrderHandler,
+} = require('./createOrder');
 
 function clone(value) {
   if (Array.isArray(value)) return value.map(clone);
@@ -207,6 +210,24 @@ function run(db, input = request(), overrides = {}) {
 }
 
 describe('createBoutiqueOrder callable transaction', () => {
+  test('uses the immutable product snapshot name in payment emails', () => {
+    const templateData = buildBoutiqueOrderTemplateData({
+      orderNumber: 'BTQ-2026-0039',
+      buyer: { displayName: 'Jan ANDRIESSENS', email: 'canonical@example.test' },
+      payment: { amount: 20, communication: '+++BTQ-2026-0039+++' },
+      items: [{
+        productId: 'Vb3iVyPXR8IA8JTVNS9Q',
+        qty: 1,
+        productSnapshot: { name: 'Protège-sangle de masque personnalisé' },
+      }],
+    }, { clubName: 'Calypso Diving Club', logoUrl: '' });
+
+    expect(templateData.items).toEqual([
+      { name: 'Protège-sangle de masque personnalisé', quantity: 1 },
+    ]);
+    expect(JSON.stringify(templateData)).not.toContain('Vb3iVyPXR8IA8JTVNS9Q');
+  });
+
   test.each(['draft', 'archived', null])('rejects visibility %p without writes', async (visibility) => {
     const db = new MemoryFirestore(seed(visibility));
     const before = clone([...db.docs]);
