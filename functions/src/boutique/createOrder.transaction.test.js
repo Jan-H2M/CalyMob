@@ -147,7 +147,12 @@ function product(visibility = 'published') {
     supplierId: 'supplier-1',
     deliveryModes: ['pool_pickup'],
     pricing: { salePrice: 25 },
-    variants: [{ id: 'size-m', label: 'M', stockCount: 5 }],
+    variants: [{
+      id: 'size-m',
+      label: 'M',
+      attributes: { color: 'Bleu marine', gender: 'Femme' },
+      stockCount: 5,
+    }],
   };
 }
 
@@ -221,7 +226,8 @@ describe('createBoutiqueOrder callable transaction', () => {
         deliveryMode: 'pool_pickup',
         productSnapshot: {
           name: 'Softshell Calypso',
-          variantLabel: 'M · Bleu marine · Femme',
+          variantLabel: 'M',
+          variantAttributes: { color: 'Bleu marine', gender: 'Femme' },
           customizations: {
             technique: 'embroidery',
             clubLogo: { enabled: true, zone: 'coeur' },
@@ -249,6 +255,17 @@ describe('createBoutiqueOrder callable transaction', () => {
       details: { code: 'PRODUCT_NOT_PUBLISHED' },
     });
     expect(clone([...db.docs])).toEqual(before);
+  });
+
+  test('snapshots variant attributes for complete immutable order details', async () => {
+    const db = new MemoryFirestore(seed());
+    await run(db);
+    const order = [...db.docs.entries()].find(([path]) => /\/orders\//.test(path))[1];
+
+    expect(order.items[0].productSnapshot).toMatchObject({
+      variantLabel: 'M',
+      variantAttributes: { color: 'Bleu marine', gender: 'Femme' },
+    });
   });
 
   test('commits canonical buyer identity, inventory reservation and payment snapshot atomically', async () => {

@@ -309,12 +309,28 @@ function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
 }
 
+function sanitizeVariantAttributes(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, raw]) => [String(key).trim(), String(raw ?? '').trim()])
+      .filter(([key, raw]) => key && raw)
+  );
+}
+
 function formatBoutiqueOrderItem(item) {
   const snapshot = item.productSnapshot || {};
   const parts = [
     snapshot.name || item.productName || item.product_name || item.name || 'Article',
   ];
-  if (snapshot.variantLabel) parts.push(snapshot.variantLabel);
+  const variantParts = [];
+  if (snapshot.variantLabel) variantParts.push(String(snapshot.variantLabel).trim());
+  for (const value of Object.values(sanitizeVariantAttributes(snapshot.variantAttributes))) {
+    if (!variantParts.some(existing => existing.toLocaleLowerCase('fr') === value.toLocaleLowerCase('fr'))) {
+      variantParts.push(value);
+    }
+  }
+  parts.push(...variantParts);
 
   const customizations = snapshot.customizations || item.customizations || {};
   const customizationParts = [];
@@ -681,6 +697,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
             productSnapshot: {
               name: product.name || '',
               variantLabel: variant.label || '',
+              variantAttributes: sanitizeVariantAttributes(variant.attributes),
               category: product.category || '',
               inventoryMode,
               allowBackorder,
