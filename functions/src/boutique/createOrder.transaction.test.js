@@ -131,6 +131,7 @@ class MemoryFirestore {
 const clubId = 'calypso';
 const uid = 'member-1';
 const productPath = `clubs/${clubId}/products/product-1`;
+const memberPath = `clubs/${clubId}/members/${uid}`;
 const now = { toMillis: () => Date.parse('2026-10-04T12:00:00.000Z'), toDate: () => new Date('2026-10-04T12:00:00.000Z') };
 
 function product(visibility = 'published') {
@@ -147,7 +148,16 @@ function product(visibility = 'published') {
 }
 
 function seed(visibility = 'published') {
-  return { [productPath]: product(visibility) };
+  return {
+    [productPath]: product(visibility),
+    [memberPath]: {
+      member_status: 'active',
+      email: 'canonical@example.test',
+      prenom: 'Ada',
+      nom: 'Member',
+      phoneNumber: '+32470000000',
+    },
+  };
 }
 
 function request(overrides = {}) {
