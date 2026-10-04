@@ -89,16 +89,21 @@ function resolveMinimumOrderQuantity(product) {
   return parsePositiveInteger(constraints.minimumOrderQuantity) || 1;
 }
 
-function sanitizeBuyer(inputBuyer, authUid) {
-  const buyer = inputBuyer && typeof inputBuyer === 'object' ? inputBuyer : {};
-  const email = typeof buyer.email === 'string' ? buyer.email.trim() : '';
-  const displayName = typeof buyer.displayName === 'string'
-    ? buyer.displayName.trim()
-    : (typeof buyer.name === 'string' ? buyer.name.trim() : '');
+function cleanString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildBuyerFromMember(member, authUid, memberId = authUid) {
+  const source = member && typeof member === 'object' ? member : {};
+  const email = cleanString(source.email);
+  const displayName = cleanString(source.displayName)
+    || cleanString(source.display_name)
+    || cleanString(source.name)
+    || `${cleanString(source.prenom || source.firstName)} ${cleanString(source.nom || source.lastName)}`.trim();
 
   if (!email || !displayName) {
     throw buildInvalidInputError('INVALID_INPUT', {
-      missing: !email ? 'buyer.email' : 'buyer.displayName',
+      missing: !email ? 'member.email' : 'member.displayName',
     });
   }
 
@@ -106,8 +111,11 @@ function sanitizeBuyer(inputBuyer, authUid) {
     userId: authUid,
     displayName,
     email,
-    phone: typeof buyer.phone === 'string' ? buyer.phone.trim() : '',
-    memberId: typeof buyer.memberId === 'string' ? buyer.memberId.trim() : '',
+    phone: cleanString(source.phoneNumber)
+      || cleanString(source.phone)
+      || cleanString(source.telephone)
+      || cleanString(source.gsm),
+    memberId: cleanString(memberId) || authUid,
   };
 }
 
@@ -225,6 +233,7 @@ function extractOrderCounter(orderNumber, year) {
 // Pure helper exported for contract regression tests. The callable itself is
 // still exported through functions/index.js only.
 exports.computeCustomizations = computeCustomizations;
+exports.buildBuyerFromMember = buildBuyerFromMember;
 
 async function resolveClubBankSettings(clubRef) {
   const [bankSnap, generalSnap, clubInfoSnap] = await Promise.all([
@@ -415,19 +424,23 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   return now;
 }
 
-exports.createBoutiqueOrder = onCall(
-  {
-    region: REGION,
-    memory: '512MiB',
-    timeoutSeconds: 60,
-    maxInstances: 10,
-  },
-  async (request) => {
+async function createBoutiqueOrderHandler(request, dependencies = {}) {
+    const db = dependencies.db || admin.firestore();
+    const timestampNow = dependencies.timestampNow || (() => admin.firestore.Timestamp.now());
+    const timestampFromMillis = dependencies.timestampFromMillis
+      || ((value) => admin.firestore.Timestamp.fromMillis(value));
+    const serverTimestamp = dependencies.serverTimestamp
+      || (() => admin.firestore.FieldValue.serverTimestamp());
+    const createUuid = dependencies.randomUUID || randomUUID;
+    const qrToDataURL = dependencies.qrToDataURL || QRCode.toDataURL;
+    const accessCheck = dependencies.assertBoutiqueAccess || assertBoutiqueAccess;
+    const bankSettingsResolver = dependencies.resolveClubBankSettings || resolveClubBankSettings;
+    const orderEmailSender = dependencies.sendBoutiqueOrderEmail || sendBoutiqueOrderEmail;
+
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError('unauthenticated', 'Authentification requise');
     }
 
-    const db = admin.firestore();
     const clubId = typeof request.data?.clubId === 'string' ? request.data.clubId.trim() : '';
     const items = Array.isArray(request.data?.items) ? request.data.items : [];
     const deferPaymentEmail = request.data?.deferPaymentEmail === true;
@@ -438,15 +451,14 @@ exports.createBoutiqueOrder = onCall(
       });
     }
 
+    const clubRef = getClubRef(db, clubId);
+    const access = await accessCheck({ clubRef, authUid: request.auth.uid, HttpsError });
     let buyer;
     try {
-      buyer = sanitizeBuyer(request.data?.buyer, request.auth.uid);
+      buyer = buildBuyerFromMember(access.member, request.auth.uid, access.memberId);
     } catch (error) {
       throw mapErrorToHttps(error, HttpsError);
     }
-
-    const clubRef = getClubRef(db, clubId);
-    await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
 
     // Fix audit 2026-07-19 (K5): idempotency-key tegen dubbele orders bij
     // retry, timeout of app-kill tussen server-commit en client-response.
@@ -462,11 +474,11 @@ exports.createBoutiqueOrder = onCall(
 
     const orderRef = clubRef.collection('orders').doc();
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
-    const now = admin.firestore.Timestamp.now();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
+    const now = timestampNow();
+    const expiresAt = timestampFromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
     const currentYear = new Date(now.toMillis()).getUTCFullYear();
     const orderCounterRef = clubRef.collection('settings').doc(`boutique_order_counter_${currentYear}`);
-    const bankSettings = await resolveClubBankSettings(clubRef);
+    const bankSettings = await bankSettingsResolver(clubRef);
 
     try {
       const result = await db.runTransaction(async (transaction) => {
@@ -534,10 +546,11 @@ exports.createBoutiqueOrder = onCall(
           }
 
           const product = cachedProduct.data;
-          if (product.visibility === 'archived') {
-            throw buildDomainError('PRODUCT_ARCHIVED', 'Produit archivé', {
+          if (product.visibility !== 'published') {
+            throw buildDomainError('PRODUCT_NOT_PUBLISHED', 'Produit non publié', {
               productId,
               variantId,
+              visibility: product.visibility || null,
             });
           }
 
@@ -605,7 +618,7 @@ exports.createBoutiqueOrder = onCall(
           deliverySurcharges += lineDeliverySurcharge;
 
           lines.push({
-            lineId: randomUUID(),
+            lineId: createUuid(),
             productId,
             variantId,
             qty,
@@ -645,19 +658,19 @@ exports.createBoutiqueOrder = onCall(
           amount: total,
           communication: paymentCommunication,
         });
-        const qrCodeUrl = await QRCode.toDataURL(epcPayload);
+        const qrCodeUrl = await qrToDataURL(epcPayload);
 
         for (const cachedProduct of productCache.values()) {
           transaction.update(cachedProduct.ref, {
             variants: cachedProduct.data.variants,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         }
 
         transaction.set(orderCounterRef, {
           counter: nextCounter,
           year: currentYear,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: serverTimestamp(),
         }, { merge: true });
 
         const orderData = {
@@ -693,8 +706,8 @@ exports.createBoutiqueOrder = onCall(
           expiresAt,
           migration_source: null,
           _backfill: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         };
 
         transaction.set(orderRef, orderData);
@@ -709,8 +722,8 @@ exports.createBoutiqueOrder = onCall(
             orderId: orderRef.id,
             byUserId: request.auth.uid,
             timestamp: now,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         });
 
@@ -759,7 +772,7 @@ exports.createBoutiqueOrder = onCall(
       let emailStatus = deferPaymentEmail ? 'deferred' : 'failed';
       if (!deferPaymentEmail) {
         try {
-          emailSentAt = await sendBoutiqueOrderEmail({
+          emailSentAt = await orderEmailSender({
             clubRef,
             clubId,
             orderRef,
@@ -777,7 +790,7 @@ exports.createBoutiqueOrder = onCall(
           await orderRef.update({
             'payment.email_status': 'failed',
             'payment.email_error': emailError.message || 'Email failed',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         }
       }
@@ -809,7 +822,17 @@ exports.createBoutiqueOrder = onCall(
       console.error(`[createBoutiqueOrder] Failed for ${clubId}/${orderRef.id}:`, error);
       throw mapErrorToHttps(error, HttpsError);
     }
+}
+
+exports.createBoutiqueOrderHandler = createBoutiqueOrderHandler;
+exports.createBoutiqueOrder = onCall(
+  {
+    region: REGION,
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    maxInstances: 10,
   },
+  createBoutiqueOrderHandler,
 );
 
 exports.sendBoutiqueOrderPaymentEmail = onCall(

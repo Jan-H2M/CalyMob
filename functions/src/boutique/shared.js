@@ -61,7 +61,12 @@ async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
     throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
   }
 
-  return { isActiveMember, hasBoutiqueResponsibility: hasResponsibility };
+  return {
+    isActiveMember,
+    hasBoutiqueResponsibility: hasResponsibility,
+    member,
+    memberId: memberSnap.id || authUid,
+  };
 }
 
 function buildInvalidInputError(message, details = {}) {
@@ -90,6 +95,7 @@ function mapErrorToHttps(error, HttpsError) {
     case 'OUT_OF_STOCK':
     case 'PRODUCT_NOT_FOUND':
     case 'PRODUCT_ARCHIVED':
+    case 'PRODUCT_NOT_PUBLISHED':
     case 'ORDER_NOT_FOUND':
     case 'ORDER_NOT_CANCELLABLE':
     case 'MEMBER_NOT_FOUND':
