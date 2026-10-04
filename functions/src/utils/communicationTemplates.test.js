@@ -137,6 +137,28 @@ describe('communicationTemplates Cloud Functions helper', () => {
     expect(rendered.html).toContain('https://caly.club/operations?selectedId&#x3D;op-1');
   });
 
+  it('renders a friendly Boutique thank-you email with complete order details', async () => {
+    const db = buildTemplateDb([]);
+    const result = await resolveCommunicationTemplate(db, 'club-1', 'boutique_order_payment');
+    const rendered = renderCommunicationTemplate(result.template, {
+      recipientName: 'Jan',
+      clubName: 'Calypso Diving Club',
+      orderNumber: 'BTQ-2026-0039',
+      amountFormatted: '20,00 €',
+      communication: '+++BTQ-2026-0039+++',
+      items: [{
+        name: 'Protège-sangle de masque personnalisé · Unique · Orange · Unisexe · Retrait piscine',
+        quantity: 1,
+      }],
+    });
+
+    expect(rendered.subject).toBe('Merci pour ta commande BTQ-2026-0039 · 20,00 €');
+    expect(rendered.html).toContain('Merci beaucoup pour ta commande');
+    expect(rendered.html).toContain('Nous sommes ravis de la préparer pour toi');
+    expect(rendered.html).toContain('Protège-sangle de masque personnalisé · Unique · Orange · Unisexe · Retrait piscine x 1');
+    expect(rendered.html).toContain('Encore merci et à très bientôt');
+  });
+
   it('logs email history and linked communication entry', async () => {
     const db = buildLoggingDb();
     const routing = buildEmailRouting({
