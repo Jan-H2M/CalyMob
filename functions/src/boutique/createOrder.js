@@ -325,10 +325,16 @@ function formatBoutiqueOrderItem(item) {
   ];
   const variantParts = [];
   if (snapshot.variantLabel) variantParts.push(String(snapshot.variantLabel).trim());
+  const existingVariantComponents = new Set(
+    variantParts.flatMap(part => part.split(/\s*[·|/]\s*/))
+      .map(part => part.trim().toLocaleLowerCase('fr'))
+      .filter(Boolean)
+  );
   for (const value of Object.values(sanitizeVariantAttributes(snapshot.variantAttributes))) {
     const normalizedValue = value.toLocaleLowerCase('fr');
-    if (!variantParts.some(existing => existing.toLocaleLowerCase('fr').includes(normalizedValue))) {
+    if (!existingVariantComponents.has(normalizedValue)) {
       variantParts.push(value);
+      existingVariantComponents.add(normalizedValue);
     }
   }
   parts.push(...variantParts);
