@@ -218,12 +218,25 @@ describe('createBoutiqueOrder callable transaction', () => {
       items: [{
         productId: 'Vb3iVyPXR8IA8JTVNS9Q',
         qty: 1,
-        productSnapshot: { name: 'Protège-sangle de masque personnalisé' },
+        deliveryMode: 'pool_pickup',
+        productSnapshot: {
+          name: 'Softshell Calypso',
+          variantLabel: 'M · Bleu marine · Femme',
+          customizations: {
+            technique: 'embroidery',
+            clubLogo: { enabled: true, zone: 'coeur' },
+            name: { text: 'Jan', zone: 'manche droite' },
+            certification: { value: 'P3', zone: 'manche gauche' },
+          },
+        },
       }],
     }, { clubName: 'Calypso Diving Club', logoUrl: '' });
 
     expect(templateData.items).toEqual([
-      { name: 'Protège-sangle de masque personnalisé', quantity: 1 },
+      {
+        name: 'Softshell Calypso · M · Bleu marine · Femme · Broderie: logo club (coeur), nom « Jan » (manche droite), brevet P3 (manche gauche) · Retrait piscine',
+        quantity: 1,
+      },
     ]);
     expect(JSON.stringify(templateData)).not.toContain('Vb3iVyPXR8IA8JTVNS9Q');
   });
