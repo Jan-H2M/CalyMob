@@ -5,6 +5,7 @@ const QRCode = require('qrcode');
 const {
   REGION,
   assertBoutiqueAccess,
+  evaluateBoutiqueAccess,
   buildDomainError,
   buildEpcQrPayload,
   buildInvalidInputError,
@@ -476,6 +477,21 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
 
     try {
       const result = await db.runTransaction(async (transaction) => {
+        const flagsRef = clubRef.collection('settings').doc('feature_flags');
+        const memberRef = clubRef.collection('members').doc(request.auth.uid);
+        const [flagsSnap, memberSnap] = await Promise.all([
+          transaction.get(flagsRef),
+          transaction.get(memberRef),
+        ]);
+        const transactionalAccess = evaluateBoutiqueAccess(
+          flagsSnap.exists ? flagsSnap.data() : {},
+          memberSnap.exists ? memberSnap.data() : null,
+        );
+        if (!transactionalAccess.allowed) {
+          throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
+        }
+        const buyer = buildBuyerFromMember(memberSnap.data(), request.auth.uid, memberSnap.id);
+
         if (idempotencyKey) {
           const existingSnap = await transaction.get(
             clubRef.collection('orders')
@@ -492,13 +508,6 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
             };
           }
         }
-
-        const memberRef = clubRef.collection('members').doc(request.auth.uid);
-        const memberSnap = await transaction.get(memberRef);
-        if (!memberSnap.exists || memberSnap.get('member_status') !== 'active') {
-          throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
-        }
-        const buyer = buildBuyerFromMember(memberSnap.data(), request.auth.uid, memberSnap.id);
 
         const counterSnap = await transaction.get(orderCounterRef);
         const prefix = `BTQ-${currentYear}-`;
