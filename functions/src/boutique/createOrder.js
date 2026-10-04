@@ -309,6 +309,39 @@ function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
 }
 
+function formatBoutiqueOrderItem(item) {
+  const snapshot = item.productSnapshot || {};
+  const parts = [
+    snapshot.name || item.productName || item.product_name || item.name || 'Article',
+  ];
+  if (snapshot.variantLabel) parts.push(snapshot.variantLabel);
+
+  const customizations = snapshot.customizations || item.customizations || {};
+  const customizationParts = [];
+  if (customizations.clubLogo?.enabled) {
+    customizationParts.push(`logo club${customizations.clubLogo.zone ? ` (${customizations.clubLogo.zone})` : ''}`);
+  }
+  if (customizations.name?.text) {
+    customizationParts.push(`nom « ${customizations.name.text} »${customizations.name.zone ? ` (${customizations.name.zone})` : ''}`);
+  }
+  if (customizations.certification?.value) {
+    customizationParts.push(`brevet ${customizations.certification.value}${customizations.certification.zone ? ` (${customizations.certification.zone})` : ''}`);
+  }
+  if (customizationParts.length > 0) {
+    const technique = customizations.technique === 'print' ? 'Impression' : 'Broderie';
+    parts.push(`${technique}: ${customizationParts.join(', ')}`);
+  }
+
+  const deliveryLabels = {
+    digital: 'Digital',
+    pool_pickup: 'Retrait piscine',
+    post: 'Envoi postal',
+    in_person: 'Remise en main propre',
+  };
+  if (deliveryLabels[item.deliveryMode]) parts.push(deliveryLabels[item.deliveryMode]);
+  return parts.join(' · ');
+}
+
 function buildBoutiqueOrderTemplateData(order, emailSettings) {
   const buyer = order.buyer || {};
   const payment = order.payment || {};
@@ -322,11 +355,7 @@ function buildBoutiqueOrderTemplateData(order, emailSettings) {
     communication: payment.communication || `+++${order.orderNumber}+++`,
     items: Array.isArray(order.items)
       ? order.items.map(item => ({
-        name: item.productSnapshot?.name
-          || item.productName
-          || item.product_name
-          || item.name
-          || 'Article',
+        name: formatBoutiqueOrderItem(item),
         quantity: item.quantity || item.quantite || item.qty || 1,
       }))
       : [],
@@ -846,6 +875,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
 
 exports.createBoutiqueOrderHandler = createBoutiqueOrderHandler;
 exports.buildBoutiqueOrderTemplateData = buildBoutiqueOrderTemplateData;
+exports.formatBoutiqueOrderItem = formatBoutiqueOrderItem;
 exports.createBoutiqueOrder = onCall(
   {
     region: REGION,
