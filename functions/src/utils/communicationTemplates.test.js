@@ -142,7 +142,7 @@ describe('communicationTemplates Cloud Functions helper', () => {
     const result = await resolveCommunicationTemplate(db, 'club-1', 'boutique_order_payment');
     const rendered = renderCommunicationTemplate(result.template, {
       recipientName: 'Jan',
-      clubName: 'Calypso Diving Club',
+      clubName: 'Club des Amis Plongeurs',
       orderNumber: 'BTQ-2026-0039',
       amountFormatted: '20,00 €',
       communication: '+++BTQ-2026-0039+++',
@@ -154,6 +154,8 @@ describe('communicationTemplates Cloud Functions helper', () => {
 
     expect(rendered.subject).toBe('Merci pour ta commande BTQ-2026-0039 · 20,00 €');
     expect(rendered.html).toContain('Merci beaucoup pour ta commande');
+    expect(rendered.html).toContain('auprès du Club des Amis Plongeurs');
+    expect(rendered.html).not.toContain('Calypso Diving Club');
     expect(rendered.html).toContain('Nous sommes ravis de la préparer pour toi');
     expect(rendered.html).toContain('Protège-sangle de masque personnalisé · Unique · Orange · Unisexe · Retrait piscine x 1');
     expect(rendered.html).toContain('Encore merci et à très bientôt');
