@@ -132,6 +132,7 @@ const clubId = 'calypso';
 const uid = 'member-1';
 const productPath = `clubs/${clubId}/products/product-1`;
 const memberPath = `clubs/${clubId}/members/${uid}`;
+const flagsPath = `clubs/${clubId}/settings/feature_flags`;
 const now = { toMillis: () => Date.parse('2026-10-04T12:00:00.000Z'), toDate: () => new Date('2026-10-04T12:00:00.000Z') };
 
 function product(visibility = 'published') {
@@ -156,6 +157,11 @@ function seed(visibility = 'published') {
       prenom: 'Ada',
       nom: 'Member',
       phoneNumber: '+32470000000',
+    },
+    [flagsPath]: {
+      boutiqueEnabled: true,
+      boutiqueMobileEnabled: true,
+      boutiqueAccess: 'tous',
     },
   };
 }
@@ -243,6 +249,39 @@ describe('createBoutiqueOrder callable transaction', () => {
     expect([...db.docs.keys()].filter((path) => /\/orders\//.test(path))).toHaveLength(1);
     expect([...db.docs.keys()].filter((path) => /\/inventoryMutations\//.test(path))).toHaveLength(1);
     expect(db.docs.get(productPath).variants[0].stockCount).toBe(3);
+  });
+
+  test('denies a replay when transactional membership is no longer authorized', async () => {
+    const db = new MemoryFirestore(seed());
+    await run(db);
+    db.docs.set(memberPath, { ...db.docs.get(memberPath), member_status: 'inactive' });
+
+    await expect(run(db)).rejects.toMatchObject({ code: 'permission-denied' });
+    expect([...db.docs.keys()].filter((path) => /\/orders\//.test(path))).toHaveLength(1);
+    expect(db.docs.get(productPath).variants[0].stockCount).toBe(3);
+  });
+
+  test('revalidates tester responsibility and feature flags inside the transaction', async () => {
+    const scenarios = [
+      {
+        member: { ...seed()[memberPath], clubStatuten: [] },
+        flags: { boutiqueEnabled: true, boutiqueAccess: 'testeurs' },
+      },
+      {
+        member: { ...seed()[memberPath], clubStatuten: ['Responsable boutique'] },
+        flags: { boutiqueEnabled: false, boutiqueMobileEnabled: false, boutiqueAccess: 'testeurs' },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const data = seed();
+      data[memberPath] = scenario.member;
+      data[flagsPath] = scenario.flags;
+      const db = new MemoryFirestore(data);
+      const before = clone([...db.docs]);
+      await expect(run(db)).rejects.toMatchObject({ code: 'permission-denied' });
+      expect(clone([...db.docs])).toEqual(before);
+    }
   });
 
   test('rolls back every write when stock is insufficient', async () => {

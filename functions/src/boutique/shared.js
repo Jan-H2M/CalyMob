@@ -37,6 +37,26 @@ function hasBoutiqueResponsibility(member) {
   return statuten.some((value) => BOUTIQUE_RESPONSIBILITY_VALUES.has(value));
 }
 
+function evaluateBoutiqueAccess(flags, member) {
+  const settings = flags && typeof flags === 'object' ? flags : {};
+  const enabled = settings.boutiqueEnabled === true || settings.boutiqueMobileEnabled === true;
+  const isActiveMember = isActiveBoutiqueMember(member);
+  const hasResponsibility = hasBoutiqueResponsibility(member);
+  const accessMode = resolveBoutiqueAccessMode(settings);
+  const modeAllows = accessMode === 'tous'
+    ? isActiveMember
+    : accessMode === 'testeurs'
+      ? isActiveMember && hasResponsibility
+      : false;
+
+  return {
+    allowed: enabled && modeAllows,
+    accessMode,
+    isActiveMember,
+    hasBoutiqueResponsibility: hasResponsibility,
+  };
+}
+
 async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
   const [flagsSnap, memberSnap] = await Promise.all([
     clubRef.collection('settings').doc('feature_flags').get(),
@@ -44,26 +64,16 @@ async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
   ]);
 
   const flags = flagsSnap.exists ? flagsSnap.data() : {};
-  const enabled = flags.boutiqueEnabled === true || flags.boutiqueMobileEnabled === true;
   const member = memberSnap.exists ? memberSnap.data() : {};
-  const isActiveMember = memberSnap.exists && isActiveBoutiqueMember(member);
-  const hasResponsibility = hasBoutiqueResponsibility(member);
+  const access = evaluateBoutiqueAccess(flags, memberSnap.exists ? member : null);
 
-  const accessMode = resolveBoutiqueAccessMode(flags);
-  const modeAllows =
-    accessMode === 'tous'
-      ? isActiveMember
-      : accessMode === 'testeurs'
-        ? isActiveMember && hasResponsibility
-        : false; // 'masque' — niemand, ook admins niet (zelfde als de client)
-
-  if (!enabled || !modeAllows) {
+  if (!access.allowed) {
     throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
   }
 
   return {
-    isActiveMember,
-    hasBoutiqueResponsibility: hasResponsibility,
+    isActiveMember: access.isActiveMember,
+    hasBoutiqueResponsibility: access.hasBoutiqueResponsibility,
     member,
     memberId: memberSnap.id || authUid,
   };
@@ -194,6 +204,7 @@ function buildEpcQrPayload({ iban, beneficiary, amount, ogm, communication }) {
 module.exports = {
   REGION,
   assertBoutiqueAccess,
+  evaluateBoutiqueAccess,
   hasBoutiqueResponsibility,
   isActiveBoutiqueMember,
   resolveBoutiqueAccessMode,
