@@ -452,13 +452,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
     }
 
     const clubRef = getClubRef(db, clubId);
-    const access = await accessCheck({ clubRef, authUid: request.auth.uid, HttpsError });
-    let buyer;
-    try {
-      buyer = buildBuyerFromMember(access.member, request.auth.uid, access.memberId);
-    } catch (error) {
-      throw mapErrorToHttps(error, HttpsError);
-    }
+    await accessCheck({ clubRef, authUid: request.auth.uid, HttpsError });
 
     // Fix audit 2026-07-19 (K5): idempotency-key tegen dubbele orders bij
     // retry, timeout of app-kill tussen server-commit en client-response.
@@ -498,6 +492,13 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
             };
           }
         }
+
+        const memberRef = clubRef.collection('members').doc(request.auth.uid);
+        const memberSnap = await transaction.get(memberRef);
+        if (!memberSnap.exists || memberSnap.get('member_status') !== 'active') {
+          throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
+        }
+        const buyer = buildBuyerFromMember(memberSnap.data(), request.auth.uid, memberSnap.id);
 
         const counterSnap = await transaction.get(orderCounterRef);
         const prefix = `BTQ-${currentYear}-`;
