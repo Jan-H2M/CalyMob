@@ -286,7 +286,7 @@ const SYSTEM_SEED_TEMPLATES = {
   </div>
   <h1 style="font-size: 22px; color: #111827;">Merci pour ta commande !</h1>
   <p>Bonjour {{recipientName}},</p>
-  <p>Merci beaucoup pour ta commande auprès du Calypso Diving Club. Nous sommes ravis de la préparer pour toi !</p>
+  <p>Merci beaucoup pour ta commande auprès du {{clubName}}. Nous sommes ravis de la préparer pour toi !</p>
   <p>Ta commande <strong>{{orderNumber}}</strong> est bien enregistrée. Pour la confirmer, il te suffit encore d’effectuer le paiement avec les informations ci-dessous.</p>
   <div style="background: #F3F4F6; border-radius: 8px; padding: 20px; margin: 20px 0;">
     <p><strong>Commande:</strong> {{orderNumber}}</p>
