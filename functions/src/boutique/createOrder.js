@@ -309,6 +309,30 @@ function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
 }
 
+function buildBoutiqueOrderTemplateData(order, emailSettings) {
+  const buyer = order.buyer || {};
+  const payment = order.payment || {};
+  return {
+    recipientName: buyer.displayName || buyer.email || '',
+    clubName: emailSettings.clubName,
+    logoUrl: emailSettings.logoUrl,
+    orderNumber: order.orderNumber,
+    amount: payment.amount,
+    amountFormatted: formatAmount(payment.amount),
+    communication: payment.communication || `+++${order.orderNumber}+++`,
+    items: Array.isArray(order.items)
+      ? order.items.map(item => ({
+        name: item.productSnapshot?.name
+          || item.productName
+          || item.product_name
+          || item.name
+          || 'Article',
+        quantity: item.quantity || item.quantite || item.qty || 1,
+      }))
+      : [],
+  };
+}
+
 async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const buyer = order.buyer || {};
   const recipientEmail = String(buyer.email || '').trim();
@@ -318,21 +342,7 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const emailSettings = await resolveClubEmailSettings(clubRef);
   const payment = order.payment || {};
   const templateType = 'boutique_order_payment';
-  const templateData = {
-    recipientName: buyer.displayName || recipientEmail,
-    clubName: emailSettings.clubName,
-    logoUrl: emailSettings.logoUrl,
-    orderNumber: order.orderNumber,
-    amount: payment.amount,
-    amountFormatted: formatAmount(payment.amount),
-    communication: payment.communication || `+++${order.orderNumber}+++`,
-    items: Array.isArray(order.items)
-      ? order.items.map(item => ({
-        name: item.productName || item.product_name || item.name || item.productId || 'Article',
-        quantity: item.quantity || item.quantite || 1,
-      }))
-      : [],
-  };
+  const templateData = buildBoutiqueOrderTemplateData(order, emailSettings);
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
@@ -835,6 +845,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
 }
 
 exports.createBoutiqueOrderHandler = createBoutiqueOrderHandler;
+exports.buildBoutiqueOrderTemplateData = buildBoutiqueOrderTemplateData;
 exports.createBoutiqueOrder = onCall(
   {
     region: REGION,
