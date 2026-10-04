@@ -326,7 +326,8 @@ function formatBoutiqueOrderItem(item) {
   const variantParts = [];
   if (snapshot.variantLabel) variantParts.push(String(snapshot.variantLabel).trim());
   for (const value of Object.values(sanitizeVariantAttributes(snapshot.variantAttributes))) {
-    if (!variantParts.some(existing => existing.toLocaleLowerCase('fr') === value.toLocaleLowerCase('fr'))) {
+    const normalizedValue = value.toLocaleLowerCase('fr');
+    if (!variantParts.some(existing => existing.toLocaleLowerCase('fr').includes(normalizedValue))) {
       variantParts.push(value);
     }
   }

@@ -247,6 +247,24 @@ describe('createBoutiqueOrder callable transaction', () => {
     expect(JSON.stringify(templateData)).not.toContain('Vb3iVyPXR8IA8JTVNS9Q');
   });
 
+  test('does not duplicate attributes already present in a composite variant label', () => {
+    const templateData = buildBoutiqueOrderTemplateData({
+      orderNumber: 'BTQ-2026-0041',
+      buyer: { displayName: 'Jan ANDRIESSENS' },
+      payment: { amount: 67 },
+      items: [{
+        qty: 1,
+        productSnapshot: {
+          name: 'Softshell Calypso',
+          variantLabel: 'M · Bleu marine · Femme',
+          variantAttributes: { color: 'Bleu marine', gender: 'Femme' },
+        },
+      }],
+    }, { clubName: 'Calypso Diving Club', logoUrl: '' });
+
+    expect(templateData.items[0].name).toBe('Softshell Calypso · M · Bleu marine · Femme');
+  });
+
   test.each(['draft', 'archived', null])('rejects visibility %p without writes', async (visibility) => {
     const db = new MemoryFirestore(seed(visibility));
     const before = clone([...db.docs]);
