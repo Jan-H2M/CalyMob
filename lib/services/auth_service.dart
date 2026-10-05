@@ -2,6 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'crashlytics_service.dart';
 
+typedef AuthSignIn = Future<User?> Function(String email, String password);
+typedef AuthRetryDelay = Future<void> Function(Duration duration);
+typedef AuthErrorReporter =
+    void Function(Object error, StackTrace? stack, String context);
+
 /// Exception de login qui conserve le code FirebaseAuth d'origine.
 ///
 /// Permet à l'appelant (ex: login biométrique) de distinguer un refus des
@@ -13,6 +18,42 @@ class AuthLoginException implements Exception {
   final String message;
 
   AuthLoginException(this.code, this.message);
+
+  factory AuthLoginException.fromFirebase(FirebaseAuthException exception) {
+    switch (exception.code) {
+      case 'user-not-found':
+        return AuthLoginException(
+          exception.code,
+          'Aucun compte trouvé avec cet email',
+        );
+      case 'wrong-password':
+        return AuthLoginException(exception.code, 'Mot de passe incorrect');
+      case 'invalid-credential':
+        return AuthLoginException(
+          exception.code,
+          'Email ou mot de passe incorrect',
+        );
+      case 'invalid-email':
+        return AuthLoginException(exception.code, 'Email invalide');
+      case 'user-disabled':
+        return AuthLoginException(exception.code, 'Ce compte a été désactivé');
+      case 'too-many-requests':
+        return AuthLoginException(
+          exception.code,
+          'Trop de tentatives. Réessayez dans quelques minutes',
+        );
+      case 'network-request-failed':
+        return AuthLoginException(
+          exception.code,
+          'Connexion impossible. Vérifiez votre réseau puis réessayez.',
+        );
+      default:
+        return AuthLoginException(
+          exception.code,
+          'Erreur d\'authentification: ${exception.message}',
+        );
+    }
+  }
 
   /// True quand les credentials eux-mêmes sont refusés par Firebase Auth.
   /// C'est la SEULE raison valable pour effacer les credentials biométriques.
@@ -30,7 +71,37 @@ class AuthLoginException implements Exception {
 
 /// Service d'authentification Firebase
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  static const Duration _networkRetryDelay = Duration(milliseconds: 750);
+
+  final FirebaseAuth? _injectedAuth;
+  final AuthSignIn? _injectedSignIn;
+  final AuthRetryDelay _retryDelay;
+  final AuthErrorReporter _reportError;
+
+  AuthService({
+    FirebaseAuth? auth,
+    AuthSignIn? signIn,
+    AuthRetryDelay retryDelay = Future<void>.delayed,
+    AuthErrorReporter reportError = CrashlyticsService.authError,
+  }) : _injectedAuth = auth,
+       _injectedSignIn = signIn,
+       _retryDelay = retryDelay,
+       _reportError = reportError;
+
+  FirebaseAuth get _auth => _injectedAuth ?? FirebaseAuth.instance;
+
+  Future<User?> _signIn(String email, String password) async {
+    final injectedSignIn = _injectedSignIn;
+    if (injectedSignIn != null) {
+      return injectedSignIn(email, password);
+    }
+
+    final credential = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    return credential.user;
+  }
 
   /// Stream de l'état d'authentification
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -40,48 +111,38 @@ class AuthService {
 
   /// Login avec email et mot de passe
   Future<User> login(String email, String password) async {
-    try {
-      debugPrint('🔐 Tentative login: $email');
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      try {
+        debugPrint('🔐 Tentative login: $email');
 
-      final userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+        final user = await _signIn(email, password);
 
-      if (userCredential.user == null) {
-        throw Exception('Échec de connexion: utilisateur null');
+        if (user == null) {
+          throw Exception('Échec de connexion: utilisateur null');
+        }
+
+        debugPrint('✅ Login réussi: ${user.uid}');
+        return user;
+      } on FirebaseAuthException catch (e, stack) {
+        _reportError(e, stack, 'login FirebaseAuth ${e.code}');
+        debugPrint('❌ Erreur login: ${e.code} - ${e.message}');
+
+        if (e.code == 'network-request-failed' && attempt == 1) {
+          debugPrint('🔄 Réseau indisponible, nouvelle tentative de login');
+          await _retryDelay(_networkRetryDelay);
+          continue;
+        }
+
+        throw AuthLoginException.fromFirebase(e);
+      } catch (e, stack) {
+        if (e is AuthLoginException) rethrow;
+        _reportError(e, stack, 'login unexpected error');
+        debugPrint('❌ Erreur inattendue login: $e');
+        throw Exception('Erreur de connexion: $e');
       }
-
-      debugPrint('✅ Login réussi: ${userCredential.user!.uid}');
-      return userCredential.user!;
-    } on FirebaseAuthException catch (e, stack) {
-      CrashlyticsService.authError(e, stack, 'login FirebaseAuth ${e.code}');
-      debugPrint('❌ Erreur login: ${e.code} - ${e.message}');
-
-      switch (e.code) {
-        case 'user-not-found':
-          throw AuthLoginException(e.code, 'Aucun compte trouvé avec cet email');
-        case 'wrong-password':
-          throw AuthLoginException(e.code, 'Mot de passe incorrect');
-        case 'invalid-credential':
-          throw AuthLoginException(e.code, 'Email ou mot de passe incorrect');
-        case 'invalid-email':
-          throw AuthLoginException(e.code, 'Email invalide');
-        case 'user-disabled':
-          throw AuthLoginException(e.code, 'Ce compte a été désactivé');
-        case 'too-many-requests':
-          throw AuthLoginException(
-              e.code, 'Trop de tentatives. Réessayez dans quelques minutes');
-        default:
-          throw AuthLoginException(
-              e.code, 'Erreur d\'authentification: ${e.message}');
-      }
-    } catch (e, stack) {
-      if (e is AuthLoginException) rethrow;
-      CrashlyticsService.authError(e, stack, 'login unexpected error');
-      debugPrint('❌ Erreur inattendue login: $e');
-      throw Exception('Erreur de connexion: $e');
     }
+
+    throw StateError('Nombre de tentatives de connexion incohérent');
   }
 
   /// Logout

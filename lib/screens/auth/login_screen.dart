@@ -261,10 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // L'ancien code les purgeait ici, ce qui désactivait définitivement
         // le login biométrique après une seule erreur réseau.
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${e.message} — réessayez.'),
-            backgroundColor: Colors.orange,
-          ),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.orange),
         );
       }
     } catch (e) {
