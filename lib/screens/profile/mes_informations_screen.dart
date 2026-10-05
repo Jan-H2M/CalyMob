@@ -16,7 +16,14 @@ import 'identite_screen.dart';
 import 'settings_screen.dart';
 
 class MesInformationsScreen extends StatefulWidget {
-  const MesInformationsScreen({super.key});
+  const MesInformationsScreen({
+    super.key,
+    this.profileService,
+    this.sensitiveInfoService,
+  });
+
+  final ProfileService? profileService;
+  final SensitiveInfoService? sensitiveInfoService;
 
   @override
   State<MesInformationsScreen> createState() => _MesInformationsScreenState();
@@ -24,8 +31,10 @@ class MesInformationsScreen extends StatefulWidget {
 
 class _MesInformationsScreenState extends State<MesInformationsScreen> {
   static const String _clubId = 'calypso';
-  final ProfileService _profileService = ProfileService();
-  final SensitiveInfoService _sensitiveInfoService = SensitiveInfoService();
+  late final ProfileService _profileService =
+      widget.profileService ?? ProfileService();
+  late final SensitiveInfoService _sensitiveInfoService =
+      widget.sensitiveInfoService ?? SensitiveInfoService();
   bool _saving = false;
 
   @override

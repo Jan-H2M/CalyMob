@@ -31,9 +31,14 @@ import 'mes_brevets_screen.dart';
 enum ProfilePhotoSource { camera, gallery }
 
 class IdentiteScreen extends StatefulWidget {
-  const IdentiteScreen({super.key, this.photoMediaService});
+  const IdentiteScreen({
+    super.key,
+    this.photoMediaService,
+    this.profileService,
+  });
 
   final ProfilePhotoMediaService? photoMediaService;
+  final ProfileService? profileService;
 
   @override
   State<IdentiteScreen> createState() => _IdentiteScreenState();
@@ -41,7 +46,8 @@ class IdentiteScreen extends StatefulWidget {
 
 class _IdentiteScreenState extends State<IdentiteScreen> {
   final String _clubId = 'calypso';
-  final ProfileService _profileService = ProfileService();
+  late final ProfileService _profileService =
+      widget.profileService ?? ProfileService();
   late final ProfilePhotoMediaService _photoMediaService =
       widget.photoMediaService ?? ProfilePhotoMediaService.system();
   bool _isLoading = false;
@@ -264,9 +270,8 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
             BirthdaySharingSwitch(
               contentPadding: EdgeInsets.zero,
               value: profile.shareBirthday,
-              onChanged: _isLoading
-                  ? null
-                  : (value) => _updateBirthdaySharing(value),
+              onChanged:
+                  _isLoading ? null : (value) => _updateBirthdaySharing(value),
             ),
             const SizedBox(height: 8),
             _row(

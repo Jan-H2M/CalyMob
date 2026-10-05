@@ -25,7 +25,18 @@ import '../../widgets/profile/birthday_sharing_switch.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({
+    super.key,
+    this.profileService,
+    this.notificationService,
+    this.biometricService,
+    this.runStartupChecks = true,
+  });
+
+  final ProfileService? profileService;
+  final NotificationService? notificationService;
+  final BiometricService? biometricService;
+  final bool runStartupChecks;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -33,9 +44,12 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final String _clubId = 'calypso';
-  final ProfileService _profileService = ProfileService();
-  final NotificationService _notificationService = NotificationService();
-  final BiometricService _biometricService = BiometricService();
+  late final ProfileService _profileService =
+      widget.profileService ?? ProfileService();
+  late final NotificationService _notificationService =
+      widget.notificationService ?? NotificationService();
+  late final BiometricService _biometricService =
+      widget.biometricService ?? BiometricService();
   final TextEditingController _phoneController = TextEditingController();
 
   bool _isLoading = false;
@@ -48,8 +62,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _checkBiometricStatus();
-    _checkForUpdate();
+    if (widget.runStartupChecks) {
+      _checkBiometricStatus();
+      _checkForUpdate();
+    }
   }
 
   Future<void> _checkForUpdate({bool forceCheck = false}) async {
