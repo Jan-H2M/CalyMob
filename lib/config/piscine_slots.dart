@@ -53,8 +53,10 @@ class GonflageSlots {
 class EncadrantSlots {
   static const String premiereHeure = '1ere_heure';
   static const String deuxiemeHeure = '2eme_heure';
+  static const String rangement = '22h30';
 
-  static const List<String> all = [premiereHeure, deuxiemeHeure];
+  static const List<String> teaching = [premiereHeure, deuxiemeHeure];
+  static const List<String> all = [premiereHeure, deuxiemeHeure, rangement];
 
   /// Niveaux qui ne font que le 1er créneau (20h15-21h15)
   static const List<String> levelsFirstHourOnly = ['1*'];
@@ -80,6 +82,8 @@ class EncadrantSlots {
         return '20h15';
       case deuxiemeHeure:
         return '21h15';
+      case rangement:
+        return 'Rangement 22h30';
       default:
         return slot;
     }
@@ -131,14 +135,14 @@ String getSlotLabel(String role, String slot) {
 }
 
 /// Obtenir tous les créneaux disponibles pour un rôle donné
-List<String> getSlotsForRole(String role) {
+List<String> getSlotsForRole(String role, {bool isOfficialEncadrant = false}) {
   switch (role) {
     case 'accueil':
       return AccueilSlots.all;
     case 'gonflage':
       return GonflageSlots.all;
     case 'encadrant':
-      return EncadrantSlots.all;
+      return isOfficialEncadrant ? EncadrantSlots.all : EncadrantSlots.teaching;
     case 'theorie':
       return TheorieSlots.all;
     default:

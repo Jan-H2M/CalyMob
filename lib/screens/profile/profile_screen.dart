@@ -173,6 +173,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     MaterialPageRoute(
                                       builder: (_) => AvailabilityScreen(
                                         userRoles: roles,
+                                        isOfficialEncadrant:
+                                            memberProvider.isEncadrant,
                                       ),
                                     ),
                                   );

@@ -3,7 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Model Availability - Beschikbaarheden voor piscine sessies
 /// Accueil, Encadrants en Gonflage kunnen aangeven wanneer ze beschikbaar zijn
 ///
-/// Pour encadrants: [timeSlots] contient '1ere_heure', '2eme_heure', ou les deux
+/// Pour encadrants: [timeSlots] contient '1ere_heure', '2eme_heure' et, pour
+/// les encadrants officiels, éventuellement '22h30' (rangement).
 /// Pour gonflage: [timeSlots] contient '19h45', '20h15', '22h30' (un ou plusieurs).
 /// Les documents historiques peuvent encore contenir d'anciens créneaux.
 /// Pour accueil: [timeSlots] contient '20h15', '21h15' (un ou plusieurs)
