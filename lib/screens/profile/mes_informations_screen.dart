@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/profile_service.dart';
 import '../../services/sensitive_info_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/profile/birthday_sharing_switch.dart';
 import 'identite_screen.dart';
 import 'settings_screen.dart';
 
@@ -130,13 +131,9 @@ class _MesInformationsScreenState extends State<MesInformationsScreen> {
             onPressed: () => _editPhone(profile),
           ),
         ),
-        SwitchListTile(
+        BirthdaySharingSwitch(
           contentPadding: EdgeInsets.zero,
           value: profile.shareBirthday,
-          title: const Text('Partager mon anniversaire'),
-          subtitle: const Text(
-            'Seuls le jour et le mois sont visibles dans Who’s Who. Ce choix active aussi les vœux du club.',
-          ),
           onChanged: (value) => _updateBirthdaySharing(
             userId: profile.id,
             shareBirthday: value,

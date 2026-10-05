@@ -21,6 +21,7 @@ import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
 import 'calendar_feed_screen.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/profile/birthday_sharing_switch.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
@@ -499,6 +500,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _updateBirthdaySharing(bool value) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+      await _profileService.updateBirthdaySharing(
+        _clubId,
+        userId,
+        shareBirthday: value,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Préférence anniversaire mise à jour'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _updateUsesCarnet(bool value) async {
     setState(() => _isLoading = true);
     try {
@@ -755,6 +786,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             trailing: const Icon(Icons.edit, size: 20),
             onTap: () => _updatePhoneNumber(profile),
+          ),
+          const Divider(height: 1),
+          BirthdaySharingSwitch(
+            value: profile.shareBirthday,
+            onChanged:
+                _isLoading ? null : (value) => _updateBirthdaySharing(value),
           ),
         ],
       ),

@@ -23,6 +23,7 @@ import '../../services/profile_photo_media_source.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/photo_consent_dialog.dart';
+import '../../widgets/profile/birthday_sharing_switch.dart';
 import 'face_camera_screen.dart'
     if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'mes_brevets_screen.dart';
@@ -260,6 +261,14 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
               ),
             ),
             const SizedBox(height: 8),
+            BirthdaySharingSwitch(
+              contentPadding: EdgeInsets.zero,
+              value: profile.shareBirthday,
+              onChanged: _isLoading
+                  ? null
+                  : (value) => _updateBirthdaySharing(value),
+            ),
+            const SizedBox(height: 8),
             _row(
               icon: Icons.workspace_premium_outlined,
               color: Colors.orange,
@@ -442,6 +451,34 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Numéro de téléphone mis à jour'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateBirthdaySharing(bool value) async {
+    try {
+      setState(() => _isLoading = true);
+      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+      await _profileService.updateBirthdaySharing(
+        _clubId,
+        userId,
+        shareBirthday: value,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Préférence anniversaire mise à jour'),
             backgroundColor: Colors.green,
           ),
         );
