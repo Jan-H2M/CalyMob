@@ -26,14 +26,19 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/poll_compose_dialog.dart';
 import '../../widgets/poll_widget.dart';
 
+typedef TeamMessageStreamFactory = Stream<List<TeamMessage>> Function(
+    String clubId, String channelId);
+
 class TeamChatScreen extends StatefulWidget {
   final TeamChannel channel;
   final bool openPollComposer;
+  final TeamMessageStreamFactory? messageStreamFactory;
 
   const TeamChatScreen({
     super.key,
     required this.channel,
     this.openPollComposer = false,
+    this.messageStreamFactory,
   });
 
   @override
@@ -42,7 +47,9 @@ class TeamChatScreen extends StatefulWidget {
 
 class _TeamChatScreenState extends State<TeamChatScreen>
     with WidgetsBindingObserver, RouteAware {
-  final TeamChannelService _channelService = TeamChannelService();
+  TeamChannelService? _channelService;
+  TeamChannelService get _resolvedChannelService =>
+      _channelService ??= TeamChannelService();
   final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -69,10 +76,12 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   ModalRoute<dynamic>? _subscribedRoute;
   String? _acknowledgementUserId;
   Poll? _pendingPoll;
+  late Stream<List<TeamMessage>> _messageStream;
 
   @override
   void initState() {
     super.initState();
+    _messageStream = _createMessageStream();
     WidgetsBinding.instance.addObserver(this);
     _appIsForeground = WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
@@ -81,6 +90,29 @@ class _TeamChatScreenState extends State<TeamChatScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _createPoll();
       });
+    }
+  }
+
+  Stream<List<TeamMessage>> _createMessageStream() {
+    return widget.messageStreamFactory?.call(
+          FirebaseConfig.defaultClubId,
+          widget.channel.id,
+        ) ??
+        _resolvedChannelService.getMessages(
+          FirebaseConfig.defaultClubId,
+          widget.channel.id,
+        );
+  }
+
+  @override
+  void didUpdateWidget(covariant TeamChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.channel.id != widget.channel.id ||
+        !identical(
+          oldWidget.messageStreamFactory,
+          widget.messageStreamFactory,
+        )) {
+      _messageStream = _createMessageStream();
     }
   }
 
@@ -274,7 +306,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     try {
       final attachments = <TeamMessageAttachment>[];
       for (final pending in _pendingAttachments) {
-        final attachment = await _channelService.uploadAttachment(
+        final attachment = await _resolvedChannelService.uploadAttachment(
           clubId: clubId,
           channelId: widget.channel.id,
           file: pending.file,
@@ -283,7 +315,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
         attachments.add(attachment);
       }
 
-      await _channelService.sendMessage(
+      await _resolvedChannelService.sendMessage(
         clubId: clubId,
         channelId: widget.channel.id,
         senderId: userId,
@@ -316,7 +348,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     final userId = context.read<AuthProvider>().currentUser?.uid;
     if (userId == null) return;
 
-    await _channelService.toggleReaction(
+    await _resolvedChannelService.toggleReaction(
       clubId: FirebaseConfig.defaultClubId,
       channelId: widget.channel.id,
       messageId: messageId,
@@ -329,7 +361,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     final userId = context.read<AuthProvider>().currentUser?.uid;
     if (userId == null) return;
 
-    await _channelService.togglePollVote(
+    await _resolvedChannelService.togglePollVote(
       clubId: FirebaseConfig.defaultClubId,
       channelId: widget.channel.id,
       messageId: messageId,
@@ -339,7 +371,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
   }
 
   Future<void> _closePoll(String messageId) async {
-    await _channelService.closePoll(
+    await _resolvedChannelService.closePoll(
       clubId: FirebaseConfig.defaultClubId,
       channelId: widget.channel.id,
       messageId: messageId,
@@ -371,7 +403,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
       // Upload eventuele nieuwe files.
       final newUploaded = <TeamMessageAttachment>[];
       for (final nf in result.newFileTuples) {
-        final uploaded = await _channelService.uploadAttachment(
+        final uploaded = await _resolvedChannelService.uploadAttachment(
           clubId: clubId,
           channelId: channelId,
           file: nf.file,
@@ -395,7 +427,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
         ...newUploaded,
       ];
 
-      await _channelService.updateMessage(
+      await _resolvedChannelService.updateMessage(
         clubId: clubId,
         channelId: channelId,
         messageId: message.id,
@@ -439,7 +471,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     if (confirmed != true) return;
 
     try {
-      await _channelService.deleteMessage(
+      await _resolvedChannelService.deleteMessage(
         clubId: FirebaseConfig.defaultClubId,
         channelId: widget.channel.id,
         messageId: messageId,
@@ -567,7 +599,6 @@ class _TeamChatScreenState extends State<TeamChatScreen>
     final authProvider = context.watch<AuthProvider>();
     final unreadProvider = context.watch<UnreadCountProvider>();
     final routeIsCurrent = isCurrentRouteForReadAcknowledgement(context);
-    const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
     if (userId == null) {
@@ -621,10 +652,7 @@ class _TeamChatScreenState extends State<TeamChatScreen>
             children: [
               Expanded(
                 child: StreamBuilder<List<TeamMessage>>(
-                  stream: _channelService.getMessages(
-                    clubId,
-                    widget.channel.id,
-                  ),
+                  stream: _messageStream,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
