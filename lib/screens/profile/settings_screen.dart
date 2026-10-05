@@ -21,10 +21,22 @@ import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
 import 'calendar_feed_screen.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/profile/birthday_sharing_switch.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({
+    super.key,
+    this.profileService,
+    this.notificationService,
+    this.biometricService,
+    this.runStartupChecks = true,
+  });
+
+  final ProfileService? profileService;
+  final NotificationService? notificationService;
+  final BiometricService? biometricService;
+  final bool runStartupChecks;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -32,9 +44,12 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final String _clubId = 'calypso';
-  final ProfileService _profileService = ProfileService();
-  final NotificationService _notificationService = NotificationService();
-  final BiometricService _biometricService = BiometricService();
+  late final ProfileService _profileService =
+      widget.profileService ?? ProfileService();
+  late final NotificationService _notificationService =
+      widget.notificationService ?? NotificationService();
+  late final BiometricService _biometricService =
+      widget.biometricService ?? BiometricService();
   final TextEditingController _phoneController = TextEditingController();
 
   bool _isLoading = false;
@@ -47,8 +62,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _checkBiometricStatus();
-    _checkForUpdate();
+    if (widget.runStartupChecks) {
+      _checkBiometricStatus();
+      _checkForUpdate();
+    }
   }
 
   Future<void> _checkForUpdate({bool forceCheck = false}) async {
@@ -499,6 +516,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _updateBirthdaySharing(bool value) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+      await _profileService.updateBirthdaySharing(
+        _clubId,
+        userId,
+        shareBirthday: value,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Préférence anniversaire mise à jour'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _updateUsesCarnet(bool value) async {
     setState(() => _isLoading = true);
     try {
@@ -755,6 +802,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             trailing: const Icon(Icons.edit, size: 20),
             onTap: () => _updatePhoneNumber(profile),
+          ),
+          const Divider(height: 1),
+          BirthdaySharingSwitch(
+            value: profile.shareBirthday,
+            onChanged:
+                _isLoading ? null : (value) => _updateBirthdaySharing(value),
           ),
         ],
       ),

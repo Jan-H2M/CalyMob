@@ -6,24 +6,37 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/member_profile.dart';
 
-typedef ProfileCallableInvoker = Future<void> Function(
+typedef ProfileCallableInvoker = Future<Object?> Function(
   String functionName,
   Map<String, dynamic> data,
 );
+
+typedef ProfileRecoveryWait = Future<void> Function(Duration delay);
 
 /// Service de gestion des profils membres
 class ProfileService {
   final FirebaseFirestore _firestore;
   final FirebaseStorage? _storageOverride;
   final ProfileCallableInvoker? _callableOverride;
+  final List<Duration> _birthdayRecoveryDelays;
+  final ProfileRecoveryWait _recoveryWait;
 
   ProfileService({
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
     ProfileCallableInvoker? callableInvoker,
+    List<Duration> birthdayRecoveryDelays = const [
+      Duration.zero,
+      Duration(milliseconds: 100),
+      Duration(milliseconds: 250),
+      Duration(milliseconds: 500),
+    ],
+    ProfileRecoveryWait? recoveryWait,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _storageOverride = storage,
-        _callableOverride = callableInvoker;
+        _callableOverride = callableInvoker,
+        _birthdayRecoveryDelays = birthdayRecoveryDelays,
+        _recoveryWait = recoveryWait ?? Future<void>.delayed;
 
   FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
 
@@ -352,12 +365,40 @@ class ProfileService {
         'shareBirthday': shareBirthday,
       };
       final callableOverride = _callableOverride;
+      Object? resultData;
+      Object? callableError;
       if (callableOverride != null) {
-        await callableOverride('updateBirthdaySharing', payload);
+        try {
+          resultData = await callableOverride('updateBirthdaySharing', payload);
+        } catch (error) {
+          callableError = error;
+        }
       } else {
-        await FirebaseFunctions.instanceFor(region: 'europe-west1')
-            .httpsCallable('updateBirthdaySharing')
-            .call(payload);
+        try {
+          final result = await FirebaseFunctions.instanceFor(
+            region: 'europe-west1',
+          ).httpsCallable('updateBirthdaySharing').call(payload);
+          resultData = result.data;
+        } catch (error) {
+          callableError = error;
+        }
+      }
+
+      final receiptConfirmed = resultData is Map &&
+          resultData['shareBirthday'] == shareBirthday &&
+          resultData['shareBirthday'] is bool;
+      if (!receiptConfirmed) {
+        final stateConfirmed = await _confirmBirthdaySharingState(
+          clubId,
+          userId,
+          expectedShareBirthday: shareBirthday,
+        );
+        if (!stateConfirmed) {
+          if (callableError != null) throw callableError;
+          throw StateError(
+            'Réponse de partage anniversaire invalide et état serveur non confirmé.',
+          );
+        }
       }
 
       debugPrint('✅ Préférence partage anniversaire mise à jour');
@@ -365,6 +406,47 @@ class ProfileService {
       debugPrint('❌ Erreur mise à jour partage anniversaire: $e');
       rethrow;
     }
+  }
+
+  Future<bool> _confirmBirthdaySharingState(
+    String clubId,
+    String userId, {
+    required bool expectedShareBirthday,
+  }) async {
+    for (final delay in _birthdayRecoveryDelays) {
+      if (delay > Duration.zero) {
+        await _recoveryWait(delay);
+      }
+      try {
+        final documents = await Future.wait([
+          _firestore
+              .collection('clubs/$clubId/members')
+              .doc(userId)
+              .get(const GetOptions(source: Source.server)),
+          _firestore
+              .collection('clubs/$clubId/member_directory')
+              .doc(userId)
+              .get(const GetOptions(source: Source.server)),
+        ]);
+        if (!documents[0].exists || !documents[1].exists) continue;
+
+        final member = documents[0].data() ?? const <String, dynamic>{};
+        final directory = documents[1].data() ?? const <String, dynamic>{};
+        if (member['share_birthday'] != expectedShareBirthday ||
+            directory['share_birthday'] != expectedShareBirthday) {
+          continue;
+        }
+        if (!expectedShareBirthday &&
+            (directory['birth_month'] != null ||
+                directory['birth_day'] != null)) {
+          continue;
+        }
+        return true;
+      } catch (error) {
+        debugPrint('ℹ️ Vérification anniversaire non concluante: $error');
+      }
+    }
+    return false;
   }
 
   /// Mettre à jour le numéro de téléphone
