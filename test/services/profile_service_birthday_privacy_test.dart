@@ -83,6 +83,7 @@ void main() {
           calls.add({'name': name, 'data': data});
           await Future<void>.delayed(Duration.zero);
           completed = true;
+          return {'shareBirthday': false};
         },
       );
 
@@ -109,6 +110,7 @@ void main() {
       final service = ProfileService(
         firestore: FakeFirebaseFirestore(),
         callableInvoker: (_, __) async => throw StateError('rejected'),
+        birthdayRecoveryDelays: const [Duration.zero],
       );
 
       await expectLater(
@@ -116,6 +118,83 @@ void main() {
           'calypso',
           'member-1',
           shareBirthday: true,
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('empty, malformed, and mismatched receipts fail closed', () async {
+      for (final result in <Object?>[
+        null,
+        {'accepted': true},
+        {'shareBirthday': true},
+      ]) {
+        final service = ProfileService(
+          firestore: FakeFirebaseFirestore(),
+          callableInvoker: (_, __) async => result,
+          birthdayRecoveryDelays: const [Duration.zero],
+        );
+
+        await expectLater(
+          service.updateBirthdaySharing(
+            'calypso',
+            'member-1',
+            shareBirthday: false,
+          ),
+          throwsStateError,
+        );
+      }
+    });
+
+    test(
+        'invalid receipt succeeds only after both authoritative projections confirm opt-out',
+        () async {
+      final firestore = FakeFirebaseFirestore();
+      await firestore.doc('clubs/calypso/members/member-1').set({
+        'share_birthday': false,
+      });
+      await firestore.doc('clubs/calypso/member_directory/member-1').set({
+        'share_birthday': false,
+        'birth_month': null,
+        'birth_day': null,
+      });
+      final service = ProfileService(
+        firestore: firestore,
+        callableInvoker: (_, __) async => null,
+        birthdayRecoveryDelays: const [Duration.zero],
+      );
+
+      await expectLater(
+        service.updateBirthdaySharing(
+          'calypso',
+          'member-1',
+          shareBirthday: false,
+        ),
+        completes,
+      );
+    });
+
+    test('opt-out recovery rejects stale public birthday fragments', () async {
+      final firestore = FakeFirebaseFirestore();
+      await firestore.doc('clubs/calypso/members/member-1').set({
+        'share_birthday': false,
+      });
+      await firestore.doc('clubs/calypso/member_directory/member-1').set({
+        'share_birthday': false,
+        'birth_month': 7,
+        'birth_day': 7,
+      });
+      final service = ProfileService(
+        firestore: firestore,
+        callableInvoker: (_, __) async => {'shareBirthday': true},
+        birthdayRecoveryDelays: const [Duration.zero],
+      );
+
+      await expectLater(
+        service.updateBirthdaySharing(
+          'calypso',
+          'member-1',
+          shareBirthday: false,
         ),
         throwsStateError,
       );
