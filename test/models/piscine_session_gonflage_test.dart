@@ -1,4 +1,5 @@
 import 'package:calymob/config/piscine_slots.dart';
+import 'package:calymob/models/availability.dart';
 import 'package:calymob/models/piscine_session.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +31,40 @@ void main() {
     );
     expect(EncadrantSlots.displayName(EncadrantSlots.deuxiemeHeure), '21h15');
     expect(EncadrantSlots.timeForLevel('2*'), '21h15');
+  });
+
+  test('only official encadrants can select rangement availability', () {
+    expect(getSlotsForRole('encadrant', isOfficialEncadrant: true), [
+      '1ere_heure',
+      '2eme_heure',
+      '22h30',
+    ]);
+    expect(getSlotsForRole('encadrant'), ['1ere_heure', '2eme_heure']);
+    expect(
+      getSlotLabel('encadrant', EncadrantSlots.rangement),
+      'Rangement 22h30',
+    );
+  });
+
+  test('legacy availability without slots remains available for every slot',
+      () {
+    final legacy = Availability(
+      id: 'legacy',
+      membreId: 'official',
+      membreNom: 'Encadrant',
+      membrePrenom: 'Legacy',
+      date: DateTime(2026, 10, 6),
+      role: 'encadrant',
+      available: true,
+      createdAt: DateTime(2026, 10, 1),
+      updatedAt: DateTime(2026, 10, 1),
+    );
+
+    expect(legacy.isLegacyFormat, isTrue);
+    expect(
+      legacy.isLegacyFormat || legacy.hasSlot(EncadrantSlots.rangement),
+      isTrue,
+    );
   });
 
   test('reads current assignments without losing the third slot', () async {

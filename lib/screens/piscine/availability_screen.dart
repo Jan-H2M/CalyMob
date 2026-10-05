@@ -13,10 +13,12 @@ import '../../widgets/glossy_button.dart';
 /// Supporte plusieurs rôles avec tabs si l'utilisateur a les deux
 class AvailabilityScreen extends StatefulWidget {
   final List<String> userRoles; // ['accueil', 'encadrant'] ou ['accueil']
+  final bool isOfficialEncadrant;
 
   const AvailabilityScreen({
     super.key,
     required this.userRoles,
+    this.isOfficialEncadrant = false,
   });
 
   @override
@@ -610,7 +612,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
     final prenom = nameParts.first;
     final nom = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
 
-    final slots = getSlotsForRole(_currentRole);
+    final slots = getSlotsForRole(
+      _currentRole,
+      isOfficialEncadrant: widget.isOfficialEncadrant,
+    );
     final dateFormat = DateFormat('EEEE d MMMM', 'fr_FR');
     final formattedDate = dateFormat.format(date);
     final displayDate =
@@ -626,8 +631,6 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            final selectedSlots = List<String>.from(initialSlots);
-
             return _SlotSelectionSheet(
               date: displayDate,
               role: _currentRole,

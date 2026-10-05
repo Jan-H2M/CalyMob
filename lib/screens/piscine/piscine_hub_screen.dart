@@ -47,6 +47,7 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
   @override
   Widget build(BuildContext context) {
     final unreadProvider = context.watch<UnreadCountProvider>();
+    final memberProvider = context.watch<MemberProvider>();
     // This tab only contains session discussions. Team channels have their own
     // rows in Communication and must not keep this badge non-zero after the
     // last session conversation is opened.
@@ -152,6 +153,7 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
                     // Tab 1: Disponibilités
                     AvailabilityScreen(
                       userRoles: widget.userRoles,
+                      isOfficialEncadrant: memberProvider.isEncadrant,
                     ),
                     // Tab 2: Séances & Discussions
                     _SeancesTab(userRoles: widget.userRoles),
