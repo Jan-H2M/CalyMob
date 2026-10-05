@@ -1152,8 +1152,15 @@ service cloud.firestore {
         // Admins can create new members (for user management UI)
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
 
-        // Admins can update and delete members
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+        // Admin clients may edit ordinary member fields, but share_birthday is
+        // callable-only for every role. The callable atomically updates the
+        // private source and member_directory; a direct admin update would
+        // otherwise bypass that projection invariant.
+        allow update: if isAdmin(clubId)
+          && hasValidSession(clubId)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['share_birthday']);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Unread cursor v1. These documents are intentionally self-owned only:
         // administrators do not receive an exception here. Server-side migration
