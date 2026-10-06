@@ -275,7 +275,7 @@ const SYSTEM_SEED_TEMPLATES = {
   },
   boutique_order_payment: {
     name: 'System seed boutique order payment',
-    subject: 'Commande {{orderNumber}} - {{amountFormatted}}',
+    subject: 'Merci pour ta commande {{orderNumber}} · {{amountFormatted}}',
     htmlContent: `
 <!doctype html>
 <html>
@@ -284,9 +284,10 @@ const SYSTEM_SEED_TEMPLATES = {
   <div style="text-align: center; padding: 20px 0; border-bottom: 1px solid #E5E7EB;">
     {{#if logoUrl}}<img src="{{logoUrl}}" alt="{{clubName}}" style="max-width: 200px; height: auto;">{{else}}<h2 style="margin: 0; color: #374151;">{{clubName}}</h2>{{/if}}
   </div>
-  <h1 style="font-size: 22px; color: #111827;">Paiement de commande</h1>
+  <h1 style="font-size: 22px; color: #111827;">Merci pour ta commande !</h1>
   <p>Bonjour {{recipientName}},</p>
-  <p>Votre commande {{orderNumber}} est enregistrée et prête à payer.</p>
+  <p>Merci beaucoup pour ta commande auprès du {{clubName}}. Nous sommes ravis de la préparer pour toi !</p>
+  <p>Ta commande <strong>{{orderNumber}}</strong> est bien enregistrée. Pour la confirmer, il te suffit encore d’effectuer le paiement avec les informations ci-dessous.</p>
   <div style="background: #F3F4F6; border-radius: 8px; padding: 20px; margin: 20px 0;">
     <p><strong>Commande:</strong> {{orderNumber}}</p>
     <p><strong>Montant:</strong> {{amountFormatted}}</p>
@@ -298,8 +299,8 @@ const SYSTEM_SEED_TEMPLATES = {
       </ul>
     {{/if}}
   </div>
-  <p>Le QR code de paiement est joint à cet email.</p>
-  <p>Cordialement,<br><strong>{{clubName}}</strong></p>
+  <p>Le QR code de paiement est joint à cet email. Dès que nous recevons ton paiement, nous nous occupons de la suite.</p>
+  <p>Encore merci et à très bientôt !<br><strong>L’équipe du {{clubName}}</strong></p>
 </body>
 </html>`.trim(),
   },

@@ -5,6 +5,7 @@ const QRCode = require('qrcode');
 const {
   REGION,
   assertBoutiqueAccess,
+  evaluateBoutiqueAccess,
   buildDomainError,
   buildEpcQrPayload,
   buildInvalidInputError,
@@ -89,16 +90,21 @@ function resolveMinimumOrderQuantity(product) {
   return parsePositiveInteger(constraints.minimumOrderQuantity) || 1;
 }
 
-function sanitizeBuyer(inputBuyer, authUid) {
-  const buyer = inputBuyer && typeof inputBuyer === 'object' ? inputBuyer : {};
-  const email = typeof buyer.email === 'string' ? buyer.email.trim() : '';
-  const displayName = typeof buyer.displayName === 'string'
-    ? buyer.displayName.trim()
-    : (typeof buyer.name === 'string' ? buyer.name.trim() : '');
+function cleanString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildBuyerFromMember(member, authUid, memberId = authUid) {
+  const source = member && typeof member === 'object' ? member : {};
+  const email = cleanString(source.email);
+  const displayName = cleanString(source.displayName)
+    || cleanString(source.display_name)
+    || cleanString(source.name)
+    || `${cleanString(source.prenom || source.firstName)} ${cleanString(source.nom || source.lastName)}`.trim();
 
   if (!email || !displayName) {
     throw buildInvalidInputError('INVALID_INPUT', {
-      missing: !email ? 'buyer.email' : 'buyer.displayName',
+      missing: !email ? 'member.email' : 'member.displayName',
     });
   }
 
@@ -106,8 +112,11 @@ function sanitizeBuyer(inputBuyer, authUid) {
     userId: authUid,
     displayName,
     email,
-    phone: typeof buyer.phone === 'string' ? buyer.phone.trim() : '',
-    memberId: typeof buyer.memberId === 'string' ? buyer.memberId.trim() : '',
+    phone: cleanString(source.phoneNumber)
+      || cleanString(source.phone)
+      || cleanString(source.telephone)
+      || cleanString(source.gsm),
+    memberId: cleanString(memberId) || authUid,
   };
 }
 
@@ -225,6 +234,7 @@ function extractOrderCounter(orderNumber, year) {
 // Pure helper exported for contract regression tests. The callable itself is
 // still exported through functions/index.js only.
 exports.computeCustomizations = computeCustomizations;
+exports.buildBuyerFromMember = buildBuyerFromMember;
 
 async function resolveClubBankSettings(clubRef) {
   const [bankSnap, generalSnap, clubInfoSnap] = await Promise.all([
@@ -299,6 +309,82 @@ function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
 }
 
+function sanitizeVariantAttributes(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, raw]) => [String(key).trim(), String(raw ?? '').trim()])
+      .filter(([key, raw]) => key && raw)
+  );
+}
+
+function formatBoutiqueOrderItem(item) {
+  const snapshot = item.productSnapshot || {};
+  const parts = [
+    snapshot.name || item.productName || item.product_name || item.name || 'Article',
+  ];
+  const variantParts = [];
+  if (snapshot.variantLabel) variantParts.push(String(snapshot.variantLabel).trim());
+  const existingVariantComponents = new Set(
+    variantParts.flatMap(part => part.split(/\s*[·|/]\s*/))
+      .map(part => part.trim().toLocaleLowerCase('fr'))
+      .filter(Boolean)
+  );
+  for (const value of Object.values(sanitizeVariantAttributes(snapshot.variantAttributes))) {
+    const normalizedValue = value.toLocaleLowerCase('fr');
+    if (!existingVariantComponents.has(normalizedValue)) {
+      variantParts.push(value);
+      existingVariantComponents.add(normalizedValue);
+    }
+  }
+  parts.push(...variantParts);
+
+  const customizations = snapshot.customizations || item.customizations || {};
+  const customizationParts = [];
+  if (customizations.clubLogo?.enabled) {
+    customizationParts.push(`logo club${customizations.clubLogo.zone ? ` (${customizations.clubLogo.zone})` : ''}`);
+  }
+  if (customizations.name?.text) {
+    customizationParts.push(`nom « ${customizations.name.text} »${customizations.name.zone ? ` (${customizations.name.zone})` : ''}`);
+  }
+  if (customizations.certification?.value) {
+    customizationParts.push(`brevet ${customizations.certification.value}${customizations.certification.zone ? ` (${customizations.certification.zone})` : ''}`);
+  }
+  if (customizationParts.length > 0) {
+    const technique = customizations.technique === 'print' ? 'Impression' : 'Broderie';
+    parts.push(`${technique}: ${customizationParts.join(', ')}`);
+  }
+
+  const deliveryLabels = {
+    digital: 'Digital',
+    pool_pickup: 'Retrait piscine',
+    post: 'Envoi postal',
+    in_person: 'Remise en main propre',
+  };
+  if (deliveryLabels[item.deliveryMode]) parts.push(deliveryLabels[item.deliveryMode]);
+  return parts.join(' · ');
+}
+
+function buildBoutiqueOrderTemplateData(order, emailSettings) {
+  const buyer = order.buyer || {};
+  const payment = order.payment || {};
+  return {
+    recipientName: buyer.displayName || buyer.email || '',
+    clubName: emailSettings.clubName,
+    logoUrl: emailSettings.logoUrl,
+    orderNumber: order.orderNumber,
+    amount: payment.amount,
+    amountFormatted: formatAmount(payment.amount),
+    communication: payment.communication || `+++${order.orderNumber}+++`,
+    items: Array.isArray(order.items)
+      ? order.items.map(item => ({
+        name: formatBoutiqueOrderItem(item),
+        quantity: item.quantity || item.quantite || item.qty || 1,
+      }))
+      : [],
+  };
+}
+
 async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const buyer = order.buyer || {};
   const recipientEmail = String(buyer.email || '').trim();
@@ -308,21 +394,7 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const emailSettings = await resolveClubEmailSettings(clubRef);
   const payment = order.payment || {};
   const templateType = 'boutique_order_payment';
-  const templateData = {
-    recipientName: buyer.displayName || recipientEmail,
-    clubName: emailSettings.clubName,
-    logoUrl: emailSettings.logoUrl,
-    orderNumber: order.orderNumber,
-    amount: payment.amount,
-    amountFormatted: formatAmount(payment.amount),
-    communication: payment.communication || `+++${order.orderNumber}+++`,
-    items: Array.isArray(order.items)
-      ? order.items.map(item => ({
-        name: item.productName || item.product_name || item.name || item.productId || 'Article',
-        quantity: item.quantity || item.quantite || 1,
-      }))
-      : [],
-  };
+  const templateData = buildBoutiqueOrderTemplateData(order, emailSettings);
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
@@ -415,19 +487,23 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   return now;
 }
 
-exports.createBoutiqueOrder = onCall(
-  {
-    region: REGION,
-    memory: '512MiB',
-    timeoutSeconds: 60,
-    maxInstances: 10,
-  },
-  async (request) => {
+async function createBoutiqueOrderHandler(request, dependencies = {}) {
+    const db = dependencies.db || admin.firestore();
+    const timestampNow = dependencies.timestampNow || (() => admin.firestore.Timestamp.now());
+    const timestampFromMillis = dependencies.timestampFromMillis
+      || ((value) => admin.firestore.Timestamp.fromMillis(value));
+    const serverTimestamp = dependencies.serverTimestamp
+      || (() => admin.firestore.FieldValue.serverTimestamp());
+    const createUuid = dependencies.randomUUID || randomUUID;
+    const qrToDataURL = dependencies.qrToDataURL || QRCode.toDataURL;
+    const accessCheck = dependencies.assertBoutiqueAccess || assertBoutiqueAccess;
+    const bankSettingsResolver = dependencies.resolveClubBankSettings || resolveClubBankSettings;
+    const orderEmailSender = dependencies.sendBoutiqueOrderEmail || sendBoutiqueOrderEmail;
+
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError('unauthenticated', 'Authentification requise');
     }
 
-    const db = admin.firestore();
     const clubId = typeof request.data?.clubId === 'string' ? request.data.clubId.trim() : '';
     const items = Array.isArray(request.data?.items) ? request.data.items : [];
     const deferPaymentEmail = request.data?.deferPaymentEmail === true;
@@ -438,15 +514,8 @@ exports.createBoutiqueOrder = onCall(
       });
     }
 
-    let buyer;
-    try {
-      buyer = sanitizeBuyer(request.data?.buyer, request.auth.uid);
-    } catch (error) {
-      throw mapErrorToHttps(error, HttpsError);
-    }
-
     const clubRef = getClubRef(db, clubId);
-    await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
+    await accessCheck({ clubRef, authUid: request.auth.uid, HttpsError });
 
     // Fix audit 2026-07-19 (K5): idempotency-key tegen dubbele orders bij
     // retry, timeout of app-kill tussen server-commit en client-response.
@@ -462,14 +531,29 @@ exports.createBoutiqueOrder = onCall(
 
     const orderRef = clubRef.collection('orders').doc();
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
-    const now = admin.firestore.Timestamp.now();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
+    const now = timestampNow();
+    const expiresAt = timestampFromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
     const currentYear = new Date(now.toMillis()).getUTCFullYear();
     const orderCounterRef = clubRef.collection('settings').doc(`boutique_order_counter_${currentYear}`);
-    const bankSettings = await resolveClubBankSettings(clubRef);
+    const bankSettings = await bankSettingsResolver(clubRef);
 
     try {
       const result = await db.runTransaction(async (transaction) => {
+        const flagsRef = clubRef.collection('settings').doc('feature_flags');
+        const memberRef = clubRef.collection('members').doc(request.auth.uid);
+        const [flagsSnap, memberSnap] = await Promise.all([
+          transaction.get(flagsRef),
+          transaction.get(memberRef),
+        ]);
+        const transactionalAccess = evaluateBoutiqueAccess(
+          flagsSnap.exists ? flagsSnap.data() : {},
+          memberSnap.exists ? memberSnap.data() : null,
+        );
+        if (!transactionalAccess.allowed) {
+          throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
+        }
+        const buyer = buildBuyerFromMember(memberSnap.data(), request.auth.uid, memberSnap.id);
+
         if (idempotencyKey) {
           const existingSnap = await transaction.get(
             clubRef.collection('orders')
@@ -534,10 +618,11 @@ exports.createBoutiqueOrder = onCall(
           }
 
           const product = cachedProduct.data;
-          if (product.visibility === 'archived') {
-            throw buildDomainError('PRODUCT_ARCHIVED', 'Produit archivé', {
+          if (product.visibility !== 'published') {
+            throw buildDomainError('PRODUCT_NOT_PUBLISHED', 'Produit non publié', {
               productId,
               variantId,
+              visibility: product.visibility || null,
             });
           }
 
@@ -605,7 +690,7 @@ exports.createBoutiqueOrder = onCall(
           deliverySurcharges += lineDeliverySurcharge;
 
           lines.push({
-            lineId: randomUUID(),
+            lineId: createUuid(),
             productId,
             variantId,
             qty,
@@ -619,6 +704,7 @@ exports.createBoutiqueOrder = onCall(
             productSnapshot: {
               name: product.name || '',
               variantLabel: variant.label || '',
+              variantAttributes: sanitizeVariantAttributes(variant.attributes),
               category: product.category || '',
               inventoryMode,
               allowBackorder,
@@ -645,19 +731,19 @@ exports.createBoutiqueOrder = onCall(
           amount: total,
           communication: paymentCommunication,
         });
-        const qrCodeUrl = await QRCode.toDataURL(epcPayload);
+        const qrCodeUrl = await qrToDataURL(epcPayload);
 
         for (const cachedProduct of productCache.values()) {
           transaction.update(cachedProduct.ref, {
             variants: cachedProduct.data.variants,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         }
 
         transaction.set(orderCounterRef, {
           counter: nextCounter,
           year: currentYear,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: serverTimestamp(),
         }, { merge: true });
 
         const orderData = {
@@ -693,8 +779,8 @@ exports.createBoutiqueOrder = onCall(
           expiresAt,
           migration_source: null,
           _backfill: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         };
 
         transaction.set(orderRef, orderData);
@@ -709,8 +795,8 @@ exports.createBoutiqueOrder = onCall(
             orderId: orderRef.id,
             byUserId: request.auth.uid,
             timestamp: now,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         });
 
@@ -759,7 +845,7 @@ exports.createBoutiqueOrder = onCall(
       let emailStatus = deferPaymentEmail ? 'deferred' : 'failed';
       if (!deferPaymentEmail) {
         try {
-          emailSentAt = await sendBoutiqueOrderEmail({
+          emailSentAt = await orderEmailSender({
             clubRef,
             clubId,
             orderRef,
@@ -777,7 +863,7 @@ exports.createBoutiqueOrder = onCall(
           await orderRef.update({
             'payment.email_status': 'failed',
             'payment.email_error': emailError.message || 'Email failed',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         }
       }
@@ -809,7 +895,19 @@ exports.createBoutiqueOrder = onCall(
       console.error(`[createBoutiqueOrder] Failed for ${clubId}/${orderRef.id}:`, error);
       throw mapErrorToHttps(error, HttpsError);
     }
+}
+
+exports.createBoutiqueOrderHandler = createBoutiqueOrderHandler;
+exports.buildBoutiqueOrderTemplateData = buildBoutiqueOrderTemplateData;
+exports.formatBoutiqueOrderItem = formatBoutiqueOrderItem;
+exports.createBoutiqueOrder = onCall(
+  {
+    region: REGION,
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    maxInstances: 10,
   },
+  createBoutiqueOrderHandler,
 );
 
 exports.sendBoutiqueOrderPaymentEmail = onCall(

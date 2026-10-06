@@ -1,4 +1,36 @@
-const { computeCustomizations } = require('./createOrder');
+const { buildBuyerFromMember, computeCustomizations } = require('./createOrder');
+
+describe('boutique buyer identity contract', () => {
+  test('uses only the authenticated member record for identity fields', () => {
+    expect(buildBuyerFromMember({
+      email: ' server@example.test ',
+      prenom: 'Ada',
+      nom: 'Lovelace',
+      phoneNumber: ' +32 470 00 00 00 ',
+    }, 'auth-uid', 'member-doc')).toEqual({
+      userId: 'auth-uid',
+      memberId: 'member-doc',
+      displayName: 'Ada Lovelace',
+      email: 'server@example.test',
+      phone: '+32 470 00 00 00',
+    });
+  });
+
+  test.each([
+    [{ displayName: 'Ada' }, 'member.email'],
+    [{ email: 'ada@example.test' }, 'member.displayName'],
+  ])('rejects an incomplete canonical member profile', (member, missing) => {
+    try {
+      buildBuyerFromMember(member, 'auth-uid');
+      throw new Error('expected canonical member validation to fail');
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        details: { missing },
+      });
+    }
+  });
+});
 
 function product({ pricingMode = 'fixed' } = {}) {
   return {

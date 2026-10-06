@@ -17,19 +17,18 @@
     "backfill:pool-carnet-v2": "node scripts/backfill_pool_session_carnet_v2.cjs"
   },
   "dependencies": {
-    "axios": "^1.6.0",
+    "axios": "^1.20.0",
     "dotenv": "^16.3.0",
-    "firebase-admin": "^13.6.0",
-    "firebase-functions": "^7.3.2",
-    "googleapis": "^131.0.0",
-    "handlebars": "^4.7.8",
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^7.4.0",
+    "googleapis": "^183.0.0",
+    "handlebars": "^4.7.9",
     "pdfkit": "^0.18.0",
     "qrcode": "^1.5.3",
-    "uuid": "^9.0.0"
+    "uuid": "^14.0.2"
   },
   "devDependencies": {
-    "firebase-functions-test": "^3.1.0",
-    "jest": "^30.3.0",
+    "jest": "^30.5.2",
     "pdf-parse": "^2.4.5"
   },
   "jest": {
@@ -37,6 +36,9 @@
     "testMatch": [
       "**/*.test.js"
     ]
+  },
+  "overrides": {
+    "uuid": "$uuid"
   },
   "private": true
 }
