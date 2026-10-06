@@ -182,6 +182,7 @@ async function sendCotisationPaymentEmail({
     iban: bankSettings.iban,
     beneficiary: bankSettings.beneficiary,
     logoUrl: emailSettings.logoUrl,
+    qrCodeImage: 'cid:qrcode',
   };
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
@@ -290,6 +291,8 @@ async function resolveAccountingCode(clubRef, tariffCode) {
   if (String(tariffCode || '').includes('2')) return '730-00-716';
   return '730-00-712';
 }
+
+exports.sendCotisationPaymentEmail = sendCotisationPaymentEmail;
 
 exports.createCotisationPayment = onCall(
   {

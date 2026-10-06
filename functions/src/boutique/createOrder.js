@@ -376,6 +376,7 @@ function buildBoutiqueOrderTemplateData(order, emailSettings) {
     amount: payment.amount,
     amountFormatted: formatAmount(payment.amount),
     communication: payment.communication || `+++${order.orderNumber}+++`,
+    qrCodeImage: 'cid:qrcode',
     items: Array.isArray(order.items)
       ? order.items.map(item => ({
         name: formatBoutiqueOrderItem(item),
@@ -900,6 +901,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
 exports.createBoutiqueOrderHandler = createBoutiqueOrderHandler;
 exports.buildBoutiqueOrderTemplateData = buildBoutiqueOrderTemplateData;
 exports.formatBoutiqueOrderItem = formatBoutiqueOrderItem;
+exports.sendBoutiqueOrderEmail = sendBoutiqueOrderEmail;
 exports.createBoutiqueOrder = onCall(
   {
     region: REGION,

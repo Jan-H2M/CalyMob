@@ -146,6 +146,7 @@ describe('communicationTemplates Cloud Functions helper', () => {
       orderNumber: 'BTQ-2026-0039',
       amountFormatted: '20,00 €',
       communication: '+++BTQ-2026-0039+++',
+      qrCodeImage: 'cid:qrcode',
       items: [{
         name: 'Protège-sangle de masque personnalisé · Unique · Orange · Unisexe · Retrait piscine',
         quantity: 1,
@@ -158,7 +159,32 @@ describe('communicationTemplates Cloud Functions helper', () => {
     expect(rendered.html).not.toContain('Calypso Diving Club');
     expect(rendered.html).toContain('Nous sommes ravis de la préparer pour toi');
     expect(rendered.html).toContain('Protège-sangle de masque personnalisé · Unique · Orange · Unisexe · Retrait piscine x 1');
+    expect(rendered.html).toContain('src="cid:qrcode"');
+    expect(rendered.html).toContain('Scannez ce QR code avec votre application bancaire');
+    expect(rendered.html).not.toContain('QR code de paiement est joint');
+    expect(rendered.html).toContain('Dès que nous recevons ton paiement, nous nous occupons de la suite.');
     expect(rendered.html).toContain('Encore merci et à très bientôt');
+  });
+
+  it('renders the membership payment QR code inline in the email body', async () => {
+    const db = buildTemplateDb([]);
+    const result = await resolveCommunicationTemplate(db, 'club-1', 'membership_payment');
+    const rendered = renderCommunicationTemplate(result.template, {
+      recipientName: 'Jan',
+      clubName: 'Calypso Diving Club',
+      seasonLabel: '2026–2027',
+      tariffLabel: 'Membre première année',
+      periodLabel: 'Janvier à décembre',
+      amountFormatted: '150,00 €',
+      communication: '+++COT-2026-JAN-AND-ID12345+++',
+      iban: 'BE26210016070629',
+      beneficiary: 'Calypso Diving Club ASBL',
+      qrCodeImage: 'cid:qrcode',
+    });
+
+    expect(rendered.html).toContain('src="cid:qrcode"');
+    expect(rendered.html).toContain('alt="QR code de paiement"');
+    expect(rendered.html).not.toContain('est joint à cet email');
   });
 
   it('logs email history and linked communication entry', async () => {

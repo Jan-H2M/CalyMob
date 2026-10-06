@@ -244,6 +244,7 @@ describe('createBoutiqueOrder callable transaction', () => {
         quantity: 1,
       },
     ]);
+    expect(templateData.qrCodeImage).toBe('cid:qrcode');
     expect(JSON.stringify(templateData)).not.toContain('Vb3iVyPXR8IA8JTVNS9Q');
   });
 

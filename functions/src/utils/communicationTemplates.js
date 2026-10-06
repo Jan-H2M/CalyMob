@@ -268,7 +268,10 @@ const SYSTEM_SEED_TEMPLATES = {
     <p><strong>IBAN:</strong> {{iban}}</p>
     <p><strong>Bénéficiaire:</strong> {{beneficiary}}</p>
   </div>
-  <p>Le QR code de paiement est joint à cet email.</p>
+  <div style="text-align: center; margin: 28px 0;">
+    <p style="margin: 0 0 14px; font-weight: 600; color: #111827;">Scannez ce QR code avec votre application bancaire</p>
+    <img src="{{qrCodeImage}}" alt="QR code de paiement" width="280" height="280" style="display: inline-block; width: 280px; max-width: 100%; height: auto; border: 1px solid #E5E7EB; border-radius: 8px;" />
+  </div>
   <p>Cordialement,<br><strong>{{clubName}}</strong></p>
 </body>
 </html>`.trim(),
@@ -299,7 +302,11 @@ const SYSTEM_SEED_TEMPLATES = {
       </ul>
     {{/if}}
   </div>
-  <p>Le QR code de paiement est joint à cet email. Dès que nous recevons ton paiement, nous nous occupons de la suite.</p>
+  <div style="text-align: center; margin: 28px 0;">
+    <p style="margin: 0 0 14px; font-weight: 600; color: #111827;">Scannez ce QR code avec votre application bancaire</p>
+    <img src="{{qrCodeImage}}" alt="QR code de paiement" width="280" height="280" style="display: inline-block; width: 280px; max-width: 100%; height: auto; border: 1px solid #E5E7EB; border-radius: 8px;" />
+  </div>
+  <p>Dès que nous recevons ton paiement, nous nous occupons de la suite.</p>
   <p>Encore merci et à très bientôt !<br><strong>L’équipe du {{clubName}}</strong></p>
 </body>
 </html>`.trim(),
