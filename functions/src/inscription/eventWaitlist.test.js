@@ -1529,6 +1529,7 @@ describe('updateEventRegistration callable', () => {
     previousRequest = null,
     operationOverrides = {},
     linkedGuestData = null,
+    waitlistEntries = [],
   } = {}) {
     const historyRef = { id: 'history-1', path: 'inscriptions/parent/edit_history/history-1' };
     const parentRef = {
@@ -1572,6 +1573,15 @@ describe('updateEventRegistration callable', () => {
         ...linkedGuestData,
       }),
     };
+    const waitlistDocs = waitlistEntries.map((entry, index) => ({
+      id: entry.id,
+      ref: { id: entry.id, path: `inscriptions/${entry.id}` },
+      data: () => ({
+        membre_id: entry.memberId || `waitlisted-member-${index + 1}`,
+        registration_status: 'waitlisted',
+        requested_at: new Date(entry.requestedAt),
+      }),
+    }));
     const newGuestRef = { id: 'new-guest', path: 'inscriptions/new-guest' };
     const inscriptionsRef = {
       path: 'clubs/calypso/operations/event-1/inscriptions',
@@ -1581,12 +1591,19 @@ describe('updateEventRegistration callable', () => {
       id: requestId,
       path: `clubs/calypso/operations/event-1/registration_requests/${requestId}`,
     };
+    let auditSequence = 0;
+    const auditRef = {
+      doc: jest.fn(() => ({
+        id: `audit-${++auditSequence}`,
+        path: `clubs/calypso/operations/event-1/waitlist_audit/audit-${auditSequence}`,
+      })),
+    };
     const operationRef = {
       path: 'clubs/calypso/operations/event-1',
       collection: jest.fn(name => {
         if (name === 'inscriptions') return inscriptionsRef;
         if (name === 'registration_requests') return { doc: jest.fn(() => requestRef) };
-        if (name === 'waitlist_audit') return { doc: jest.fn() };
+        if (name === 'waitlist_audit') return auditRef;
         throw new Error(`unexpected collection ${name}`);
       }),
     };
@@ -1596,6 +1613,7 @@ describe('updateEventRegistration callable', () => {
         exists: true,
         data: () => ({ prenom: 'Alice', nom: 'Membre', app_role: 'membre' }),
       })),
+      collection: jest.fn(() => ({ add: jest.fn() })),
     };
     const operation = {
       titre: 'Sortie test',
@@ -1614,7 +1632,13 @@ describe('updateEventRegistration callable', () => {
       get: jest.fn(async ref => {
         if (ref === operationRef) return { exists: true, data: () => operation };
         if (ref === inscriptionsRef) {
-          return { docs: linkedGuest === null ? [parent] : [parent, linkedGuest] };
+          return {
+            docs: [
+              parent,
+              ...(linkedGuest === null ? [] : [linkedGuest]),
+              ...waitlistDocs,
+            ],
+          };
         }
         if (ref === requestRef) {
           return { exists: previousRequest !== null, data: () => previousRequest };
@@ -1636,6 +1660,8 @@ describe('updateEventRegistration callable', () => {
       newGuestRef,
       historyRef,
       requestRef,
+      waitlistDocs,
+      auditRef,
     };
   }
 
@@ -1740,6 +1766,84 @@ describe('updateEventRegistration callable', () => {
       historyRef,
       expect.objectContaining({ guests_removed: ['guest-existing'] }),
     );
+  });
+
+  test('promotes only the oldest waitlisted member when an edit frees one place', async () => {
+    const { transaction, waitlistDocs, auditRef } = setupEditDb({
+      linkedGuestData: {},
+      operationOverrides: { capacite_max: 2, allow_waitlist: true },
+      waitlistEntries: [
+        {
+          id: 'wait-second',
+          memberId: 'member-wait-second',
+          requestedAt: '2026-08-10T10:00:00Z',
+        },
+        {
+          id: 'wait-first',
+          memberId: 'member-wait-first',
+          requestedAt: '2026-08-10T09:00:00Z',
+        },
+      ],
+    });
+
+    const result = await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'parent',
+        requestId,
+        selectedSupplementIds: [],
+        guests: [],
+        guestIdsToRemove: ['guest-existing'],
+      },
+    });
+
+    expect(result.promotedIds).toEqual(['wait-first']);
+    expect(transaction.update).toHaveBeenCalledWith(
+      waitlistDocs[1].ref,
+      expect.objectContaining({
+        registration_status: 'confirmed',
+        waitlist_promoted_by: 'automatic_after_registration_edit',
+      }),
+    );
+    expect(transaction.update).not.toHaveBeenCalledWith(
+      waitlistDocs[0].ref,
+      expect.anything(),
+    );
+    expect(auditRef.doc).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not promote the waitlist when a removed guest is replaced one-for-one', async () => {
+    const { transaction, waitlistDocs, auditRef } = setupEditDb({
+      linkedGuestData: {},
+      operationOverrides: { capacite_max: 2, allow_waitlist: true },
+      waitlistEntries: [{
+        id: 'wait-first',
+        memberId: 'member-wait-first',
+        requestedAt: '2026-08-10T09:00:00Z',
+      }],
+    });
+
+    const result = await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'parent',
+        requestId,
+        selectedSupplementIds: [],
+        guests: [{ firstName: 'Charlie', lastName: 'Invité', tariffId: 'guest' }],
+        guestIdsToRemove: ['guest-existing'],
+      },
+    });
+
+    expect(result.promotedIds).toEqual([]);
+    expect(transaction.update).not.toHaveBeenCalledWith(
+      waitlistDocs[0].ref,
+      expect.anything(),
+    );
+    expect(auditRef.doc).not.toHaveBeenCalled();
   });
 
   test('rejects a new guest when capacity is full without staging writes', async () => {

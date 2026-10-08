@@ -9,6 +9,29 @@ import '../../models/member_profile.dart';
 import '../../services/operation_service.dart';
 import 'add_guest_dialog.dart';
 
+@visibleForTesting
+Map<String, dynamic> registrationEditDialogResult({
+  required double authoritativeServerDelta,
+  required bool wasPaid,
+  required bool forceRefundClaim,
+  required List<SelectedSupplement> supplements,
+  required double supplementTotal,
+}) {
+  // The callable returns oldTotal - newTotal, while the detail screen expects
+  // newTotal - oldTotal: positive opens payment, negative reports a refund.
+  final uiDelta = -authoritativeServerDelta;
+  final refundCreated =
+      authoritativeServerDelta > 0 && (wasPaid || forceRefundClaim);
+  return {
+    'supplements': supplements,
+    'supplementTotal': supplementTotal,
+    'delta': uiDelta,
+    'refundCreated': refundCreated,
+    'requiresPaymentVerification':
+        refundCreated && forceRefundClaim && !wasPaid,
+  };
+}
+
 /// Dialog om een bestaande inschrijving te wijzigen (supplementen, gasten).
 ///
 /// Gebaseerd op dezelfde stijl als [AddGuestDialog].
@@ -407,18 +430,19 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           .map((g) => g['id'] as String)
           .toList();
 
-      await OperationService().updateMyInscription(
+      final authoritativeServerDelta =
+          await OperationService().updateMyInscription(
         clubId: widget.clubId,
         operationId: widget.operation.id,
         inscriptionId: widget.currentInscription.id,
         selectedSupplements: widget.operation.supplements
             .where((s) => _selectedSupplementIds.contains(s.id))
-            .map((s) => SelectedSupplement(id: s.id, name: s.name, price: s.price))
+            .map((s) =>
+                SelectedSupplement(id: s.id, name: s.name, price: s.price))
             .toList(),
         supplementTotal: _newSupplementTotal,
         guests: guestUpdates.isNotEmpty ? guestUpdates : null,
-        guestIdsToRemove:
-            guestIdsToRemove.isNotEmpty ? guestIdsToRemove : null,
+        guestIdsToRemove: guestIdsToRemove.isNotEmpty ? guestIdsToRemove : null,
         forceRefundClaim: forceRefundClaim,
         requestId: _editRequestId,
       );
@@ -428,26 +452,19 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         final supplements = widget.operation.supplements
             .where((s) => _selectedSupplementIds.contains(s.id))
             .map((s) => SelectedSupplement(
-              id: s.id,
-              name: s.name,
-              price: s.price,
-            ))
+                  id: s.id,
+                  name: s.name,
+                  price: s.price,
+                ))
             .toList();
 
-        // refundCreated == true iff the backend will/did create a demande:
-        //   - inscription was already marked paid (normal refund), OR
-        //   - the user explicitly claimed they had already paid
-        //     (`forceRefundClaim`), creating a demande with status
-        //     'a_verifier_paiement'.
-        final refundCreated =
-            _delta < 0 && (widget.currentInscription.paye || forceRefundClaim);
-        Navigator.of(context).pop({
-          'supplements': supplements,
-          'supplementTotal': _newSupplementTotal,
-          'delta': _delta,
-          'refundCreated': refundCreated,
-          'requiresPaymentVerification': forceRefundClaim,
-        });
+        Navigator.of(context).pop(registrationEditDialogResult(
+          authoritativeServerDelta: authoritativeServerDelta,
+          wasPaid: widget.currentInscription.paye,
+          forceRefundClaim: forceRefundClaim,
+          supplements: supplements,
+          supplementTotal: _newSupplementTotal,
+        ));
       }
     } catch (e) {
       debugPrint('Error saving inscription: $e');

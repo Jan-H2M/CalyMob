@@ -1078,12 +1078,12 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
   });
   const member = await requireMember(clubId, uid);
   const memberData = member.data();
-  const { operationRef, inscriptionsRef } = refs(clubId, operationId);
+  const { operationRef, inscriptionsRef, auditRef } = refs(clubId, operationId);
   const requestRef = operationRef.collection('registration_requests').doc(requestId);
   const newGuests = guests.filter(guest => guest.inscriptionId === null);
   const newGuestRefs = newGuests.map(() => inscriptionsRef.doc());
 
-  return admin.firestore().runTransaction(async transaction => {
+  const result = await admin.firestore().runTransaction(async transaction => {
     const [operationSnap, inscriptionsSnap, requestSnap] = await Promise.all([
       transaction.get(operationRef),
       transaction.get(inscriptionsRef),
@@ -1104,7 +1104,11 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
           'Cet identifiant de demande a déjà été utilisé pour une autre modification.',
         );
       }
-      return { ...previous.registration_edit_receipt, idempotent: true };
+      return {
+        ...previous.registration_edit_receipt,
+        idempotent: true,
+        notifications: [],
+      };
     }
 
     const operation = operationSnap.data();
@@ -1249,6 +1253,46 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
         now,
       }));
     });
+    const removedActiveCount = guestIdsToRemove.filter(guestId => (
+      ACTIVE_STATUSES.has(linkedById.get(guestId).data().registration_status || 'confirmed')
+    )).length;
+    const netReleasedPlaces = Math.max(0, removedActiveCount - newGuests.length);
+    const nextEntries = netReleasedPlaces > 0
+      ? promotionCandidatesAfterWithdrawal(
+        operation,
+        inscriptionsSnap.docs,
+        guestIdsToRemove,
+        asDate(now),
+      ).slice(0, netReleasedPlaces)
+      : [];
+    const promotedStatus = registrationStatusAfterPromotion(operation);
+    for (const nextEntry of nextEntries) {
+      transaction.update(nextEntry.ref, {
+        registration_status: promotedStatus,
+        payment_status: operation.payment_required === true ? 'open' : null,
+        waitlist_promoted_at: now,
+        waitlist_promoted_by: 'automatic_after_registration_edit',
+        updated_at: now,
+        ...actionMetadata({
+          member: { prenom: 'Système', app_role: 'system' },
+          uid: 'system',
+          source: 'cloud_function',
+          appVersion: null,
+          reason: 'automatic_after_registration_edit',
+          action: 'waitlist_promoted',
+          now,
+        }),
+      });
+      transaction.set(auditRef.doc(), {
+        action: 'promoted_after_registration_edit',
+        membre_id: nextEntry.data().membre_id,
+        inscription_id: nextEntry.id,
+        released_by: uid,
+        at: now,
+        by: 'system',
+        resulting_status: promotedStatus,
+      });
+    }
     const addedGuestIds = newGuestRefs.map(ref => ref.id);
     const editHistoryRef = parentEntry.ref.collection('edit_history').doc();
     transaction.set(editHistoryRef, {
@@ -1274,6 +1318,7 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
       operationTitle: cleanAuditText(operation.titre, 'Événement', 160),
       addedGuestIds,
       removedGuestIds: guestIdsToRemove,
+      promotedIds: nextEntries.map(entry => entry.id),
       idempotent: false,
     };
     transaction.set(requestRef, {
@@ -1287,8 +1332,33 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
     transaction.update(operationRef, {
       registration_capacity_revision: Number(operation.registration_capacity_revision || 0) + 1,
     });
-    return receipt;
+    return {
+      ...receipt,
+      notifications: nextEntries.map(entry => ({
+        operation,
+        memberId: entry.data().membre_id,
+      })),
+    };
   });
+
+  for (const notification of result.notifications) {
+    try {
+      await sendPromotionNotification(
+        clubId,
+        operationId,
+        notification.operation,
+        notification.memberId,
+      );
+    } catch (error) {
+      console.error('Registration edit waitlist notification failed', {
+        clubId,
+        operationId,
+        error,
+      });
+    }
+  }
+  const { notifications: _notifications, ...response } = result;
+  return response;
 });
 
 const joinEventWaitlist = onCall({ region: REGION }, async request => {
