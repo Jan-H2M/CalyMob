@@ -58,6 +58,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
 
   bool _guestsLoaded = false;
   bool _saving = false;
+  late final String _editRequestId;
 
   /// Compute the total price of a set of supplement ids using the operation's
   /// current supplement catalog as source of truth. Supplements that are no
@@ -160,6 +161,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
   @override
   void initState() {
     super.initState();
+    _editRequestId = OperationService().newRegistrationRequestId();
     _initialSupplementIds =
         widget.currentInscription.selectedSupplements.map((s) => s.id).toSet();
     _selectedSupplementIds = Set.from(_initialSupplementIds);
@@ -175,7 +177,9 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           .get();
 
       _initialGuestSupplementIds.clear();
-      final guests = snapshot.docs.map((doc) {
+      final guests = snapshot.docs.where((doc) {
+        return doc.data()['registration_status'] != 'canceled';
+      }).map((doc) {
         final data = doc.data();
         // Parse selected_supplements (list of {id,name,price}) into a Set of ids.
         final raw = data['selected_supplements'];
@@ -416,6 +420,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         guestIdsToRemove:
             guestIdsToRemove.isNotEmpty ? guestIdsToRemove : null,
         forceRefundClaim: forceRefundClaim,
+        requestId: _editRequestId,
       );
 
       if (mounted) {

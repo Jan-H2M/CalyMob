@@ -302,6 +302,34 @@ function registrationPayloadFingerprint({
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
+function registrationEditPayloadFingerprint({
+  clubId,
+  operationId,
+  inscriptionId,
+  selectedSupplementIds,
+  guests,
+  guestIdsToRemove,
+  deliveryAddress,
+}) {
+  const canonical = JSON.stringify({
+    version: 1,
+    clubId,
+    operationId,
+    inscriptionId,
+    selectedSupplementIds: [...selectedSupplementIds].sort(),
+    guests: guests.map(guest => ({
+      inscriptionId: guest.inscriptionId || null,
+      firstName: guest.firstName || null,
+      lastName: guest.lastName || null,
+      tariffId: guest.tariffId || null,
+      selectedSupplementIds: [...(guest.selectedSupplementIds || [])].sort(),
+    })),
+    guestIdsToRemove: [...guestIdsToRemove].sort(),
+    deliveryAddress: deliveryAddress || null,
+  });
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
 function selectedSupplements(operation, requestedIds) {
   if (requestedIds === undefined || requestedIds === null) return [];
   if (!Array.isArray(requestedIds) || requestedIds.length > 50
@@ -409,6 +437,42 @@ function requestedGuests(value) {
       selectedSupplementIds: guest.selectedSupplementIds ?? [],
     };
   });
+}
+
+function requestedRegistrationEditGuests(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 20) {
+    throw new HttpsError('invalid-argument', 'Liste d’invités invalide.');
+  }
+  return value.map(guest => {
+    if (!guest || typeof guest !== 'object' || Array.isArray(guest)) {
+      throw new HttpsError('invalid-argument', 'Invité invalide.');
+    }
+    const inscriptionId = guest.inscriptionId ?? null;
+    if (inscriptionId !== null
+      && (typeof inscriptionId !== 'string' || !inscriptionId
+        || inscriptionId.length > 1500 || inscriptionId.includes('/'))) {
+      throw new HttpsError('invalid-argument', 'Identifiant invité invalide.');
+    }
+    if (inscriptionId !== null) {
+      return {
+        inscriptionId,
+        selectedSupplementIds: guest.selectedSupplementIds ?? [],
+      };
+    }
+    return { inscriptionId: null, ...requestedGuests([guest])[0] };
+  });
+}
+
+function requestedGuestRemovalIds(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 20
+    || value.some(id => typeof id !== 'string' || !id
+      || id.length > 1500 || id.includes('/'))
+    || new Set(value).size !== value.length) {
+    throw new HttpsError('invalid-argument', 'Liste de suppressions invité invalide.');
+  }
+  return value;
 }
 
 function monetaryAmount(value) {
@@ -964,6 +1028,269 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
   });
 });
 
+const updateEventRegistration = onCall({ region: REGION }, async request => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
+  const {
+    clubId,
+    operationId,
+    inscriptionId,
+    requestId: rawRequestId,
+    selectedSupplementIds = [],
+    guests: rawGuests = [],
+    guestIdsToRemove: rawGuestIdsToRemove = [],
+    deliveryAddress: rawDeliveryAddress = null,
+    source = 'calymob',
+    appVersion = null,
+  } = request.data || {};
+  if (typeof clubId !== 'string' || typeof operationId !== 'string'
+    || typeof inscriptionId !== 'string' || !inscriptionId
+    || inscriptionId.length > 1500 || inscriptionId.includes('/')
+    || !/^[A-Za-z0-9_-]+$/.test(clubId) || !/^[A-Za-z0-9_-]+$/.test(operationId)) {
+    throw new HttpsError('invalid-argument', 'Paramètres de modification invalides.');
+  }
+  if (!Array.isArray(selectedSupplementIds)) {
+    throw new HttpsError('invalid-argument', 'Sélection de suppléments invalide.');
+  }
+  const deliveryAddress = rawDeliveryAddress === null
+    ? null : cleanAuditText(rawDeliveryAddress, null, 500);
+  if (rawDeliveryAddress !== null && deliveryAddress === null) {
+    throw new HttpsError('invalid-argument', 'Adresse de livraison invalide.');
+  }
+  const requestId = registrationRequestId(rawRequestId);
+  const guests = requestedRegistrationEditGuests(rawGuests);
+  const guestIdsToRemove = requestedGuestRemovalIds(rawGuestIdsToRemove);
+  const existingGuestIds = guests
+    .filter(guest => guest.inscriptionId !== null)
+    .map(guest => guest.inscriptionId);
+  if (new Set(existingGuestIds).size !== existingGuestIds.length
+    || existingGuestIds.some(id => guestIdsToRemove.includes(id))) {
+    throw new HttpsError('invalid-argument', 'Modification invité contradictoire.');
+  }
+  const payloadFingerprint = registrationEditPayloadFingerprint({
+    clubId,
+    operationId,
+    inscriptionId,
+    selectedSupplementIds,
+    guests,
+    guestIdsToRemove,
+    deliveryAddress,
+  });
+  const member = await requireMember(clubId, uid);
+  const memberData = member.data();
+  const { operationRef, inscriptionsRef } = refs(clubId, operationId);
+  const requestRef = operationRef.collection('registration_requests').doc(requestId);
+  const newGuests = guests.filter(guest => guest.inscriptionId === null);
+  const newGuestRefs = newGuests.map(() => inscriptionsRef.doc());
+
+  return admin.firestore().runTransaction(async transaction => {
+    const [operationSnap, inscriptionsSnap, requestSnap] = await Promise.all([
+      transaction.get(operationRef),
+      transaction.get(inscriptionsRef),
+      transaction.get(requestRef),
+    ]);
+    if (!operationSnap.exists) throw new HttpsError('not-found', 'Événement introuvable.');
+    if (requestSnap.exists) {
+      const previous = requestSnap.data();
+      if (previous.kind !== 'registration_edit'
+        || previous.member_id !== uid
+        || previous.inscription_id !== inscriptionId) {
+        throw new HttpsError('permission-denied', 'Cette demande appartient à une autre inscription.');
+      }
+      if (previous.payload_fingerprint !== payloadFingerprint
+        || !previous.registration_edit_receipt) {
+        throw new HttpsError(
+          'already-exists',
+          'Cet identifiant de demande a déjà été utilisé pour une autre modification.',
+        );
+      }
+      return { ...previous.registration_edit_receipt, idempotent: true };
+    }
+
+    const operation = operationSnap.data();
+    const parentEntry = inscriptionsSnap.docs.find(doc => doc.id === inscriptionId);
+    if (!parentEntry) throw new HttpsError('not-found', 'Inscription introuvable.');
+    const parent = parentEntry.data();
+    if (parent.membre_id !== uid || parent.is_guest === true
+      || parent.registration_status === 'canceled'
+      || parent.registration_status === 'waitlisted') {
+      throw new HttpsError('permission-denied', 'Seul le membre inscrit peut modifier cette inscription.');
+    }
+    const now = admin.firestore.Timestamp.now();
+    const deadline = effectiveDeadline(operation);
+    if (deadline && asDate(now) > deadline) {
+      throw new HttpsError('failed-precondition', 'Le délai de modification est dépassé.');
+    }
+
+    const linkedGuests = inscriptionsSnap.docs.filter(doc => {
+      const data = doc.data();
+      return data.parent_inscription_id === inscriptionId
+        && data.registration_status !== 'canceled';
+    });
+    const linkedById = new Map(linkedGuests.map(doc => [doc.id, doc]));
+    for (const id of [...existingGuestIds, ...guestIdsToRemove]) {
+      const entry = linkedById.get(id);
+      if (!entry || entry.data().added_by !== uid || entry.data().is_guest !== true) {
+        throw new HttpsError('permission-denied', 'Invité non modifiable.');
+      }
+    }
+
+    const retainedGuests = linkedGuests.filter(doc => !guestIdsToRemove.includes(doc.id));
+    if (newGuests.length > 0) {
+      if (operation.allow_guests !== true) {
+        throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
+      }
+      const maxGuests = Number(operation.max_guests_per_member);
+      if (Number.isInteger(maxGuests) && maxGuests >= 0
+        && retainedGuests.length + newGuests.length > maxGuests) {
+        throw new HttpsError('failed-precondition', 'Nombre maximal d’invités atteint.');
+      }
+      const activeAfterRemovals = inscriptionsSnap.docs.filter(doc => (
+        !guestIdsToRemove.includes(doc.id)
+        && ACTIVE_STATUSES.has(doc.data().registration_status || 'confirmed')
+      )).length;
+      assertRegistrationOpen(operation, activeAfterRemovals, newGuests.length);
+    }
+
+    const parentSupplements = selectedSupplements(operation, selectedSupplementIds);
+    const parentSupplementTotal = parentSupplements
+      .reduce((sum, item) => sum + item.price, 0);
+    const existingGuestUpdates = new Map();
+    for (const guest of guests.filter(item => item.inscriptionId !== null)) {
+      const supplements = selectedSupplements(operation, guest.selectedSupplementIds);
+      existingGuestUpdates.set(guest.inscriptionId, {
+        selected_supplements: supplements,
+        supplement_total: supplements.reduce((sum, item) => sum + item.price, 0),
+      });
+    }
+    const newGuestPricings = newGuests.map(guest => guestPricing(operation, guest));
+
+    const oldGuestsTotal = linkedGuests.reduce((sum, doc) => {
+      const data = doc.data();
+      return sum + monetaryAmount(data.prix || 0) + monetaryAmount(data.supplement_total || 0);
+    }, 0);
+    const oldTotal = monetaryAmount(
+      monetaryAmount(parent.prix || 0)
+      + monetaryAmount(parent.supplement_total || 0)
+      + oldGuestsTotal,
+    );
+    const retainedGuestsTotal = retainedGuests.reduce((sum, doc) => {
+      const data = doc.data();
+      const update = existingGuestUpdates.get(doc.id);
+      return sum + monetaryAmount(data.prix || 0)
+        + monetaryAmount(update ? update.supplement_total : data.supplement_total || 0);
+    }, 0);
+    const newGuestsTotal = newGuestPricings.reduce(
+      (sum, pricing) => sum + pricing.price + pricing.supplementTotal,
+      0,
+    );
+    const newTotal = monetaryAmount(
+      monetaryAmount(parent.prix || 0)
+      + parentSupplementTotal
+      + retainedGuestsTotal
+      + newGuestsTotal,
+    );
+    const audit = actionMetadata({
+      member: memberData,
+      uid,
+      source,
+      appVersion,
+      reason: 'registration_details_updated',
+      action: 'updated',
+      now,
+    });
+    transaction.update(parentEntry.ref, {
+      selected_supplements: parentSupplements,
+      supplement_total: parentSupplementTotal,
+      ...(deliveryAddress !== null ? { delivery_address: deliveryAddress } : {}),
+      updated_at: now,
+      ...audit,
+    });
+    for (const [guestId, update] of existingGuestUpdates) {
+      transaction.update(linkedById.get(guestId).ref, {
+        ...update,
+        updated_at: now,
+        ...actionMetadata({
+          member: memberData,
+          uid,
+          source,
+          appVersion,
+          reason: 'guest_details_updated',
+          action: 'updated',
+          now,
+        }),
+      });
+    }
+    for (const guestId of guestIdsToRemove) {
+      transaction.update(linkedById.get(guestId).ref, cancellationPatch({
+        member: memberData,
+        uid,
+        source,
+        appVersion,
+        reason: 'guest_removed_during_registration_edit',
+        action: 'guest_unregistered',
+        now,
+      }));
+    }
+    newGuestRefs.forEach((guestRef, index) => {
+      transaction.set(guestRef, guestRegistrationPayload({
+        operation,
+        operationId,
+        guest: newGuests[index],
+        pricing: newGuestPricings[index],
+        guestRef,
+        parentInscriptionId: inscriptionId,
+        registrationStatus: parent.registration_status || 'confirmed',
+        paymentExpiresAt: parent.payment_expires_at || null,
+        member: memberData,
+        uid,
+        source,
+        appVersion,
+        now,
+      }));
+    });
+    const addedGuestIds = newGuestRefs.map(ref => ref.id);
+    const editHistoryRef = parentEntry.ref.collection('edit_history').doc();
+    transaction.set(editHistoryRef, {
+      action: 'inscription_updated',
+      inscription_id: inscriptionId,
+      timestamp: now,
+      previous_supplements: parent.selected_supplements || [],
+      new_supplements: parentSupplements,
+      previous_total: monetaryAmount(parent.supplement_total || 0),
+      new_total: parentSupplementTotal,
+      guests_added: addedGuestIds,
+      guests_removed: guestIdsToRemove,
+      actor_id: uid,
+      source: cleanAuditText(source, 'calymob', 40),
+    });
+    const receipt = {
+      version: 1,
+      inscriptionId,
+      oldTotal,
+      newTotal,
+      delta: monetaryAmount(Math.abs(oldTotal - newTotal)) * (oldTotal >= newTotal ? 1 : -1),
+      isPaid: parent.paye === true,
+      operationTitle: cleanAuditText(operation.titre, 'Événement', 160),
+      addedGuestIds,
+      removedGuestIds: guestIdsToRemove,
+      idempotent: false,
+    };
+    transaction.set(requestRef, {
+      kind: 'registration_edit',
+      member_id: uid,
+      inscription_id: inscriptionId,
+      payload_fingerprint: payloadFingerprint,
+      registration_edit_receipt: receipt,
+      created_at: now,
+    });
+    transaction.update(operationRef, {
+      registration_capacity_revision: Number(operation.registration_capacity_revision || 0) + 1,
+    });
+    return receipt;
+  });
+});
+
 const joinEventWaitlist = onCall({ region: REGION }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
@@ -1380,12 +1707,14 @@ module.exports = {
   registrationPaymentState,
   guestPayloadFingerprint,
   registrationPayloadFingerprint,
+  registrationEditPayloadFingerprint,
   registrationReceipt,
   storedRegistrationReceipt,
   guestPricing,
   joinEventWaitlist,
   registerForEvent,
   addGuestToEvent,
+  updateEventRegistration,
   leaveEventWaitlist,
   unregisterFromEvent,
   promoteEventWaitlistEntry,

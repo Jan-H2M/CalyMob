@@ -35,9 +35,11 @@ const {
   promotionCandidatesAfterWithdrawal,
   registerForEvent,
   addGuestToEvent,
+  updateEventRegistration,
   guestPricing,
   guestPayloadFingerprint,
   registrationPayloadFingerprint,
+  registrationEditPayloadFingerprint,
   canonicalGuestName,
   memberRegistrationPrice,
   registrationPaymentState,
@@ -1516,5 +1518,303 @@ describe('unregisterFromEvent callable', () => {
       auth: { uid: 'member-1' },
       data: { clubId: 'calypso', operationId: 'event-1', inscriptionId: 'other' },
     })).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+});
+
+describe('updateEventRegistration callable', () => {
+  const requestId = 'edit_request_20261008_1';
+
+  function setupEditDb({
+    parentOwner = 'member-1',
+    previousRequest = null,
+    operationOverrides = {},
+    linkedGuestData = null,
+  } = {}) {
+    const historyRef = { id: 'history-1', path: 'inscriptions/parent/edit_history/history-1' };
+    const parentRef = {
+      id: 'parent',
+      path: 'inscriptions/parent',
+      collection: jest.fn(name => {
+        if (name !== 'edit_history') throw new Error(`unexpected parent collection ${name}`);
+        return { doc: jest.fn(() => historyRef) };
+      }),
+    };
+    const parent = {
+      id: 'parent',
+      ref: parentRef,
+      data: () => ({
+        membre_id: parentOwner,
+        membre_prenom: 'Alice',
+        membre_nom: 'Membre',
+        prix: 25,
+        supplement_total: 0,
+        selected_supplements: [],
+        paye: false,
+        registration_status: 'confirmed',
+      }),
+    };
+    const linkedGuestRef = { id: 'guest-existing', path: 'inscriptions/guest-existing' };
+    const linkedGuest = linkedGuestData === null ? null : {
+      id: 'guest-existing',
+      ref: linkedGuestRef,
+      data: () => ({
+        membre_id: 'guest_synthetic',
+        membre_prenom: 'Bob',
+        membre_nom: 'Invité',
+        prix: 35,
+        supplement_total: 4,
+        selected_supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
+        paye: false,
+        is_guest: true,
+        added_by: 'member-1',
+        parent_inscription_id: 'parent',
+        registration_status: 'confirmed',
+        ...linkedGuestData,
+      }),
+    };
+    const newGuestRef = { id: 'new-guest', path: 'inscriptions/new-guest' };
+    const inscriptionsRef = {
+      path: 'clubs/calypso/operations/event-1/inscriptions',
+      doc: jest.fn(() => newGuestRef),
+    };
+    const requestRef = {
+      id: requestId,
+      path: `clubs/calypso/operations/event-1/registration_requests/${requestId}`,
+    };
+    const operationRef = {
+      path: 'clubs/calypso/operations/event-1',
+      collection: jest.fn(name => {
+        if (name === 'inscriptions') return inscriptionsRef;
+        if (name === 'registration_requests') return { doc: jest.fn(() => requestRef) };
+        if (name === 'waitlist_audit') return { doc: jest.fn() };
+        throw new Error(`unexpected collection ${name}`);
+      }),
+    };
+    const memberRef = {
+      path: 'clubs/calypso/members/member-1',
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({ prenom: 'Alice', nom: 'Membre', app_role: 'membre' }),
+      })),
+    };
+    const operation = {
+      titre: 'Sortie test',
+      statut: 'ouvert',
+      date_debut: new Date('2027-08-14T10:00:00Z'),
+      capacite_max: 4,
+      allow_guests: true,
+      max_guests_per_member: 2,
+      event_tariffs: [
+        { id: 'guest', label: 'Invité', price: 35, is_guest_tariff: true },
+      ],
+      supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
+      ...operationOverrides,
+    };
+    const transaction = {
+      get: jest.fn(async ref => {
+        if (ref === operationRef) return { exists: true, data: () => operation };
+        if (ref === inscriptionsRef) {
+          return { docs: linkedGuest === null ? [parent] : [parent, linkedGuest] };
+        }
+        if (ref === requestRef) {
+          return { exists: previousRequest !== null, data: () => previousRequest };
+        }
+        throw new Error(`unexpected get ${ref.path}`);
+      }),
+      set: jest.fn(),
+      update: jest.fn(),
+    };
+    const db = {
+      doc: jest.fn(path => path === operationRef.path ? operationRef : memberRef),
+      runTransaction: jest.fn(async callback => callback(transaction)),
+    };
+    admin.firestore.mockReturnValue(db);
+    return {
+      transaction,
+      parentRef,
+      linkedGuestRef,
+      newGuestRef,
+      historyRef,
+      requestRef,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('adds a guest to an existing registration in the server transaction', async () => {
+    const { transaction, parentRef, newGuestRef, historyRef } = setupEditDb();
+
+    const result = await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'parent',
+        requestId,
+        selectedSupplementIds: [],
+        guests: [{
+          firstName: 'Bob',
+          lastName: 'Invité',
+          tariffId: 'guest',
+          selectedSupplementIds: ['bottle'],
+        }],
+        guestIdsToRemove: [],
+        source: 'calymob',
+      },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      version: 1,
+      inscriptionId: 'parent',
+      oldTotal: 25,
+      newTotal: 64,
+      delta: -39,
+      addedGuestIds: ['new-guest'],
+      idempotent: false,
+    }));
+    expect(transaction.update).toHaveBeenCalledWith(
+      parentRef,
+      expect.objectContaining({ selected_supplements: [], supplement_total: 0 }),
+    );
+    expect(transaction.set).toHaveBeenCalledWith(
+      newGuestRef,
+      expect.objectContaining({
+        parent_inscription_id: 'parent',
+        added_by: 'member-1',
+        prix: 35,
+        supplement_total: 4,
+      }),
+    );
+    expect(transaction.set).toHaveBeenCalledWith(
+      historyRef,
+      expect.objectContaining({ guests_added: ['new-guest'] }),
+    );
+  });
+
+  test('rejects editing another member registration before writing', async () => {
+    const { transaction } = setupEditDb({ parentOwner: 'member-2' });
+    await expect(updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', inscriptionId: 'parent', requestId,
+      },
+    })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('cancels a linked guest and returns the authoritative refund delta', async () => {
+    const { transaction, linkedGuestRef, historyRef } = setupEditDb({
+      linkedGuestData: {},
+    });
+
+    const result = await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'parent',
+        requestId,
+        selectedSupplementIds: [],
+        guests: [],
+        guestIdsToRemove: ['guest-existing'],
+      },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      oldTotal: 64,
+      newTotal: 25,
+      delta: 39,
+      removedGuestIds: ['guest-existing'],
+    }));
+    expect(transaction.update).toHaveBeenCalledWith(
+      linkedGuestRef,
+      expect.objectContaining({
+        registration_status: 'canceled',
+        canceled_by: 'member-1',
+      }),
+    );
+    expect(transaction.set).toHaveBeenCalledWith(
+      historyRef,
+      expect.objectContaining({ guests_removed: ['guest-existing'] }),
+    );
+  });
+
+  test('rejects a new guest when capacity is full without staging writes', async () => {
+    const { transaction } = setupEditDb({
+      operationOverrides: { capacite_max: 1 },
+    });
+    await expect(updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'parent',
+        requestId,
+        guests: [{ firstName: 'Bob', lastName: 'Invité', tariffId: 'guest' }],
+      },
+    })).rejects.toMatchObject({ code: 'resource-exhausted' });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('returns the stored receipt on an identical retry without writes', async () => {
+    const guests = [{
+      inscriptionId: null,
+      firstName: 'Bob',
+      lastName: 'Invité',
+      tariffId: 'guest',
+      selectedSupplementIds: ['bottle'],
+    }];
+    const fingerprint = registrationEditPayloadFingerprint({
+      clubId: 'calypso',
+      operationId: 'event-1',
+      inscriptionId: 'parent',
+      selectedSupplementIds: [],
+      guests,
+      guestIdsToRemove: [],
+      deliveryAddress: null,
+    });
+    const receipt = {
+      version: 1,
+      inscriptionId: 'parent',
+      oldTotal: 25,
+      newTotal: 64,
+      delta: -39,
+      isPaid: false,
+      operationTitle: 'Sortie test',
+      addedGuestIds: ['original-guest'],
+      removedGuestIds: [],
+      idempotent: false,
+    };
+    const { transaction } = setupEditDb({
+      previousRequest: {
+        kind: 'registration_edit',
+        member_id: 'member-1',
+        inscription_id: 'parent',
+        payload_fingerprint: fingerprint,
+        registration_edit_receipt: receipt,
+      },
+    });
+
+    const result = await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'parent',
+        requestId,
+        guests: [{
+          firstName: 'Bob', lastName: 'Invité', tariffId: 'guest',
+          selectedSupplementIds: ['bottle'],
+        }],
+      },
+    });
+
+    expect(result).toEqual({ ...receipt, idempotent: true });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
   });
 });

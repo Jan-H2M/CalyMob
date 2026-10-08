@@ -273,6 +273,7 @@ const eventWaitlist = require('./src/inscription/eventWaitlist');
 exports.joinEventWaitlist = eventWaitlist.joinEventWaitlist;
 exports.registerForEvent = eventWaitlist.registerForEvent;
 exports.addGuestToEvent = eventWaitlist.addGuestToEvent;
+exports.updateEventRegistration = eventWaitlist.updateEventRegistration;
 exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
 exports.unregisterFromEvent = eventWaitlist.unregisterFromEvent;
 exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;
