@@ -5,6 +5,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const REGION = 'europe-west1';
 const ACTIVE_STATUSES = new Set(['confirmed', 'pending_payment']);
 const ELEVATED_ROLES = new Set(['admin', 'superadmin', 'validateur']);
+const GUEST_DIVING_LEVELS = new Set(['NB', '1', '2', '3', '4', 'AM', 'MC', 'MF', 'MN']);
 
 function cleanAuditText(value, fallback = null, maxLength = 160) {
   if (typeof value !== 'string') return fallback;
@@ -24,6 +25,26 @@ function canonicalGuestName(value) {
     .replace(/^ +| +$/g, '');
   if (!canonical || canonical.length > 80) {
     throw new HttpsError('invalid-argument', 'Nom invité invalide (80 caractères maximum).');
+  }
+  return canonical;
+}
+
+function canonicalGuestDivingLevel(value) {
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new HttpsError('invalid-argument', 'Niveau de plongée invité invalide.');
+  }
+  const normalized = value.trim().toUpperCase().replace(/★/g, '*').replace(/ /g, '');
+  const aliases = {
+    'N/B': 'NB',
+    P1: '1', '1*': '1',
+    P2: '2', '2*': '2',
+    P3: '3', '3*': '3',
+    P4: '4', '4*': '4',
+  };
+  const canonical = aliases[normalized] || normalized;
+  if (!GUEST_DIVING_LEVELS.has(canonical)) {
+    throw new HttpsError('invalid-argument', 'Niveau de plongée invité invalide.');
   }
   return canonical;
 }
@@ -273,6 +294,9 @@ function guestPayloadFingerprint({ clubId, operationId, parentInscriptionId, gue
     firstName: guest.firstName,
     lastName: guest.lastName,
     tariffId: guest.tariffId || null,
+    ...(Object.prototype.hasOwnProperty.call(guest, 'divingLevel')
+      ? { divingLevel: guest.divingLevel }
+      : {}),
     selectedSupplementIds: [...(guest.selectedSupplementIds || [])].sort(),
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
@@ -296,6 +320,9 @@ function registrationPayloadFingerprint({
       firstName: guest.firstName,
       lastName: guest.lastName,
       tariffId: guest.tariffId || null,
+      ...(Object.prototype.hasOwnProperty.call(guest, 'divingLevel')
+        ? { divingLevel: guest.divingLevel }
+        : {}),
       selectedSupplementIds: [...(guest.selectedSupplementIds || [])].sort(),
     })),
   });
@@ -322,6 +349,9 @@ function registrationEditPayloadFingerprint({
       firstName: guest.firstName || null,
       lastName: guest.lastName || null,
       tariffId: guest.tariffId || null,
+      ...(Object.prototype.hasOwnProperty.call(guest, 'divingLevel')
+        ? { divingLevel: guest.divingLevel }
+        : {}),
       selectedSupplementIds: [...(guest.selectedSupplementIds || [])].sort(),
     })),
     guestIdsToRemove: [...guestIdsToRemove].sort(),
@@ -435,6 +465,9 @@ function requestedGuests(value) {
       lastName,
       tariffId,
       selectedSupplementIds: guest.selectedSupplementIds ?? [],
+      ...(Object.prototype.hasOwnProperty.call(guest, 'divingLevel')
+        ? { divingLevel: canonicalGuestDivingLevel(guest.divingLevel) }
+        : {}),
     };
   });
 }
@@ -458,6 +491,9 @@ function requestedRegistrationEditGuests(value) {
       return {
         inscriptionId,
         selectedSupplementIds: guest.selectedSupplementIds ?? [],
+        ...(Object.prototype.hasOwnProperty.call(guest, 'divingLevel')
+          ? { divingLevel: canonicalGuestDivingLevel(guest.divingLevel) }
+          : {}),
       };
     }
     return { inscriptionId: null, ...requestedGuests([guest])[0] };
@@ -665,6 +701,7 @@ function guestRegistrationPayload({
     membre_id: `guest_${guestRef.id}`,
     membre_nom: guest.lastName,
     membre_prenom: guest.firstName,
+    plongeur_code: guest.divingLevel || null,
     prix: pricing.price,
     paye: false,
     registration_status: registrationStatus,
@@ -1165,6 +1202,9 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
       existingGuestUpdates.set(guest.inscriptionId, {
         selected_supplements: supplements,
         supplement_total: supplements.reduce((sum, item) => sum + item.price, 0),
+        ...(Object.prototype.hasOwnProperty.call(guest, 'divingLevel')
+          ? { plongeur_code: guest.divingLevel }
+          : {}),
       });
     }
     const newGuestPricings = newGuests.map(guest => guestPricing(operation, guest));
@@ -1773,6 +1813,7 @@ module.exports = {
   canManageWaitlist,
   canAddStandaloneGuest,
   canonicalGuestName,
+  canonicalGuestDivingLevel,
   memberRegistrationPrice,
   registrationPaymentState,
   guestPayloadFingerprint,

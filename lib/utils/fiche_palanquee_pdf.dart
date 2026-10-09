@@ -40,8 +40,21 @@ class FichePalanqueePdf {
     // Récupérer les niveaux de plongée depuis Firestore
     final memberLevels = await _fetchMemberLevels(
       clubId,
-      participants.map((p) => p.membreId).where((id) => id.isNotEmpty).toList(),
+      participants
+          .where((participant) => !participant.isGuest)
+          .map((participant) => participant.membreId)
+          .where((id) => id.isNotEmpty)
+          .toList(),
     );
+    // Non-member guests have no member_directory entry. Use the validated
+    // level snapshot stored with their inscription; historical guests simply
+    // keep an empty level.
+    for (final participant in participants) {
+      final code = participant.plongeurCode;
+      if (participant.isGuest && code != null && code.trim().isNotEmpty) {
+        memberLevels[participant.membreId] = _formatDivingLevel(code, null);
+      }
+    }
 
     // Préparer les données
     final sortedParticipants = List<ParticipantOperation>.from(participants)

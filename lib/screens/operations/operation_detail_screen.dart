@@ -939,6 +939,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         firstName: guest['prenom'] as String,
         lastName: guest['nom'] as String,
         tariffId: guest['tariffId'] as String?,
+        divingLevel: guest['divingLevel'] as String?,
         selectedSupplements: supplements,
       );
     }).toList();
@@ -1565,7 +1566,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         }
         aggregatedAmount = openInstallment.aggregatedAmount;
       } else {
-        aggregatedAmount = (participant.paye ? 0 : participant.totalPrix) +
+        aggregatedAmount = (participant.paye ? 0.0 : participant.totalPrix) +
             linkedGuests
                 .where((g) => !g.paye)
                 .fold<double>(0.0, (sum, g) => sum + g.totalPrix);
@@ -2080,6 +2081,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       final parentInscriptionId =
           isMemberDrivenFlow ? _userInscription!.id : null;
       final tariffId = result['tariffId'] as String?;
+      final divingLevel = result['divingLevel'] as String?;
       final selectedSupplements = (result['selectedSupplements'] as List?)
               ?.whereType<SelectedSupplement>()
               .toList() ??
@@ -2092,6 +2094,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         guestPrenom: result['prenom'] as String,
         guestNom: result['nom'] as String,
         tariffId: tariffId,
+        divingLevel: divingLevel,
         selectedSupplements: selectedSupplements,
       );
       final requestId = _guestRequestIdentity.requestIdFor(payloadFingerprint);
@@ -2108,6 +2111,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           addedByUserName: authProvider.displayName ?? 'Admin',
           parentInscriptionId: parentInscriptionId,
           tariffId: tariffId,
+          divingLevel: divingLevel,
           selectedSupplements: selectedSupplements,
           supplementTotal: result['supplementTotal'] as double?,
           requestId: requestId,

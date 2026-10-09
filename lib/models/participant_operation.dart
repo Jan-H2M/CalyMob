@@ -161,6 +161,10 @@ class ParticipantOperation {
   final String? tariffLabel;
   final String? tariffSelectedBy;
   final String? tariffValidationStatus;
+
+  /// Diver-level snapshot for non-member guests. Member levels continue to
+  /// come from member_directory; legacy guests legitimately have no value.
+  final String? plongeurCode;
   final Map<String, InstallmentPayment> installmentPayments;
 
   /// Snapshot of the paid amount at the moment paye was set to true.
@@ -207,6 +211,7 @@ class ParticipantOperation {
     this.tariffLabel,
     this.tariffSelectedBy,
     this.tariffValidationStatus,
+    this.plongeurCode,
     this.installmentPayments = const {},
     this.amountPaid,
     this.editHistory,
@@ -341,6 +346,7 @@ class ParticipantOperation {
       tariffLabel: data['tariff_label'] as String?,
       tariffSelectedBy: data['tariff_selected_by'] as String?,
       tariffValidationStatus: data['tariff_validation_status'] as String?,
+      plongeurCode: data['plongeur_code'] as String?,
       installmentPayments:
           _parseInstallmentPayments(data['installment_payments']),
       amountPaid: (data['amount_paid'] as num?)?.toDouble(),
@@ -439,6 +445,7 @@ class ParticipantOperation {
       'tariff_label': tariffLabel,
       'tariff_selected_by': tariffSelectedBy,
       'tariff_validation_status': tariffValidationStatus,
+      'plongeur_code': plongeurCode,
       'installment_payments': installmentPayments.map(
         (key, value) => MapEntry(key, value.toMap()),
       ),
@@ -485,6 +492,7 @@ class ParticipantOperation {
     String? tariffLabel,
     String? tariffSelectedBy,
     String? tariffValidationStatus,
+    String? plongeurCode,
     Map<String, InstallmentPayment>? installmentPayments,
     double? amountPaid,
     List<EditHistoryEntry>? editHistory,
@@ -525,6 +533,7 @@ class ParticipantOperation {
       tariffSelectedBy: tariffSelectedBy ?? this.tariffSelectedBy,
       tariffValidationStatus:
           tariffValidationStatus ?? this.tariffValidationStatus,
+      plongeurCode: plongeurCode ?? this.plongeurCode,
       installmentPayments: installmentPayments ?? this.installmentPayments,
       amountPaid: amountPaid ?? this.amountPaid,
       editHistory: editHistory ?? this.editHistory,

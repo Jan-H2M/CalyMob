@@ -8,6 +8,7 @@ import '../../models/tariff.dart';
 import '../../models/member_profile.dart';
 import '../../services/operation_service.dart';
 import 'add_guest_dialog.dart';
+import '../../widgets/guest_diving_level_field.dart';
 
 @visibleForTesting
 Map<String, dynamic> registrationEditDialogResult({
@@ -70,6 +71,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
   /// Used for diff detection in [_hasChanges] and to compute the old total
   /// when generating refunds.
   final Map<String, Set<String>> _initialGuestSupplementIds = {};
+  final Map<String, String?> _initialGuestDivingLevels = {};
 
   /// Newly added guests during this edit session (not yet saved).
   /// Each entry: {prenom, nom, prix, tariffId, selectedSupplementIds
@@ -165,6 +167,15 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     return false;
   }
 
+  bool _guestLevelsModified() {
+    for (final guest in _guests) {
+      final id = guest['id'] as String;
+      if (_deletedGuestIds.contains(id)) continue;
+      if (guest['divingLevel'] != _initialGuestDivingLevels[id]) return true;
+    }
+    return false;
+  }
+
   bool get _hasChanges {
     if (_selectedSupplementIds.length != _initialSupplementIds.length ||
         !_selectedSupplementIds.containsAll(_initialSupplementIds)) {
@@ -173,6 +184,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     if (_deletedGuestIds.isNotEmpty) return true;
     if (_newGuests.isNotEmpty) return true;
     if (_guestSupplementsModified()) return true;
+    if (_guestLevelsModified()) return true;
     return false;
   }
 
@@ -200,6 +212,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           .get();
 
       _initialGuestSupplementIds.clear();
+      _initialGuestDivingLevels.clear();
       final guests = snapshot.docs.where((doc) {
         return doc.data()['registration_status'] != 'canceled';
       }).map((doc) {
@@ -217,6 +230,10 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         // Snapshot the initial selection (independent copy) so toggles don't
         // mutate the diff baseline.
         _initialGuestSupplementIds[doc.id] = Set<String>.from(ids);
+        final divingLevel = canonicalRegistrationGuestDivingLevel(
+          data['plongeur_code'] as String?,
+        );
+        _initialGuestDivingLevels[doc.id] = divingLevel;
         // Capture the supplement_total exactly as stored on the doc — this
         // is what the user previously paid for. Reusing the current
         // operation catalog for the "old" total would mismatch the backend
@@ -231,6 +248,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           'selectedSupplementIds': ids,
           'storedSupplementTotal':
               (data['supplement_total'] as num?)?.toDouble() ?? 0,
+          'divingLevel': divingLevel,
         };
       }).toList();
 
@@ -270,6 +288,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           'nom': result['nom'] as String,
           'prix': result['prix'] as double,
           'tariffId': result['tariffId'] as String?,
+          'divingLevel': result['divingLevel'] as String?,
           'selectedSupplementIds':
               initialSupplements.map((s) => s.id).toSet(),
         });
@@ -287,7 +306,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       if (prenom.isEmpty || nom.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+              const SnackBar(
                 content:
                     Text('Veuillez remplir tous les champs des invites')),
           );
@@ -395,6 +414,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
             prenom: guest['prenom'] as String,
             nom: guest['nom'] as String,
             prix: (guest['prix'] as num).toDouble(),
+            divingLevel: guest['divingLevel'] as String?,
+            updateDivingLevel: true,
             selectedSupplements: selected,
             supplementTotal: _supplementTotalForIds(suppIds),
           ));
@@ -419,6 +440,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           nom: guest['nom'] as String,
           prix: (guest['prix'] as num).toDouble(),
           tariffId: guest['tariffId'] as String?,
+          divingLevel: guest['divingLevel'] as String?,
           selectedSupplements: selected,
           supplementTotal: _supplementTotalForIds(suppIds),
         ));
@@ -712,6 +734,11 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
               prix: (g['prix'] as num).toDouble(),
               selectedSupplementIds:
                   g['selectedSupplementIds'] as Set<String>,
+              divingLevelFieldKey: ValueKey('guest-level-${g['id']}'),
+              divingLevel: g['divingLevel'] as String?,
+              onDivingLevelChanged: (level) {
+                setState(() => g['divingLevel'] = level);
+              },
               isNew: false,
               onDelete: () {
                 setState(() {
@@ -726,6 +753,11 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
               prix: (g['prix'] as num).toDouble(),
               selectedSupplementIds:
                   g['selectedSupplementIds'] as Set<String>,
+              divingLevelFieldKey: ObjectKey(g),
+              divingLevel: g['divingLevel'] as String?,
+              onDivingLevelChanged: (level) {
+                setState(() => g['divingLevel'] = level);
+              },
               isNew: true,
               onDelete: () {
                 setState(() {
@@ -769,6 +801,9 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     required String nom,
     required double prix,
     required Set<String> selectedSupplementIds,
+    required Key divingLevelFieldKey,
+    required String? divingLevel,
+    required ValueChanged<String?> onDivingLevelChanged,
     required bool isNew,
     required VoidCallback onDelete,
   }) {
@@ -840,6 +875,14 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
                 splashRadius: 16,
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          GuestDivingLevelField(
+            key: divingLevelFieldKey,
+            value: divingLevel,
+            compact: true,
+            fillColor: Colors.white.withValues(alpha: 0.9),
+            onChanged: onDivingLevelChanged,
           ),
           if (hasSupplements) ...[
             const SizedBox(height: 8),

@@ -13,6 +13,19 @@ import '../../services/lifras_service.dart';
 import '../../models/member_observation.dart';
 import '../../services/member_observation_service.dart';
 
+@visibleForTesting
+Map<String, String> participantLevelSnapshots(
+  Iterable<ParticipantOperation> participants,
+) {
+  return {
+    for (final participant in participants)
+      if (participant.membreId.isNotEmpty &&
+          participant.plongeurCode != null &&
+          participant.plongeurCode!.trim().isNotEmpty)
+        participant.membreId: normalizeLevelCode(participant.plongeurCode!),
+  };
+}
+
 /// Écran de composition des palanquées (tap-to-assign)
 class PalanqueeScreen extends StatefulWidget {
   final Operation operation;
@@ -89,13 +102,17 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   }
 
   Future<Map<String, String>> _fetchMemberLevels() async {
+    // Guests have no member_directory document. Their validated level is a
+    // snapshot on the inscription itself; real members still use the live
+    // directory value below.
+    final levels = participantLevelSnapshots(widget.participants);
     final memberIds = widget.participants
-        .map((p) => p.membreId)
+        .where((participant) => !participant.isGuest)
+        .map((participant) => participant.membreId)
         .where((id) => id.isNotEmpty)
         .toList();
-    if (memberIds.isEmpty) return {};
+    if (memberIds.isEmpty) return levels;
 
-    final levels = <String, String>{};
     final chunks = <List<String>>[];
     for (var i = 0; i < memberIds.length; i += 30) {
       chunks.add(memberIds.sublist(i, (i + 30).clamp(0, memberIds.length)));

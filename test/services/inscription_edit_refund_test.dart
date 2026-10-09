@@ -142,6 +142,58 @@ void main() {
     },
   );
 
+  test('guest level updates are explicit and server validated', () async {
+    Map<String, dynamic>? request;
+    final service = OperationService(
+      firestore: FakeFirebaseFirestore(),
+      updateEventRegistrationInvoker: (payload) async {
+        request = payload;
+        return editReceipt(oldTotal: 64, newTotal: 64, delta: 0);
+      },
+    );
+
+    await service.updateMyInscription(
+      clubId: 'calypso',
+      operationId: 'event-1',
+      inscriptionId: 'parent-1',
+      selectedSupplements: const [],
+      supplementTotal: 0,
+      requestId: 'edit_request_20261009_level',
+      guests: [
+        GuestUpdate(
+          inscriptionId: 'guest-existing',
+          prenom: 'Vinciane',
+          nom: 'Invitée',
+          prix: 35,
+          divingLevel: '2 *',
+          updateDivingLevel: true,
+        ),
+        GuestUpdate(
+          prenom: 'Nouvelle',
+          nom: 'Invitée',
+          prix: 35,
+          tariffId: 'guest',
+          divingLevel: 'AM',
+        ),
+      ],
+    );
+
+    expect(request!['guests'], [
+      {
+        'inscriptionId': 'guest-existing',
+        'divingLevel': '2',
+        'selectedSupplementIds': <String>[],
+      },
+      {
+        'firstName': 'Nouvelle',
+        'lastName': 'Invitée',
+        'tariffId': 'guest',
+        'divingLevel': 'AM',
+        'selectedSupplementIds': <String>[],
+      },
+    ]);
+  });
+
   test('edit receipt rejects missing authoritative totals', () {
     expect(
       () => EventRegistrationEditResult.fromCallable({

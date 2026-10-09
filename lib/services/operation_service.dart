@@ -29,6 +29,43 @@ typedef UpdateEventRegistrationInvoker = Future<Map<String, dynamic>> Function(
 
 const int registrationGuestNameMaxLength = 80;
 
+/// Canonical LIFRAS levels accepted for guests. `null` deliberately means
+/// "not provided": existing guest registrations predate this field and must
+/// remain editable.
+const Map<String, String> registrationGuestDivingLevelLabels = {
+  'NB': 'Non breveté',
+  '1': '1★',
+  '2': '2★',
+  '3': '3★',
+  '4': '4★',
+  'AM': 'Assistant Moniteur',
+  'MC': 'Moniteur Club',
+  'MF': 'Moniteur Fédéral',
+  'MN': 'Moniteur National',
+};
+
+String? canonicalRegistrationGuestDivingLevel(String? value) {
+  final raw = value?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final normalized = raw.toUpperCase().replaceAll('★', '*').replaceAll(' ', '');
+  final aliases = <String, String>{
+    'N/B': 'NB',
+    'P1': '1',
+    '1*': '1',
+    'P2': '2',
+    '2*': '2',
+    'P3': '3',
+    '3*': '3',
+    'P4': '4',
+    '4*': '4',
+  };
+  final canonical = aliases[normalized] ?? normalized;
+  if (!registrationGuestDivingLevelLabels.containsKey(canonical)) {
+    throw const FormatException('Niveau de plongée invité invalide.');
+  }
+  return canonical;
+}
+
 @visibleForTesting
 bool isOperationVisibleInCalyMob(Operation operation) {
   return operation.statut != 'supprime';
@@ -51,21 +88,27 @@ class RegistrationGuestRequest {
     required this.firstName,
     required this.lastName,
     this.tariffId,
+    this.divingLevel,
     this.selectedSupplements = const <SelectedSupplement>[],
   });
 
   final String firstName;
   final String lastName;
   final String? tariffId;
+  final String? divingLevel;
   final List<SelectedSupplement> selectedSupplements;
 
-  Map<String, dynamic> toCallablePayload() => {
-        'firstName': canonicalRegistrationGuestName(firstName),
-        'lastName': canonicalRegistrationGuestName(lastName),
-        if (tariffId != null) 'tariffId': tariffId,
-        'selectedSupplementIds':
-            selectedSupplements.map((supplement) => supplement.id).toList(),
-      };
+  Map<String, dynamic> toCallablePayload() {
+    final canonicalLevel = canonicalRegistrationGuestDivingLevel(divingLevel);
+    return {
+      'firstName': canonicalRegistrationGuestName(firstName),
+      'lastName': canonicalRegistrationGuestName(lastName),
+      if (tariffId != null) 'tariffId': tariffId,
+      if (canonicalLevel != null) 'divingLevel': canonicalLevel,
+      'selectedSupplementIds':
+          selectedSupplements.map((supplement) => supplement.id).toList(),
+    };
+  }
 }
 
 class RegistrationAmountBreakdown {
@@ -651,6 +694,9 @@ class OperationService {
         'firstName': canonicalRegistrationGuestName(guest.firstName),
         'lastName': canonicalRegistrationGuestName(guest.lastName),
         'tariffId': guest.tariffId,
+        if (canonicalRegistrationGuestDivingLevel(guest.divingLevel) != null)
+          'divingLevel':
+              canonicalRegistrationGuestDivingLevel(guest.divingLevel),
         'selectedSupplementIds': guestSupplementIds,
       };
     }).toList(growable: false);
@@ -684,10 +730,12 @@ class OperationService {
     required String guestPrenom,
     required String guestNom,
     String? tariffId,
+    String? divingLevel,
     List<SelectedSupplement> selectedSupplements = const <SelectedSupplement>[],
   }) {
     final supplementIds =
         selectedSupplements.map((supplement) => supplement.id).toList()..sort();
+    final canonicalLevel = canonicalRegistrationGuestDivingLevel(divingLevel);
     final canonical = jsonEncode(<String, dynamic>{
       'version': 1,
       'clubId': clubId,
@@ -696,6 +744,7 @@ class OperationService {
       'firstName': canonicalRegistrationGuestName(guestPrenom),
       'lastName': canonicalRegistrationGuestName(guestNom),
       'tariffId': tariffId,
+      if (canonicalLevel != null) 'divingLevel': canonicalLevel,
       'selectedSupplementIds': supplementIds,
     });
     return sha256.convert(utf8.encode(canonical)).toString();
@@ -1562,6 +1611,7 @@ class OperationService {
     /// ID of the Tariff entry from operation.event_tariffs[] used to compute
     /// this guest's price ("Invité adulte" / "Invité enfant" / etc.).
     String? tariffId,
+    String? divingLevel,
 
     /// Optional supplements selected for this guest (same supplements list
     /// the inviting member sees). Stored exactly like a member's supplements
@@ -1583,6 +1633,7 @@ class OperationService {
             guestPrenom: guestPrenom,
             guestNom: guestNom,
             tariffId: tariffId,
+            divingLevel: divingLevel,
             selectedSupplements: supplements,
           );
       final payload = <String, dynamic>{
@@ -1596,6 +1647,8 @@ class OperationService {
           'firstName': canonicalRegistrationGuestName(guestPrenom),
           'lastName': canonicalRegistrationGuestName(guestNom),
           if (tariffId != null) 'tariffId': tariffId,
+          if (canonicalRegistrationGuestDivingLevel(divingLevel) != null)
+            'divingLevel': canonicalRegistrationGuestDivingLevel(divingLevel),
           'selectedSupplementIds':
               supplements.map((supplement) => supplement.id).toList(),
         },
@@ -2051,15 +2104,23 @@ class OperationService {
           if (guest.inscriptionId != null) {
             return <String, dynamic>{
               'inscriptionId': guest.inscriptionId,
+              if (guest.updateDivingLevel)
+                'divingLevel': canonicalRegistrationGuestDivingLevel(
+                  guest.divingLevel,
+                ),
               'selectedSupplementIds': guest.selectedSupplements
                   .map((supplement) => supplement.id)
                   .toList(),
             };
           }
+          final canonicalLevel = canonicalRegistrationGuestDivingLevel(
+            guest.divingLevel,
+          );
           return <String, dynamic>{
             'firstName': canonicalRegistrationGuestName(guest.prenom),
             'lastName': canonicalRegistrationGuestName(guest.nom),
             if (guest.tariffId != null) 'tariffId': guest.tariffId,
+            if (canonicalLevel != null) 'divingLevel': canonicalLevel,
             'selectedSupplementIds': guest.selectedSupplements
                 .map((supplement) => supplement.id)
                 .toList(),
@@ -2240,6 +2301,12 @@ class GuestUpdate {
   final String nom;
   final double prix;
   final String? tariffId;
+  final String? divingLevel;
+
+  /// Existing guest updates omit the level unless explicitly requested.
+  /// This preserves data for older callers while allowing the edit dialog to
+  /// intentionally set or clear the new optional field.
+  final bool updateDivingLevel;
   final List<SelectedSupplement> selectedSupplements;
   final double supplementTotal;
 
@@ -2249,6 +2316,8 @@ class GuestUpdate {
     required this.nom,
     required this.prix,
     this.tariffId,
+    this.divingLevel,
+    this.updateDivingLevel = false,
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
   });

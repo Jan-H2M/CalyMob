@@ -41,6 +41,7 @@ const {
   registrationPayloadFingerprint,
   registrationEditPayloadFingerprint,
   canonicalGuestName,
+  canonicalGuestDivingLevel,
   memberRegistrationPrice,
   registrationPaymentState,
   unregisterFromEvent,
@@ -119,6 +120,43 @@ describe('event waitlist policy', () => {
       ['member', 'guest-1', 'guest-2'],
       now,
     ).map(entry => entry.id)).toEqual(['wait-1', 'wait-2', 'wait-3']);
+  });
+});
+
+describe('guest diving levels', () => {
+  test.each([
+    ['2 *', '2'],
+    ['P3', '3'],
+    ['nb', 'NB'],
+    ['Moniteur-not-supported', null],
+  ])('canonicalizes and validates %s', (input, expected) => {
+    if (expected === null) {
+      expect(() => canonicalGuestDivingLevel(input)).toThrow('Niveau de plongée invité invalide.');
+    } else {
+      expect(canonicalGuestDivingLevel(input)).toBe(expected);
+    }
+  });
+
+  test('keeps an omitted level optional for legacy guests', () => {
+    expect(canonicalGuestDivingLevel(null)).toBeNull();
+  });
+
+  test('keeps the mobile and server fingerprint contract aligned', () => {
+    expect(registrationPayloadFingerprint({
+      clubId: 'club-1',
+      operationId: 'event-1',
+      selectedSupplementIds: ['tank', 'meal'],
+      guests: [
+        {
+          firstName: 'Bob', lastName: 'Guest', tariffId: 'adult', divingLevel: '2',
+          selectedSupplementIds: ['air', 'meal'],
+        },
+        {
+          firstName: 'Eve', lastName: 'Guest', tariffId: null,
+          selectedSupplementIds: [],
+        },
+      ],
+    })).toBe('f241b9eafa86f9917d7ad7db3be72a2ba390314c2d1e22044cd51ecca42776fe');
   });
 });
 
@@ -469,7 +507,10 @@ describe('registerForEvent callable', () => {
         operationId: 'event-1',
         requestId: validRequestId,
         guests: [
-          { firstName: 'Bob', lastName: 'Guest', tariffId: 'guest-adult' },
+          {
+            firstName: 'Bob', lastName: 'Guest', tariffId: 'guest-adult',
+            divingLevel: '2 *',
+          },
           {
             firstName: 'Eve', lastName: 'Guest', tariffId: 'guest-adult',
             selectedSupplementIds: ['bottle'],
@@ -486,6 +527,7 @@ describe('registerForEvent callable', () => {
         prix: 35,
         parent_inscription_id: 'generated-registration',
         membre_id: 'guest_generated-guest-1',
+        plongeur_code: '2',
       }),
     );
     expect(transactions[0].set).toHaveBeenCalledWith(
@@ -898,6 +940,19 @@ test('guest payload fingerprint matches the CalyMob canonical contract', () => {
       selectedSupplementIds: ['tank', 'meal'],
     },
   })).toBe('c22dd83086be920d982cb715caa0ad7662fe409d74755e11d9833ac6a1fd087d');
+
+  expect(guestPayloadFingerprint({
+    clubId: 'club-1',
+    operationId: 'event-1',
+    parentInscriptionId: 'parent-1',
+    guest: {
+      firstName: 'Bob',
+      lastName: 'Guest',
+      tariffId: 'guest-adult',
+      divingLevel: '2',
+      selectedSupplementIds: ['tank', 'meal'],
+    },
+  })).toBe('7d1f9b36323e42e3dc26091bd98398fe80574bb1ba66d4b23394f8c8d9be41c8');
 });
 
 test('registration payload fingerprint sorts supplements but preserves guest order', () => {
@@ -1684,6 +1739,7 @@ describe('updateEventRegistration callable', () => {
           firstName: 'Bob',
           lastName: 'Invité',
           tariffId: 'guest',
+          divingLevel: '2★',
           selectedSupplementIds: ['bottle'],
         }],
         guestIdsToRemove: [],
@@ -1711,6 +1767,7 @@ describe('updateEventRegistration callable', () => {
         added_by: 'member-1',
         prix: 35,
         supplement_total: 4,
+        plongeur_code: '2',
       }),
     );
     expect(transaction.set).toHaveBeenCalledWith(
@@ -1729,6 +1786,39 @@ describe('updateEventRegistration callable', () => {
     })).rejects.toMatchObject({ code: 'permission-denied' });
     expect(transaction.set).not.toHaveBeenCalled();
     expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('updates an existing guest level and accepts clearing it', async () => {
+    let setup = setupEditDb({ linkedGuestData: { plongeur_code: null } });
+    await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', inscriptionId: 'parent', requestId,
+        guests: [{
+          inscriptionId: 'guest-existing', divingLevel: '2 *', selectedSupplementIds: ['bottle'],
+        }],
+      },
+    });
+    expect(setup.transaction.update).toHaveBeenCalledWith(
+      setup.linkedGuestRef,
+      expect.objectContaining({ plongeur_code: '2' }),
+    );
+
+    jest.clearAllMocks();
+    setup = setupEditDb({ linkedGuestData: { plongeur_code: '2' } });
+    await updateEventRegistration({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', inscriptionId: 'parent', requestId,
+        guests: [{
+          inscriptionId: 'guest-existing', divingLevel: null, selectedSupplementIds: ['bottle'],
+        }],
+      },
+    });
+    expect(setup.transaction.update).toHaveBeenCalledWith(
+      setup.linkedGuestRef,
+      expect.objectContaining({ plongeur_code: null }),
+    );
   });
 
   test('cancels a linked guest and returns the authoritative refund delta', async () => {
