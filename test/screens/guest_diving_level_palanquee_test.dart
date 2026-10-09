@@ -50,9 +50,7 @@ void main() {
     expect(participant.toFirestore()['plongeur_code'], '2');
   });
 
-  test(
-      'palanquee organization uses guest snapshots and tolerates legacy guests',
-      () {
+  test('palanquee organization only uses guest level snapshots', () {
     final participants = [
       ParticipantOperation(
         id: 'guest-registration-1',
@@ -75,8 +73,20 @@ void main() {
         dateInscription: DateTime(2026, 10, 9),
         isGuest: true,
       ),
+      ParticipantOperation(
+        id: 'member-registration',
+        operationId: 'event-1',
+        membreId: 'member-1',
+        membreNom: 'Membre',
+        membrePrenom: 'Marie',
+        prix: 0,
+        dateInscription: DateTime(2026, 10, 9),
+        plongeurCode: '4',
+      ),
     ];
 
+    // The legacy guest has no snapshot, while the member's inscription-level
+    // value must be ignored: member_directory is authoritative for members.
     expect(participantLevelSnapshots(participants), {
       'guest_guest-registration-1': '2',
     });

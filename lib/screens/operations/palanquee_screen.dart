@@ -19,7 +19,8 @@ Map<String, String> participantLevelSnapshots(
 ) {
   return {
     for (final participant in participants)
-      if (participant.membreId.isNotEmpty &&
+      if (participant.isGuest &&
+          participant.membreId.isNotEmpty &&
           participant.plongeurCode != null &&
           participant.plongeurCode!.trim().isNotEmpty)
         participant.membreId: normalizeLevelCode(participant.plongeurCode!),
