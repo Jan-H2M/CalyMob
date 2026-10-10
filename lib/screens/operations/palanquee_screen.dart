@@ -27,6 +27,26 @@ Map<String, String> participantLevelSnapshots(
   };
 }
 
+@visibleForTesting
+List<Palanquee> rehydratePalanqueeParticipantLevels(
+  Iterable<Palanquee> palanquees,
+  Map<String, String> currentLevels,
+) {
+  return palanquees
+      .map(
+        (palanquee) => palanquee.copyWith(
+          participants: palanquee.participants
+              .map(
+                (participant) => participant.copyWith(
+                  niveau: currentLevels[participant.membreId] ?? '',
+                ),
+              )
+              .toList(),
+        ),
+      )
+      .toList();
+}
+
 /// Écran de composition des palanquées (tap-to-assign)
 class PalanqueeScreen extends StatefulWidget {
   final Operation operation;
@@ -82,7 +102,13 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       final assignments = futures[1] as PalanqueeAssignments?;
 
       if (assignments != null && assignments.palanquees.isNotEmpty) {
-        _palanquees = assignments.palanquees;
+        // Saved assignments preserve composition, not diver-level authority.
+        // Rehydrate every assigned participant before validation/display so a
+        // changed member-directory or guest inscription snapshot is applied.
+        _palanquees = rehydratePalanqueeParticipantLevels(
+          assignments.palanquees,
+          _memberLevels,
+        );
       }
 
 

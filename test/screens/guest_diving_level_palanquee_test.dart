@@ -1,5 +1,7 @@
 import 'package:calymob/models/participant_operation.dart';
+import 'package:calymob/models/palanquee.dart';
 import 'package:calymob/screens/operations/palanquee_screen.dart';
+import 'package:calymob/services/lifras_validation_service.dart';
 import 'package:calymob/widgets/guest_diving_level_field.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -90,5 +92,48 @@ void main() {
     expect(participantLevelSnapshots(participants), {
       'guest_guest-registration-1': '2',
     });
+  });
+
+  test('saved guest assignments use the current authoritative snapshot', () {
+    const savedAssignments = [
+      Palanquee(
+        numero: 1,
+        participants: [
+          PalanqueeParticipant(
+            membreId: 'guest_changed',
+            membreNom: 'Invitée',
+            membrePrenom: 'Vinciane',
+            niveau: '2',
+          ),
+          PalanqueeParticipant(
+            membreId: 'member_monitor',
+            membreNom: 'Moniteur',
+            membrePrenom: 'Marie',
+            niveau: 'MC',
+          ),
+        ],
+      ),
+      Palanquee(
+        numero: 2,
+        participants: [
+          PalanqueeParticipant(
+            membreId: 'guest_legacy',
+            membreNom: 'Invité',
+            membrePrenom: 'Sans niveau',
+            niveau: '3',
+          ),
+        ],
+      ),
+    ];
+
+    final hydrated = rehydratePalanqueeParticipantLevels(
+      savedAssignments,
+      const {'guest_changed': 'NB', 'member_monitor': 'MC'},
+    );
+
+    expect(hydrated[0].participants[0].niveau, 'NB');
+    expect(hydrated[1].participants.single.niveau, isEmpty);
+    expect(savedAssignments[0].participants[0].niveau, '2');
+    expect(validateAllPalanquees(hydrated)[1]!.maxDepth, 15);
   });
 }
