@@ -1343,7 +1343,7 @@ service cloud.firestore {
         match /formation_snapshot/{snapshotId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isEncadrantForClub(clubId) ||
+            isPiscineFormationEditor(clubId) ||
             isAdmin(clubId)
           );
           allow write: if false;
@@ -1984,18 +1984,45 @@ service cloud.firestore {
     }
 
     // ========== CARNET DE FORMATION — Member Observations ==========
-    // Pedagogische observaties op leden — alleen Moniteur+Encadrant of admin.
+    // Pedagogische observaties op leden. Moniteur+Encadrant/admin kan
+    // evalueren; een piscine-encadrant mag daarnaast een tekstuele opmerking
+    // over een zwembadcontext opslaan, zonder oefening of resultaat te boeken.
     // Vóór 2026-04-29 stond hier enkel een observerId-check, wat elke
     // geauthenticeerde clublid liet schrijven via direct API-call. Nu strikt
     // afgestemd op de CARNET_DE_FORMATION_TECH.md intent ("encadrants et admins")
     // én op de LIFRAS-realiteit (alleen Moniteurs valideren).
     match /clubs/{clubId}/member_observations/{observationId} {
-      // Lecture: tous les membres authentifiés
-      allow read: if isAuthenticated() &&
-        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-      // Création: Moniteur+Encadrant of admin, en moet zelf de observer zijn
-      allow create: if canValidateLifras(clubId) &&
-        request.resource.data.observerId == request.auth.uid;
+      // Lecture: de betrokken leerling ziet de eigen observaties; bevoegde
+      // formation editors zien de leerlingen die zij begeleiden.
+      allow read: if isMember(clubId) && (
+        resource.data.memberId == request.auth.uid ||
+        isPiscineFormationEditor(clubId)
+      );
+      // Création: de auteur moet altijd zichzelf als observer registreren.
+      // Piscine-opmerkingen zijn bewust beperkt tot vrije tekst: geen
+      // exerciceCode/result → nooit een LIFRAS-validatie via de trigger.
+      allow create: if request.resource.data.observerId == request.auth.uid && (
+        canValidateLifras(clubId) || (
+          isPiscineFormationEditor(clubId) &&
+          request.resource.data.memberId is string &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.memberId)) &&
+          request.resource.data.contextType == 'piscine' &&
+          request.resource.data.contextId == 'formation_overview' &&
+          request.resource.data.contextTitle == 'Suivi formation piscine' &&
+          request.resource.data.category == 'general' &&
+          request.resource.data.note is string &&
+          request.resource.data.note.size() > 0 &&
+          request.resource.data.note.size() <= 2000 &&
+          request.resource.data.contextDate == request.time &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.keys().hasOnly([
+            'memberId', 'memberName', 'memberNiveau',
+            'contextType', 'contextId', 'contextDate', 'contextTitle',
+            'category', 'note', 'observerId', 'createdAt', 'updatedAt'
+          ])
+        )
+      );
       // Modification: oorspronkelijke auteur (mits nog steeds Moniteur+Encadrant), of admin
       allow update: if isAdmin(clubId) || (
         canValidateLifras(clubId) &&
@@ -2048,11 +2075,11 @@ service cloud.firestore {
     // 'formation_snapshot' (FormationSnapshotReader.getAllSnapshots). Même
     // contrainte CG que ci-dessus : les règles imbriquées ne s'appliquent PAS
     // aux collection-group queries, il faut une règle {path=**} dédiée avec un
-    // club codé en dur (calypso, single-tenant). Restreint aux encadrants/admin
-    // (la liste est réservée aux encadrants ; un membre lit son propre snapshot
+    // club codé en dur (calypso, single-tenant). Restreint aux encadrants de
+    // formation carrière/piscine et admins ; un membre lit son propre snapshot
     // via la règle imbriquée sous /members/{memberId}/formation_snapshot).
     match /{path=**}/formation_snapshot/{snapshotId} {
-      allow read: if request.auth != null && isEncadrantForClub('calypso');
+      allow read: if request.auth != null && isPiscineFormationEditor('calypso');
     }
 
     // ========================================================================

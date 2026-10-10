@@ -148,6 +148,17 @@ class PermissionHelper {
         normalized.contains('encadrants et assistants');
   }
 
+  /// Formation tracking is shared by career encadrants and piscine
+  /// encadrants. This grants visibility only; LIFRAS validation remains under
+  /// [canValidateLifras].
+  static bool canViewFormationTracking(List<String> clubStatuten) =>
+      isAdmin(clubStatuten) || isEncadrantPiscine(clubStatuten);
+
+  /// A piscine encadrant may add a free-text pool remark about a student.
+  /// Exercise results and LIFRAS validation remain forbidden.
+  static bool canAddPoolFormationRemark(List<String> clubStatuten) =>
+      isAdmin(clubStatuten) || isEncadrantPiscine(clubStatuten);
+
   /// Access gate for emergency contacts shared through Who's Who.
   /// Mirrors isEncadrantForClub() + hasCARole() in firestore.rules.
   static bool canViewEmergencyContacts(List<String> clubStatuten) {

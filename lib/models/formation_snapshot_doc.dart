@@ -60,6 +60,55 @@ class FormationSnapshotDoc {
   int get milPct => milModulePct ?? 0;
   bool get hasMil => milModulePct != null;
 
+  /// Progression regroupée selon les trois volets demandés par les
+  /// instructeurs. Les examens piscine/théorie ont des codes LIFRAS explicites
+  /// (`*.EXP`, `*.EXT`, `*.T`) dans le référentiel ; les autres épreuves sont
+  /// les épreuves pratiques en milieu naturel (carrière).
+  Map<FormationModality, FormationModalityProgress> get modalityProgress {
+    final entries = <String, _ModalityExerciseState>{};
+    final targetNiveau = _targetNiveauCode(targetLevel);
+
+    void add(
+      String code,
+      String description,
+      _FormationExerciseState state,
+    ) {
+      final key = code.trim().toUpperCase();
+      if (key.isEmpty) return;
+      final existing = entries[key];
+      if (existing != null && existing.state.index <= state.index) return;
+      entries[key] = _ModalityExerciseState(
+        modality: formationModalityForExercise(code, description),
+        state: state,
+      );
+    }
+
+    for (final exercise in validated) {
+      if (!_exerciseMatchesTarget(exercise, targetNiveau)) continue;
+      add(exercise.code, exercise.description, _FormationExerciseState.validated);
+    }
+    for (final exercise in pending) {
+      if (!_exerciseMatchesTarget(exercise, targetNiveau)) continue;
+      add(exercise.code, exercise.description, _FormationExerciseState.pending);
+    }
+    for (final claim in pendingClaims) {
+      if (!_codeMatchesTarget(claim.code, targetNiveau)) continue;
+      add(claim.code, claim.label, _FormationExerciseState.pending);
+    }
+    for (final exercise in remaining) {
+      add(exercise.code, exercise.description, _FormationExerciseState.remaining);
+    }
+
+    return {
+      for (final modality in FormationModality.values)
+        modality: FormationModalityProgress._fromStates(
+          entries.values
+              .where((entry) => entry.modality == modality)
+              .map((entry) => entry.state),
+        ),
+    };
+  }
+
   DateTime? get lastActivityDate => diveStats.lastDiveDate;
 
   int get daysSinceLastActivity {
@@ -171,14 +220,127 @@ class FormationSnapshotDoc {
   }
 }
 
+enum FormationModality { career, pool, theory }
+
+extension FormationModalityLabel on FormationModality {
+  String get label => switch (this) {
+        FormationModality.career => 'Carrière',
+        FormationModality.pool => 'Piscine',
+        FormationModality.theory => 'Théorie',
+      };
+}
+
+class FormationModalityProgress {
+  final int validated;
+  final int pending;
+  final int remaining;
+
+  const FormationModalityProgress({
+    required this.validated,
+    required this.pending,
+    required this.remaining,
+  });
+
+  factory FormationModalityProgress._fromStates(
+    Iterable<_FormationExerciseState> states,
+  ) {
+    var validated = 0;
+    var pending = 0;
+    var remaining = 0;
+    for (final state in states) {
+      switch (state) {
+        case _FormationExerciseState.validated:
+          validated++;
+        case _FormationExerciseState.pending:
+          pending++;
+        case _FormationExerciseState.remaining:
+          remaining++;
+      }
+    }
+    return FormationModalityProgress(
+      validated: validated,
+      pending: pending,
+      remaining: remaining,
+    );
+  }
+
+  int get total => validated + pending + remaining;
+  int get pct => total == 0 ? 0 : ((validated / total) * 100).round();
+}
+
+FormationModality formationModalityForExercise(
+  String code,
+  String description,
+) {
+  final normalizedCode = code.trim().toUpperCase();
+  final normalizedDescription = description.trim().toLowerCase();
+  final isTheory = normalizedCode.endsWith('.EXT') ||
+      normalizedCode.endsWith('.T') ||
+      normalizedDescription.contains('théori') ||
+      normalizedDescription.contains('theori');
+  if (isTheory) return FormationModality.theory;
+
+  final isPool = normalizedCode.endsWith('.EXP') ||
+      normalizedDescription.contains('piscine') ||
+      normalizedDescription.contains('pool');
+  if (isPool) return FormationModality.pool;
+
+  return FormationModality.career;
+}
+
+enum _FormationExerciseState { validated, pending, remaining }
+
+class _ModalityExerciseState {
+  final FormationModality modality;
+  final _FormationExerciseState state;
+
+  const _ModalityExerciseState({required this.modality, required this.state});
+}
+
+String? _targetNiveauCode(String? targetLevel) {
+  return switch (targetLevel?.trim().toUpperCase()) {
+    '1' || '1*' || 'P1' || 'NB' => 'NB',
+    '2' || '2*' || 'P2' => 'P2',
+    '3' || '3*' || 'P3' => 'P3',
+    '4' || '4*' || 'P4' => 'P4',
+    'AM' => 'AM',
+    'MC' => 'MC',
+    'MF' => 'MF',
+    'MN' => 'MN',
+    _ => null,
+  };
+}
+
+bool _exerciseMatchesTarget(SnapshotExercise exercise, String? targetNiveau) {
+  if (targetNiveau == null) return true;
+  final niveau = exercise.niveau.trim().toUpperCase();
+  if (niveau.isNotEmpty) return niveau == targetNiveau;
+  return _codeMatchesTarget(exercise.code, targetNiveau);
+}
+
+bool _codeMatchesTarget(String code, String? targetNiveau) {
+  if (targetNiveau == null) return true;
+  final normalized = code.trim().toUpperCase();
+  if (targetNiveau == 'NB') return normalized.startsWith('P1.');
+  if (targetNiveau == 'P2' && normalized == 'P1.EXP') return true;
+  return normalized.startsWith('$targetNiveau.');
+}
+
 class SnapshotExercise {
   final String code;
   final String description;
+  final String niveau;
   final DateTime? date;
-  const SnapshotExercise({required this.code, required this.description, this.date});
+  const SnapshotExercise({
+    required this.code,
+    required this.description,
+    this.niveau = '',
+    this.date,
+  });
   factory SnapshotExercise.fromMap(Map<String, dynamic> m) => SnapshotExercise(
         code: m['code']?.toString() ?? '',
         description: m['description']?.toString() ?? '',
+        niveau: m['niveau']?.toString() ?? '',
         date: _date(m['date']),
       );
 }
