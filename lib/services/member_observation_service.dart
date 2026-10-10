@@ -22,10 +22,10 @@ class MemberObservationService {
         .where('memberId', isEqualTo: memberId)
         .orderBy('contextDate', descending: true)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => MemberObservation.fromFirestore(d))
-            .toList());
+        .map((snap) =>
+            snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList());
   }
+
   /// Observations voor een sessie (gesorteerd op naam).
   Stream<List<MemberObservation>> getObservationsForSession(
     String clubId,
@@ -35,9 +35,8 @@ class MemberObservationService {
         .where('contextId', isEqualTo: sessionId)
         .orderBy('memberName')
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => MemberObservation.fromFirestore(d))
-            .toList());
+        .map((snap) =>
+            snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList());
   }
 
   /// Nieuwe observation aanmaken.
@@ -46,6 +45,34 @@ class MemberObservationService {
     MemberObservation observation,
   ) async {
     final docRef = await _collection(clubId).add(observation.toMap());
+    return docRef.id;
+  }
+
+  /// Adds an auditable free-text pool remark without exercise/result fields.
+  /// Firestore resolves all audit dates to the same trusted request time.
+  Future<String> addPoolFormationRemark({
+    required String clubId,
+    required String memberId,
+    required String memberName,
+    required String memberNiveau,
+    required String note,
+    required String observerId,
+  }) async {
+    final serverTime = FieldValue.serverTimestamp();
+    final docRef = await _collection(clubId).add({
+      'memberId': memberId,
+      'memberName': memberName,
+      'memberNiveau': memberNiveau,
+      'contextType': 'piscine',
+      'contextId': 'formation_overview',
+      'contextDate': serverTime,
+      'contextTitle': 'Suivi formation piscine',
+      'category': 'general',
+      'note': note,
+      'observerId': observerId,
+      'createdAt': serverTime,
+      'updatedAt': serverTime,
+    });
     return docRef.id;
   }
 

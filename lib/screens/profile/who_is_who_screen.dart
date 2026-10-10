@@ -86,7 +86,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     // Voir la formation = tout encadrant (ou admin/moniteur). La validation
     // pédagogique reste, elle, sous canValidateLifras (_canManageExercises).
     final canSeeFormation =
-        canValidate || PermissionHelper.isEncadrant(profile.clubStatuten);
+        canValidate ||
+        PermissionHelper.canViewFormationTracking(profile.clubStatuten);
     final canSeeEmergencyContacts =
         PermissionHelper.canViewEmergencyContacts(profile.clubStatuten);
 
@@ -1299,6 +1300,8 @@ class _FormationListViewState extends State<FormationListView> {
                               fontWeight: FontWeight.w600)),
                     ),
                   const SizedBox(height: 6),
+                  _modalityProgress(s),
+                  const SizedBox(height: 6),
                   _miniBar('Exercices', s.exercisePct, AppColors.lichtblauw),
                   if (s.hasMil) ...[
                     const SizedBox(height: 4),
@@ -1333,6 +1336,37 @@ class _FormationListViewState extends State<FormationListView> {
       child: Text(text,
           style: TextStyle(
               color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _modalityProgress(FormationSnapshotDoc snapshot) {
+    final progress = snapshot.modalityProgress;
+    return Wrap(
+      spacing: 5,
+      runSpacing: 5,
+      children: FormationModality.values.map((modality) {
+        final value = progress[modality]!;
+        final detail = value.total == 0
+            ? '—'
+            : '${value.validated}/${value.total}'
+                '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}';
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          ),
+          child: Text(
+            '${modality.label} $detail',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.92),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

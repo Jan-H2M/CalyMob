@@ -189,6 +189,74 @@ void main() {
     expect(find.text('Scanner une carte papier'), findsNothing);
   });
 
+  testWidgets(
+    'formation overview is visible to encadrants and opens the member view',
+    (tester) async {
+      var openedFormation = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActionsEvaluationsScreen(
+            previewMode: true,
+            previewClubStatuten: const ['Encadrant'],
+            previewPlongeurCode: 'AM',
+            onOpenFormationOverview: () => openedFormation = true,
+          ),
+        ),
+      );
+
+      expect(find.text('Suivi des formations'), findsOneWidget);
+      expect(find.text('Avancement des élèves'), findsOneWidget);
+      expect(find.textContaining('carrière, piscine, théorie'), findsOneWidget);
+      expect(find.text('Scanner une carte papier'), findsNothing);
+
+      await tester.tap(find.text('Avancement des élèves'));
+      expect(openedFormation, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey('actions-segment-done')));
+      await tester.pump();
+      expect(find.text('Avancement des élèves'), findsNothing);
+    },
+  );
+
+  testWidgets('formation overview stays hidden from ordinary members', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewClubStatuten: ['membre'],
+          previewPlongeurCode: 'P2',
+        ),
+      ),
+    );
+
+    expect(find.text('Avancement des élèves'), findsNothing);
+    expect(find.text('Tout est à jour'), findsOneWidget);
+  });
+
+  testWidgets(
+    'pool encadrants can open formation but cannot validate LIFRAS',
+    (tester) async {
+      var openedFormation = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActionsEvaluationsScreen(
+            previewMode: true,
+            previewClubStatuten: const ['Encadrant Piscine'],
+            previewPlongeurCode: 'AM',
+            onOpenFormationOverview: () => openedFormation = true,
+          ),
+        ),
+      );
+
+      expect(find.text('Avancement des élèves'), findsOneWidget);
+      expect(find.text('Scanner une carte papier'), findsNothing);
+      await tester.tap(find.text('Avancement des élèves'));
+      expect(openedFormation, isTrue);
+    },
+  );
+
   testWidgets('search filters done history by status and member', (
     tester,
   ) async {

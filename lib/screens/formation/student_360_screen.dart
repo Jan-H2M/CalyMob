@@ -1,11 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/member_profile.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../services/formation_snapshot_reader.dart';
+import '../../services/member_observation_service.dart';
+import '../../utils/member_name.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/ocean_background.dart';
 
 /// WP-10 — Fiche élève 360°.
@@ -60,6 +66,26 @@ class _Student360ScreenState extends State<Student360Screen> {
           .where('memberId', isEqualTo: widget.member.id)
           .get();
       final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+      final observerIds = list
+          .map((o) => o['observerId']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final members = FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(widget.clubId)
+          .collection('member_directory');
+      final names = <String, String>{};
+      await Future.wait(observerIds.map((observerId) async {
+        final member = await members.doc(observerId).get();
+        final data = member.data();
+        if (data != null) {
+          names[observerId] = memberDisplayName(data, fallback: 'Encadrant');
+        }
+      }));
+      for (final observation in list) {
+        observation['canonicalObserverName'] =
+            names[observation['observerId']?.toString() ?? ''] ?? '';
+      }
       list.sort((a, b) {
         final da = _obsDate(a)?.millisecondsSinceEpoch ?? 0;
         final db = _obsDate(b)?.millisecondsSinceEpoch ?? 0;
@@ -78,8 +104,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     return null;
   }
 
-  String get _fullName =>
-      '${widget.member.prenom} ${widget.member.nom}'.trim();
+  String get _fullName => '${widget.member.prenom} ${widget.member.nom}'.trim();
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +239,8 @@ class _Student360ScreenState extends State<Student360Screen> {
                   children: [
                     _stat('Plongées', '${s.diveStats.total}'),
                     _stat('Mer', '${s.diveStats.mer}'),
-                    _stat('Prof. max',
+                    _stat(
+                        'Prof. max',
                         s.diveStats.maxDepthMeters == null
                             ? '—'
                             : '${s.diveStats.maxDepthMeters!.toStringAsFixed(0)} m'),
@@ -317,30 +343,122 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Widget _buildCta() {
+    final clubStatuten = context.watch<MemberProvider>().clubStatuten;
+    final canAddPoolRemark =
+        PermissionHelper.canAddPoolFormationRemark(clubStatuten);
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-        child: SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.lichtblauw,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canAddPoolRemark) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.72),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: _addPoolRemark,
+                  icon: const Icon(Icons.add_comment_outlined),
+                  label: const Text('Ajouter une remarque piscine'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.lichtblauw,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                // La préparation ouvre le planning depuis une sortie précise :
+                // on renvoie le membre au flux appelant (câblage complet = WP-12).
+                onPressed: () => Navigator.of(context)
+                    .pop({'action': 'plan', 'memberId': widget.member.id}),
+                icon: const Icon(Icons.event_note),
+                label: const Text('Préparer la prochaine séance'),
+              ),
             ),
-            // La préparation ouvre le planning depuis une sortie précise :
-            // on renvoie le membre au flux appelant (câblage complet = WP-12).
-            onPressed: () =>
-                Navigator.of(context).pop({'action': 'plan', 'memberId': widget.member.id}),
-            icon: const Icon(Icons.event_note),
-            label: const Text('Préparer la prochaine séance'),
-          ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _addPoolRemark() async {
+    final noteController = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remarque piscine'),
+        content: TextField(
+          controller: noteController,
+          autofocus: true,
+          minLines: 3,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Ajoutez une remarque sur la progression de l’élève…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = noteController.text.trim();
+              if (value.isNotEmpty) Navigator.of(dialogContext).pop(value);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    noteController.dispose();
+    if (note == null || note.isEmpty || !mounted) return;
+
+    final auth = context.read<AuthProvider>();
+    final observerId = auth.currentUser?.uid ?? '';
+    if (observerId.isEmpty) return;
+    try {
+      await MemberObservationService().addPoolFormationRemark(
+        clubId: widget.clubId,
+        memberId: widget.member.id,
+        memberName: _fullName,
+        memberNiveau: _snapshot?.targetLevel ?? '',
+        note: note,
+        observerId: observerId,
+      );
+      final observations = await _loadObservations();
+      if (!mounted) return;
+      setState(() => _observations = observations);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Remarque piscine enregistrée')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La remarque n’a pas pu être enregistrée.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   // WP-12 — bandeau « Points d'attention » (vue moniteur).
@@ -375,7 +493,8 @@ class _Student360ScreenState extends State<Student360Screen> {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text('• ${_describeCode(s, code)}$detail',
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.92), fontSize: 13)),
+                      color: Colors.white.withValues(alpha: 0.92),
+                      fontSize: 13)),
             );
           }),
         ],
@@ -407,6 +526,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
+        _modalityProgressSummary(s),
         _section(
           '✓ Validés (${s.validated.length})',
           s.validated
@@ -417,9 +537,10 @@ class _Student360ScreenState extends State<Student360Screen> {
         _section(
           '⏳ En attente (${s.pending.length + s.pendingClaims.length})',
           [
-            ...s.pending.map((e) => _exRow(e.code, e.description, Colors.amberAccent)),
-            ...s.pendingClaims.map((c) =>
-                _exRow(c.code, c.label.isNotEmpty ? c.label : c.status, Colors.amberAccent)),
+            ...s.pending
+                .map((e) => _exRow(e.code, e.description, Colors.amberAccent)),
+            ...s.pendingClaims.map((c) => _exRow(c.code,
+                c.label.isNotEmpty ? c.label : c.status, Colors.amberAccent)),
           ],
           emptyText: 'Rien en attente.',
         ),
@@ -427,12 +548,91 @@ class _Student360ScreenState extends State<Student360Screen> {
           '○ Restants (${s.remaining.length})',
           s.remaining.map((e) {
             final pc = s.perCode[e.code];
-            final badge = (pc != null && pc.attempts > 0) ? '×${pc.attempts} pratiqué' : null;
+            final badge = (pc != null && pc.attempts > 0)
+                ? '×${pc.attempts} pratiqué'
+                : null;
             return _exRow(e.code, e.description, Colors.white54, badge: badge);
           }).toList(),
           emptyText: 'Tous les exercices de l\'objectif sont couverts.',
         ),
       ],
+    );
+  }
+
+  Widget _modalityProgressSummary(FormationSnapshotDoc snapshot) {
+    final progress = snapshot.modalityProgress;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.donkerblauw.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Progression par volet',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 9),
+          ...FormationModality.values.map((modality) {
+            final value = progress[modality]!;
+            final total = value.total;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 68,
+                    child: Text(
+                      modality.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: LinearProgressIndicator(
+                        value: total == 0 ? 0 : value.validated / total,
+                        minHeight: 7,
+                        backgroundColor: Colors.white.withValues(alpha: 0.16),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.lichtblauw,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 70,
+                    child: Text(
+                      total == 0
+                          ? '—'
+                          : '${value.validated}/$total'
+                              '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}',
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.86),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -543,7 +743,9 @@ class _Student360ScreenState extends State<Student360Screen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: Text(label, style: const TextStyle(color: Colors.white))),
+              Expanded(
+                  child:
+                      Text(label, style: const TextStyle(color: Colors.white))),
               Text('${r.have}/${r.need}',
                   style: TextStyle(
                       color: done ? Colors.greenAccent : Colors.white,
@@ -572,7 +774,8 @@ class _Student360ScreenState extends State<Student360Screen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(k, style: TextStyle(color: Colors.white.withValues(alpha: 0.85))),
+          Text(k,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.85))),
           Text(v,
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.w700)),
@@ -600,7 +803,10 @@ class _Student360ScreenState extends State<Student360Screen> {
       children: [
         _section(
           '🎯 Objectifs de l\'élève',
-          s.goalCodes.map((c) => _exRow(c, s.perCode[c]?.lastResult ?? '', Colors.tealAccent)).toList(),
+          s.goalCodes
+              .map((c) =>
+                  _exRow(c, s.perCode[c]?.lastResult ?? '', Colors.tealAccent))
+              .toList(),
           emptyText: 'Aucun exercice ciblé.',
         ),
         if (s.goalNote.isNotEmpty)
@@ -631,9 +837,14 @@ class _Student360ScreenState extends State<Student360Screen> {
       itemBuilder: (context, i) {
         final o = _observations[i];
         final result = o['result']?.toString() ?? '';
-        final code = o['exerciceCode']?.toString() ?? o['themeTitle']?.toString() ?? '';
+        final code = o['exerciceCode']?.toString() ??
+            o['themeTitle']?.toString() ??
+            (o['contextType'] == 'piscine'
+                ? 'Remarque piscine'
+                : 'Observation');
         final desc = _lookupDesc(s, o['exerciceCode']?.toString() ?? '');
         final note = o['note']?.toString() ?? '';
+        final observerName = o['canonicalObserverName']?.toString() ?? '';
         final date = _obsDate(o);
         final color = result == 'acquis'
             ? Colors.greenAccent
@@ -654,12 +865,16 @@ class _Student360ScreenState extends State<Student360Screen> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                         color: color.withValues(alpha: 0.25),
                         borderRadius: BorderRadius.circular(20)),
                     child: Text(_resultLabel(result),
-                        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -668,7 +883,8 @@ class _Student360ScreenState extends State<Student360Screen> {
                       children: [
                         Text(code,
                             style: const TextStyle(
-                                color: Colors.white, fontWeight: FontWeight.w700)),
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700)),
                         if (desc.isNotEmpty)
                           Text(desc,
                               style: TextStyle(
@@ -680,14 +896,26 @@ class _Student360ScreenState extends State<Student360Screen> {
                   if (date != null)
                     Text(_shortDate(date),
                         style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6), fontSize: 11)),
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 11)),
                 ],
               ),
               if (note.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(note,
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 13)),
+              ],
+              if (observerName.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text(
+                  'Par $observerName',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.58),
+                    fontSize: 11,
+                  ),
+                ),
               ],
             ],
           ),
