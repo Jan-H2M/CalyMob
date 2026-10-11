@@ -60,6 +60,15 @@ void main() {
     expect(find.text('Total en milieu naturel'), findsOneWidget);
     expect(find.text('12/20'), findsOneWidget);
     expect(find.text('Manque 8'), findsOneWidget);
+    expect(find.text('Voir les détails LIFRAS'), findsOneWidget);
+    expect(find.text('En mer'), findsNothing);
+
+    final detailsButton = find.byKey(const Key('mil-show-details'));
+    await tester.ensureVisible(detailsButton);
+    await tester.tap(detailsButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     expect(find.text('En mer'), findsOneWidget);
     expect(find.text('5/5'), findsOneWidget);
     expect(find.text('Atteint'), findsOneWidget);
@@ -118,6 +127,14 @@ void main() {
     expect(find.text('Total en milieu naturel'), findsOneWidget);
     expect(find.text('12/20'), findsOneWidget);
     expect(find.text('Manque 8'), findsOneWidget);
+    expect(find.text('5/5'), findsNothing);
+
+    final detailsButton = find.byKey(const Key('mil-show-details'));
+    await tester.ensureVisible(detailsButton);
+    await tester.tap(detailsButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     expect(find.text('5/5'), findsOneWidget);
     expect(find.text('Atteint'), findsOneWidget);
   });
