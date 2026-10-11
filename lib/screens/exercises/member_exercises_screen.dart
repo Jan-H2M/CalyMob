@@ -620,7 +620,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             children: [
               Icon(icon, size: 18, color: Colors.white),
               const SizedBox(width: 6),
-              Text(
+              Expanded(
+                  child: Text(
                 title,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
@@ -634,7 +635,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                     ),
                   ],
                 ),
-              ),
+              )),
               const SizedBox(width: 6),
               if (children.isNotEmpty)
                 Container(
@@ -762,7 +763,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         exercice.code,
