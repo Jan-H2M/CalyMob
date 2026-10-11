@@ -24,11 +24,9 @@ class PoolStudentSession {
 
   bool get trainingReported => participation == 'training';
 
-  factory PoolStudentSession.fromRecords(
-    String id,
-    Map<String, dynamic> session,
-    List<Map<String, dynamic>> attendance,
-  ) {
+  factory PoolStudentSession.fromRecords(String id,
+      Map<String, dynamic> session, List<Map<String, dynamic>> attendance,
+      {String? automaticLevel}) {
     // Duplicate QR documents count once. Prefer the completed report, while
     // retaining legacy assignments when the canonical record lacks them.
     attendance = [...attendance]
@@ -54,8 +52,7 @@ class PoolStudentSession {
       lessons.add(_lesson(session, group, ''));
     }
     if (lessons.isEmpty &&
-        (merged['assignedLevel'] != null ||
-            merged['assignedCourseId'] != null)) {
+        (merged['assignedCourseId']?.toString().isNotEmpty ?? false)) {
       lessons.add(
         _lesson(
             session,
@@ -68,6 +65,20 @@ class PoolStudentSession {
       );
     }
     final rawOutcome = merged['outcome']?.toString() ?? '';
+    if (lessons.isEmpty &&
+        rawOutcome.isEmpty &&
+        hours.isEmpty &&
+        merged['sentToReserve'] != true &&
+        merged['isGuest'] != true) {
+      final assignedLevel = merged['assignedLevel']?.toString();
+      final level =
+          assignedLevel?.isNotEmpty == true ? assignedLevel : automaticLevel;
+      if (level != null && level.isNotEmpty) {
+        lessons.add(_scheduledLesson(
+            session, level, merged['assignedToMemberId']?.toString(),
+            inferred: assignedLevel?.isNotEmpty != true));
+      }
+    }
     final training = rawOutcome == 'training' ||
         (rawOutcome.isEmpty &&
             hours.values.any((value) => poolMap(value)['role'] == 'eleve'));
@@ -92,6 +103,7 @@ class PoolStudentLesson {
   final String theme;
   final List<String> monitorNames;
   final List<String> monitorIds;
+  final String sourceLabel;
   const PoolStudentLesson({
     required this.level,
     required this.group,
@@ -99,7 +111,86 @@ class PoolStudentLesson {
     required this.theme,
     this.monitorNames = const [],
     this.monitorIds = const [],
+    this.sourceLabel = '',
   });
+}
+
+/// Mirrors CalyCompta getPiscineAutoAssignedLevel, not historical validation.
+String? poolAutomaticFormationLevel(String? code, bool active) {
+  if (!active) return null;
+  final normalized =
+      code?.trim().toUpperCase().replaceAll('★', '').replaceAll('*', '');
+  return const {
+    'NB': '1*',
+    '1': '2*',
+    'P1': '2*',
+    '2': '3*',
+    'P2': '3*',
+    '3': '4*',
+    'P3': '4*',
+    '4': 'AM',
+    'P4': 'AM',
+    'AM': 'MC',
+    'MC': 'MC'
+  }[normalized];
+}
+
+PoolStudentLesson _scheduledLesson(
+    Map<String, dynamic> session, String level, String? parentId,
+    {required bool inferred}) {
+  final hour = level == '1*' ? '1ere_heure' : '2eme_heure';
+  final assignment = poolMap(poolMap(session['niveaux'])[level]);
+  final byHour =
+      poolMap(assignment['courses_by_hour'] ?? assignment['coursesByHour']);
+  final raw = byHour[hour];
+  final courses =
+      raw is List ? raw.map(poolMap).toList() : <Map<String, dynamic>>[];
+  Map<String, dynamic> selected = const {};
+  if (courses.length == 1) {
+    selected = courses.single;
+  } else if (courses.length > 1 && parentId != null && parentId.isNotEmpty) {
+    final candidates = courses
+        .where((course) =>
+            course['encadrants'] is List &&
+            (course['encadrants'] as List)
+                .any((person) => poolMap(person)['membre_id'] == parentId))
+        .toList();
+    if (candidates.length == 1) selected = candidates.single;
+  } else if (byHour.isEmpty && assignment.isNotEmpty) {
+    selected = {
+      'theme': assignment['theme_$hour'] ?? assignment['theme'],
+      'encadrants': assignment['encadrants'] is List
+          ? (assignment['encadrants'] as List)
+              .where((person) =>
+                  (poolMap(person)['heure'] ?? '1ere_heure') == hour)
+              .toList()
+          : [],
+      'order': 0
+    };
+  }
+  final people = selected['encadrants'] is List
+      ? (selected['encadrants'] as List).map(poolMap).toList()
+      : <Map<String, dynamic>>[];
+  return PoolStudentLesson(
+      level: level,
+      group: courses.length > 1 && selected['order'] is num
+          ? '${(selected['order'] as num).toInt() + 1}'
+          : '',
+      hour: hour,
+      theme: (selected['theme'] ?? '').toString(),
+      monitorNames: people
+          .map((person) =>
+              '${person['membre_prenom'] ?? ''} ${person['membre_nom'] ?? ''}'
+                  .trim())
+          .where((name) => name.isNotEmpty)
+          .toList(),
+      monitorIds: people
+          .map((person) => (person['membre_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList(),
+      sourceLabel: inferred
+          ? 'Affectation automatique selon le profil actuel · contenu du planning'
+          : 'Affectation de la séance · contenu du planning');
 }
 
 PoolStudentLesson _lesson(

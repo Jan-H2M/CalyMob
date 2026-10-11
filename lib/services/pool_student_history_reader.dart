@@ -9,7 +9,8 @@ class PoolStudentHistoryReader {
   PoolStudentHistoryReader({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
-  Future<List<PoolStudentSession>> load(String clubId, String memberId) async {
+  Future<List<PoolStudentSession>> load(String clubId, String memberId,
+      {String? automaticLevel}) async {
     final sessions = await _firestore
         .collection('clubs')
         .doc(clubId)
@@ -56,6 +57,7 @@ class PoolStudentHistoryReader {
             session.id,
             data,
             records.values.toList(),
+            automaticLevel: automaticLevel,
           );
         }),
       );
@@ -100,6 +102,7 @@ class PoolStudentHistoryReader {
                     hour: lesson.hour,
                     theme: lesson.theme,
                     monitorIds: lesson.monitorIds,
+                    sourceLabel: lesson.sourceLabel,
                     monitorNames: lesson.monitorNames.isNotEmpty
                         ? lesson.monitorNames
                         : lesson.monitorIds

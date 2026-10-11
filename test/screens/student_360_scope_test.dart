@@ -35,7 +35,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Apnée synthétique'), findsOneWidget);
     expect(find.text('Encadrants : Moniteur Test'), findsOneWidget);
-    expect(find.text('1* · Groupe 2 · 1re heure'), findsOneWidget);
+    expect(find.text('Formation 1★ · Groupe 2 · 1re heure'), findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsNothing);
     expect(find.text('Ajouter une remarque piscine'), findsOneWidget);
     await tester.tap(find.text('Ajouter une remarque à cette séance'));
@@ -75,6 +75,23 @@ void main() {
       ),
       findsNothing,
     );
+  });
+  testWidgets('monitor can open an observation directly from observations tab',
+      (tester) async {
+    await _pump(tester, scope: FormationTrackingScope.full);
+    await tester.tap(find.text('Observations'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Ajouter une observation'), findsOneWidget);
+    await tester.tap(find.text('Ajouter une observation'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Observation synthétique');
+    await tester.tap(find.text('Annuler'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(AlertDialog), findsNothing);
   });
 
   testWidgets('full scope exposes canonical brevet experience have and need', (

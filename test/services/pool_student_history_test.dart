@@ -128,6 +128,117 @@ void main() {
     ]);
     expect(history.trainingReported, isFalse);
   });
+  test(
+      'web automatic grouping resolves unique scheduled lesson, not validation',
+      () {
+    final planned = {
+      'niveaux': {
+        '3*': {
+          'courses_by_hour': {
+            '1ere_heure': [
+              {'id': 'earlier', 'theme': 'Autre heure'}
+            ],
+            '2eme_heure': [
+              {
+                'id': 'unique',
+                'theme': 'Remontée assistée au gilet',
+                'encadrants': [
+                  {'membre_prenom': 'Romain', 'membre_nom': 'Test'}
+                ]
+              }
+            ],
+          }
+        }
+      }
+    };
+    expect(poolAutomaticFormationLevel('2', true), '3*');
+    expect(poolAutomaticFormationLevel('2', false), isNull);
+    final history = PoolStudentSession.fromRecords(
+        's',
+        planned,
+        [
+          {'memberId': 'pupil'}
+        ],
+        automaticLevel: '3*');
+    expect(history.lessons.single.level, '3*');
+    expect(history.lessons.single.hour, '2eme_heure');
+    expect(history.lessons.single.theme, 'Remontée assistée au gilet');
+    expect(history.lessons.single.monitorNames, ['Romain Test']);
+    expect(history.lessons.single.sourceLabel, contains('profil actuel'));
+    expect(history.trainingReported, isFalse);
+    final explicit = PoolStudentSession.fromRecords(
+        's',
+        planned,
+        [
+          {'assignedLevel': '3*'}
+        ],
+        automaticLevel: '1*');
+    expect(explicit.lessons.single.level, '3*');
+    expect(
+        explicit.lessons.single.sourceLabel, isNot(contains('profil actuel')));
+  });
+  test(
+      'automatic level never chooses arbitrary parallel course or overwrites report',
+      () {
+    final ambiguous = PoolStudentSession.fromRecords('s', session, [{}],
+        automaticLevel: '1*');
+    expect(ambiguous.lessons.single.theme, isEmpty);
+    final saved = PoolStudentSession.fromRecords(
+        's',
+        session,
+        [
+          {
+            'groupAssignment': {'level': '1*', 'themeSnapshot': 'Historique'}
+          }
+        ],
+        automaticLevel: '3*');
+    expect(saved.lessons.single.level, '1*');
+    expect(saved.lessons.single.theme, 'Historique');
+    final reserve = PoolStudentSession.fromRecords(
+        's',
+        session,
+        [
+          {'sentToReserve': true}
+        ],
+        automaticLevel: '1*');
+    expect(reserve.lessons, isEmpty);
+  });
+  test('general monitor remark has server audit and is not a pool or result',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final service = MemberObservationService(firestore: db);
+    await service.addFormationRemark(
+        clubId: 'club',
+        memberId: 'pupil',
+        memberName: 'Test',
+        memberNiveau: '3*',
+        observerId: 'monitor',
+        note: ' Progrès synthétiques ');
+    final note = (await db.collection('clubs/club/member_observations').get())
+        .docs
+        .single
+        .data();
+    expect(note['note'], 'Progrès synthétiques');
+    expect(note['contextType'], 'autre');
+    expect(note['observerId'], 'monitor');
+    expect(note['contextDate'], isA<Timestamp>());
+    // The fake resolves serverTimestamp separately per field. Exact request
+    // time equality is verified against the real emulator in the rules test.
+    expect(note['createdAt'], isA<Timestamp>());
+    expect(note['updatedAt'], isA<Timestamp>());
+    expect(note.containsKey('result'), isFalse);
+    await expectLater(
+        service.addFormationRemark(
+            clubId: 'club',
+            memberId: 'pupil',
+            memberName: 'Test',
+            memberNiveau: '3*',
+            observerId: 'monitor',
+            note: ' '),
+        throwsArgumentError);
+    expect(
+        (await db.collection('clubs/club/member_observations').get()).size, 1);
+  });
   test('missing lesson date never becomes today or permits a historical note',
       () {
     final history = PoolStudentSession.fromRecords('s', {}, [{}]);

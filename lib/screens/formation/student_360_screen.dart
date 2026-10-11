@@ -74,6 +74,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   List<PoolStudentSession> _poolHistory = const [];
   bool _historyLoading = false;
   bool _historyFailed = false;
+  bool _observationsFailed = false;
 
   @override
   void initState() {
@@ -118,6 +119,8 @@ class _Student360ScreenState extends State<Student360Screen> {
       final history = await PoolStudentHistoryReader().load(
         widget.clubId,
         widget.member.id,
+        automaticLevel: poolAutomaticFormationLevel(
+            widget.member.plongeurCode, widget.member.formationActive),
       );
       if (!mounted) return;
       setState(() {
@@ -175,6 +178,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Future<List<Map<String, dynamic>>> _loadObservations() async {
+    _observationsFailed = false;
     try {
       Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('clubs')
@@ -221,6 +225,7 @@ class _Student360ScreenState extends State<Student360Screen> {
       });
       return list;
     } catch (_) {
+      _observationsFailed = true;
       return const [];
     }
   }
@@ -641,6 +646,8 @@ class _Student360ScreenState extends State<Student360Screen> {
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
+                    backgroundColor:
+                        AppColors.donkerblauw.withValues(alpha: 0.85),
                     side: BorderSide(
                       color: Colors.white.withValues(alpha: 0.72),
                     ),
@@ -683,14 +690,22 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Future<void> _addPoolRemark([PoolStudentSession? session]) async {
+  Future<void> _addPoolRemark([PoolStudentSession? session]) =>
+      _addRemark(session: session);
+
+  Future<void> _addRemark(
+      {PoolStudentSession? session, bool pool = true}) async {
+    // Pool-only instructors may never create non-pool observations.
+    if (!pool && widget.scope != FormationTrackingScope.full) return;
     var draft = '';
     final note = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(
           session == null
-              ? 'Remarque piscine'
+              ? pool
+                  ? 'Remarque piscine'
+                  : 'Ajouter une observation'
               : 'Remarque · ${_sessionDate(session.date)}',
         ),
         content: TextField(
@@ -736,7 +751,7 @@ class _Student360ScreenState extends State<Student360Screen> {
           sessionDate: session.date!,
           note: note,
         );
-      } else {
+      } else if (pool) {
         await MemberObservationService().addPoolFormationRemark(
           clubId: widget.clubId,
           memberId: widget.member.id,
@@ -747,18 +762,30 @@ class _Student360ScreenState extends State<Student360Screen> {
           note: note,
           observerId: observerId,
         );
+      } else {
+        await MemberObservationService().addFormationRemark(
+          clubId: widget.clubId,
+          memberId: widget.member.id,
+          memberName: _fullName,
+          memberNiveau: _snapshot?.targetLevel ?? '',
+          observerId: observerId,
+          note: note,
+        );
       }
       final observations = await _loadObservations();
       if (!mounted) return;
       setState(() => _observations = observations);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Remarque piscine enregistrée')),
+        SnackBar(
+            content: Text(pool
+                ? 'Remarque piscine enregistrée'
+                : 'Observation enregistrée')),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('La remarque n’a pas pu être enregistrée.'),
+          content: Text('L’observation n’a pas pu être enregistrée.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -925,7 +952,13 @@ class _Student360ScreenState extends State<Student360Screen> {
             children: [
               Text(
                 [
-                  lesson.level,
+                  lesson.level.endsWith('*')
+                      ? 'Formation ${lesson.level.replaceAll('*', '★')}'
+                      : lesson.level == 'MC'
+                          ? 'Formation Moniteur Club'
+                          : lesson.level == 'AM'
+                              ? 'Formation Assistant Moniteur'
+                              : lesson.level,
                   if (lesson.group.isNotEmpty) 'Groupe ${lesson.group}',
                   if (lesson.hour.isNotEmpty)
                     lesson.hour == '1ere_heure'
@@ -947,6 +980,10 @@ class _Student360ScreenState extends State<Student360Screen> {
                 'Encadrants : ${lesson.monitorNames.isEmpty ? 'non renseignés' : lesson.monitorNames.join(', ')}',
                 style: const TextStyle(color: Colors.white70),
               ),
+              if (lesson.sourceLabel.isNotEmpty)
+                Text(lesson.sourceLabel,
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 11)),
             ],
           ),
         ),
@@ -1293,22 +1330,38 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   // ---- Onglet Observations -------------------------------------------------
   Widget _buildObservationsTab(FormationSnapshotDoc? s) {
-    if (_observations.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Aucune observation enregistrée.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
-          ),
-        ),
-      );
-    }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      itemCount: _observations.length,
+      itemCount: _observations.length +
+          1 +
+          (_observations.isEmpty || _observationsFailed ? 1 : 0),
       itemBuilder: (context, i) {
-        final o = _observations[i];
+        if (i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.donkerblauw,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: () => _addRemark(
+                  pool: widget.scope == FormationTrackingScope.piscineOnly),
+              icon: const Icon(Icons.add_comment_outlined),
+              label: Text(widget.scope == FormationTrackingScope.piscineOnly
+                  ? 'Ajouter une remarque piscine'
+                  : 'Ajouter une observation'),
+            ),
+          );
+        }
+        if (i == 1 && (_observations.isEmpty || _observationsFailed)) {
+          return Text(
+            _observationsFailed
+                ? 'Observations temporairement indisponibles.'
+                : 'Aucune observation enregistrée.',
+            style: const TextStyle(color: Colors.white),
+          );
+        }
+        final o = _observations[i - 1 - (_observationsFailed ? 1 : 0)];
         final result = o['result']?.toString() ?? '';
         final code = o['exerciceCode']?.toString() ??
             o['themeTitle']?.toString() ??
@@ -1403,7 +1456,7 @@ class _Student360ScreenState extends State<Student360Screen> {
               if (observerName.isNotEmpty) ...[
                 const SizedBox(height: 5),
                 Text(
-                  'Par $observerName',
+                  'Par $observerName${poolDate(o['createdAt']) == null ? '' : ' · écrit le ${_sessionDate(poolDate(o['createdAt']))}'}',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.58),
                     fontSize: 11,

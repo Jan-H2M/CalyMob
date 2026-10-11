@@ -256,6 +256,14 @@ async function main() {
     ));
     const historicalRemark = {...validPoolRemark, contextId: 'past-lesson',
       contextTitle: 'Séance piscine', contextDate: new Date('2026-01-06T20:00:00Z')};
+    const generalRemark = {...validPoolRemark, contextType:'autre', contextTitle:'Suivi formation', observerId:'monitor-MC'};
+    await assertSucceeds(setDoc(doc(monitorDb, `${observationsPath}/monitor-general`), generalRemark));
+    const savedGeneral = (await getDoc(doc(monitorDb, `${observationsPath}/monitor-general`))).data();
+    if (!savedGeneral.contextDate.isEqual(savedGeneral.createdAt) || !savedGeneral.updatedAt.isEqual(savedGeneral.createdAt)) {
+      throw Error('General remark audit timestamps must match server request time.');
+    }
+    await assertFails(setDoc(doc(poolDb, `${observationsPath}/pool-general-denied`), {...generalRemark, observerId:'pool-instructor'}));
+    await assertFails(setDoc(doc(ordinaryDb, `${observationsPath}/ordinary-general-denied`), {...generalRemark, observerId:'ordinary-member'}));
     await assertSucceeds(setDoc(doc(poolDb, `${observationsPath}/historical-lesson`), historicalRemark));
     for (const [name, change] of Object.entries({
       missing: {contextId: 'missing-lesson'},

@@ -6,7 +6,7 @@ import '../models/member_observation.dart';
 class MemberObservationService {
   final FirebaseFirestore _firestore;
   MemberObservationService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _collection(String clubId) {
     return _firestore
@@ -80,6 +80,37 @@ class MemberObservationService {
       'updatedAt': serverTime,
     });
     return docRef.id;
+  }
+
+  /// General monitor note, not an exercise result. Audit dates are server-owned.
+  Future<String> addFormationRemark({
+    required String clubId,
+    required String memberId,
+    required String memberName,
+    required String memberNiveau,
+    required String observerId,
+    required String note,
+  }) async {
+    final value = note.trim();
+    if (value.isEmpty || value.length > 2000) {
+      throw ArgumentError('An observation must contain 1–2000 characters.');
+    }
+    final serverTime = FieldValue.serverTimestamp();
+    final doc = await _collection(clubId).add({
+      'memberId': memberId,
+      'memberName': memberName,
+      'memberNiveau': memberNiveau,
+      'contextType': 'autre',
+      'contextId': 'formation_overview',
+      'contextTitle': 'Suivi formation',
+      'contextDate': serverTime,
+      'category': 'general',
+      'note': value,
+      'observerId': observerId,
+      'createdAt': serverTime,
+      'updatedAt': serverTime,
+    });
+    return doc.id;
   }
 
   /// A retrospective lesson note keeps the lesson date separate from its audit.
