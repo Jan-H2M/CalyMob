@@ -649,48 +649,21 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Widget _buildPoolRemarkButton() {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-        child: SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: AppColors.donkerblauw.withValues(alpha: 0.85),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.72)),
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            onPressed: () => _addPoolRemark(),
-            icon: const Icon(Icons.add_comment_outlined),
-            label: const Text('Ajouter une remarque piscine'),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _addPoolRemark([PoolStudentSession? session]) =>
+  Future<void> _addPoolRemark(PoolStudentSession session) =>
       _addRemark(session: session);
 
-  Future<void> _addRemark(
-      {PoolStudentSession? session, bool pool = true}) async {
+  Future<void> _addRemark({PoolStudentSession? session}) async {
+    final pool = session != null;
     // Pool-only instructors may never create non-pool observations.
     if (!pool && widget.scope != FormationTrackingScope.full) return;
+    if (pool && (session.date == null || !session.hasLessonDate)) return;
     var draft = '';
     final note = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(
           session == null
-              ? pool
-                  ? 'Remarque piscine'
-                  : 'Ajouter une observation'
+              ? 'Ajouter une observation'
               : 'Remarque · ${_sessionDate(session.date)}',
         ),
         content: TextField(
@@ -735,17 +708,6 @@ class _Student360ScreenState extends State<Student360Screen> {
           sessionId: session.id,
           sessionDate: session.date!,
           note: note,
-        );
-      } else if (pool) {
-        await MemberObservationService().addPoolFormationRemark(
-          clubId: widget.clubId,
-          memberId: widget.member.id,
-          memberName: _fullName,
-          memberNiveau: widget.scope == FormationTrackingScope.full
-              ? _snapshot?.targetLevel ?? ''
-              : '',
-          note: note,
-          observerId: observerId,
         );
       } else {
         await MemberObservationService().addFormationRemark(
@@ -859,7 +821,6 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        _buildPoolRemarkButton(),
         _section(
           'Séances piscine · ${_poolHistory.length} présences enregistrées',
           [
@@ -1246,6 +1207,15 @@ class _Student360ScreenState extends State<Student360Screen> {
           (_observations.isEmpty || _observationsFailed ? 1 : 0),
       itemBuilder: (context, i) {
         if (i == 0) {
+          if (widget.scope == FormationTrackingScope.piscineOnly) {
+            return const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Pour ajouter une remarque, choisissez une séance datée dans l’onglet Piscine.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            );
+          }
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: FilledButton.icon(
@@ -1253,12 +1223,9 @@ class _Student360ScreenState extends State<Student360Screen> {
                   backgroundColor: AppColors.donkerblauw,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14)),
-              onPressed: () => _addRemark(
-                  pool: widget.scope == FormationTrackingScope.piscineOnly),
+              onPressed: () => _addRemark(),
               icon: const Icon(Icons.add_comment_outlined),
-              label: Text(widget.scope == FormationTrackingScope.piscineOnly
-                  ? 'Ajouter une remarque piscine'
-                  : 'Ajouter une observation'),
+              label: const Text('Ajouter une observation'),
             ),
           );
         }

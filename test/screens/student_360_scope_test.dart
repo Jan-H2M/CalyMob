@@ -11,6 +11,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('pool-only remarks require a dated session', (tester) async {
+    await _pump(tester, scope: FormationTrackingScope.piscineOnly, history: [
+      PoolStudentSession(
+          id: 'dated',
+          date: DateTime(2026, 10, 6),
+          location: 'Piscine',
+          lessons: const [],
+          participation: ''),
+      const PoolStudentSession(
+          id: 'undated',
+          date: null,
+          hasLessonDate: false,
+          location: 'Piscine',
+          lessons: [],
+          participation: ''),
+    ]);
+    expect(find.text('Ajouter une remarque piscine'), findsNothing);
+    final buttons = find.widgetWithText(
+        OutlinedButton, 'Ajouter une remarque à cette séance');
+    expect(buttons, findsNWidgets(2));
+    final values = tester.widgetList<OutlinedButton>(buttons).toList();
+    expect(values[0].onPressed, isNotNull);
+    expect(values[1].onPressed, isNull);
+    await tester.tap(buttons.first);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Remarque · 06/10/2026'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
   testWidgets('compact complete exams and experience use green checks',
       (tester) async {
     await _pump(tester,
@@ -148,7 +179,7 @@ void main() {
     expect(find.text('Encadrants : Moniteur Test'), findsOneWidget);
     expect(find.text('Formation 1★ · Groupe 2 · 1re heure'), findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsNothing);
-    expect(find.text('Ajouter une remarque piscine'), findsOneWidget);
+    expect(find.text('Ajouter une remarque piscine'), findsNothing);
     await tester.tap(find.text('Ajouter une remarque à cette séance'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -173,13 +204,15 @@ void main() {
     expect(find.text('Remontée assistée carrière'), findsNothing);
     expect(find.text('Examen théorique'), findsNothing);
     expect(find.text('Total en milieu naturel'), findsNothing);
-    expect(find.text('Ajouter une remarque piscine'), findsOneWidget);
+    expect(find.text('Ajouter une remarque piscine'), findsNothing);
     expect(find.text('Préparer la prochaine séance'), findsNothing);
 
     await tester.drag(find.byType(TabBarView), const Offset(-1200, 0));
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Bonne maîtrise du vidage de masque.'), findsOneWidget);
+    expect(find.text('Ajouter une remarque piscine'), findsNothing);
+    expect(find.text('Ajouter une observation'), findsNothing);
     expect(
       find.text(
         'Observation carrière confidentielle.',
