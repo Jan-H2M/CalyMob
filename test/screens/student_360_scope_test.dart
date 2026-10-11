@@ -1,5 +1,6 @@
 import 'package:calymob/models/formation_snapshot_doc.dart';
 import 'package:calymob/models/member_profile.dart';
+import 'package:calymob/models/mil_experience_overview.dart';
 import 'package:calymob/models/pool_formation_snapshot_doc.dart';
 import 'package:calymob/screens/formation/student_360_screen.dart';
 import 'package:calymob/screens/exercises/member_exercises_screen.dart';
@@ -53,7 +54,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(
-      find.text('Expériences exigées pour 2* (module 61 %)'),
+      find.text('Expériences LIFRAS — Brevet 2*'),
       findsOneWidget,
     );
     expect(find.text('Total en milieu naturel'), findsOneWidget);
@@ -62,6 +63,7 @@ void main() {
     expect(find.text('En mer'), findsOneWidget);
     expect(find.text('5/5'), findsOneWidget);
     expect(find.text('Atteint'), findsOneWidget);
+    expect(find.text('Brevet 3*'), findsOneWidget);
   });
 
   test('pool observation boundary rejects non-pool records', () {
@@ -110,7 +112,7 @@ void main() {
     );
 
     expect(
-      find.text('Expériences exigées pour 2* (module 61 %)'),
+      find.text('Expériences LIFRAS — Brevet 2*'),
       findsOneWidget,
     );
     expect(find.text('Total en milieu naturel'), findsOneWidget);
@@ -144,6 +146,8 @@ Future<void> _pump(
         previewMode: true,
         previewSnapshot:
             scope == FormationTrackingScope.full ? _snapshot() : null,
+        previewMilOverview:
+            scope == FormationTrackingScope.full ? _milOverview() : null,
         previewPoolSnapshot: scope == FormationTrackingScope.piscineOnly
             ? const PoolFormationSnapshotDoc(
                 memberId: 'student-1',
@@ -167,6 +171,42 @@ Future<void> _pump(
     ),
   );
   await tester.pump();
+}
+
+MilExperienceOverview _milOverview() {
+  return const MilExperienceOverview(
+    preferredBrevet: '2',
+    sourceVersion: 'test-v1',
+    byBrevet: {
+      '2': MilBrevetExperience(
+        brevetCode: '2',
+        modulePct: 61,
+        requirements: {
+          'total_milieu_naturel': SnapshotMilRequirement(
+            have: 12,
+            need: 20,
+            dataMissing: false,
+          ),
+          'mer': SnapshotMilRequirement(
+            have: 5,
+            need: 5,
+            dataMissing: false,
+          ),
+        },
+      ),
+      '3': MilBrevetExperience(
+        brevetCode: '3',
+        modulePct: 20,
+        requirements: {
+          'total_milieu_naturel': SnapshotMilRequirement(
+            have: 12,
+            need: 60,
+            dataMissing: false,
+          ),
+        },
+      ),
+    },
+  );
 }
 
 FormationSnapshotDoc _snapshot() {

@@ -6,10 +6,12 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/member_profile.dart';
+import '../../models/mil_experience_overview.dart';
 import '../../models/pool_formation_snapshot_doc.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
+import '../../services/mil_experience_service.dart';
 import '../../utils/member_name.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
@@ -36,6 +38,7 @@ class Student360Screen extends StatefulWidget {
   final PoolFormationSnapshotDoc? poolSnapshot;
   final bool previewMode;
   final FormationSnapshotDoc? previewSnapshot;
+  final MilExperienceOverview? previewMilOverview;
   final PoolFormationSnapshotDoc? previewPoolSnapshot;
   final List<Map<String, dynamic>> previewObservations;
 
@@ -47,6 +50,7 @@ class Student360Screen extends StatefulWidget {
     this.poolSnapshot,
     this.previewMode = false,
     this.previewSnapshot,
+    this.previewMilOverview,
     this.previewPoolSnapshot,
     this.previewObservations = const [],
   });
@@ -60,6 +64,7 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   bool _loading = true;
   FormationSnapshotDoc? _snapshot;
+  MilExperienceOverview? _milOverview;
   PoolFormationSnapshotDoc? _poolSnapshot;
   List<Map<String, dynamic>> _observations = const [];
 
@@ -71,6 +76,12 @@ class _Student360ScreenState extends State<Student360Screen> {
         _poolSnapshot = widget.previewPoolSnapshot;
       } else {
         _snapshot = widget.previewSnapshot;
+        _milOverview = widget.previewMilOverview ??
+            (widget.previewSnapshot == null
+                ? null
+                : MilExperienceOverview.fromSnapshot(
+                    widget.previewSnapshot!,
+                  ));
       }
       _observations = widget.previewObservations
           .where(
@@ -91,10 +102,28 @@ class _Student360ScreenState extends State<Student360Screen> {
   Future<void> _loadFull() async {
     final snapshot =
         await _reader!.getSnapshot(widget.clubId, widget.member.id);
+    MilExperienceOverview? milOverview;
+    try {
+      milOverview = await MilExperienceService().load(
+        clubId: widget.clubId,
+        memberId: widget.member.id,
+        preferredBrevet: resolvePreferredMilBrevet(
+          targetFormationLevel: widget.member.targetFormationLevel,
+          currentCode: widget.member.plongeurCode,
+          snapshotTargetLevel: snapshot?.targetLevel,
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[student_360] lecture MIL impossible: $error\n$stackTrace');
+    }
     final observations = await _loadObservations();
     if (!mounted) return;
     setState(() {
       _snapshot = snapshot;
+      _milOverview = milOverview ??
+          (snapshot == null
+              ? null
+              : MilExperienceOverview.fromSnapshot(snapshot));
       _observations = observations;
       _loading = false;
     });
@@ -348,6 +377,9 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Widget _buildHeader(FormationSnapshotDoc s) {
     final m = widget.member;
+    final liveTargetCode = _milOverview?.initialBrevet;
+    final liveMil =
+        liveTargetCode == null ? null : _milOverview?.byBrevet[liveTargetCode];
     // Le panneau foncé remonte derrière l'AppBar transparente + la status bar
     // (SafeArea top:false) → titre « Alison » et stats toujours sur fond foncé.
     final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
@@ -388,9 +420,13 @@ class _Student360ScreenState extends State<Student360Screen> {
                   ),
                 const SizedBox(height: 8),
                 _progressBar('Exercices', s.exercisePct, AppColors.lichtblauw),
-                if (s.hasMil) ...[
+                if (liveMil != null || s.hasMil) ...[
                   const SizedBox(height: 6),
-                  _progressBar('Expérience MIL', s.milPct, Colors.amberAccent),
+                  _progressBar(
+                    'Expériences comptabilisées',
+                    liveMil?.modulePct ?? s.milPct,
+                    Colors.amberAccent,
+                  ),
                 ],
                 const SizedBox(height: 8),
                 Wrap(
@@ -980,23 +1016,14 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   // ---- Onglet Expérience (MIL) --------------------------------------------
   Widget _buildMilTab(FormationSnapshotDoc s) {
-    if (!s.hasMil || s.milPerRequirement.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            "Pas de tableau d'expériences MIL pour ce niveau.",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
-          ),
-        ),
-      );
-    }
     final zones = s.diveStats.zones;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        MilRequirementsCard(snapshot: s, dark: true),
+        MilRequirementsCard(
+          overview: _milOverview ?? MilExperienceOverview.fromSnapshot(s),
+          dark: true,
+        ),
         const SizedBox(height: 14),
         _section('Profondeurs', [
           _kv('0–10 m', '${zones['0_10'] ?? 0}'),

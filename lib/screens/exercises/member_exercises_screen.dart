@@ -5,11 +5,13 @@ import '../../config/firebase_config.dart';
 import '../../models/exercice_valide.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/formation_snapshot_doc.dart';
+import '../../models/mil_experience_overview.dart';
 import '../../providers/exercice_valide_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/exercice_valide_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/formation_snapshot_reader.dart';
+import '../../services/mil_experience_service.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -52,11 +54,13 @@ class MemberExercisesScreen extends StatefulWidget {
 @visibleForTesting
 class MemberFormationExperienceSection extends StatelessWidget {
   final FormationSnapshotDoc? snapshot;
+  final MilExperienceOverview? overview;
   final bool loading;
 
   const MemberFormationExperienceSection({
     super.key,
     required this.snapshot,
+    this.overview,
     required this.loading,
   });
 
@@ -66,10 +70,12 @@ class MemberFormationExperienceSection extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
     final data = snapshot;
-    if (data == null || !data.hasMil || data.milPerRequirement.isEmpty) {
+    final experience = overview ??
+        (data == null ? null : MilExperienceOverview.fromSnapshot(data));
+    if (experience == null || experience.isEmpty) {
       return const SizedBox.shrink();
     }
-    return MilRequirementsCard(snapshot: data);
+    return MilRequirementsCard(overview: experience);
   }
 }
 
@@ -77,6 +83,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   final ExerciceValideService _service = ExerciceValideService();
   final LifrasService _lifrasService = LifrasService();
   final FormationSnapshotReader _formationReader = FormationSnapshotReader();
+  final MilExperienceService _milExperienceService = MilExperienceService();
   final String _clubId = FirebaseConfig.defaultClubId;
 
   // Catalog for self-declaration view
@@ -84,6 +91,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   NiveauLIFRAS? _targetNiveau;
   bool _isLoadingCatalog = false;
   FormationSnapshotDoc? _formationSnapshot;
+  MilExperienceOverview? _milOverview;
   bool _isLoadingFormationSnapshot = false;
 
   // Classic view state (non-self)
@@ -153,11 +161,31 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
   Future<void> _loadFormationSnapshot() async {
     setState(() => _isLoadingFormationSnapshot = true);
+    final member = context.read<MemberProvider>();
     final snapshot =
         await _formationReader.getSnapshot(_clubId, widget.memberId);
+    MilExperienceOverview? overview;
+    try {
+      overview = await _milExperienceService.load(
+        clubId: _clubId,
+        memberId: widget.memberId,
+        preferredBrevet: resolvePreferredMilBrevet(
+          targetFormationLevel: member.targetFormationLevel,
+          currentCode: member.plongeurCode,
+          snapshotTargetLevel: snapshot?.targetLevel,
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[member_exercises] lecture MIL impossible: '
+          '$error\n$stackTrace');
+    }
     if (!mounted) return;
     setState(() {
       _formationSnapshot = snapshot;
+      _milOverview = overview ??
+          (snapshot == null
+              ? null
+              : MilExperienceOverview.fromSnapshot(snapshot));
       _isLoadingFormationSnapshot = false;
     });
   }
@@ -387,6 +415,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               const SizedBox(height: 12),
               MemberFormationExperienceSection(
                 snapshot: _formationSnapshot,
+                overview: _milOverview,
                 loading: _isLoadingFormationSnapshot,
               ),
               const SizedBox(height: 12),
