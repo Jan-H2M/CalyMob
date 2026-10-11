@@ -8,6 +8,8 @@ The full dossier header uses one compact line: Épreuves (validated/required), T
 
 The Observations tab has an add button even when empty. Full monitors create an auditable general formation note; pool-only instructors stay limited to pool notes. Neither note type adds exercise/result fields. Read failures are shown as unavailable, not as an empty history.
 
+The unconnected Préparer la prochaine séance button is removed from the natural-water tab; it previously only returned an ignored navigation result. Pool remark buttons remain functional and unchanged.
+
 When QR rows have no saved group report, history mirrors the web planner's automatic formation placement using the current active formation profile (NB→1★, 1★→2★, 2★→3★, etc.). This fallback is explicitly labelled as current-profile placement and planning content, not historical validation. Saved reports and session overrides win. Only a unique course in the appropriate hour, or an unambiguous parent-monitor match, supplies the lesson; parallel courses are never selected arbitrarily. No historical records are backfilled.
 
 The read-only history queries only the requested member under the specified club, handles legacy identity fields and duplicate QR documents, and has no 30-day cutoff. Missing group/theme/date information is displayed honestly rather than reconstructed by selecting an arbitrary parallel course. Current planner information is a fallback when no saved theme exists.

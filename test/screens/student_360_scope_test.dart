@@ -115,7 +115,7 @@ void main() {
     await _pump(tester, scope: FormationTrackingScope.full);
 
     expect(find.text('Progression par volet'), findsNothing);
-    expect(find.text('Préparer la prochaine séance'), findsOneWidget);
+    expect(find.text('Préparer la prochaine séance'), findsNothing);
     expect(find.text('Exercices en milieu naturel et théorie'), findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsOneWidget);
     expect(find.text('Examen théorique'), findsOneWidget);

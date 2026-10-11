@@ -649,59 +649,27 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Widget _buildCta({bool pool = false}) {
+  Widget _buildPoolRemarkButton() {
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (pool)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor:
-                        AppColors.donkerblauw.withValues(alpha: 0.85),
-                    side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: () => _addPoolRemark(),
-                  icon: const Icon(Icons.add_comment_outlined),
-                  label: const Text('Ajouter une remarque piscine'),
-                ),
+        child: SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: AppColors.donkerblauw.withValues(alpha: 0.85),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.72)),
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
               ),
-            if (!pool && widget.scope == FormationTrackingScope.full) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.lichtblauw,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  // La préparation ouvre le planning depuis une sortie précise :
-                  // on renvoie le membre au flux appelant (câblage complet = WP-12).
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pop({'action': 'plan', 'memberId': widget.member.id}),
-                  icon: const Icon(Icons.event_note),
-                  label: const Text('Préparer la prochaine séance'),
-                ),
-              ),
-            ],
-          ],
+            ),
+            onPressed: () => _addPoolRemark(),
+            icon: const Icon(Icons.add_comment_outlined),
+            label: const Text('Ajouter une remarque piscine'),
+          ),
         ),
       ),
     );
@@ -891,7 +859,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        _buildCta(pool: true),
+        _buildPoolRemarkButton(),
         _section(
           'Séances piscine · ${_poolHistory.length} présences enregistrées',
           [
@@ -1071,7 +1039,6 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        _buildCta(),
         ..._exerciseSections(s, pool: false),
       ],
     );
