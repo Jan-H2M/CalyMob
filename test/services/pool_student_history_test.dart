@@ -6,6 +6,49 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('mixed instructor and pupil hours count only the recorded pupil lesson',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final date = Timestamp.fromDate(DateTime(2026, 10, 6));
+    final sessions = db.collection('clubs/club/piscine_sessions');
+    await sessions.doc('mixed').set({'date': date});
+    await sessions.doc('mixed').collection('attendees').doc('pupil').set({
+      'scannedAt': date,
+      'outcome': 'encadrant',
+      'hoursReport': {
+        '1ere_heure': {
+          'role': 'eleve',
+          'group': {'level': '3*', 'groupNumber': 1}
+        },
+        '2eme_heure': {
+          'role': 'encadrant',
+          'group': {'level': '2*', 'groupNumber': 1}
+        }
+      }
+    });
+    await sessions.doc('planned').set({'date': date});
+    await sessions.doc('planned').collection('attendees').doc('pupil').set({
+      'scannedAt': Timestamp.fromDate(DateTime(2026, 10, 7)),
+      'assignedLevel': '3*'
+    });
+    final history =
+        await PoolStudentHistoryReader(firestore: db).load('club', 'pupil');
+    final mixed = history.singleWhere((s) => s.id == 'mixed');
+    expect(mixed.participation, 'encadrant');
+    expect(mixed.lessons.single.level, '3*');
+    expect(mixed.lessons.single.participationReported, isTrue);
+    expect(mixed.lessons.single.isPlanned, isFalse);
+    expect(
+        history.singleWhere((s) => s.id == 'planned').lessons.single.isPlanned,
+        isTrue);
+    expect(
+        poolTrainingVisits(history)
+            .map((c) => [c.level, c.reported, c.toConfirm]),
+        [
+          ['3*', 1, 0]
+        ]);
+  });
+
   test(
       'training visits count each date once per level and distinguish planning',
       () {

@@ -45,7 +45,8 @@ class PoolStudentSession {
       final report = poolMap(hour.value);
       if (report['role'] != 'eleve') continue;
       final group = poolMap(report['group'] ?? report['eleveGroup']);
-      lessons.add(_lesson(session, group, hour.key));
+      lessons
+          .add(_lesson(session, group, hour.key, participationReported: true));
     }
     final group = poolMap(merged['groupAssignment']);
     if (lessons.isEmpty && group.isNotEmpty) {
@@ -105,6 +106,7 @@ class PoolStudentLesson {
   final List<String> monitorIds;
   final String sourceLabel;
   final bool isPlanned;
+  final bool participationReported;
   const PoolStudentLesson({
     required this.level,
     required this.group,
@@ -114,6 +116,7 @@ class PoolStudentLesson {
     this.monitorIds = const [],
     this.sourceLabel = '',
     this.isPlanned = false,
+    this.participationReported = false,
   });
 }
 
@@ -209,14 +212,25 @@ List<PoolLevelVisits> poolTrainingVisits(List<PoolStudentSession> sessions) {
   final planned = <String, Set<String>>{};
   for (final session in sessions) {
     if (!session.hasLessonDate || session.date == null) continue;
-    if (session.participation.isNotEmpty && !session.trainingReported) continue;
+    final mixedInstructor = session.participation == 'encadrant';
+    if (session.participation.isNotEmpty &&
+        !session.trainingReported &&
+        !mixedInstructor) {
+      continue;
+    }
     final date = session.date!;
     final day = '${date.year}-${date.month}-${date.day}';
     for (final lesson in session.lessons) {
+      // A mixed session's overall outcome is encadrant. Only its explicitly
+      // reported pupil hours count, never its instructor work or planned group.
+      if (mixedInstructor && !lesson.participationReported) continue;
       final level = lesson.level.trim().toUpperCase().replaceAll('★', '*');
       if (level.isEmpty) continue;
       final destination =
-          session.trainingReported && !lesson.isPlanned ? reported : planned;
+          (session.trainingReported || lesson.participationReported) &&
+                  !lesson.isPlanned
+              ? reported
+              : planned;
       (destination[level] ??= {}).add(day);
     }
   }
@@ -230,8 +244,9 @@ List<PoolLevelVisits> poolTrainingVisits(List<PoolStudentSession> sessions) {
 PoolStudentLesson _lesson(
   Map<String, dynamic> session,
   Map<String, dynamic> group,
-  String hour,
-) {
+  String hour, {
+  bool participationReported = false,
+}) {
   final level = (group['level'] ?? group['niveau'] ?? '').toString();
   final savedGroupNumber = group['groupNumber'] ?? group['group_number'];
   final savedHour = hour.isNotEmpty
@@ -329,6 +344,7 @@ PoolStudentLesson _lesson(
     theme: (group['themeSnapshot'] ?? matched['theme'] ?? '').toString(),
     monitorNames: names.toSet().toList(),
     monitorIds: ids.toSet().toList(),
+    participationReported: participationReported,
   );
 }
 

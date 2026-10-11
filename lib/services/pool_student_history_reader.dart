@@ -103,6 +103,8 @@ class PoolStudentHistoryReader {
                     theme: lesson.theme,
                     monitorIds: lesson.monitorIds,
                     sourceLabel: lesson.sourceLabel,
+                    isPlanned: lesson.isPlanned,
+                    participationReported: lesson.participationReported,
                     monitorNames: lesson.monitorNames.isNotEmpty
                         ? lesson.monitorNames
                         : lesson.monitorIds
