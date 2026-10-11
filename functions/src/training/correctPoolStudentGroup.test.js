@@ -77,6 +77,12 @@ test('duplicates for same identity are corrected consistently', async () => {
   await executeCorrection(db, 'monitor', request);
   expect(data.get('clubs/calypso/piscine_sessions/synthetic/attendees/legacy').assignedCourseId).toBe('group2');
 });
+test('conflicting identity aliases perform zero writes', async () => {
+  const f = fixture({ attendance: { memberId: 'student', membre_id: 'different', scannedAt: 'scan' } });
+  const before = JSON.stringify([...f.data]);
+  await expect(executeCorrection(f.db, 'monitor', f.request)).rejects.toThrow();
+  expect(JSON.stringify([...f.data])).toBe(before);
+});
 test.each(['unauthenticated', 'permission', 'concurrent', 'invalid-course', 'undated', 'identity'])('%s performs zero writes', async scenario => {
   const f = fixture(scenario === 'permission' ? { actor: { clubStatuten: ['Membre'] } }
     : scenario === 'undated' ? { session: { type: 'piscine' } }
@@ -95,6 +101,12 @@ test('cannot reclassify a service-only presence as student training', () => {
   expect(() => buildPatch({ outcome: 'service_only' },
     { hour: '2eme_heure', level: '2*', courseId: 'course', groupNumber: 1, monitors: [] })).toThrow();
 });
+test.each(['service', 'nage_libre', 'absent'])('cannot overwrite mixed-hour %s activity without a role', activity => {
+  expect(() => buildPatch({ outcome: 'training', hoursReport: {
+    '1ere_heure': { activity: 'formation', role: 'eleve', group: { level: '1*' } },
+    '2eme_heure': { activity },
+  } }, { hour: '2eme_heure', level: '2*', courseId: 'course', groupNumber: 1, monitors: [] })).toThrow();
+});
 test('replay operation cannot be reused for another correction', async () => {
   const f = fixture();
   await executeCorrection(f.db, 'monitor', f.request);
@@ -107,6 +119,12 @@ test('explicit group supervisor is retained for future session closing', async (
   f.data.set('clubs/calypso/piscine_sessions/synthetic/groups/3star_groupe2', { supervisorId: 'supervisor', hourKey: '2eme_heure' });
   await executeCorrection(f.db, 'monitor', f.request);
   expect(f.data.get('clubs/calypso/piscine_sessions/synthetic/attendees/student').hoursReport['2eme_heure'].group.validatorId).toBe('supervisor');
+});
+test.each([{ groupNumber: 1 }, { group_key: '3*-1' }, { hour_key: '1ere_heure' }, { niveau: '2*' }])('conflicting supervisor override metadata is ignored: %j', async metadata => {
+  const f = fixture();
+  f.data.set('clubs/calypso/piscine_sessions/synthetic/groups/3star_groupe2', { supervisorId: 'wrong', ...metadata });
+  await executeCorrection(f.db, 'monitor', f.request);
+  expect(f.data.get('clubs/calypso/piscine_sessions/synthetic/attendees/student').hoursReport['2eme_heure'].group.validatorId).toBe('trainer');
 });
 test('legacy plans use one unambiguous group per populated hour', () => {
   expect(choices({ niveaux: { '2*': { theme_2eme_heure: 'Synthétique' } } })).toEqual([

@@ -62,6 +62,9 @@ function buildPatch(attendance, option) {
     validatorId: option.validatorId || null,
   };
   const report = { ...(attendance.hoursReport || {}) };
+  if (report[option.hour]?.activity && report[option.hour].activity !== 'formation') {
+    throw new HttpsError('failed-precondition', 'Cette heure comporte déjà une activité différente.');
+  }
   if (attendance.outcome && attendance.outcome !== 'training' && report[option.hour]?.role !== 'eleve') {
     throw new HttpsError('failed-precondition', 'Cette présence ne comporte pas de participation élève à cette heure.');
   }
@@ -111,9 +114,11 @@ async function executeCorrection(db, uid, data) {
     const groupKey = normalizeGroupKey(`${option.level}-${option.groupNumber}`);
     const groupDoc = await tx.get(sessionRef.collection('groups').doc(groupKey));
     const override = groupDoc.exists ? groupDoc.data() : {};
-    const overrideMatches = (!override.level || override.level === level) &&
-      (!override.hourKey || override.hourKey === hour) && (!override.heure || override.heure === hour) &&
-      (!override.course_id || override.course_id === courseId);
+    const overrideMatches = [override.level, override.niveau].filter(Boolean).every(v => v === level) &&
+      [override.hourKey, override.heure, override.hour_key].filter(Boolean).every(v => v === hour) &&
+      [override.course_id, override.courseId].filter(Boolean).every(v => v === courseId) &&
+      [override.groupNumber, override.group_number].filter(v => v != null).every(v => Number(v) === option.groupNumber) &&
+      [override.groupKey, override.group_key].filter(Boolean).every(v => normalizeGroupKey(v) === groupKey);
     const explicit = overrideMatches ? override.supervisorId || override.validatorId : null;
     option.monitors = option.monitors.filter(p => p.membre_id !== memberId);
     option.validatorId = (explicit && explicit !== memberId ? explicit : null) ||
@@ -130,8 +135,9 @@ async function executeCorrection(db, uid, data) {
     const before = {};
     for (const doc of records.values()) {
       const value = doc.data();
-      const identity = value.memberId || value.membre_id || value.member_id || doc.id;
-      if (identity !== memberId || value.isGuest) throw new HttpsError('failed-precondition', 'Identité de participation ambiguë.');
+      const identities = [value.memberId, value.membre_id, value.member_id].filter(Boolean);
+      if (!identities.length) identities.push(doc.id);
+      if (identities.some(identity => identity !== memberId) || value.isGuest) throw new HttpsError('failed-precondition', 'Identité de participation ambiguë.');
       before[doc.id] = assignmentState(value);
     }
     if (JSON.stringify(normalized(before)) !== JSON.stringify(normalized(expectedState))) {
