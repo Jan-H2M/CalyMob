@@ -129,6 +129,7 @@ flutter:
   assets:
     - assets/images/
     - assets/animations/
+    - assets/mil/preview_protocols.json
 
   shaders:
     - shaders/ocean.frag

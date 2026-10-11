@@ -13,11 +13,14 @@ import '../../providers/auth_provider.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
 import '../../services/mil_experience_service.dart';
+import '../../services/mil_protocol_reader.dart';
 import '../../services/pool_student_history_reader.dart';
 import '../../services/pool_group_correction_service.dart';
 import '../../utils/member_name.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
+import '../../widgets/formation/mil_protocol_catalog_sheet.dart';
+import '../../widgets/formation/mil_protocol_sheet.dart';
 import '../../widgets/ocean_background.dart';
 
 @visibleForTesting
@@ -41,6 +44,7 @@ class Student360Screen extends StatefulWidget {
   final PoolFormationSnapshotDoc? poolSnapshot;
   final bool previewMode;
   final FormationSnapshotDoc? previewSnapshot;
+  final Future<MilProtocol?> Function(String code, bool pool)? protocolLoader;
   final MilExperienceOverview? previewMilOverview;
   final PoolFormationSnapshotDoc? previewPoolSnapshot;
   final List<Map<String, dynamic>> previewObservations;
@@ -54,6 +58,7 @@ class Student360Screen extends StatefulWidget {
     this.poolSnapshot,
     this.previewMode = false,
     this.previewSnapshot,
+    this.protocolLoader,
     this.previewMilOverview,
     this.previewPoolSnapshot,
     this.previewObservations = const [],
@@ -895,6 +900,12 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
+        TextButton.icon(
+          onPressed: () => MilProtocolCatalogSheet.show(context,
+              clubId: widget.clubId, pool: true),
+          icon: const Icon(Icons.menu_book_outlined),
+          label: const Text('Protocoles MIL · Piscine'),
+        ),
         _section(
           'Séances de formation piscine',
           [
@@ -1124,6 +1135,12 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
+        TextButton.icon(
+          onPressed: () => MilProtocolCatalogSheet.show(context,
+              clubId: widget.clubId, pool: false),
+          icon: const Icon(Icons.menu_book_outlined),
+          label: const Text('Protocoles MIL · Milieu naturel'),
+        ),
         ..._exerciseSections(s, pool: false),
       ],
     );
@@ -1151,7 +1168,8 @@ class _Student360ScreenState extends State<Student360Screen> {
       _section(
         '✓ Validés (${validated.length})',
         validated
-            .map((e) => _exRow(e.code, e.description, Colors.greenAccent))
+            .map((e) =>
+                _exRow(e.code, e.description, Colors.greenAccent, pool: pool))
             .toList(),
         emptyText: 'Aucun exercice validé.',
       ),
@@ -1159,13 +1177,15 @@ class _Student360ScreenState extends State<Student360Screen> {
         '⏳ En attente (${pending.length + claims.length})',
         [
           ...pending.map(
-            (e) => _exRow(e.code, e.description, Colors.amberAccent),
+            (e) =>
+                _exRow(e.code, e.description, Colors.amberAccent, pool: pool),
           ),
           ...claims.map(
             (c) => _exRow(
               c.code,
               c.label.isNotEmpty ? c.label : c.status,
               Colors.amberAccent,
+              pool: pool,
             ),
           ),
         ],
@@ -1178,61 +1198,75 @@ class _Student360ScreenState extends State<Student360Screen> {
           final badge = (pc != null && pc.attempts > 0)
               ? '×${pc.attempts} pratiqué'
               : null;
-          return _exRow(e.code, e.description, Colors.white54, badge: badge);
+          return _exRow(e.code, e.description, Colors.white54,
+              badge: badge, pool: pool);
         }).toList(),
         emptyText: 'Tous les exercices de l\'objectif sont couverts.',
       ),
     ];
   }
 
-  Widget _exRow(String code, String subtitle, Color dot, {String? badge}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 5),
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  code,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (subtitle.isNotEmpty)
+  Widget _exRow(String code, String subtitle, Color dot,
+      {String? badge, bool pool = false}) {
+    return InkWell(
+      key: ValueKey('mil-protocol-${pool ? 'pool' : 'mn'}-$code'),
+      onTap: code.trim().isEmpty
+          ? null
+          : () => MilProtocolSheet.show(context,
+              clubId: widget.clubId,
+              code: code,
+              pool: pool,
+              loader: widget.protocolLoader == null
+                  ? null
+                  : () => widget.protocolLoader!(code, pool)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 5),
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
-                      fontSize: 12,
+                    code,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-              ],
-            ),
-          ),
-          if (badge != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                badge,
-                style: const TextStyle(color: Colors.white, fontSize: 11),
+                  if (subtitle.isNotEmpty)
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.75),
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+            if (badge != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  badge,
+                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

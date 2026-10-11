@@ -7,10 +7,42 @@ import 'package:calymob/screens/formation/student_360_screen.dart';
 import 'package:calymob/screens/exercises/member_exercises_screen.dart';
 import 'package:calymob/screens/profile/who_is_who_screen.dart';
 import 'package:calymob/utils/permission_helper.dart';
+import 'package:calymob/services/mil_protocol_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('monitor exercise opens protocol and closes without validation',
+      (tester) async {
+    final calls = <String>[];
+    await _pump(tester, scope: FormationTrackingScope.full,
+        protocolLoader: (code, pool) async {
+      calls.add('$code:$pool');
+      return MilProtocol(
+          key: 'mn__$code',
+          code: code,
+          medium: 'mn',
+          sectionId: 'test-section',
+          title: 'Protocole synthétique',
+          body: 'Description de test uniquement.',
+          sourceUrl: 'https://example.invalid/',
+          sourceVersion: 'test',
+          referenceUrls: const []);
+    });
+    final row = find.byKey(const ValueKey('mil-protocol-mn-P2.RA'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(calls, ['P2.RA:false']);
+    expect(find.text('Protocole synthétique'), findsOneWidget);
+    expect(find.text('Description de test uniquement.'), findsOneWidget);
+    await tester.tap(find.byTooltip('Fermer le protocole'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Protocole synthétique'), findsNothing);
+    expect(find.text('✓ Validés (1)'), findsOneWidget);
+  });
   testWidgets('compact pool card keeps actions side by side on a narrow phone',
       (tester) async {
     await _pump(tester,
@@ -426,6 +458,7 @@ Future<void> _pump(
   required FormationTrackingScope scope,
   List<PoolStudentSession> history = const [],
   FormationSnapshotDoc? snapshot,
+  Future<MilProtocol?> Function(String, bool)? protocolLoader,
   Size size = const Size(1200, 1800),
 }) async {
   tester.view.physicalSize = size;
@@ -445,6 +478,7 @@ Future<void> _pump(
         ),
         scope: scope,
         previewMode: true,
+        protocolLoader: protocolLoader,
         previewPoolHistory: history,
         previewSnapshot: scope == FormationTrackingScope.full
             ? snapshot ?? _snapshot()

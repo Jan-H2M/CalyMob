@@ -16,6 +16,7 @@ import '../../utils/date_formatter.dart';
 import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
+import '../../widgets/formation/mil_protocol_code_sheet.dart';
 import '../training/historical_claims_screen.dart';
 import '../training/external_proof_capture_screen.dart';
 import '../training/evaluation_request_screen.dart';
@@ -908,6 +909,14 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 style: TextStyle(fontSize: 11, color: Colors.grey[500]),
               ),
             ],
+            IconButton(
+              tooltip: 'Voir le protocole MIL',
+              onPressed: exercice.code.trim().isEmpty
+                  ? null
+                  : () => MilProtocolCodeSheet.show(context,
+                      clubId: _clubId, code: exercice.code),
+              icon: const Icon(Icons.info_outline),
+            ),
           ],
         ),
       ),
