@@ -60,19 +60,17 @@ void main() {
     expect(find.text('Total en milieu naturel'), findsOneWidget);
     expect(find.text('12/20'), findsOneWidget);
     expect(find.text('Manque 8'), findsOneWidget);
-    expect(find.text('Voir les détails LIFRAS'), findsOneWidget);
-    expect(find.text('En mer'), findsNothing);
-
-    final detailsButton = find.byKey(const Key('mil-show-details'));
-    await tester.ensureVisible(detailsButton);
-    await tester.tap(detailsButton);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
     expect(find.text('En mer'), findsOneWidget);
     expect(find.text('5/5'), findsOneWidget);
     expect(find.text('Atteint'), findsOneWidget);
-    expect(find.text('Brevet 3*'), findsOneWidget);
+    expect(find.text('Encadrement'), findsOneWidget);
+    expect(find.text('Données manquantes • requis 3'), findsOneWidget);
+    expect(find.text('Voir les détails LIFRAS'), findsNothing);
+    expect(find.text('Brevet 3*'), findsNothing);
+    expect(
+      find.text('Répartition des plongées par profondeur'),
+      findsOneWidget,
+    );
   });
 
   test('pool observation boundary rejects non-pool records', () {
@@ -208,6 +206,11 @@ MilExperienceOverview _milOverview() {
             have: 5,
             need: 5,
             dataMissing: false,
+          ),
+          'encadrement': SnapshotMilRequirement(
+            have: 0,
+            need: 3,
+            dataMissing: true,
           ),
         },
       ),
