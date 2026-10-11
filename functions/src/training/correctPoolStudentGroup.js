@@ -144,6 +144,7 @@ async function executeCorrection(db, uid, data) {
       const scan = row.scannedAt;
       const proof = receipt?.exists ? receipt.data() : null;
       return scan && typeof scan.toMillis === 'function' && Number.isFinite(scan.toMillis()) &&
+        row.qrVerified && JSON.stringify(normalized(row.qrVerified)) === JSON.stringify(normalized(proof)) &&
         proof?.version === 1 && proof.memberId === memberId && proof.sessionId === sessionId &&
         proof.scannerUid === row.scannedBy && proof.scannedAt?.toMillis?.() === scan.toMillis();
     })) throw new HttpsError('failed-precondition', 'Présence scannée par QR requise.');

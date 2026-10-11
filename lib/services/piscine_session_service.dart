@@ -304,6 +304,7 @@ class PiscineSessionService {
     required String memberName,
     required String scannedBy,
     bool isGuest = false,
+    bool qrScan = false,
   }) async {
     // Check of lid al aanwezig is
     final alreadyPresent = await isAttendeePresent(
@@ -316,7 +317,12 @@ class PiscineSessionService {
       throw Exception('Ce membre est déjà marqué présent');
     }
 
-    if (!isGuest) {
+    final isTheory = qrScan &&
+        !isGuest &&
+        (await _sessionsCollection(clubId).doc(sessionId).get())
+                .data()?['type'] ==
+            'theorie';
+    if (!isGuest && qrScan && !isTheory) {
       await _recordQr(
           {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId});
       return;

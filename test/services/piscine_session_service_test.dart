@@ -39,6 +39,7 @@ void main() {
         memberId: memberId,
         memberName: 'Alice Exemple',
         scannedBy: 'accueil',
+        qrScan: true,
       );
 
       expect(sent,
@@ -60,6 +61,30 @@ void main() {
       expect(all.docs, hasLength(1));
       expect(all.docs.single.id, isNot('guest-a'));
       expect(all.docs.single.data()['isGuest'], isTrue);
+    });
+    test('manual and theory attendance stay available without QR proof',
+        () async {
+      await service.addAttendee(
+          clubId: clubId,
+          sessionId: sessionId,
+          memberId: memberId,
+          memberName: 'Synthetic',
+          scannedBy: 'accueil');
+      expect(
+          (await attendees.doc(memberId).get()).data()!['qrVerified'], isNull);
+      await attendees.doc(memberId).delete();
+      await firestore
+          .doc('clubs/$clubId/piscine_sessions/$sessionId')
+          .set({'type': 'theorie'});
+      await service.addAttendee(
+          clubId: clubId,
+          sessionId: sessionId,
+          memberId: memberId,
+          memberName: 'Synthetic',
+          scannedBy: 'accueil',
+          qrScan: true);
+      expect(
+          (await attendees.doc(memberId).get()).data()!['qrVerified'], isNull);
     });
 
     test('recognises canonical and French legacy member identities', () async {

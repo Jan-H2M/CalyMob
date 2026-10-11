@@ -58,6 +58,7 @@ async function main() {
     await assert.rejects(executeCorrection(db, 'student', correction));
     await session.collection('qr_scan_receipts').doc('student').set({ version: 1, memberId: 'student',
       scannerUid: 'admin', sessionId: session.id, scannedAt: scan });
+    await attendee.update({ qrVerified: (await session.collection('qr_scan_receipts').doc('student').get()).data() });
     attendance = (await attendee.get()).data();
     correction.expectedState = { student: assignmentState(attendance) };
     await executeCorrection(db, 'student', correction);
@@ -101,8 +102,26 @@ async function main() {
     await executeQrAttendance(db, 'admin', { clubId: 'calypso', sessionId: 'spoof', memberId: 'student' });
     await assert.rejects(executeQrAttendance(db, 'admin', { clubId: 'calypso', sessionId: 'spoof', memberId: 'student' }));
     const trusted = (await db.doc(spoofPath).get()).data();
+    const clientTrusted = { ...trusted, scannedAt: Timestamp.fromMillis(trusted.scannedAt.toMillis()),
+      qrVerified: { ...trusted.qrVerified, scannedAt: Timestamp.fromMillis(trusted.qrVerified.scannedAt.toMillis()) } };
     await executeCorrection(db, 'student', { ...correction, sessionId: 'spoof',
       operationId: 'trusted', expectedState: { student: assignmentState(trusted) } });
+    // Admin deletion must not leave reusable proof for a member to reactivate.
+    await db.doc(spoofPath).delete();
+    await assertSucceeds(setDoc(doc(studentDb, spoofPath), {
+      memberId: 'student', memberName: 'Synthetic', scannedBy: trusted.scannedBy,
+      scannedAt: Timestamp.fromMillis(trusted.scannedAt.toMillis()), isGuest: false }));
+    const revived = (await db.doc(spoofPath).get()).data();
+    await assert.rejects(executeCorrection(db, 'student', { ...correction, sessionId: 'spoof',
+      operationId: 'revived', expectedState: { student: assignmentState(revived) } }));
+    await db.doc(spoofPath).delete();
+    await assertFails(setDoc(doc(studentDb, spoofPath), {
+      memberId: 'student', memberName: 'Synthetic', scannedBy: trusted.scannedBy,
+      scannedAt: Timestamp.fromMillis(trusted.scannedAt.toMillis()), isGuest: false, qrVerified: clientTrusted.qrVerified }));
+    // The existing privileged Undo is lossless and remains authorized.
+    await assertSucceeds(setDoc(doc(adminDb, spoofPath), clientTrusted));
+    await executeCorrection(db, 'student', { ...correction, sessionId: 'spoof',
+      operationId: 'restored', expectedState: { student: assignmentState(trusted) } });
     const personalPath = `clubs/calypso/exercise_claims/${progressId('student', 'ra')}`;
     const auditPath = 'clubs/calypso/members/student/formation_admin_audit/exam1';
     await assertSucceeds(getDoc(doc(studentDb, personalPath)));

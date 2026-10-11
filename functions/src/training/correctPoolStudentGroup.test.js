@@ -62,6 +62,8 @@ test('scanned member may correct only their own group without granting monitor p
   const f = fixture({ attendance: { memberId: 'student', scannedAt: scan, scannedBy: 'monitor', remarks: 'preserved' } });
   f.data.set('clubs/calypso/piscine_sessions/synthetic/qr_scan_receipts/student', {
     version: 1, memberId: 'student', sessionId: 'synthetic', scannerUid: 'monitor', scannedAt: scan });
+  f.data.get('clubs/calypso/piscine_sessions/synthetic/attendees/student').qrVerified =
+    f.data.get('clubs/calypso/piscine_sessions/synthetic/qr_scan_receipts/student');
   await executeCorrection(f.db, 'student', f.request);
   const row = f.data.get('clubs/calypso/piscine_sessions/synthetic/attendees/student');
   expect(row.scannedAt).toBe(scan);
