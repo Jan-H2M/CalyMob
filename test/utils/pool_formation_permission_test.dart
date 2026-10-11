@@ -54,6 +54,31 @@ void main() {
     );
   });
 
+  test('canonical app admin gets full scope without a moniteur code', () {
+    const roles = ['CA', 'E', 'P'];
+
+    expect(
+      PermissionHelper.canViewFormationTracking(roles, appRole: 'admin'),
+      isTrue,
+    );
+    expect(
+      PermissionHelper.canValidateLifras(
+        clubStatuten: roles,
+        plongeurCode: 'AM',
+        appRole: 'admin',
+      ),
+      isTrue,
+    );
+    expect(
+      PermissionHelper.formationTrackingScope(
+        clubStatuten: roles,
+        plongeurCode: 'AM',
+        appRole: 'admin',
+      ),
+      FormationTrackingScope.full,
+    );
+  });
+
   test('LIFRAS moniteur with encadrant role gets the full formation scope', () {
     expect(
       PermissionHelper.formationTrackingScope(

@@ -31,18 +31,30 @@ class PoolFormationOverviewReader {
               'clubId': clubId,
             }))
               .data;
-      final data = raw is Map ? raw.cast<String, dynamic>() : const {};
+      if (raw is! Map) {
+        throw const FormatException('Réponse formation piscine invalide.');
+      }
+      final data = raw.cast<String, dynamic>();
       final students = data['students'];
-      if (students is! List) return const [];
-      return students
-          .whereType<Map>()
-          .map((item) =>
-              PoolFormationStudent.fromMap(item.cast<String, dynamic>()))
-          .where((student) => student.profile.id.isNotEmpty)
-          .toList(growable: false);
+      if (students is! List) {
+        throw const FormatException('Liste des élèves absente.');
+      }
+      final result = <PoolFormationStudent>[];
+      for (final item in students) {
+        if (item is! Map) {
+          throw const FormatException('Élève piscine invalide.');
+        }
+        final student =
+            PoolFormationStudent.fromMap(item.cast<String, dynamic>());
+        if (student.profile.id.isEmpty) {
+          throw const FormatException('Identifiant élève absent.');
+        }
+        result.add(student);
+      }
+      return List.unmodifiable(result);
     } catch (error) {
       debugPrint('⚠️ Vue formation piscine indisponible: $error');
-      return const [];
+      rethrow;
     }
   }
 }

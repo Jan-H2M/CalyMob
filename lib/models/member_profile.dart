@@ -10,6 +10,7 @@ class MemberProfile {
   final String nom;
   final String prenom;
   final String email;
+  final String? appRole; // Canonical application role (admin/superadmin/user)
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
   final String? plongeurNiveau; // Niveau complet en texte
   final String?
@@ -79,6 +80,7 @@ class MemberProfile {
     required this.nom,
     required this.prenom,
     required this.email,
+    this.appRole,
     this.plongeurCode,
     this.plongeurNiveau,
     this.fonctionDefaut,
@@ -130,6 +132,7 @@ class MemberProfile {
       nom: memberLastName(data) ?? '',
       prenom: memberFirstName(data) ?? '',
       email: data['email'] ?? '',
+      appRole: _stringOrNull(data['app_role']),
       plongeurCode: data['plongeur_code'],
       plongeurNiveau: data['plongeur_niveau'],
       fonctionDefaut: data['fonction_defaut'],
@@ -192,6 +195,7 @@ class MemberProfile {
       nom: memberLastName(data) ?? '',
       prenom: memberFirstName(data) ?? '',
       email: _stringOrNull(data['email']) ?? '',
+      appRole: _stringOrNull(data['app_role']),
       plongeurCode: _stringOrNull(data['plongeur_code']),
       plongeurNiveau: _stringOrNull(data['plongeur_niveau']),
       fonctionDefaut: _stringOrNull(data['fonction_defaut']),
@@ -302,6 +306,7 @@ class MemberProfile {
     String? nom,
     String? prenom,
     String? email,
+    String? appRole,
     String? plongeurCode,
     String? plongeurNiveau,
     String? fonctionDefaut,
@@ -335,6 +340,7 @@ class MemberProfile {
       nom: nom ?? this.nom,
       prenom: prenom ?? this.prenom,
       email: email ?? this.email,
+      appRole: appRole ?? this.appRole,
       plongeurCode: plongeurCode ?? this.plongeurCode,
       plongeurNiveau: plongeurNiveau ?? this.plongeurNiveau,
       fonctionDefaut: fonctionDefaut ?? this.fonctionDefaut,

@@ -499,6 +499,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return PermissionHelper.canValidateLifras(
       clubStatuten: statuten,
       plongeurCode: plongeurCode,
+      appRole: memberProvider.appRole,
     );
   }
 
