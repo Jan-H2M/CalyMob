@@ -555,30 +555,35 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   }
 
   Widget _buildSelfActions() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: [
-        TextButton.icon(
-          style: TextButton.styleFrom(
-              foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
-          icon: const Icon(Icons.fact_check_outlined, size: 18),
-          label: const Text('Demander une évaluation',
-              style: TextStyle(fontSize: 12)),
-          onPressed: () => _openEvaluationRequest(),
-        ),
-        TextButton.icon(
-          style: TextButton.styleFrom(
-              foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
-          icon: const Icon(Icons.history_edu_outlined, size: 18),
-          label: const Text('Exercices sur papier',
-              style: TextStyle(fontSize: 12)),
-          onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const HistoricalClaimsScreen())),
-        ),
-      ],
+    return Container(
+      decoration: BoxDecoration(
+          color: AppColors.donkerblauw.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(12)),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          TextButton.icon(
+            style: TextButton.styleFrom(
+                foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
+            icon: const Icon(Icons.fact_check_outlined, size: 18),
+            label: const Text('Demander une évaluation',
+                style: TextStyle(fontSize: 12)),
+            onPressed: () => _openEvaluationRequest(),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(
+                foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
+            icon: const Icon(Icons.history_edu_outlined, size: 18),
+            label: const Text('Exercices sur papier',
+                style: TextStyle(fontSize: 12)),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const HistoricalClaimsScreen())),
+          ),
+        ],
+      ),
     );
   }
 
@@ -602,98 +607,105 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       // Skip empty 'En attente' section entirely
       return const SizedBox.shrink();
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section header — white text on the blue ocean gradient.
-        Row(
-          children: [
-            Icon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
-                    color: Colors.black26,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 6),
-            if (children.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Text(
-                  children.length.toString(),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (children.isEmpty && emptyText != null)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.donkerblauw.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              emptyText,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Colors.white70,
-              ),
-            ),
-          )
-        else
-          // Wrap all rows in one white card so dark text reads cleanly
-          // on the blue ocean gradient backdrop.
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.donkerblauw.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Column(
-              children: [
-                for (int i = 0; i < children.length; i++) ...[
-                  if (i > 0)
-                    const Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: Colors.white12,
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+          color: AppColors.donkerblauw.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(14)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section header — white text on the blue ocean gradient.
+          Row(
+            children: [
+              Icon(icon, size: 18, color: Colors.white),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      offset: Offset(0, 1),
+                      blurRadius: 3,
+                      color: Colors.black26,
                     ),
-                  children[i],
-                ],
-              ],
-            ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (children.isNotEmpty)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    children.length.toString(),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
           ),
-      ],
+          const SizedBox(height: 8),
+          if (children.isEmpty && emptyText != null)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.donkerblauw.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                emptyText,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.white70,
+                ),
+              ),
+            )
+          else
+            // Wrap all rows in one white card so dark text reads cleanly
+            // on the blue ocean gradient backdrop.
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.donkerblauw.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Column(
+                children: [
+                  for (int i = 0; i < children.length; i++) ...[
+                    if (i > 0)
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Colors.white12,
+                      ),
+                    children[i],
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -735,8 +747,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                     ? const Icon(Icons.check, size: 16, color: Colors.white)
                     : Text(
                         exercice.niveau.code,
-                        style: TextStyle(
-                          color: niveauColor,
+                        style: const TextStyle(
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 10,
                         ),
