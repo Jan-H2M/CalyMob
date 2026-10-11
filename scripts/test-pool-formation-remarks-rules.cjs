@@ -9,6 +9,7 @@ const {
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
 const {
+  collection,
   collectionGroup,
   doc,
   getDoc,
@@ -28,6 +29,8 @@ async function main() {
   });
   const snapshotPath =
     'clubs/calypso/members/student/formation_snapshot/current';
+  const poolSnapshotPath =
+    'clubs/calypso/members/student/pool_formation_snapshot/current';
   const observationsPath = 'clubs/calypso/member_observations';
 
   const validPoolRemark = {
@@ -68,8 +71,33 @@ async function main() {
         plongeur_code: 'MC',
       });
       await setDoc(doc(db, snapshotPath), {
+        member_id: 'student',
+        target_level: '2*',
+        mil_experience: {
+          per_requirement: { mer: { have: 12, need: 5 } },
+        },
+      });
+      await setDoc(doc(db, poolSnapshotPath), {
+        member_id: 'student',
+        piscine: {
+          validated: 3,
+          pending: 1,
+          remaining: 2,
+          total: 6,
+          pct: 50,
+        },
+      });
+      await setDoc(doc(db, `${observationsPath}/pool-seeded`), {
         memberId: 'student',
-        targetLevel: 'P1',
+        contextType: 'piscine',
+        note: 'Observation piscine visible.',
+      });
+      await setDoc(doc(db, `${observationsPath}/career-seeded`), {
+        memberId: 'student',
+        contextType: 'plongee',
+        category: 'exercice_lifras',
+        exerciceCode: 'P2.RA',
+        result: 'acquis',
       });
     });
 
@@ -77,18 +105,60 @@ async function main() {
     const poolDb = env.authenticatedContext('pool-instructor').firestore();
     const monitorDb = env.authenticatedContext('lifras-monitor').firestore();
 
-    await assertSucceeds(getDoc(doc(poolDb, snapshotPath)));
+    await assertFails(getDoc(doc(poolDb, snapshotPath)));
+    await assertSucceeds(getDoc(doc(poolDb, poolSnapshotPath)));
     await assertFails(getDoc(doc(ordinaryDb, snapshotPath)));
-    await assertSucceeds(getDocs(query(
+    await assertFails(getDoc(doc(ordinaryDb, poolSnapshotPath)));
+    await assertSucceeds(getDoc(doc(monitorDb, snapshotPath)));
+    await assertSucceeds(getDoc(doc(monitorDb, poolSnapshotPath)));
+    const studentDb = env.authenticatedContext('student').firestore();
+    await assertSucceeds(getDoc(doc(studentDb, snapshotPath)));
+    await assertSucceeds(getDoc(doc(studentDb, poolSnapshotPath)));
+    await assertFails(getDocs(query(
       collectionGroup(poolDb, 'formation_snapshot'),
-      where('targetLevel', '==', 'P1'),
+      where('member_id', '==', 'student'),
+    )));
+    await assertSucceeds(getDocs(query(
+      collectionGroup(poolDb, 'pool_formation_snapshot'),
+      where('member_id', '==', 'student'),
+    )));
+    await assertSucceeds(getDocs(query(
+      collectionGroup(monitorDb, 'formation_snapshot'),
+      where('member_id', '==', 'student'),
+    )));
+
+    await assertSucceeds(getDoc(
+      doc(poolDb, `${observationsPath}/pool-seeded`),
+    ));
+    await assertFails(getDoc(
+      doc(poolDb, `${observationsPath}/career-seeded`),
+    ));
+    await assertSucceeds(getDoc(
+      doc(monitorDb, `${observationsPath}/pool-seeded`),
+    ));
+    await assertSucceeds(getDoc(
+      doc(monitorDb, `${observationsPath}/career-seeded`),
+    ));
+    await assertSucceeds(getDoc(
+      doc(studentDb, `${observationsPath}/pool-seeded`),
+    ));
+    await assertSucceeds(getDoc(
+      doc(studentDb, `${observationsPath}/career-seeded`),
+    ));
+    await assertSucceeds(getDocs(query(
+      collection(poolDb, observationsPath),
+      where('memberId', '==', 'student'),
+      where('contextType', '==', 'piscine'),
+    )));
+    await assertFails(getDocs(query(
+      collection(poolDb, observationsPath),
+      where('memberId', '==', 'student'),
     )));
 
     await assertSucceeds(setDoc(
       doc(poolDb, `${observationsPath}/pool-free-text`),
       validPoolRemark,
     ));
-    const studentDb = env.authenticatedContext('student').firestore();
     await assertSucceeds(getDoc(
       doc(studentDb, `${observationsPath}/pool-free-text`),
     ));
@@ -141,7 +211,7 @@ async function main() {
     ));
 
     console.log(
-      'PASS pool formation rules: pool instructors can read progress and add free-text pool remarks without LIFRAS validation rights',
+      'PASS pool formation rules: pool instructors read only the pool-safe projection and piscine observations',
     );
   } finally {
     await env.cleanup();

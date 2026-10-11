@@ -15,7 +15,9 @@ import '../../services/sensitive_info_service.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/profile/emergency_contacts_card.dart';
 import '../../models/formation_snapshot_doc.dart';
+import '../../models/pool_formation_snapshot_doc.dart';
 import '../../services/formation_snapshot_reader.dart';
+import '../../services/pool_formation_overview_reader.dart';
 import '../exercises/member_exercises_screen.dart';
 import '../formation/student_360_screen.dart';
 
@@ -67,13 +69,12 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
       duration: const Duration(seconds: 35),
       vsync: this,
     );
-    _bubblesPosition =
-        Tween<double>(
-          begin: 0.5, // Start in midden
-          end: -0.5, // Eind boven het scherm
-        ).animate(
-          CurvedAnimation(parent: _bubblesController, curve: Curves.linear),
-        );
+    _bubblesPosition = Tween<double>(
+      begin: 0.5, // Start in midden
+      end: -0.5, // Eind boven het scherm
+    ).animate(
+      CurvedAnimation(parent: _bubblesController, curve: Curves.linear),
+    );
     _bubblesController.repeat();
   }
 
@@ -202,8 +203,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     filtered.sort((a, b) {
       if (_sortBy == 'prenom') {
         final prenomCompare = a.prenom.toLowerCase().compareTo(
-          b.prenom.toLowerCase(),
-        );
+              b.prenom.toLowerCase(),
+            );
         if (prenomCompare != 0) return prenomCompare;
         return a.nom.toLowerCase().compareTo(b.nom.toLowerCase());
       } else {
@@ -463,11 +464,11 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                             padding: const EdgeInsets.all(12),
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  childAspectRatio: 0.8,
-                                  crossAxisSpacing: 10,
-                                  mainAxisSpacing: 10,
-                                ),
+                              crossAxisCount: 3,
+                              childAspectRatio: 0.8,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                            ),
                             itemCount: filteredMembers.length,
                             itemBuilder: (context, index) {
                               final member = filteredMembers[index];
@@ -589,13 +590,13 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                             child: ClipOval(
                               child:
                                   member.hasPhoto && member.consentInternalPhoto
-                                  ? CachedNetworkImage(
-                                      imageUrl: member.photoUrl!,
-                                      fit: BoxFit.cover,
-                                      width: photoSize,
-                                      height: photoSize,
-                                      placeholder: (context, url) =>
-                                          const Center(
+                                      ? CachedNetworkImage(
+                                          imageUrl: member.photoUrl!,
+                                          fit: BoxFit.cover,
+                                          width: photoSize,
+                                          height: photoSize,
+                                          placeholder: (context, url) =>
+                                              const Center(
                                             child: SizedBox(
                                               width: 20,
                                               height: 20,
@@ -604,20 +605,20 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                                               ),
                                             ),
                                           ),
-                                      errorWidget: (context, url, error) =>
-                                          Icon(
+                                          errorWidget: (context, url, error) =>
+                                              Icon(
                                             Icons.person,
                                             size: 40,
                                             color: Colors.white.withOpacity(
                                               0.6,
                                             ),
                                           ),
-                                    )
-                                  : Icon(
-                                      Icons.person,
-                                      size: 40,
-                                      color: Colors.white.withOpacity(0.6),
-                                    ),
+                                        )
+                                      : Icon(
+                                          Icons.person,
+                                          size: 40,
+                                          color: Colors.white.withOpacity(0.6),
+                                        ),
                             ),
                           ),
                           if (isCurrentUser)
@@ -1237,13 +1238,20 @@ class FormationListView extends StatefulWidget {
 
 class _FormationRow {
   final MemberProfile profile;
-  final FormationSnapshotDoc snapshot;
-  const _FormationRow({required this.profile, required this.snapshot});
+  final FormationSnapshotDoc? fullSnapshot;
+  final PoolFormationSnapshotDoc? poolSnapshot;
+
+  const _FormationRow.full({required this.profile, required this.fullSnapshot})
+      : poolSnapshot = null;
+
+  const _FormationRow.pool({required this.profile, required this.poolSnapshot})
+      : fullSnapshot = null;
 }
 
 class _FormationListViewState extends State<FormationListView> {
   final ProfileService _profileService = ProfileService();
   final FormationSnapshotReader _reader = FormationSnapshotReader();
+  final PoolFormationOverviewReader _poolReader = PoolFormationOverviewReader();
   late final Future<List<_FormationRow>> _future;
 
   @override
@@ -1253,6 +1261,17 @@ class _FormationListViewState extends State<FormationListView> {
   }
 
   Future<List<_FormationRow>> _load() async {
+    if (widget.scope == FormationTrackingScope.piscineOnly) {
+      final students = await _poolReader.getAllStudents(widget.clubId);
+      return students
+          .map(
+            (student) => _FormationRow.pool(
+              profile: student.profile,
+              poolSnapshot: student.snapshot,
+            ),
+          )
+          .toList(growable: false);
+    }
     final results = await Future.wait<dynamic>([
       _profileService.getAllProfiles(widget.clubId),
       _reader.getAllSnapshots(widget.clubId),
@@ -1264,13 +1283,13 @@ class _FormationListViewState extends State<FormationListView> {
     for (final s in snaps) {
       final p = byId[s.memberId];
       if (p == null) continue;
-      rows.add(_FormationRow(profile: p, snapshot: s));
+      rows.add(_FormationRow.full(profile: p, fullSnapshot: s));
     }
     // Tri par défaut : prénom (puis nom) — ordre alphabétique.
     rows.sort((a, b) {
       final byFirst = a.profile.prenom.toLowerCase().compareTo(
-        b.profile.prenom.toLowerCase(),
-      );
+            b.profile.prenom.toLowerCase(),
+          );
       if (byFirst != 0) return byFirst;
       return a.profile.nom.toLowerCase().compareTo(b.profile.nom.toLowerCase());
     });
@@ -1290,7 +1309,8 @@ class _FormationListViewState extends State<FormationListView> {
           )
           .toList();
     }
-    if (widget.filterLevel != null) {
+    if (widget.scope == FormationTrackingScope.full &&
+        widget.filterLevel != null) {
       out = out
           .where(
             (r) =>
@@ -1338,12 +1358,13 @@ class _FormationListViewState extends State<FormationListView> {
 
   Widget _buildRow(BuildContext context, _FormationRow row) {
     final m = row.profile;
-    final s = row.snapshot;
-    final trajet = widget.scope == FormationTrackingScope.piscineOnly
+    final full = row.fullSnapshot;
+    final pool = row.poolSnapshot;
+    final trajet = full == null
         ? ''
-        : s.targetLevel != null && s.targetLevel!.isNotEmpty
-        ? '${s.currentCode.isEmpty ? '—' : s.currentCode} → ${s.targetLevel}'
-        : (s.currentCode.isEmpty ? '' : s.currentCode);
+        : full.targetLevel != null && full.targetLevel!.isNotEmpty
+            ? '${full.currentCode.isEmpty ? '—' : full.currentCode} → ${full.targetLevel}'
+            : full.currentCode;
 
     return GestureDetector(
       onTap: () {
@@ -1353,6 +1374,7 @@ class _FormationListViewState extends State<FormationListView> {
               clubId: widget.clubId,
               member: m,
               scope: widget.scope,
+              poolSnapshot: pool,
             ),
           ),
         );
@@ -1386,15 +1408,12 @@ class _FormationListViewState extends State<FormationListView> {
                           ),
                         ),
                       ),
-                      if (widget.scope == FormationTrackingScope.full &&
-                          s.attentionCount > 0)
-                        _badge('⚠ ${s.attentionCount}', Colors.redAccent),
-                      if (widget.scope == FormationTrackingScope.full &&
-                          s.pendingCount > 0)
-                        _badge('⏳ ${s.pendingCount}', Colors.amberAccent),
-                      if (widget.scope == FormationTrackingScope.full &&
-                          s.goalCount > 0)
-                        _badge('🎯 ${s.goalCount}', Colors.tealAccent),
+                      if (full != null && full.attentionCount > 0)
+                        _badge('⚠ ${full.attentionCount}', Colors.redAccent),
+                      if (full != null && full.pendingCount > 0)
+                        _badge('⏳ ${full.pendingCount}', Colors.amberAccent),
+                      if (full != null && full.goalCount > 0)
+                        _badge('🎯 ${full.goalCount}', Colors.tealAccent),
                     ],
                   ),
                   if (trajet.isNotEmpty)
@@ -1410,17 +1429,24 @@ class _FormationListViewState extends State<FormationListView> {
                       ),
                     ),
                   const SizedBox(height: 6),
-                  _modalityProgress(s),
-                  if (widget.scope == FormationTrackingScope.full) ...[
+                  if (pool != null)
+                    _poolProgress(pool)
+                  else if (full != null)
+                    _modalityProgress(full),
+                  if (full != null) ...[
                     const SizedBox(height: 6),
-                    _miniBar('Exercices', s.exercisePct, AppColors.lichtblauw),
-                    if (s.hasMil) ...[
+                    _miniBar(
+                      'Exercices',
+                      full.exercisePct,
+                      AppColors.lichtblauw,
+                    ),
+                    if (full.hasMil) ...[
                       const SizedBox(height: 4),
-                      _miniBar('Exp. MIL', s.milPct, Colors.amberAccent),
+                      _miniBar('Exp. MIL', full.milPct, Colors.amberAccent),
                     ],
                     const SizedBox(height: 6),
                     Text(
-                      s.pedagogicalLine,
+                      full.pedagogicalLine,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1468,7 +1494,7 @@ class _FormationListViewState extends State<FormationListView> {
         final detail = value.total == 0
             ? '—'
             : '${value.validated}/${value.total}'
-                  '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}';
+                '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}';
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
           decoration: BoxDecoration(
@@ -1486,6 +1512,29 @@ class _FormationListViewState extends State<FormationListView> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _poolProgress(PoolFormationSnapshotDoc snapshot) {
+    final detail = snapshot.total == 0
+        ? '—'
+        : '${snapshot.validated}/${snapshot.total}'
+            '${snapshot.pending > 0 ? ' · ${snapshot.pending}⏳' : ''}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Text(
+        'Piscine $detail',
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.92),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 
