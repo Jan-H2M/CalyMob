@@ -28,6 +28,7 @@ void main() {
           participation: ''),
     ]);
     expect(find.text('Ajouter une remarque piscine'), findsNothing);
+    expect(find.text('Modifier le groupe'), findsNothing);
     final buttons = find.widgetWithText(
         OutlinedButton, 'Ajouter une remarque à cette séance');
     expect(buttons, findsNWidgets(2));
@@ -40,6 +41,33 @@ void main() {
     await tester.tap(find.text('Annuler'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('full monitor can correct only a dated pool group',
+      (tester) async {
+    await _pump(tester, scope: FormationTrackingScope.full, history: [
+      PoolStudentSession(
+          id: 'dated',
+          date: DateTime(2026, 10, 6),
+          location: 'Piscine',
+          lessons: const [],
+          participation: ''),
+      const PoolStudentSession(
+          id: 'undated',
+          date: null,
+          hasLessonDate: false,
+          location: 'Piscine',
+          lessons: [],
+          participation: ''),
+    ]);
+    await tester.tap(find.widgetWithText(Tab, 'Piscine'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    final buttons = find.widgetWithText(OutlinedButton, 'Modifier le groupe');
+    expect(buttons, findsNWidgets(2));
+    final values = tester.widgetList<OutlinedButton>(buttons).toList();
+    expect(values[0].onPressed, isNotNull);
+    expect(values[1].onPressed, isNull);
   });
 
   testWidgets('compact complete exams and experience use green checks',

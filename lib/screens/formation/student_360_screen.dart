@@ -14,6 +14,7 @@ import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
 import '../../services/mil_experience_service.dart';
 import '../../services/pool_student_history_reader.dart';
+import '../../services/pool_group_correction_service.dart';
 import '../../utils/member_name.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
@@ -652,6 +653,78 @@ class _Student360ScreenState extends State<Student360Screen> {
   Future<void> _addPoolRemark(PoolStudentSession session) =>
       _addRemark(session: session);
 
+  Future<void> _correctPoolGroup(PoolStudentSession session) async {
+    if (widget.scope != FormationTrackingScope.full ||
+        session.date == null ||
+        !session.hasLessonDate) {
+      return;
+    }
+    try {
+      final service = PoolGroupCorrectionService();
+      final draft =
+          await service.load(widget.clubId, session.id, widget.member.id);
+      if (!mounted) return;
+      PoolGroupChoice? selected;
+      final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => StatefulBuilder(
+                builder: (context, update) => AlertDialog(
+                  title: Text(
+                      'Modifier le groupe · ${_sessionDate(session.date)}'),
+                  content: SizedBox(
+                      width: 480,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        const Text(
+                            'Corrigez l’heure concernée selon la participation réelle. Les autres heures restent inchangées. Aucune épreuve n’est validée.'),
+                        const SizedBox(height: 16),
+                        if (draft.choices.isEmpty)
+                          const Text(
+                              'Aucun groupe renseigné dans le planning de cette séance.')
+                        else
+                          DropdownButtonFormField<PoolGroupChoice>(
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                labelText: 'Groupe et heure',
+                                border: OutlineInputBorder()),
+                            items: draft.choices
+                                .map((choice) => DropdownMenuItem(
+                                    value: choice,
+                                    child: Text(choice.label,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (choice) =>
+                                update(() => selected = choice),
+                          ),
+                      ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Annuler')),
+                    FilledButton(
+                        onPressed: selected == null
+                            ? null
+                            : () => Navigator.pop(context, true),
+                        child: const Text('Enregistrer')),
+                  ],
+                ),
+              ));
+      if (confirmed != true || selected == null || !mounted) return;
+      await service.save(
+          widget.clubId, session.id, widget.member.id, draft, selected!);
+      await _loadPoolHistory();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Groupe corrigé · modification auditée')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Correction non enregistrée. Rechargez la séance et réessayez.'),
+          backgroundColor: Colors.redAccent));
+    }
+  }
+
   Future<void> _addRemark({PoolStudentSession? session}) async {
     final pool = session != null;
     // Pool-only instructors may never create non-pool observations.
@@ -970,6 +1043,15 @@ class _Student360ScreenState extends State<Student360Screen> {
         icon: const Icon(Icons.add_comment_outlined),
         label: const Text('Ajouter une remarque à cette séance'),
       ),
+      if (widget.scope == FormationTrackingScope.full)
+        OutlinedButton.icon(
+          onPressed: session.date == null || !session.hasLessonDate
+              ? null
+              : () => _correctPoolGroup(session),
+          style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Modifier le groupe'),
+        ),
     ]);
   }
 

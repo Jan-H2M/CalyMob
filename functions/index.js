@@ -11,6 +11,8 @@ const admin = require('firebase-admin');
 // Initialize Firebase Admin
 admin.initializeApp();
 
+exports.correctPoolStudentGroup = require('./src/training/correctPoolStudentGroup').correctPoolStudentGroup;
+
 // Compatibility shim for the firebase-admin v13 modular API: when running
 // the local emulator on Node 25 the legacy `admin.firestore.FieldValue`
 // accessor isn't auto-attached, breaking every `serverTimestamp()` call.
