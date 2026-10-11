@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../profile/who_is_who_screen.dart';
 
@@ -10,7 +11,9 @@ import '../profile/who_is_who_screen.dart';
 /// The underlying list and student 360° page remain the single source of
 /// truth already used by Who's Who → Formation.
 class InstructorFormationOverviewScreen extends StatefulWidget {
-  const InstructorFormationOverviewScreen({super.key});
+  final FormationTrackingScope scope;
+
+  const InstructorFormationOverviewScreen({super.key, required this.scope});
 
   @override
   State<InstructorFormationOverviewScreen> createState() =>
@@ -42,6 +45,7 @@ class _InstructorFormationOverviewScreenState
                 child: FormationListView(
                   clubId: FirebaseConfig.defaultClubId,
                   searchQuery: _searchQuery,
+                  scope: widget.scope,
                 ),
               ),
             ],
@@ -70,11 +74,11 @@ class _InstructorFormationOverviewScreenState
                 onPressed: () => Navigator.of(context).maybePop(),
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
               ),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Avancement des élèves',
                       style: TextStyle(
                         color: Colors.white,
@@ -82,10 +86,12 @@ class _InstructorFormationOverviewScreenState
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
-                      'Carrière, piscine, théorie et expériences acquises',
-                      style: TextStyle(
+                      widget.scope == FormationTrackingScope.piscineOnly
+                          ? 'Progression et remarques piscine'
+                          : 'Carrière, piscine, théorie et expériences acquises',
+                      style: const TextStyle(
                         color: Color(0xD9FFFFFF),
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,

@@ -1,3 +1,5 @@
+enum FormationTrackingScope { piscineOnly, full }
+
 /// Helper class for permission checking based on club statutes
 class PermissionHelper {
   /// Exact role gate shared with recordOnSitePayment/recordInstallmentPayment.
@@ -63,9 +65,8 @@ class PermissionHelper {
   static bool isAdmin(List<String> clubStatuten) {
     if (clubStatuten.isEmpty) return false;
 
-    final normalizedStatuten = clubStatuten
-        .map((s) => s.toLowerCase().trim())
-        .toList();
+    final normalizedStatuten =
+        clubStatuten.map((s) => s.toLowerCase().trim()).toList();
 
     return adminStatutes.any(
       (adminStatut) => normalizedStatuten.contains(adminStatut.toLowerCase()),
@@ -109,9 +110,8 @@ class PermissionHelper {
       return false;
     }
 
-    final normalizedStatuten = rolesToCheck
-        .map((s) => s.toLowerCase().trim())
-        .toList();
+    final normalizedStatuten =
+        rolesToCheck.map((s) => s.toLowerCase().trim()).toList();
 
     return scannerRoles.any(
       (role) => normalizedStatuten.contains(role.toLowerCase()),
@@ -153,6 +153,26 @@ class PermissionHelper {
   /// [canValidateLifras].
   static bool canViewFormationTracking(List<String> clubStatuten) =>
       isAdmin(clubStatuten) || isEncadrantPiscine(clubStatuten);
+
+  /// Returns the narrowest formation view the member may use.
+  ///
+  /// Piscine encadrants share the same searchable student list as moniteurs,
+  /// but may only inspect pool progress and pool observations. Full formation
+  /// data remains reserved for LIFRAS validators and administrators.
+  static FormationTrackingScope? formationTrackingScope({
+    required List<String> clubStatuten,
+    required String? plongeurCode,
+  }) {
+    if (canValidateLifras(
+      clubStatuten: clubStatuten,
+      plongeurCode: plongeurCode,
+    )) {
+      return FormationTrackingScope.full;
+    }
+    return canViewFormationTracking(clubStatuten)
+        ? FormationTrackingScope.piscineOnly
+        : null;
+  }
 
   /// A piscine encadrant may add a free-text pool remark about a student.
   /// Exercise results and LIFRAS validation remain forbidden.
