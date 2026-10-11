@@ -12,6 +12,44 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('own dossier keeps pupil slots but hides every monitor action',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        own: true,
+        size: const Size(320, 900),
+        history: [
+          PoolStudentSession(
+              id: 'own-session',
+              date: DateTime(2026, 10, 6),
+              location: 'Piscine',
+              participation: 'training',
+              lessons: const []),
+        ]);
+    expect(find.text('Mes exercices'), findsOneWidget);
+    expect(find.text('Évaluation conservée'), findsOneWidget);
+    expect(find.byTooltip('Preuve externe'), findsOneWidget);
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Piscine'));
+    await tester.tap(find.widgetWithText(Tab, 'Piscine'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Examen piscine conservé'), findsOneWidget);
+    expect(find.text('06/10/2026 · Piscine'), findsOneWidget);
+    expect(find.byTooltip('Ajouter une remarque à cette séance'), findsNothing);
+    expect(find.byTooltip('Modifier le groupe de cette séance'), findsNothing);
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Observations'));
+    await tester.tap(find.widgetWithText(Tab, 'Observations'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Observations de vos encadrants'), findsOneWidget);
+    expect(find.textContaining('Ajouter une remarque'), findsNothing);
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Spécialités'));
+    await tester.tap(find.widgetWithText(Tab, 'Spécialités'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Spécialités conservées'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('monitor exercise opens protocol and closes without validation',
       (tester) async {
     final calls = <String>[];
@@ -459,6 +497,7 @@ Future<void> _pump(
   List<PoolStudentSession> history = const [],
   FormationSnapshotDoc? snapshot,
   Future<MilProtocol?> Function(String, bool)? protocolLoader,
+  bool own = false,
   Size size = const Size(1200, 1800),
 }) async {
   tester.view.physicalSize = size;
@@ -477,6 +516,22 @@ Future<void> _pump(
           email: 'alice@example.invalid',
         ),
         scope: scope,
+        isOwnProfile: own,
+        exerciseSections: own
+            ? (pool) => [
+                  Text(
+                      pool ? 'Examen piscine conservé' : 'Évaluation conservée')
+                ]
+            : null,
+        specialties: own ? const Text('Spécialités conservées') : null,
+        appBarActions: own
+            ? [
+                IconButton(
+                    tooltip: 'Preuve externe',
+                    onPressed: () {},
+                    icon: const Icon(Icons.photo))
+              ]
+            : const [],
         previewMode: true,
         protocolLoader: protocolLoader,
         previewPoolHistory: history,

@@ -40,7 +40,10 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
   @override
   void didUpdateWidget(covariant MilRequirementsCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_overview.byBrevet.containsKey(_selectedBrevet)) {
+    final oldOverview = oldWidget.overview ??
+        MilExperienceOverview.fromSnapshot(oldWidget.snapshot!);
+    if (oldOverview.preferredBrevet != _overview.preferredBrevet ||
+        !_overview.byBrevet.containsKey(_selectedBrevet)) {
       _selectedBrevet = _overview.initialBrevet;
     }
   }

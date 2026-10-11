@@ -13,7 +13,10 @@ import '../../services/lifras_service.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/mil_experience_service.dart';
 import '../../utils/date_formatter.dart';
-import '../../utils/plongeur_utils.dart';
+import '../../models/member_formation_dossier.dart';
+import '../../models/member_profile.dart';
+import '../../utils/permission_helper.dart';
+import '../formation/student_360_screen.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_code_sheet.dart';
@@ -91,6 +94,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   List<ExerciceLIFRAS> _catalog = [];
   NiveauLIFRAS? _targetNiveau;
   bool _isLoadingCatalog = false;
+  bool _catalogFailed = false;
   FormationSnapshotDoc? _formationSnapshot;
   MilExperienceOverview? _milOverview;
   bool _isLoadingFormationSnapshot = false;
@@ -120,10 +124,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   Future<void> _loadCatalog() async {
     final memberProvider = context.read<MemberProvider>();
 
-    // Determine target niveau: formation_active → next brevet, else current
-    final target = PlongeurUtils.getTargetNiveau(
-      plongeurCode: memberProvider.plongeurCode,
-      formationActive: memberProvider.formationActive,
+    final target = dossierTargetNiveau(
+      memberTarget: memberProvider.targetFormationLevel,
+      currentCode: memberProvider.plongeurCode,
+      snapshotTarget: _formationSnapshot?.targetLevel,
     );
 
     if (target == null) {
@@ -140,6 +144,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
     setState(() {
       _isLoadingCatalog = true;
+      _catalogFailed = false;
+      _catalog = [];
       _targetNiveau = target;
     });
 
@@ -156,6 +162,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       if (!mounted) return;
       setState(() {
         _isLoadingCatalog = false;
+        _catalogFailed = true;
       });
     }
   }
@@ -183,10 +190,17 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     if (!mounted) return;
     setState(() {
       _formationSnapshot = snapshot;
+      final preferred = resolvePreferredMilBrevet(
+        targetFormationLevel: member.targetFormationLevel,
+        currentCode: member.plongeurCode,
+        snapshotTargetLevel: snapshot?.targetLevel,
+      );
       _milOverview = overview ??
-          (snapshot == null
-              ? null
-              : MilExperienceOverview.fromSnapshot(snapshot));
+          (snapshot != null &&
+                  milBrevetCodeForTarget(snapshot.targetLevel) == preferred
+              ? MilExperienceOverview.fromSnapshot(snapshot)
+              : MilExperienceOverview(
+                  preferredBrevet: preferred, byBrevet: const {}));
       _isLoadingFormationSnapshot = false;
     });
   }
@@ -278,6 +292,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isOwnProfile) return _buildSelfView();
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -351,12 +366,43 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   Widget _buildSelfView() {
     return Consumer<ExerciceValideProvider>(
       builder: (context, provider, _) {
-        if (_isLoadingCatalog || provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
+        final member = context.watch<MemberProvider>();
+        final desiredTarget = dossierTargetNiveau(
+          memberTarget: member.targetFormationLevel,
+          currentCode: member.plongeurCode,
+          snapshotTarget: _formationSnapshot?.targetLevel,
+        );
+        if (!_isLoadingCatalog && desiredTarget != _targetNiveau) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _loadCatalog();
+              _loadFormationSnapshot();
+            }
+          });
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        }
+        if (_isLoadingCatalog ||
+            _isLoadingFormationSnapshot ||
+            provider.isLoading) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
 
         if (_targetNiveau == null) {
-          return _buildNoNiveauState();
+          return Scaffold(
+              appBar: AppBar(title: const Text('Mes exercices')),
+              body: _buildNoNiveauState());
+        }
+        if (_catalogFailed) {
+          return Scaffold(
+              appBar: AppBar(title: const Text('Mes exercices')),
+              body: Center(
+                  child: TextButton.icon(
+                      onPressed: _loadCatalog,
+                      icon: const Icon(Icons.refresh),
+                      label:
+                          const Text('Catalogue indisponible · Réessayer'))));
         }
 
         // Split catalog three ways:
@@ -390,95 +436,106 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           }
         }
 
-        // Progress counts only target-level — TN are cross-level and don't
-        // gate the next brevet, so we keep them out of the headline metric.
-        final targetTotal = targetTodo.length + targetValidated.length;
-        final progressFraction =
-            targetTotal == 0 ? 0.0 : targetValidated.length / targetTotal;
+        final snapshot = memberDossierSnapshot(
+          memberId: widget.memberId,
+          currentCode: member.plongeurCode ?? '',
+          target: _targetNiveau!,
+          catalog: _catalog,
+          validations: provider.exercicesValides,
+          source: _formationSnapshot,
+        );
+        List<Widget> sections(bool pool) {
+          bool included(ExerciceLIFRAS ex) => pool
+              ? formationModalityForExercise(ex.code, ex.description) ==
+                  FormationModality.pool
+              : formationModalityForExercise(ex.code, ex.description) !=
+                  FormationModality.pool;
+          final todo = targetTodo.where(included).toList();
+          final validated = targetValidated.where(included).toList();
+          return [
+            _buildSelfActions(),
+            const SizedBox(height: 8),
+            _buildSection(
+              title: 'À faire',
+              icon: Icons.radio_button_unchecked,
+              iconColor: Colors.amber,
+              emptyText: todo.isEmpty && validated.isEmpty
+                  ? 'Aucune épreuve renseignée dans ce volet pour ce brevet.'
+                  : 'Toutes les épreuves de ce volet sont validées.',
+              children: todo
+                  .map((ex) =>
+                      _buildTodoRow(ex, isPending: pendingIds.contains(ex.id)))
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            _buildSection(
+              title: 'Validés',
+              icon: Icons.check_circle,
+              iconColor: Colors.greenAccent,
+              emptyText: 'Aucune épreuve validée dans ce volet.',
+              children: validated
+                  .map((ex) => _buildValidatedRow(
+                      ex,
+                      _matchingValidations(provider.exercicesValides, ex)
+                          .firstWhere((v) => v.isValidated)))
+                  .toList(),
+            ),
+          ];
+        }
 
-        return RefreshIndicator(
-          onRefresh: () async {
-            await Future.wait([
-              _loadCatalog(),
-              _loadFormationSnapshot(),
-            ]);
-          },
-          child: ListView(
+        return Student360Screen(
+          clubId: _clubId,
+          member: MemberProfile(
+            id: widget.memberId,
+            nom: member.nom ?? '',
+            prenom: member.prenom ?? '',
+            email: member.email ?? '',
+            photoUrl: member.photoUrl,
+            plongeurCode: member.plongeurCode,
+            targetFormationLevel: member.targetFormationLevel,
+            formationActive: member.formationActive,
+          ),
+          scope: FormationTrackingScope.full,
+          isOwnProfile: true,
+          providedSnapshot: snapshot,
+          providedMilOverview: _milOverview,
+          exerciseSections: sections,
+          appBarActions: [
+            IconButton(
+              tooltip: 'Preuve externe',
+              icon: const Icon(Icons.add_a_photo_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const ExternalProofCaptureScreen())),
+            ),
+            IconButton(
+              tooltip: 'Rafraîchir',
+              icon: const Icon(Icons.refresh),
+              onPressed: () async {
+                await Future.wait([_loadCatalog(), _loadFormationSnapshot()]);
+              },
+            ),
+          ],
+          specialties: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // Progress header
-              _buildProgressHeader(
-                niveau: _targetNiveau!,
-                validated: targetValidated.length,
-                total: targetTotal,
-                progress: progressFraction,
-              ),
-              const SizedBox(height: 12),
-              MemberFormationExperienceSection(
-                snapshot: _formationSnapshot,
-                overview: _milOverview,
-                loading: _isLoadingFormationSnapshot,
-              ),
-              const SizedBox(height: 12),
-              _buildEvaluationRequestCard(),
-              const SizedBox(height: 12),
-              _buildHistoricalRepriseCard(),
-              const SizedBox(height: 20),
-
-              // Section 1: À faire (target-level, priority)
+              _buildSelfActions(),
+              const SizedBox(height: 8),
               _buildSection(
-                title: 'À faire',
-                icon: Icons.radio_button_unchecked,
-                iconColor: Colors.blueGrey,
-                emptyText: 'Tous les exercices de ${_targetNiveau!.code} '
-                    'sont validés 🎉',
-                children: targetTodo
-                    .map((ex) => _buildTodoRow(
-                          ex,
-                          isPending: pendingIds.contains(ex.id),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // Section 2: Validés (target-level)
-              _buildSection(
-                title: 'Validés',
-                icon: Icons.check_circle,
-                iconColor: Colors.green,
-                emptyText: 'Aucun exercice validé pour le moment',
-                children: targetValidated.map((ex) {
+                title: 'Spécialités (Tous niveaux)',
+                icon: Icons.workspace_premium_outlined,
+                iconColor: Colors.tealAccent,
+                emptyText: 'Aucune spécialité renseignée.',
+                children: tnAll.map((ex) {
                   final matches =
                       _matchingValidations(provider.exercicesValides, ex);
-                  final match = matches.firstWhere(
-                    (e) => e.isValidated,
-                    orElse: () => matches.first,
-                  );
-                  return _buildValidatedRow(ex, match);
+                  if (matches.any((v) => v.isValidated)) {
+                    return _buildValidatedRow(
+                        ex, matches.firstWhere((v) => v.isValidated));
+                  }
+                  return _buildTodoRow(ex,
+                      isPending: pendingIds.contains(ex.id));
                 }).toList(),
               ),
-              const SizedBox(height: 20),
-
-              // Section 3: Spécialités — cross-level, lower priority.
-              if (tnAll.isNotEmpty)
-                _buildSection(
-                  title: 'Spécialités (Tous niveaux)',
-                  icon: Icons.workspace_premium_outlined,
-                  iconColor: Colors.teal,
-                  emptyText: null,
-                  children: tnAll.map((ex) {
-                    final match =
-                        _matchingValidations(provider.exercicesValides, ex);
-                    final isValid = match.any((e) => e.isValidated);
-                    if (isValid) {
-                      final v = match.firstWhere((e) => e.isValidated);
-                      return _buildValidatedRow(ex, v);
-                    }
-                    return _buildTodoRow(ex,
-                        isPending: pendingIds.contains(ex.id));
-                  }).toList(),
-                ),
-              const SizedBox(height: 40),
             ],
           ),
         );
@@ -497,177 +554,31 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     );
   }
 
-  Widget _buildProgressHeader({
-    required NiveauLIFRAS niveau,
-    required int validated,
-    required int total,
-    required double progress,
-  }) {
-    final niveauColor = _getNiveauColor(niveau);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: niveauColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Center(
-                  child: Text(
-                    niveau.code,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Objectif: ${niveau.label}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    Text(
-                      '$validated / $total exercices validés',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-              backgroundColor: Colors.grey[200],
-              color: niveauColor,
-              minHeight: 8,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoricalRepriseCard() {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.96),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const HistoricalClaimsScreen()),
+  Widget _buildSelfActions() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        TextButton.icon(
+          style: TextButton.styleFrom(
+              foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
+          icon: const Icon(Icons.fact_check_outlined, size: 18),
+          label: const Text('Demander une évaluation',
+              style: TextStyle(fontSize: 12)),
+          onPressed: () => _openEvaluationRequest(),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.middenblauw.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.history_edu_outlined,
-                  color: AppColors.middenblauw,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'J’ai déjà des exercices sur papier',
-                      style: TextStyle(
-                        color: AppColors.donkerblauw,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Prépare la liste; un moniteur validera après contrôle de ta carte.',
-                      style: TextStyle(
-                        color: AppColors.donkerblauw.withValues(alpha: 0.65),
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade500),
-            ],
-          ),
+        TextButton.icon(
+          style: TextButton.styleFrom(
+              foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
+          icon: const Icon(Icons.history_edu_outlined, size: 18),
+          label: const Text('Exercices sur papier',
+              style: TextStyle(fontSize: 12)),
+          onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const HistoricalClaimsScreen())),
         ),
-      ),
-    );
-  }
-
-  Widget _buildEvaluationRequestCard() {
-    return Material(
-      color: AppColors.oranje,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _openEvaluationRequest(),
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Row(children: [
-            Icon(Icons.fact_check_outlined, color: Colors.white, size: 30),
-            SizedBox(width: 12),
-            Expanded(
-                child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Demander une évaluation',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16)),
-                SizedBox(height: 3),
-                Text('Choisis l’exercice, le contexte et le moniteur.',
-                    style: TextStyle(color: Colors.white)),
-              ],
-            )),
-            Icon(Icons.chevron_right, color: Colors.white),
-          ]),
-        ),
-      ),
+      ],
     );
   }
 
@@ -741,14 +652,14 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.95),
+              color: AppColors.donkerblauw.withValues(alpha: 0.65),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               emptyText,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 13,
-                color: Colors.grey[700],
+                color: Colors.white70,
               ),
             ),
           )
@@ -757,7 +668,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           // on the blue ocean gradient backdrop.
           Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.96),
+              color: AppColors.donkerblauw.withValues(alpha: 0.65),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
@@ -772,10 +683,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               children: [
                 for (int i = 0; i < children.length; i++) ...[
                   if (i > 0)
-                    Divider(
+                    const Divider(
                       height: 1,
                       thickness: 1,
-                      color: Colors.grey.shade200,
+                      color: Colors.white12,
                     ),
                   children[i],
                 ],
@@ -797,7 +708,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     VoidCallback? onTap,
   }) {
     final niveauColor = _getNiveauColor(exercice.niveau);
-    final muted = !isValidated;
 
     return InkWell(
       onTap: onTap,
@@ -844,10 +754,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                     children: [
                       Text(
                         exercice.code,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
-                          color: muted ? Colors.grey[800] : Colors.grey[900],
+                          color: Colors.white,
                         ),
                       ),
                       if (hintTag != null) ...[
@@ -894,9 +804,9 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                     exercice.description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: Colors.white70,
                     ),
                   ),
                 ],
@@ -906,7 +816,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               const SizedBox(width: 8),
               Text(
                 trailingText,
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                style: const TextStyle(fontSize: 11, color: Colors.white70),
               ),
             ],
             IconButton(
@@ -915,7 +825,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                   ? null
                   : () => MilProtocolCodeSheet.show(context,
                       clubId: _clubId, code: exercice.code),
-              icon: const Icon(Icons.info_outline),
+              icon: const Icon(Icons.info_outline, color: Colors.white70),
             ),
           ],
         ),

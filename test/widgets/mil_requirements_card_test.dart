@@ -35,6 +35,26 @@ void main() {
     },
   );
 
+  testWidgets(
+      'inline dossier follows a changed goal even when both remain available',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+            body: MilRequirementsCard(
+                overview: overview, inlineExpanded: true))));
+    expect(find.text('Expériences LIFRAS — Brevet 2*'), findsOneWidget);
+    final changed = MilExperienceOverview(
+        preferredBrevet: '1',
+        sourceVersion: overview.sourceVersion,
+        byBrevet: overview.byBrevet);
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body:
+                MilRequirementsCard(overview: changed, inlineExpanded: true))));
+    expect(find.text('Expériences LIFRAS — Brevet 1*'), findsOneWidget);
+    expect(find.text('Expériences LIFRAS — Brevet 2*'), findsNothing);
+  });
+
   testWidgets('compact summary opens details, switches brevet and dismisses', (
     tester,
   ) async {

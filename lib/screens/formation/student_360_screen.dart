@@ -49,6 +49,12 @@ class Student360Screen extends StatefulWidget {
   final PoolFormationSnapshotDoc? previewPoolSnapshot;
   final List<Map<String, dynamic>> previewObservations;
   final List<PoolStudentSession> previewPoolHistory;
+  final bool isOwnProfile;
+  final FormationSnapshotDoc? providedSnapshot;
+  final MilExperienceOverview? providedMilOverview;
+  final List<Widget> Function(bool pool)? exerciseSections;
+  final Widget? specialties;
+  final List<Widget> appBarActions;
 
   const Student360Screen({
     super.key,
@@ -63,6 +69,12 @@ class Student360Screen extends StatefulWidget {
     this.previewPoolSnapshot,
     this.previewObservations = const [],
     this.previewPoolHistory = const [],
+    this.isOwnProfile = false,
+    this.providedSnapshot,
+    this.providedMilOverview,
+    this.exerciseSections,
+    this.specialties,
+    this.appBarActions = const [],
   });
 
   @override
@@ -143,13 +155,14 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Future<void> _loadFull() async {
-    final snapshot = await _reader!.getSnapshot(
-      widget.clubId,
-      widget.member.id,
-    );
-    MilExperienceOverview? milOverview;
+    final snapshot = widget.providedSnapshot ??
+        await _reader!.getSnapshot(
+          widget.clubId,
+          widget.member.id,
+        );
+    MilExperienceOverview? milOverview = widget.providedMilOverview;
     try {
-      milOverview = await MilExperienceService().load(
+      milOverview ??= await MilExperienceService().load(
         clubId: widget.clubId,
         memberId: widget.member.id,
         preferredBrevet: resolvePreferredMilBrevet(
@@ -164,8 +177,9 @@ class _Student360ScreenState extends State<Student360Screen> {
     final observations = await _loadObservations();
     if (!mounted) return;
     setState(() {
-      _snapshot = snapshot;
-      _milOverview = milOverview ??
+      _snapshot = widget.providedSnapshot ?? snapshot;
+      _milOverview = widget.providedMilOverview ??
+          milOverview ??
           (snapshot == null
               ? null
               : MilExperienceOverview.fromSnapshot(snapshot));
@@ -246,9 +260,24 @@ class _Student360ScreenState extends State<Student360Screen> {
   String get _fullName => '${widget.member.prenom} ${widget.member.nom}'.trim();
 
   @override
+  void didUpdateWidget(covariant Student360Screen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.providedSnapshot != null) {
+      _snapshot = widget.providedSnapshot;
+    }
+    if (widget.providedMilOverview != null) {
+      _milOverview = widget.providedMilOverview;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: widget.scope == FormationTrackingScope.piscineOnly ? 2 : 5,
+      length: widget.scope == FormationTrackingScope.piscineOnly
+          ? 2
+          : widget.specialties == null
+              ? 5
+              : 6,
       child: Scaffold(
         extendBodyBehindAppBar: true,
         appBar: AppBar(
@@ -256,12 +285,17 @@ class _Student360ScreenState extends State<Student360Screen> {
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
           title: Text(
-            _fullName.isEmpty ? 'Fiche élève' : _fullName,
+            widget.isOwnProfile
+                ? 'Mes exercices'
+                : _fullName.isEmpty
+                    ? 'Fiche élève'
+                    : _fullName,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
           ),
+          actions: widget.appBarActions,
         ),
         body: OceanBackground(
           child: SafeArea(
@@ -295,20 +329,21 @@ class _Student360ScreenState extends State<Student360Screen> {
         if (s.attentionPoints.isNotEmpty) _buildAttentionBanner(s),
         Container(
           color: AppColors.donkerblauw.withValues(alpha: 0.82),
-          child: const TabBar(
+          child: TabBar(
             isScrollable: true,
             labelColor: Colors.white,
-            unselectedLabelColor: Color(0xFFD3E2EF),
+            unselectedLabelColor: const Color(0xFFD3E2EF),
             indicatorColor: AppColors.lichtblauw,
             indicatorWeight: 3,
-            labelStyle: TextStyle(fontWeight: FontWeight.w600),
-            unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500),
+            labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
             tabs: [
-              Tab(text: 'Milieu naturel'),
-              Tab(text: 'Piscine'),
-              Tab(text: 'Expériences brevet'),
-              Tab(text: 'Objectifs'),
-              Tab(text: 'Observations'),
+              const Tab(text: 'Milieu naturel'),
+              const Tab(text: 'Piscine'),
+              const Tab(text: 'Expériences brevet'),
+              const Tab(text: 'Objectifs'),
+              const Tab(text: 'Observations'),
+              if (widget.specialties != null) const Tab(text: 'Spécialités'),
             ],
           ),
         ),
@@ -320,6 +355,7 @@ class _Student360ScreenState extends State<Student360Screen> {
               _buildMilTab(s),
               _buildGoalsTab(s),
               _buildObservationsTab(s),
+              if (widget.specialties != null) widget.specialties!,
             ],
           ),
         ),
@@ -417,14 +453,20 @@ class _Student360ScreenState extends State<Student360Screen> {
     final m = widget.member;
     final natural = s.modalityProgress[FormationModality.career]!;
     final exams = s.examProgress;
-    final liveTargetCode = _milOverview?.initialBrevet;
+    final liveTargetCode =
+        _milOverview?.preferredBrevet ?? _milOverview?.initialBrevet;
     final liveMil =
         liveTargetCode == null ? null : _milOverview?.byBrevet[liveTargetCode];
     // Le panneau foncé remonte derrière l'AppBar transparente + la status bar
     // (SafeArea top:false) → titre « Alison » et stats toujours sur fond foncé.
     final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
-    final trajet = s.targetLevel != null && s.targetLevel!.isNotEmpty
-        ? '${s.currentCode.isEmpty ? '—' : s.currentCode} → ${s.targetLevel}'
+    final target = liveTargetCode == null
+        ? s.targetLevel
+        : const {'1', '2', '3', '4'}.contains(liveTargetCode)
+            ? '$liveTargetCode*'
+            : liveTargetCode;
+    final trajet = target != null && target.isNotEmpty
+        ? '${s.currentCode.isEmpty ? '—' : s.currentCode} → $target'
         : (s.currentCode.isEmpty ? '' : s.currentCode);
     return Container(
       decoration: BoxDecoration(
@@ -659,7 +701,8 @@ class _Student360ScreenState extends State<Student360Screen> {
       _addRemark(session: session);
 
   Future<void> _correctPoolGroup(PoolStudentSession session) async {
-    if (widget.scope != FormationTrackingScope.full ||
+    if (widget.isOwnProfile ||
+        widget.scope != FormationTrackingScope.full ||
         session.date == null ||
         !session.hasLessonDate) {
       return;
@@ -731,6 +774,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Future<void> _addRemark({PoolStudentSession? session}) async {
+    if (widget.isOwnProfile) return;
     final pool = session != null;
     // Pool-only instructors may never create non-pool observations.
     if (!pool && widget.scope != FormationTrackingScope.full) return;
@@ -838,11 +882,13 @@ class _Student360ScreenState extends State<Student360Screen> {
                 size: 18,
               ),
               const SizedBox(width: 6),
-              Text(
-                'Points d\'attention (${s.attentionPoints.length})',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: Text(
+                  'Points d\'attention (${s.attentionPoints.length})',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -942,7 +988,9 @@ class _Student360ScreenState extends State<Student360Screen> {
           compact: true,
         ),
         ..._poolHistory.map(_poolSessionCard),
-        if (snapshot != null) ..._exerciseSections(snapshot, pool: true),
+        if (snapshot != null)
+          ...(widget.exerciseSections?.call(true) ??
+              _exerciseSections(snapshot, pool: true)),
         if (poolSnapshot != null)
           _section('Progression piscine', [
             _poolCountRow(
@@ -1061,40 +1109,42 @@ class _Student360ScreenState extends State<Student360Screen> {
               ),
             ),
           ),
-          Row(
-            key: Key('pool-session-actions-${session.id}'),
-            children: [
-              Expanded(
-                child: Tooltip(
-                  message: 'Ajouter une remarque à cette séance',
-                  child: OutlinedButton.icon(
-                    onPressed: session.date == null || !session.hasLessonDate
-                        ? null
-                        : () => _addPoolRemark(session),
-                    style: _poolActionStyle(),
-                    icon: const Icon(Icons.add_comment_outlined, size: 14),
-                    label: const Text('Remarque'),
-                  ),
-                ),
-              ),
-              if (widget.scope == FormationTrackingScope.full) ...[
-                const SizedBox(width: 8),
+          if (!widget.isOwnProfile)
+            Row(
+              key: Key('pool-session-actions-${session.id}'),
+              children: [
                 Expanded(
                   child: Tooltip(
-                    message: 'Modifier le groupe de cette séance',
+                    message: 'Ajouter une remarque à cette séance',
                     child: OutlinedButton.icon(
                       onPressed: session.date == null || !session.hasLessonDate
                           ? null
-                          : () => _correctPoolGroup(session),
+                          : () => _addPoolRemark(session),
                       style: _poolActionStyle(),
-                      icon: const Icon(Icons.edit_outlined, size: 14),
-                      label: const Text('Groupe'),
+                      icon: const Icon(Icons.add_comment_outlined, size: 14),
+                      label: const Text('Remarque'),
                     ),
                   ),
                 ),
+                if (widget.scope == FormationTrackingScope.full) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Tooltip(
+                      message: 'Modifier le groupe de cette séance',
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            session.date == null || !session.hasLessonDate
+                                ? null
+                                : () => _correctPoolGroup(session),
+                        style: _poolActionStyle(),
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        label: const Text('Groupe'),
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
+            ),
         ],
         compact: true);
   }
@@ -1141,7 +1191,8 @@ class _Student360ScreenState extends State<Student360Screen> {
           icon: const Icon(Icons.menu_book_outlined),
           label: const Text('Protocoles MIL · Milieu naturel'),
         ),
-        ..._exerciseSections(s, pool: false),
+        ...(widget.exerciseSections?.call(false) ??
+            _exerciseSections(s, pool: false)),
       ],
     );
   }
@@ -1365,6 +1416,12 @@ class _Student360ScreenState extends State<Student360Screen> {
           (_observations.isEmpty || _observationsFailed ? 1 : 0),
       itemBuilder: (context, i) {
         if (i == 0) {
+          if (widget.isOwnProfile) {
+            return const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('Observations de vos encadrants',
+                    style: TextStyle(color: Colors.white70)));
+          }
           if (widget.scope == FormationTrackingScope.piscineOnly) {
             return const Padding(
               padding: EdgeInsets.only(bottom: 16),
