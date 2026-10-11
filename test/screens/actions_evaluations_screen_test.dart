@@ -5,66 +5,65 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets(
-    'todo shows every active source except duplicate buddy tasks',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(390, 1100));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      LogbookConfirmationAction? openedConfirmation;
-      FormationTask? openedTask;
+  testWidgets('todo shows every active source except duplicate buddy tasks', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    LogbookConfirmationAction? openedConfirmation;
+    FormationTask? openedTask;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ActionsEvaluationsScreen(
-            previewMode: true,
-            previewConfirmations: const [
-              LogbookConfirmationAction(
-                id: 'confirmation-1',
-                sourceMemberName: 'Sophie Dubois',
-                locationName: 'Nemo 33',
-                matchType: 'similar',
-              ),
-              LogbookConfirmationAction(
-                id: 'answered-1',
-                sourceMemberName: 'Louise Martin',
-                locationName: 'Zilvermeer',
-                matchType: 'identical',
-                status: 'declined',
-              ),
-            ],
-            previewTasks: [
-              _task('validation', FormationTaskType.monitorValidation),
-              _task('buddy duplicate', FormationTaskType.buddyConfirmation),
-              _task('event prep', FormationTaskType.eventPreparation),
-              _task('manual reminder', FormationTaskType.manualReminder),
-              _task(
-                'completed evaluation',
-                FormationTaskType.monitorObservation,
-                status: FormationTaskStatus.done,
-              ),
-            ],
-            onOpenConfirmation: (value) => openedConfirmation = value,
-            onOpenTask: (value) => openedTask = value,
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewConfirmations: const [
+            LogbookConfirmationAction(
+              id: 'confirmation-1',
+              sourceMemberName: 'Sophie Dubois',
+              locationName: 'Nemo 33',
+              matchType: 'similar',
+            ),
+            LogbookConfirmationAction(
+              id: 'answered-1',
+              sourceMemberName: 'Louise Martin',
+              locationName: 'Zilvermeer',
+              matchType: 'identical',
+              status: 'declined',
+            ),
+          ],
+          previewTasks: [
+            _task('validation', FormationTaskType.monitorValidation),
+            _task('buddy duplicate', FormationTaskType.buddyConfirmation),
+            _task('event prep', FormationTaskType.eventPreparation),
+            _task('manual reminder', FormationTaskType.manualReminder),
+            _task(
+              'completed evaluation',
+              FormationTaskType.monitorObservation,
+              status: FormationTaskStatus.done,
+            ),
+          ],
+          onOpenConfirmation: (value) => openedConfirmation = value,
+          onOpenTask: (value) => openedTask = value,
         ),
-      );
-      await tester.pump();
+      ),
+    );
+    await tester.pump();
 
-      expect(find.text('Actions & évaluations'), findsOneWidget);
-      expect(find.text('Plongées à confirmer'), findsOneWidget);
-      expect(find.text('Plongée avec Sophie Dubois'), findsOneWidget);
-      expect(find.text('Plongée avec Louise Martin'), findsNothing);
-      expect(find.text('validation'), findsOneWidget);
-      expect(find.text('buddy duplicate'), findsNothing);
-      expect(find.text('event prep'), findsOneWidget);
-      expect(find.text('manual reminder'), findsOneWidget);
-      expect(find.text('completed evaluation'), findsNothing);
-      await tester.tap(find.text('Plongée avec Sophie Dubois'));
-      expect(openedConfirmation?.id, 'confirmation-1');
-      await tester.tap(find.text('validation'));
-      expect(openedTask?.id, 'validation');
-    },
-  );
+    expect(find.text('Actions & évaluations'), findsOneWidget);
+    expect(find.text('Plongées à confirmer'), findsOneWidget);
+    expect(find.text('Plongée avec Sophie Dubois'), findsOneWidget);
+    expect(find.text('Plongée avec Louise Martin'), findsNothing);
+    expect(find.text('validation'), findsOneWidget);
+    expect(find.text('buddy duplicate'), findsNothing);
+    expect(find.text('event prep'), findsOneWidget);
+    expect(find.text('manual reminder'), findsOneWidget);
+    expect(find.text('completed evaluation'), findsNothing);
+    await tester.tap(find.text('Plongée avec Sophie Dubois'));
+    expect(openedConfirmation?.id, 'confirmation-1');
+    await tester.tap(find.text('validation'));
+    expect(openedTask?.id, 'validation');
+  });
 
   testWidgets('done history exposes answered confirmations and closed states', (
     tester,
@@ -157,6 +156,7 @@ void main() {
     );
 
     expect(find.text('Scanner une carte papier'), findsOneWidget);
+    expect(find.textContaining('carrière, piscine, théorie'), findsOneWidget);
     await tester.tap(find.text('Scanner une carte papier'));
     expect(openedScanner, isTrue);
 
@@ -206,7 +206,11 @@ void main() {
 
       expect(find.text('Suivi des formations'), findsOneWidget);
       expect(find.text('Avancement des élèves'), findsOneWidget);
-      expect(find.textContaining('carrière, piscine, théorie'), findsOneWidget);
+      expect(
+        find.textContaining('progression et remarques piscine'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('carrière, piscine, théorie'), findsNothing);
       expect(find.text('Scanner une carte papier'), findsNothing);
 
       await tester.tap(find.text('Avancement des élèves'));
@@ -235,27 +239,30 @@ void main() {
     expect(find.text('Tout est à jour'), findsOneWidget);
   });
 
-  testWidgets(
-    'pool encadrants can open formation but cannot validate LIFRAS',
-    (tester) async {
-      var openedFormation = false;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ActionsEvaluationsScreen(
-            previewMode: true,
-            previewClubStatuten: const ['Encadrant Piscine'],
-            previewPlongeurCode: 'AM',
-            onOpenFormationOverview: () => openedFormation = true,
-          ),
+  testWidgets('pool encadrants can open formation but cannot validate LIFRAS', (
+    tester,
+  ) async {
+    var openedFormation = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewClubStatuten: const ['Encadrant Piscine'],
+          previewPlongeurCode: 'AM',
+          onOpenFormationOverview: () => openedFormation = true,
         ),
-      );
+      ),
+    );
 
-      expect(find.text('Avancement des élèves'), findsOneWidget);
-      expect(find.text('Scanner une carte papier'), findsNothing);
-      await tester.tap(find.text('Avancement des élèves'));
-      expect(openedFormation, isTrue);
-    },
-  );
+    expect(find.text('Avancement des élèves'), findsOneWidget);
+    expect(
+      find.textContaining('progression et remarques piscine'),
+      findsOneWidget,
+    );
+    expect(find.text('Scanner une carte papier'), findsNothing);
+    await tester.tap(find.text('Avancement des élèves'));
+    expect(openedFormation, isTrue);
+  });
 
   testWidgets('search filters done history by status and member', (
     tester,
@@ -301,19 +308,21 @@ void main() {
     tester,
   ) async {
     FormationTask? openedTask;
-    await tester.pumpWidget(MaterialApp(
-      home: ActionsEvaluationsScreen(
-        previewMode: true,
-        previewTasks: [
-          _task(
-            'Évaluation historique P2.DP',
-            FormationTaskType.monitorValidation,
-            status: FormationTaskStatus.done,
-          ),
-        ],
-        onOpenTask: (task) => openedTask = task,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewTasks: [
+            _task(
+              'Évaluation historique P2.DP',
+              FormationTaskType.monitorValidation,
+              status: FormationTaskStatus.done,
+            ),
+          ],
+          onOpenTask: (task) => openedTask = task,
+        ),
       ),
-    ));
+    );
 
     expect(find.text('Évaluation historique P2.DP'), findsNothing);
     await tester.tap(find.text('Fait'));

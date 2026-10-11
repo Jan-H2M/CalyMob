@@ -7,12 +7,21 @@ import '../../config/app_colors.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/member_profile.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/member_provider.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
 import '../../utils/member_name.dart';
 import '../../utils/permission_helper.dart';
+import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/ocean_background.dart';
+
+@visibleForTesting
+bool formationObservationVisible(
+  FormationTrackingScope scope,
+  Map<String, dynamic> observation,
+) {
+  return scope == FormationTrackingScope.full ||
+      observation['contextType']?.toString() == 'piscine';
+}
 
 /// WP-10 — Fiche élève 360°.
 ///
@@ -22,11 +31,19 @@ import '../../widgets/ocean_background.dart';
 class Student360Screen extends StatefulWidget {
   final String clubId;
   final MemberProfile member;
+  final FormationTrackingScope scope;
+  final bool previewMode;
+  final FormationSnapshotDoc? previewSnapshot;
+  final List<Map<String, dynamic>> previewObservations;
 
   const Student360Screen({
     super.key,
     required this.clubId,
     required this.member,
+    required this.scope,
+    this.previewMode = false,
+    this.previewSnapshot,
+    this.previewObservations = const [],
   });
 
   @override
@@ -34,7 +51,7 @@ class Student360Screen extends StatefulWidget {
 }
 
 class _Student360ScreenState extends State<Student360Screen> {
-  final FormationSnapshotReader _reader = FormationSnapshotReader();
+  FormationSnapshotReader? _reader;
 
   bool _loading = true;
   FormationSnapshotDoc? _snapshot;
@@ -43,11 +60,24 @@ class _Student360ScreenState extends State<Student360Screen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.previewMode) {
+      _snapshot = widget.previewSnapshot;
+      _observations = widget.previewObservations
+          .where(
+            (observation) =>
+                formationObservationVisible(widget.scope, observation),
+          )
+          .toList(growable: false);
+      _loading = false;
+    } else {
+      _reader = FormationSnapshotReader();
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    final snapshot = await _reader.getSnapshot(widget.clubId, widget.member.id);
+    final snapshot =
+        await _reader!.getSnapshot(widget.clubId, widget.member.id);
     final observations = await _loadObservations();
     if (!mounted) return;
     setState(() {
@@ -59,13 +89,22 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Future<List<Map<String, dynamic>>> _loadObservations() async {
     try {
-      final snap = await FirebaseFirestore.instance
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('clubs')
           .doc(widget.clubId)
           .collection('member_observations')
-          .where('memberId', isEqualTo: widget.member.id)
-          .get();
-      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+          .where('memberId', isEqualTo: widget.member.id);
+      if (widget.scope == FormationTrackingScope.piscineOnly) {
+        query = query.where('contextType', isEqualTo: 'piscine');
+      }
+      final snap = await query.get();
+      final list = snap.docs
+          .map((d) => {'id': d.id, ...d.data()})
+          .where(
+            (observation) =>
+                formationObservationVisible(widget.scope, observation),
+          )
+          .toList();
       final observerIds = list
           .map((o) => o['observerId']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
@@ -75,13 +114,15 @@ class _Student360ScreenState extends State<Student360Screen> {
           .doc(widget.clubId)
           .collection('member_directory');
       final names = <String, String>{};
-      await Future.wait(observerIds.map((observerId) async {
-        final member = await members.doc(observerId).get();
-        final data = member.data();
-        if (data != null) {
-          names[observerId] = memberDisplayName(data, fallback: 'Encadrant');
-        }
-      }));
+      await Future.wait(
+        observerIds.map((observerId) async {
+          final member = await members.doc(observerId).get();
+          final data = member.data();
+          if (data != null) {
+            names[observerId] = memberDisplayName(data, fallback: 'Encadrant');
+          }
+        }),
+      );
       for (final observation in list) {
         observation['canonicalObserverName'] =
             names[observation['observerId']?.toString() ?? ''] ?? '';
@@ -109,7 +150,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: widget.scope == FormationTrackingScope.piscineOnly ? 2 : 4,
       child: Scaffold(
         extendBodyBehindAppBar: true,
         appBar: AppBar(
@@ -119,7 +160,9 @@ class _Student360ScreenState extends State<Student360Screen> {
           title: Text(
             _fullName.isEmpty ? 'Fiche élève' : _fullName,
             style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold),
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         body: OceanBackground(
@@ -127,7 +170,8 @@ class _Student360ScreenState extends State<Student360Screen> {
             top: false,
             child: _loading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white))
+                    child: CircularProgressIndicator(color: Colors.white),
+                  )
                 : _snapshot == null
                     ? _buildEmpty()
                     : _buildContent(_snapshot!),
@@ -152,6 +196,9 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Widget _buildContent(FormationSnapshotDoc s) {
+    if (widget.scope == FormationTrackingScope.piscineOnly) {
+      return _buildPiscineContent(s);
+    }
     return Column(
       children: [
         _buildHeader(s),
@@ -168,7 +215,7 @@ class _Student360ScreenState extends State<Student360Screen> {
             unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500),
             tabs: [
               Tab(text: 'Exercices'),
-              Tab(text: 'Expérience'),
+              Tab(text: 'Expériences brevet'),
               Tab(text: 'Objectifs'),
               Tab(text: 'Observations'),
             ],
@@ -186,6 +233,92 @@ class _Student360ScreenState extends State<Student360Screen> {
         ),
         _buildCta(),
       ],
+    );
+  }
+
+  Widget _buildPiscineContent(FormationSnapshotDoc s) {
+    return Column(
+      children: [
+        _buildPiscineHeader(s),
+        Container(
+          color: AppColors.donkerblauw.withValues(alpha: 0.82),
+          child: const TabBar(
+            labelColor: Colors.white,
+            unselectedLabelColor: Color(0xFFD3E2EF),
+            indicatorColor: AppColors.lichtblauw,
+            indicatorWeight: 3,
+            labelStyle: TextStyle(fontWeight: FontWeight.w600),
+            unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500),
+            tabs: [
+              Tab(text: 'Piscine'),
+              Tab(text: 'Observations piscine'),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            children: [_buildPiscineExercisesTab(s), _buildObservationsTab(s)],
+          ),
+        ),
+        _buildCta(),
+      ],
+    );
+  }
+
+  Widget _buildPiscineHeader(FormationSnapshotDoc s) {
+    final progress = s.modalityProgress[FormationModality.pool]!;
+    final total = progress.total;
+    final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppColors.donkerblauw.withValues(alpha: 0.94),
+            AppColors.donkerblauw.withValues(alpha: 0.82),
+          ],
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(16, topInset, 16, 12),
+      child: Row(
+        children: [
+          _avatar(widget.member, 64),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Suivi piscine',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _fractionProgressBar(
+                  'Exercices piscine',
+                  progress.validated,
+                  total,
+                  AppColors.lichtblauw,
+                ),
+                if (progress.pending > 0) ...[
+                  const SizedBox(height: 7),
+                  Text(
+                    '${progress.pending} en attente',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -221,11 +354,14 @@ class _Student360ScreenState extends State<Student360Screen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (trajet.isNotEmpty)
-                  Text(trajet,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    trajet,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 _progressBar('Exercices', s.exercisePct, AppColors.lichtblauw),
                 if (s.hasMil) ...[
@@ -240,10 +376,11 @@ class _Student360ScreenState extends State<Student360Screen> {
                     _stat('Plongées', '${s.diveStats.total}'),
                     _stat('Mer', '${s.diveStats.mer}'),
                     _stat(
-                        'Prof. max',
-                        s.diveStats.maxDepthMeters == null
-                            ? '—'
-                            : '${s.diveStats.maxDepthMeters!.toStringAsFixed(0)} m'),
+                      'Prof. max',
+                      s.diveStats.maxDepthMeters == null
+                          ? '—'
+                          : '${s.diveStats.maxDepthMeters!.toStringAsFixed(0)} m',
+                    ),
                     if (s.attentionCount > 0)
                       _stat('⚠ Attention', '${s.attentionCount}'),
                     if (s.pendingCount > 0)
@@ -286,11 +423,14 @@ class _Student360ScreenState extends State<Student360Screen> {
         color: Colors.white.withValues(alpha: 0.2),
       ),
       alignment: Alignment.center,
-      child: Text(initials,
-          style: TextStyle(
-              color: Colors.white,
-              fontSize: size * 0.35,
-              fontWeight: FontWeight.bold)),
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * 0.35,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
@@ -302,14 +442,21 @@ class _Student360ScreenState extends State<Student360Screen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
-            Text('$pct %',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700)),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+              ),
+            ),
+            Text(
+              '$pct %',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 3),
@@ -326,26 +473,74 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
+  Widget _fractionProgressBar(
+    String label,
+    int validated,
+    int total,
+    Color color,
+  ) {
+    final value = total == 0 ? 0.0 : validated / total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+              ),
+            ),
+            Text(
+              total == 0 ? '—' : '$validated/$total',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 7,
+            backgroundColor: Colors.white.withValues(alpha: 0.18),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _stat(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w800)),
-        Text(label,
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7), fontSize: 11)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.7),
+            fontSize: 11,
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildCta() {
-    final clubStatuten = context.watch<MemberProvider>().clubStatuten;
-    final canAddPoolRemark =
-        PermissionHelper.canAddPoolFormationRemark(clubStatuten);
     return SafeArea(
       top: false,
       child: Padding(
@@ -353,45 +548,45 @@ class _Student360ScreenState extends State<Student360Screen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (canAddPoolRemark) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.72)),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: _addPoolRemark,
+                icon: const Icon(Icons.add_comment_outlined),
+                label: const Text('Ajouter une remarque piscine'),
+              ),
+            ),
+            if (widget.scope == FormationTrackingScope.full) ...[
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.lichtblauw,
                     foregroundColor: Colors.white,
-                    side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed: _addPoolRemark,
-                  icon: const Icon(Icons.add_comment_outlined),
-                  label: const Text('Ajouter une remarque piscine'),
+                  // La préparation ouvre le planning depuis une sortie précise :
+                  // on renvoie le membre au flux appelant (câblage complet = WP-12).
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).pop({'action': 'plan', 'memberId': widget.member.id}),
+                  icon: const Icon(Icons.event_note),
+                  label: const Text('Préparer la prochaine séance'),
                 ),
               ),
-              const SizedBox(height: 8),
             ],
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.lichtblauw,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                // La préparation ouvre le planning depuis une sortie précise :
-                // on renvoie le membre au flux appelant (câblage complet = WP-12).
-                onPressed: () => Navigator.of(context)
-                    .pop({'action': 'plan', 'memberId': widget.member.id}),
-                icon: const Icon(Icons.event_note),
-                label: const Text('Préparer la prochaine séance'),
-              ),
-            ),
           ],
         ),
       ),
@@ -476,12 +671,19 @@ class _Student360ScreenState extends State<Student360Screen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber_rounded,
-                  color: Colors.redAccent, size: 18),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.redAccent,
+                size: 18,
+              ),
               const SizedBox(width: 6),
-              Text('Points d\'attention (${s.attentionPoints.length})',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w800)),
+              Text(
+                'Points d\'attention (${s.attentionPoints.length})',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -491,10 +693,13 @@ class _Student360ScreenState extends State<Student360Screen> {
             final detail = attempts > 0 ? ' · ×$attempts pratiqué' : '';
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text('• ${_describeCode(s, code)}$detail',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      fontSize: 13)),
+              child: Text(
+                '• ${_describeCode(s, code)}$detail',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontSize: 13,
+                ),
+              ),
             );
           }),
         ],
@@ -522,6 +727,74 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   // ---- Onglet Exercices ----------------------------------------------------
+  Widget _buildPiscineExercisesTab(FormationSnapshotDoc s) {
+    bool isPool(String code, String description) =>
+        formationModalityForExercise(code, description) ==
+        FormationModality.pool;
+
+    final validated = s.validated
+        .where((exercise) => isPool(exercise.code, exercise.description))
+        .toList(growable: false);
+    final pending = s.pending
+        .where((exercise) => isPool(exercise.code, exercise.description))
+        .toList(growable: false);
+    final pendingClaims = s.pendingClaims
+        .where((claim) => isPool(claim.code, claim.label))
+        .toList(growable: false);
+    final remaining = s.remaining
+        .where((exercise) => isPool(exercise.code, exercise.description))
+        .toList(growable: false);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      children: [
+        _section(
+          '✓ Validés en piscine (${validated.length})',
+          validated
+              .map(
+                (exercise) => _exRow(
+                  exercise.code,
+                  exercise.description,
+                  Colors.greenAccent,
+                ),
+              )
+              .toList(),
+          emptyText: 'Aucun exercice piscine validé.',
+        ),
+        _section(
+          '⏳ En attente en piscine (${pending.length + pendingClaims.length})',
+          [
+            ...pending.map(
+              (exercise) => _exRow(
+                exercise.code,
+                exercise.description,
+                Colors.amberAccent,
+              ),
+            ),
+            ...pendingClaims.map(
+              (claim) => _exRow(
+                claim.code,
+                claim.label.isNotEmpty ? claim.label : claim.status,
+                Colors.amberAccent,
+              ),
+            ),
+          ],
+          emptyText: 'Rien en attente en piscine.',
+        ),
+        _section(
+          '○ Restants en piscine (${remaining.length})',
+          remaining
+              .map(
+                (exercise) =>
+                    _exRow(exercise.code, exercise.description, Colors.white54),
+              )
+              .toList(),
+          emptyText: 'Tous les exercices piscine sont couverts.',
+        ),
+      ],
+    );
+  }
+
   Widget _buildExercisesTab(FormationSnapshotDoc s) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -537,10 +810,16 @@ class _Student360ScreenState extends State<Student360Screen> {
         _section(
           '⏳ En attente (${s.pending.length + s.pendingClaims.length})',
           [
-            ...s.pending
-                .map((e) => _exRow(e.code, e.description, Colors.amberAccent)),
-            ...s.pendingClaims.map((c) => _exRow(c.code,
-                c.label.isNotEmpty ? c.label : c.status, Colors.amberAccent)),
+            ...s.pending.map(
+              (e) => _exRow(e.code, e.description, Colors.amberAccent),
+            ),
+            ...s.pendingClaims.map(
+              (c) => _exRow(
+                c.code,
+                c.label.isNotEmpty ? c.label : c.status,
+                Colors.amberAccent,
+              ),
+            ),
           ],
           emptyText: 'Rien en attente.',
         ),
@@ -574,10 +853,7 @@ class _Student360ScreenState extends State<Student360Screen> {
         children: [
           const Text(
             'Progression par volet',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 9),
           ...FormationModality.values.map((modality) {
@@ -653,14 +929,21 @@ class _Student360ScreenState extends State<Student360Screen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(code,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w700)),
+                Text(
+                  code,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 if (subtitle.isNotEmpty)
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -671,8 +954,10 @@ class _Student360ScreenState extends State<Student360Screen> {
                 color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(badge,
-                  style: const TextStyle(color: Colors.white, fontSize: 11)),
+              child: Text(
+                badge,
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+              ),
             ),
         ],
       ),
@@ -697,74 +982,15 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        _section(
-          'Expériences exigées (module ${s.milPct} %)',
-          s.milPerRequirement.entries.map((e) {
-            final label = milExperienceLabelFr[e.key] ?? e.key;
-            return _milRow(label, e.value);
-          }).toList(),
-        ),
-        _section(
-          'Profondeurs',
-          [
-            _kv('0–10 m', '${zones['0_10'] ?? 0}'),
-            _kv('10–20 m', '${zones['10_20'] ?? 0}'),
-            _kv('20–30 m', '${zones['20_30'] ?? 0}'),
-            _kv('30 m et +', '${zones['30_plus'] ?? 0}'),
-          ],
-        ),
+        MilRequirementsCard(snapshot: s, dark: true),
+        const SizedBox(height: 14),
+        _section('Profondeurs', [
+          _kv('0–10 m', '${zones['0_10'] ?? 0}'),
+          _kv('10–20 m', '${zones['10_20'] ?? 0}'),
+          _kv('20–30 m', '${zones['20_30'] ?? 0}'),
+          _kv('30 m et +', '${zones['30_plus'] ?? 0}'),
+        ]),
       ],
-    );
-  }
-
-  Widget _milRow(String label, SnapshotMilRequirement r) {
-    if (r.dataMissing) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-                child: Text(label,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85)))),
-            const Text('Données manquantes',
-                style: TextStyle(color: Colors.white54, fontSize: 12)),
-          ],
-        ),
-      );
-    }
-    final done = r.have >= r.need;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                  child:
-                      Text(label, style: const TextStyle(color: Colors.white))),
-              Text('${r.have}/${r.need}',
-                  style: TextStyle(
-                      color: done ? Colors.greenAccent : Colors.white,
-                      fontWeight: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 3),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: LinearProgressIndicator(
-              value: r.ratio,
-              minHeight: 5,
-              backgroundColor: Colors.white.withValues(alpha: 0.15),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                  done ? Colors.greenAccent : Colors.amberAccent),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -774,11 +1000,17 @@ class _Student360ScreenState extends State<Student360Screen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(k,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.85))),
-          Text(v,
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w700)),
+          Text(
+            k,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+          ),
+          Text(
+            v,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -804,15 +1036,22 @@ class _Student360ScreenState extends State<Student360Screen> {
         _section(
           '🎯 Objectifs de l\'élève',
           s.goalCodes
-              .map((c) =>
-                  _exRow(c, s.perCode[c]?.lastResult ?? '', Colors.tealAccent))
+              .map(
+                (c) => _exRow(
+                  c,
+                  s.perCode[c]?.lastResult ?? '',
+                  Colors.tealAccent,
+                ),
+              )
               .toList(),
           emptyText: 'Aucun exercice ciblé.',
         ),
         if (s.goalNote.isNotEmpty)
           _section('Note', [
-            Text(s.goalNote,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.9))),
+            Text(
+              s.goalNote,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
+            ),
           ]),
       ],
     );
@@ -865,47 +1104,65 @@ class _Student360ScreenState extends State<Student360Screen> {
               Row(
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Text(_resultLabel(result),
-                        style: TextStyle(
-                            color: color,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700)),
+                      color: color.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _resultLabel(result),
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(code,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700)),
+                        Text(
+                          code,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                         if (desc.isNotEmpty)
-                          Text(desc,
-                              style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.75),
-                                  fontSize: 12)),
+                          Text(
+                            desc,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 12,
+                            ),
+                          ),
                       ],
                     ),
                   ),
                   if (date != null)
-                    Text(_shortDate(date),
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 11)),
+                    Text(
+                      _shortDate(date),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
+                    ),
                 ],
               ),
               if (note.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(note,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 13)),
+                Text(
+                  note,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 13,
+                  ),
+                ),
               ],
               if (observerName.isNotEmpty) ...[
                 const SizedBox(height: 5),
@@ -953,16 +1210,23 @@ class _Student360ScreenState extends State<Student360Screen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 8),
           if (children.isEmpty && emptyText != null)
-            Text(emptyText,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65), fontSize: 13))
+            Text(
+              emptyText,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 13,
+              ),
+            )
           else
             ...children,
         ],

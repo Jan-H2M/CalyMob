@@ -114,8 +114,9 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
       clubStatuten: member.clubStatuten,
       plongeurCode: member.plongeurCode,
     );
-    final canViewFormation =
-        PermissionHelper.canViewFormationTracking(member.clubStatuten);
+    final canViewFormation = PermissionHelper.canViewFormationTracking(
+      member.clubStatuten,
+    );
 
     final confirmations = FirebaseFirestore.instance
         .collection('clubs')
@@ -182,7 +183,8 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final visibleConfirmations = viewModel.confirmations;
     final standaloneTasks = viewModel.standaloneTasks;
     final rosters = viewModel.rosters;
-    final showHistoricalQr = canScanHistoricalQr &&
+    final showHistoricalQr =
+        canScanHistoricalQr &&
         _segment != ActionsEvaluationsSegment.done &&
         matchesActionsSearch(_searchQuery, const [
           'Scanner une carte papier',
@@ -190,7 +192,8 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           'Contrôler une ancienne carte d’élève',
           'QR',
         ]);
-    final showFormationOverview = canViewFormation &&
+    final showFormationOverview =
+        canViewFormation &&
         _segment != ActionsEvaluationsSegment.done &&
         matchesActionsSearch(_searchQuery, const [
           'Suivi des formations',
@@ -240,6 +243,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           ),
           const SizedBox(height: 8),
           _FormationOverviewCard(
+            fullAccess: canScanHistoricalQr,
             onTap: () => _openFormationOverview(context),
           ),
           if (visibleConfirmations.isNotEmpty ||
@@ -269,9 +273,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
             title: 'Outils de validation',
           ),
           const SizedBox(height: 8),
-          _HistoricalQrScanCard(
-            onTap: () => _openHistoricalQr(context),
-          ),
+          _HistoricalQrScanCard(onTap: () => _openHistoricalQr(context)),
           if (standaloneTasks.isNotEmpty || rosters.isNotEmpty)
             const SizedBox(height: 14),
         ],
@@ -322,18 +324,25 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final callback = widget.onOpenHistoricalQr;
     if (callback != null) return callback();
     if (widget.previewMode) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()));
   }
 
   void _openFormationOverview(BuildContext context) {
     final callback = widget.onOpenFormationOverview;
     if (callback != null) return callback();
     if (widget.previewMode) return;
+    final member = context.read<MemberProvider>();
+    final scope =
+        PermissionHelper.formationTrackingScope(
+          clubStatuten: member.clubStatuten,
+          plongeurCode: member.plongeurCode,
+        ) ??
+        FormationTrackingScope.piscineOnly;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => const InstructorFormationOverviewScreen(),
+        builder: (_) => InstructorFormationOverviewScreen(scope: scope),
       ),
     );
   }
@@ -562,8 +571,9 @@ class _HistoricalQrScanCard extends StatelessWidget {
 
 class _FormationOverviewCard extends StatelessWidget {
   final VoidCallback onTap;
+  final bool fullAccess;
 
-  const _FormationOverviewCard({required this.onTap});
+  const _FormationOverviewCard({required this.onTap, required this.fullAccess});
 
   @override
   Widget build(BuildContext context) {
@@ -571,8 +581,9 @@ class _FormationOverviewCard extends StatelessWidget {
       icon: Icons.groups_2_outlined,
       iconColor: const Color(0xFF0369A1),
       title: 'Avancement des élèves',
-      subtitle:
-          'Par personne : carrière, piscine, théorie et expériences acquises',
+      subtitle: fullAccess
+          ? 'Par personne : carrière, piscine, théorie et expériences acquises'
+          : 'Par personne : progression et remarques piscine',
       label: 'Vue instructeur',
       date: null,
       onTap: onTap,
@@ -824,10 +835,9 @@ String _shortDate(DateTime value) {
 }
 
 Color _taskColor(FormationTask task) => switch (task.type) {
-      FormationTaskType.poolCheckin ||
-      FormationTaskType.logbookCompletion =>
-        AppColors.middenblauw,
-      FormationTaskType.historicalValidation => const Color(0xFF7C3AED),
-      FormationTaskType.claimRejected => const Color(0xFFC2410C),
-      _ => const Color(0xFF047857),
-    };
+  FormationTaskType.poolCheckin ||
+  FormationTaskType.logbookCompletion => AppColors.middenblauw,
+  FormationTaskType.historicalValidation => const Color(0xFF7C3AED),
+  FormationTaskType.claimRejected => const Color(0xFFC2410C),
+  _ => const Color(0xFF047857),
+};
