@@ -891,16 +891,26 @@ class _Student360ScreenState extends State<Student360Screen> {
     FormationSnapshotDoc? snapshot,
     PoolFormationSnapshotDoc? poolSnapshot,
   }) {
+    final visits = poolTrainingVisits(_poolHistory);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         _section(
-          'Séances piscine · ${_poolHistory.length} présences enregistrées',
+          'Séances de formation piscine',
           [
-            const Text(
-              'Une présence ou un groupe attribué ne valide pas automatiquement un exercice.',
-              style: TextStyle(color: Colors.white70),
-            ),
+            if (!_historyLoading && !_historyFailed)
+              ...visits.map((visit) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Tooltip(
+                      message:
+                          'Les séances rapportées ont une participation enregistrée dans ce niveau. Les autres présences restent à confirmer selon le planning. Ce compteur ne valide aucune épreuve.',
+                      child: Text(
+                        'Formation ${visit.level.replaceAll('*', '★')} · ${visit.reported} séance${visit.reported == 1 ? '' : 's'} rapportée${visit.reported == 1 ? '' : 's'}'
+                        '${visit.toConfirm == 0 ? '' : ' · ${visit.toConfirm} à confirmer'}',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  )),
             if (_historyLoading) const LinearProgressIndicator(),
             if (_historyFailed) ...[
               const Text(
@@ -912,12 +922,13 @@ class _Student360ScreenState extends State<Student360Screen> {
                 child: const Text('Réessayer'),
               ),
             ],
-            if (!_historyLoading && !_historyFailed && _poolHistory.isEmpty)
+            if (!_historyLoading && !_historyFailed && visits.isEmpty)
               const Text(
-                'Aucune présence piscine enregistrée.',
+                'Aucune séance de formation identifiée.',
                 style: TextStyle(color: Colors.white70),
               ),
           ],
+          compact: true,
         ),
         ..._poolHistory.map(_poolSessionCard),
         if (snapshot != null) ..._exerciseSections(snapshot, pool: true),
@@ -951,109 +962,140 @@ class _Student360ScreenState extends State<Student360Screen> {
       (note) =>
           note['contextType'] == 'piscine' && note['contextId'] == session.id,
     );
-    return _section('${_sessionDate(session.date)} · ${session.location}', [
-      Text(
-        session.trainingReported
-            ? 'Participation à la formation rapportée'
-            : 'Présence enregistrée · participation non confirmée',
-        style: const TextStyle(color: Colors.white70),
-      ),
-      if (session.lessons.isEmpty)
-        const Text(
-          'Groupe et contenu de la séance non renseignés.',
-          style: TextStyle(color: Colors.white70),
-        ),
-      ...session.lessons.map(
-        (lesson) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return _section(
+        '${_sessionDate(session.date)} · ${session.location}',
+        [
+          Text(
+            session.trainingReported
+                ? 'Participation à la formation rapportée'
+                : 'Présence enregistrée · participation non confirmée',
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          if (session.lessons.isEmpty)
+            const Text(
+              'Groupe et contenu de la séance non renseignés.',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ...session.lessons.map(
+            (lesson) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    [
+                      lesson.level.endsWith('*')
+                          ? 'Formation ${lesson.level.replaceAll('*', '★')}'
+                          : lesson.level == 'MC'
+                              ? 'Formation Moniteur Club'
+                              : lesson.level == 'AM'
+                                  ? 'Formation Assistant Moniteur'
+                                  : lesson.level,
+                      if (lesson.group.isNotEmpty) 'Groupe ${lesson.group}',
+                      if (lesson.hour.isNotEmpty)
+                        lesson.hour == '1ere_heure'
+                            ? '1re heure'
+                            : lesson.hour == '2eme_heure'
+                                ? '2e heure'
+                                : lesson.hour,
+                    ].where((v) => v.isNotEmpty).join(' · '),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    lesson.theme.isEmpty
+                        ? 'Contenu non renseigné'
+                        : lesson.theme,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  Text(
+                    'Encadrants : ${lesson.monitorNames.isEmpty ? 'non renseignés' : lesson.monitorNames.join(', ')}',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  if (lesson.sourceLabel.isNotEmpty)
+                    Text(lesson.sourceLabel,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 10)),
+                ],
+              ),
+            ),
+          ),
+          if (session.instructorRemark.isNotEmpty)
+            Text(
+              'Remarque enregistrée : ${session.instructorRemark}',
+              style: const TextStyle(color: Colors.white),
+            ),
+          if (session.personalNotes.isNotEmpty)
+            Text(
+              'Note de l’élève : ${session.personalNotes}',
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ...notes.map(
+            (note) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${note['note'] ?? ''}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  Text(
+                    '${note['canonicalObserverName'] ?? 'Encadrant'} · écrit le ${_sessionDate(poolDate(note['createdAt']))}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Row(
+            key: Key('pool-session-actions-${session.id}'),
             children: [
-              Text(
-                [
-                  lesson.level.endsWith('*')
-                      ? 'Formation ${lesson.level.replaceAll('*', '★')}'
-                      : lesson.level == 'MC'
-                          ? 'Formation Moniteur Club'
-                          : lesson.level == 'AM'
-                              ? 'Formation Assistant Moniteur'
-                              : lesson.level,
-                  if (lesson.group.isNotEmpty) 'Groupe ${lesson.group}',
-                  if (lesson.hour.isNotEmpty)
-                    lesson.hour == '1ere_heure'
-                        ? '1re heure'
-                        : lesson.hour == '2eme_heure'
-                            ? '2e heure'
-                            : lesson.hour,
-                ].where((v) => v.isNotEmpty).join(' · '),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Tooltip(
+                  message: 'Ajouter une remarque à cette séance',
+                  child: OutlinedButton.icon(
+                    onPressed: session.date == null || !session.hasLessonDate
+                        ? null
+                        : () => _addPoolRemark(session),
+                    style: _poolActionStyle(),
+                    icon: const Icon(Icons.add_comment_outlined, size: 14),
+                    label: const Text('Remarque'),
+                  ),
                 ),
               ),
-              Text(
-                lesson.theme.isEmpty ? 'Contenu non renseigné' : lesson.theme,
-                style: const TextStyle(color: Colors.white),
-              ),
-              Text(
-                'Encadrants : ${lesson.monitorNames.isEmpty ? 'non renseignés' : lesson.monitorNames.join(', ')}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              if (lesson.sourceLabel.isNotEmpty)
-                Text(lesson.sourceLabel,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 11)),
+              if (widget.scope == FormationTrackingScope.full) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Tooltip(
+                    message: 'Modifier le groupe de cette séance',
+                    child: OutlinedButton.icon(
+                      onPressed: session.date == null || !session.hasLessonDate
+                          ? null
+                          : () => _correctPoolGroup(session),
+                      style: _poolActionStyle(),
+                      icon: const Icon(Icons.edit_outlined, size: 14),
+                      label: const Text('Groupe'),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
-        ),
-      ),
-      if (session.instructorRemark.isNotEmpty)
-        Text(
-          'Remarque enregistrée : ${session.instructorRemark}',
-          style: const TextStyle(color: Colors.white),
-        ),
-      if (session.personalNotes.isNotEmpty)
-        Text(
-          'Note de l’élève : ${session.personalNotes}',
-          style: const TextStyle(color: Colors.white70),
-        ),
-      ...notes.map(
-        (note) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${note['note'] ?? ''}',
-                style: const TextStyle(color: Colors.white),
-              ),
-              Text(
-                '${note['canonicalObserverName'] ?? 'Encadrant'} · écrit le ${_sessionDate(poolDate(note['createdAt']))}',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
-      OutlinedButton.icon(
-        onPressed: session.date == null || !session.hasLessonDate
-            ? null
-            : () => _addPoolRemark(session),
-        style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-        icon: const Icon(Icons.add_comment_outlined),
-        label: const Text('Ajouter une remarque à cette séance'),
-      ),
-      if (widget.scope == FormationTrackingScope.full)
-        OutlinedButton.icon(
-          onPressed: session.date == null || !session.hasLessonDate
-              ? null
-              : () => _correctPoolGroup(session),
-          style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Modifier le groupe'),
-        ),
-    ]);
+        ],
+        compact: true);
   }
+
+  ButtonStyle _poolActionStyle() => OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 30),
+        tapTargetSize: MaterialTapTargetSize.padded,
+        visualDensity: VisualDensity.standard,
+      );
 
   Widget _poolCountRow(String label, int count, IconData icon, Color color) {
     return Padding(
@@ -1445,38 +1487,42 @@ class _Student360ScreenState extends State<Student360Screen> {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   // ---- Section « carte de verre » ------------------------------------------
-  Widget _section(String title, List<Widget> children, {String? emptyText}) {
+  Widget _section(String title, List<Widget> children,
+      {String? emptyText, bool compact = false}) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
+      margin: EdgeInsets.only(bottom: compact ? 8 : 14),
+      padding: EdgeInsets.all(compact ? 10 : 14),
       decoration: BoxDecoration(
         color: AppColors.donkerblauw.withValues(alpha: 0.62),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (children.isEmpty && emptyText != null)
+      child: DefaultTextStyle.merge(
+        style: compact ? const TextStyle(fontSize: 12, height: 1.15) : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              emptyText,
+              title,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.65),
-                fontSize: 13,
+                color: Colors.white,
+                fontSize: compact ? 13 : 15,
+                fontWeight: FontWeight.w800,
               ),
-            )
-          else
-            ...children,
-        ],
+            ),
+            SizedBox(height: compact ? 4 : 8),
+            if (children.isEmpty && emptyText != null)
+              Text(
+                emptyText,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 13,
+                ),
+              )
+            else
+              ...children,
+          ],
+        ),
       ),
     );
   }

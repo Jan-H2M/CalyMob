@@ -11,6 +11,63 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('compact pool card keeps actions side by side on a narrow phone',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        size: const Size(320, 1000),
+        snapshot: FormationSnapshotDoc.fromMap('student-1', {
+          'target_level': '3*',
+          'current_code': '2',
+        }),
+        history: [
+          PoolStudentSession(
+              id: 'compact',
+              date: DateTime(2026, 10, 6),
+              location: 'Piscine',
+              participation: 'training',
+              lessons: const [
+                PoolStudentLesson(
+                    level: '3*',
+                    group: '1',
+                    hour: '2eme_heure',
+                    theme: 'Remontée assistée au gilet',
+                    monitorNames: ['Moniteur Test']),
+              ]),
+        ]);
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Piscine'));
+    await tester.tap(find.widgetWithText(Tab, 'Piscine'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
+    expect(find.text('Formation 3★ · 1 séance rapportée'), findsOneWidget);
+    expect(find.textContaining('présences enregistrées'), findsNothing);
+    expect(find.textContaining('Une présence ou un groupe attribué'),
+        findsNothing);
+    final actions = find.byKey(const Key('pool-session-actions-compact'));
+    final remark = find.descendant(
+        of: actions, matching: find.widgetWithText(OutlinedButton, 'Remarque'));
+    final group = find.descendant(
+        of: actions, matching: find.widgetWithText(OutlinedButton, 'Groupe'));
+    expect(tester.getCenter(remark).dy, closeTo(tester.getCenter(group).dy, 1));
+    expect(tester.getSize(remark).height, greaterThanOrEqualTo(48));
+    expect(
+        find.byTooltip('Ajouter une remarque à cette séance'), findsOneWidget);
+    expect(
+        find.byTooltip('Modifier le groupe de cette séance'), findsOneWidget);
+    final card = find
+        .ancestor(
+            of: find.text('06/10/2026 · Piscine'),
+            matching: find.byType(Container))
+        .first;
+    expect(tester.getSize(card).height, lessThan(230));
+    await tester.tap(remark);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Remarque · 06/10/2026'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
   testWidgets('pool-only remarks require a dated session', (tester) async {
     await _pump(tester, scope: FormationTrackingScope.piscineOnly, history: [
       PoolStudentSession(
@@ -28,9 +85,8 @@ void main() {
           participation: ''),
     ]);
     expect(find.text('Ajouter une remarque piscine'), findsNothing);
-    expect(find.text('Modifier le groupe'), findsNothing);
-    final buttons = find.widgetWithText(
-        OutlinedButton, 'Ajouter une remarque à cette séance');
+    expect(find.text('Groupe'), findsNothing);
+    final buttons = find.widgetWithText(OutlinedButton, 'Remarque');
     expect(buttons, findsNWidgets(2));
     final values = tester.widgetList<OutlinedButton>(buttons).toList();
     expect(values[0].onPressed, isNotNull);
@@ -63,7 +119,7 @@ void main() {
     await tester.tap(find.widgetWithText(Tab, 'Piscine'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    final buttons = find.widgetWithText(OutlinedButton, 'Modifier le groupe');
+    final buttons = find.widgetWithText(OutlinedButton, 'Groupe');
     expect(buttons, findsNWidgets(2));
     final values = tester.widgetList<OutlinedButton>(buttons).toList();
     expect(values[0].onPressed, isNotNull);
@@ -208,7 +264,7 @@ void main() {
     expect(find.text('Formation 1★ · Groupe 2 · 1re heure'), findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsNothing);
     expect(find.text('Ajouter une remarque piscine'), findsNothing);
-    await tester.tap(find.text('Ajouter une remarque à cette séance'));
+    await tester.tap(find.text('Remarque'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Remarque · 07/01/2025'), findsOneWidget);

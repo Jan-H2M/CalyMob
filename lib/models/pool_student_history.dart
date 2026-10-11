@@ -104,6 +104,7 @@ class PoolStudentLesson {
   final List<String> monitorNames;
   final List<String> monitorIds;
   final String sourceLabel;
+  final bool isPlanned;
   const PoolStudentLesson({
     required this.level,
     required this.group,
@@ -112,6 +113,7 @@ class PoolStudentLesson {
     this.monitorNames = const [],
     this.monitorIds = const [],
     this.sourceLabel = '',
+    this.isPlanned = false,
   });
 }
 
@@ -190,7 +192,39 @@ PoolStudentLesson _scheduledLesson(
           .toList(),
       sourceLabel: inferred
           ? 'Affectation automatique selon le profil actuel · contenu du planning'
-          : 'Affectation de la séance · contenu du planning');
+          : 'Affectation de la séance · contenu du planning',
+      isPlanned: true);
+}
+
+/// Training visits by level, not exercise validations or QR attendance totals.
+/// Each dated visit counts once per level, even with two hours or QR duplicates.
+class PoolLevelVisits {
+  final String level;
+  final int reported, toConfirm;
+  const PoolLevelVisits(this.level, this.reported, this.toConfirm);
+}
+
+List<PoolLevelVisits> poolTrainingVisits(List<PoolStudentSession> sessions) {
+  final reported = <String, Set<String>>{};
+  final planned = <String, Set<String>>{};
+  for (final session in sessions) {
+    if (!session.hasLessonDate || session.date == null) continue;
+    if (session.participation.isNotEmpty && !session.trainingReported) continue;
+    final date = session.date!;
+    final day = '${date.year}-${date.month}-${date.day}';
+    for (final lesson in session.lessons) {
+      final level = lesson.level.trim().toUpperCase().replaceAll('★', '*');
+      if (level.isEmpty) continue;
+      final destination =
+          session.trainingReported && !lesson.isPlanned ? reported : planned;
+      (destination[level] ??= {}).add(day);
+    }
+  }
+  final levels = {...reported.keys, ...planned.keys}.toList()..sort();
+  return levels
+      .map((level) => PoolLevelVisits(level, reported[level]?.length ?? 0,
+          (planned[level] ?? {}).difference(reported[level] ?? {}).length))
+      .toList();
 }
 
 PoolStudentLesson _lesson(

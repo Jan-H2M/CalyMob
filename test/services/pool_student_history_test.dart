@@ -6,6 +6,51 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'training visits count each date once per level and distinguish planning',
+      () {
+    PoolStudentSession visit(String id, int day, String participation,
+            List<PoolStudentLesson> lessons) =>
+        PoolStudentSession(
+            id: id,
+            date: DateTime(2026, 10, day),
+            location: 'Piscine',
+            participation: participation,
+            lessons: lessons);
+    const three = PoolStudentLesson(
+        level: '3*', group: '1', hour: '1ere_heure', theme: 'Synthétique');
+    const threeLater = PoolStudentLesson(
+        level: '3*', group: '2', hour: '2eme_heure', theme: 'Synthétique');
+    const planned = PoolStudentLesson(
+        level: '3*',
+        group: '',
+        hour: '2eme_heure',
+        theme: 'Planning',
+        isPlanned: true);
+    const two = PoolStudentLesson(
+        level: '2*', group: '1', hour: '1ere_heure', theme: 'Synthétique');
+    final counts = poolTrainingVisits([
+      visit('a', 6, 'training', [three, threeLater]),
+      visit('duplicate', 6, 'training', [three]),
+      visit('planning-same-day', 6, '', [planned]),
+      visit('b', 7, 'training', [three, two]),
+      visit('planning', 8, '', [planned]),
+      visit('qr-only', 9, '', []),
+      visit('service', 10, 'service_only', [three]),
+      const PoolStudentSession(
+          id: 'undated',
+          date: null,
+          location: 'Piscine',
+          participation: 'training',
+          lessons: [three],
+          hasLessonDate: false),
+    ]);
+    expect(counts.map((c) => [c.level, c.reported, c.toConfirm]), [
+      ['2*', 1, 0],
+      ['3*', 2, 1],
+    ]);
+  });
+
   final date = DateTime.utc(2025, 1, 7, 20);
   final session = <String, dynamic>{
     'date': Timestamp.fromDate(date),
