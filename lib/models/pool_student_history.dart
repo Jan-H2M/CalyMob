@@ -1,0 +1,226 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+/// Read-only history of actual QR attendance, not a LIFRAS validation.
+class PoolStudentSession {
+  final String id;
+  final DateTime? date;
+  final String location;
+  final List<PoolStudentLesson> lessons;
+  final String participation;
+  final String personalNotes;
+  final String instructorRemark;
+  final bool hasLessonDate;
+
+  const PoolStudentSession({
+    required this.id,
+    required this.date,
+    required this.location,
+    required this.lessons,
+    required this.participation,
+    this.personalNotes = '',
+    this.instructorRemark = '',
+    this.hasLessonDate = true,
+  });
+
+  bool get trainingReported => participation == 'training';
+
+  factory PoolStudentSession.fromRecords(
+    String id,
+    Map<String, dynamic> session,
+    List<Map<String, dynamic>> attendance,
+  ) {
+    // Duplicate QR documents count once. Prefer the completed report, while
+    // retaining legacy assignments when the canonical record lacks them.
+    attendance = [...attendance]
+      ..sort((a, b) => _score(a).compareTo(_score(b)));
+    final merged = <String, dynamic>{};
+    for (final row in attendance) {
+      for (final field in row.entries) {
+        if (field.value != null && field.value != '') {
+          merged[field.key] = field.value;
+        }
+      }
+    }
+    final lessons = <PoolStudentLesson>[];
+    final hours = poolMap(merged['hoursReport']);
+    for (final hour in hours.entries) {
+      final report = poolMap(hour.value);
+      if (report['role'] != 'eleve') continue;
+      final group = poolMap(report['group'] ?? report['eleveGroup']);
+      lessons.add(_lesson(session, group, hour.key));
+    }
+    final group = poolMap(merged['groupAssignment']);
+    if (lessons.isEmpty && group.isNotEmpty) {
+      lessons.add(_lesson(session, group, ''));
+    }
+    if (lessons.isEmpty &&
+        (merged['assignedLevel'] != null ||
+            merged['assignedCourseId'] != null)) {
+      lessons.add(
+        _lesson(
+            session,
+            {
+              'level': merged['assignedLevel'],
+              'course_id': merged['assignedCourseId'],
+              'validatorId': merged['assignedToMemberId'],
+            },
+            ''),
+      );
+    }
+    final rawOutcome = merged['outcome']?.toString() ?? '';
+    final training = rawOutcome == 'training' ||
+        (rawOutcome.isEmpty &&
+            hours.values.any((value) => poolMap(value)['role'] == 'eleve'));
+    return PoolStudentSession(
+      id: id,
+      date: poolDate(session['date']) ?? poolDate(merged['scannedAt']),
+      location:
+          (session['lieu'] ?? session['location_name'] ?? 'Piscine').toString(),
+      lessons: lessons,
+      participation: training ? 'training' : rawOutcome,
+      personalNotes: (merged['personalNotes'] ?? '').toString(),
+      instructorRemark: (merged['remarks'] ?? '').toString(),
+      hasLessonDate: poolDate(session['date']) != null,
+    );
+  }
+}
+
+class PoolStudentLesson {
+  final String level;
+  final String group;
+  final String hour;
+  final String theme;
+  final List<String> monitorNames;
+  final List<String> monitorIds;
+  const PoolStudentLesson({
+    required this.level,
+    required this.group,
+    required this.hour,
+    required this.theme,
+    this.monitorNames = const [],
+    this.monitorIds = const [],
+  });
+}
+
+PoolStudentLesson _lesson(
+  Map<String, dynamic> session,
+  Map<String, dynamic> group,
+  String hour,
+) {
+  final level = (group['level'] ?? group['niveau'] ?? '').toString();
+  final savedGroupNumber = group['groupNumber'] ?? group['group_number'];
+  final savedHour = hour.isNotEmpty
+      ? hour
+      : (group['hourKey'] ?? group['heure'] ?? '').toString();
+  final courseId = (group['course_id'] ?? group['courseId'] ?? '').toString();
+  Map<String, dynamic> matched = const {};
+  String matchedLevel = level;
+  String matchedHour = savedHour;
+  final levels = poolMap(session['niveaux']);
+  for (final entry in levels.entries) {
+    final courses = poolMap(
+      poolMap(entry.value)['courses_by_hour'] ??
+          poolMap(entry.value)['coursesByHour'],
+    );
+    for (final slot in courses.entries) {
+      final values = slot.value is List ? slot.value as List : const [];
+      for (var index = 0; index < values.length; index++) {
+        final course = values[index];
+        final candidate = poolMap(course);
+        final number = candidate['order'] is num
+            ? (candidate['order'] as num).toInt() + 1
+            : index + 1;
+        final contractMatches = (level.isEmpty || level == entry.key) &&
+            (savedHour.isEmpty || savedHour == slot.key) &&
+            (savedGroupNumber == null ||
+                savedGroupNumber.toString() == number.toString());
+        if ((courseId.isNotEmpty &&
+                candidate['id']?.toString() == courseId &&
+                contractMatches) ||
+            (courseId.isEmpty &&
+                level == entry.key &&
+                savedHour == slot.key &&
+                savedGroupNumber?.toString() == number.toString())) {
+          matched = candidate;
+          matchedLevel = entry.key;
+          matchedHour = slot.key;
+        }
+      }
+    }
+    // Old sessions have a single direct-level course, never parallel groups.
+    final direct = poolMap(entry.value);
+    if (matched.isEmpty &&
+        courses.isEmpty &&
+        level == entry.key &&
+        (savedGroupNumber == null || savedGroupNumber.toString() == '1') &&
+        (savedGroupNumber?.toString() == '1' ||
+            courseId == '${entry.key}_legacy') &&
+        (courseId.isEmpty || courseId == '${entry.key}_legacy')) {
+      matched = {
+        'order': 0,
+        'theme': direct[savedHour == '2eme_heure'
+                ? 'theme_2eme_heure'
+                : 'theme_1ere_heure'] ??
+            direct['theme'],
+        'encadrants': direct['encadrants'],
+      };
+    }
+  }
+  final names = <String>[];
+  final ids = <String>[];
+  final rawIds = group['moniteurIds'] ?? group['monitorIds'];
+  if (rawIds is List) {
+    ids.addAll(
+        rawIds.map((value) => value.toString()).where((id) => id.isNotEmpty));
+  }
+  final hasSavedIds = ids.isNotEmpty;
+  final rawNames = group['moniteurNames'];
+  if (rawNames is List) {
+    names.addAll(rawNames.map((v) => v.toString()).where((s) => s.isNotEmpty));
+  }
+  if (names.isEmpty && !hasSavedIds) {
+    final encadrants = matched['encadrants'];
+    if (encadrants is List) {
+      for (final value in encadrants) {
+        final person = poolMap(value);
+        if (!hasSavedIds && person['membre_id'] != null) {
+          ids.add(person['membre_id'].toString());
+        }
+        final name =
+            '${person['membre_prenom'] ?? ''} ${person['membre_nom'] ?? ''}'
+                .trim();
+        if (name.isNotEmpty) names.add(name);
+      }
+    }
+  }
+  // A course ID or a saved group report identifies one lesson. Never guess a
+  // parallel course from level alone or treat its planned theme as validated.
+  final groupNumber = savedGroupNumber ??
+      (matched['order'] is num ? (matched['order'] as num).toInt() + 1 : null);
+  return PoolStudentLesson(
+    level: matchedLevel,
+    group: groupNumber == null ? '' : groupNumber.toString(),
+    hour: matchedHour,
+    theme: (group['themeSnapshot'] ?? matched['theme'] ?? '').toString(),
+    monitorNames: names.toSet().toList(),
+    monitorIds: ids.toSet().toList(),
+  );
+}
+
+int _score(Map<String, dynamic> row) =>
+    (row['checkinCompletedAt'] == null ? 0 : 100) +
+    (row['hoursReport'] == null ? 0 : 20) +
+    (row['groupAssignment'] == null ? 0 : 10) +
+    (row['remarks'] == null ? 0 : 1);
+
+Map<String, dynamic> poolMap(dynamic value) => value is Map
+    ? value.map((key, value) => MapEntry(key.toString(), value))
+    : const {};
+
+DateTime? poolDate(dynamic value) => value is Timestamp
+    ? value.toDate()
+    : value is DateTime
+        ? value
+        : value is String
+            ? DateTime.tryParse(value)
+            : null;

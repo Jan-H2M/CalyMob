@@ -2,6 +2,7 @@ import 'package:calymob/models/formation_snapshot_doc.dart';
 import 'package:calymob/models/member_profile.dart';
 import 'package:calymob/models/mil_experience_overview.dart';
 import 'package:calymob/models/pool_formation_snapshot_doc.dart';
+import 'package:calymob/models/pool_student_history.dart';
 import 'package:calymob/screens/formation/student_360_screen.dart';
 import 'package:calymob/screens/exercises/member_exercises_screen.dart';
 import 'package:calymob/screens/profile/who_is_who_screen.dart';
@@ -10,6 +11,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('pool lesson history and retrospective note live in top pool tab',
+      (tester) async {
+    await _pump(tester, scope: FormationTrackingScope.full, history: [
+      PoolStudentSession(
+          id: 'old',
+          date: DateTime(2025, 1, 7),
+          location: 'Piscine',
+          participation: 'training',
+          lessons: const [
+            PoolStudentLesson(
+                level: '1*',
+                group: '2',
+                hour: '1ere_heure',
+                theme: 'Apnée synthétique',
+                monitorNames: ['Moniteur Test'])
+          ]),
+    ]);
+    expect(find.text('Apnée synthétique'), findsNothing);
+    expect(find.text('Ajouter une remarque piscine'), findsNothing);
+    await tester.tap(find.text('Piscine').first);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Apnée synthétique'), findsOneWidget);
+    expect(find.text('Encadrants : Moniteur Test'), findsOneWidget);
+    expect(find.text('1* · Groupe 2 · 1re heure'), findsOneWidget);
+    expect(find.text('Remontée assistée carrière'), findsNothing);
+    expect(find.text('Ajouter une remarque piscine'), findsOneWidget);
+    await tester.tap(find.text('Ajouter une remarque à cette séance'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Remarque · 07/01/2025'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(AlertDialog), findsNothing);
+  });
   testWidgets('pool-only scope exposes only pool progress and observations', (
     tester,
   ) async {
@@ -50,8 +87,9 @@ void main() {
     expect(find.text('Objectifs'), findsOneWidget);
     expect(find.text('Observations'), findsOneWidget);
 
-    await tester.drag(find.byType(TabBarView), const Offset(-1200, 0));
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Expériences brevet'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
 
     expect(
       find.text('Expériences LIFRAS — Brevet 2*'),
@@ -141,6 +179,7 @@ void main() {
 Future<void> _pump(
   WidgetTester tester, {
   required FormationTrackingScope scope,
+  List<PoolStudentSession> history = const [],
 }) async {
   tester.view.physicalSize = const Size(1200, 1800);
   tester.view.devicePixelRatio = 1;
@@ -159,6 +198,7 @@ Future<void> _pump(
         ),
         scope: scope,
         previewMode: true,
+        previewPoolHistory: history,
         previewSnapshot:
             scope == FormationTrackingScope.full ? _snapshot() : null,
         previewMilOverview:

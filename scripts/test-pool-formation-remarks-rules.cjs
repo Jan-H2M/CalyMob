@@ -64,6 +64,9 @@ async function main() {
     await env.clearFirestore();
     await env.withSecurityRulesDisabled(async context => {
       const db = context.firestore();
+      await setDoc(doc(db, 'clubs/calypso/piscine_sessions/past-lesson'), {
+        date: new Date('2026-01-06T20:00:00Z'), type: 'piscine',
+      });
       await setDoc(doc(db, 'clubs/calypso/members/student'), {
         app_role: 'user',
         clubStatuten: ['Membre'],
@@ -251,6 +254,20 @@ async function main() {
       doc(poolDb, `${observationsPath}/pool-free-text`),
       validPoolRemark,
     ));
+    const historicalRemark = {...validPoolRemark, contextId: 'past-lesson',
+      contextTitle: 'Séance piscine', contextDate: new Date('2026-01-06T20:00:00Z')};
+    await assertSucceeds(setDoc(doc(poolDb, `${observationsPath}/historical-lesson`), historicalRemark));
+    for (const [name, change] of Object.entries({
+      missing: {contextId: 'missing-lesson'},
+      wrongDate: {contextDate: new Date('2025-01-01T00:00:00Z')},
+      forgedAudit: {createdAt: new Date('2026-01-06T20:00:00Z')},
+      validation: {result: 'acquis'},
+      exercise: {exerciceCode: 'P1.EXP'},
+      wrongObserver: {observerId: 'monitor-MC'},
+    })) {
+      await assertFails(setDoc(doc(poolDb, `${observationsPath}/historical-denied-${name}`), {...historicalRemark, ...change}));
+    }
+    await assertFails(setDoc(doc(ordinaryDb, `${observationsPath}/ordinary-historical`), {...historicalRemark, observerId: 'ordinary-member'}));
     await assertSucceeds(getDoc(
       doc(studentDb, `${observationsPath}/pool-free-text`),
     ));

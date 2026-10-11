@@ -5,6 +5,7 @@ import '../../config/firebase_config.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../profile/who_is_who_screen.dart';
+import '../training/actions_evaluations_screen.dart';
 
 /// Direct instructor entry point for the existing formation overview.
 ///
@@ -33,22 +34,38 @@ class _InstructorFormationOverviewScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: OceanGradientBackground(
-        creatures: CreatureSet.fishAndBubbles,
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(context),
-              Expanded(
-                child: FormationListView(
-                  clubId: FirebaseConfig.defaultClubId,
-                  searchQuery: _searchQuery,
-                  scope: widget.scope,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: OceanGradientBackground(
+          creatures: CreatureSet.fishAndBubbles,
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(context),
+                const TabBar(
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  tabs: [
+                    Tab(text: 'Élèves'),
+                    Tab(text: 'Actions en attente'),
+                  ],
                 ),
-              ),
-            ],
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      FormationListView(
+                        clubId: FirebaseConfig.defaultClubId,
+                        searchQuery: _searchQuery,
+                        scope: widget.scope,
+                      ),
+                      const ActionsEvaluationsScreen(embedded: true),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

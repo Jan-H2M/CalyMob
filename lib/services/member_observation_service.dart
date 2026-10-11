@@ -4,7 +4,9 @@ import '../models/member_observation.dart';
 /// Service voor het beheren van member observations in CalyMob.
 /// Collection: clubs/{clubId}/member_observations
 class MemberObservationService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+  MemberObservationService({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _collection(String clubId) {
     return _firestore
@@ -22,8 +24,10 @@ class MemberObservationService {
         .where('memberId', isEqualTo: memberId)
         .orderBy('contextDate', descending: true)
         .snapshots()
-        .map((snap) =>
-            snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList());
+        .map(
+          (snap) =>
+              snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList(),
+        );
   }
 
   /// Observations voor een sessie (gesorteerd op naam).
@@ -35,8 +39,10 @@ class MemberObservationService {
         .where('contextId', isEqualTo: sessionId)
         .orderBy('memberName')
         .snapshots()
-        .map((snap) =>
-            snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList());
+        .map(
+          (snap) =>
+              snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList(),
+        );
   }
 
   /// Nieuwe observation aanmaken.
@@ -67,6 +73,34 @@ class MemberObservationService {
       'contextId': 'formation_overview',
       'contextDate': serverTime,
       'contextTitle': 'Suivi formation piscine',
+      'category': 'general',
+      'note': note,
+      'observerId': observerId,
+      'createdAt': serverTime,
+      'updatedAt': serverTime,
+    });
+    return docRef.id;
+  }
+
+  /// A retrospective lesson note keeps the lesson date separate from its audit.
+  Future<String> addPoolSessionRemark({
+    required String clubId,
+    required String memberId,
+    required String memberName,
+    required String observerId,
+    required String sessionId,
+    required DateTime sessionDate,
+    required String note,
+  }) async {
+    final serverTime = FieldValue.serverTimestamp();
+    final docRef = await _collection(clubId).add({
+      'memberId': memberId,
+      'memberName': memberName,
+      'memberNiveau': '',
+      'contextType': 'piscine',
+      'contextId': sessionId,
+      'contextDate': Timestamp.fromDate(sessionDate),
+      'contextTitle': 'Séance piscine',
       'category': 'general',
       'note': note,
       'observerId': observerId,

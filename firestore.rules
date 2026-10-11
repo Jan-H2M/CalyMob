@@ -2029,13 +2029,19 @@ service cloud.firestore {
           request.resource.data.memberId is string &&
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.memberId)) &&
           request.resource.data.contextType == 'piscine' &&
-          request.resource.data.contextId == 'formation_overview' &&
-          request.resource.data.contextTitle == 'Suivi formation piscine' &&
+          (
+            (request.resource.data.contextId == 'formation_overview' &&
+             request.resource.data.contextTitle == 'Suivi formation piscine' &&
+             request.resource.data.contextDate == request.time) ||
+            (request.resource.data.contextId is string &&
+             exists(/databases/$(database)/documents/clubs/$(clubId)/piscine_sessions/$(request.resource.data.contextId)) &&
+             request.resource.data.contextTitle == 'Séance piscine' &&
+             request.resource.data.contextDate == get(/databases/$(database)/documents/clubs/$(clubId)/piscine_sessions/$(request.resource.data.contextId)).data.date)
+          ) &&
           request.resource.data.category == 'general' &&
           request.resource.data.note is string &&
           request.resource.data.note.size() > 0 &&
           request.resource.data.note.size() <= 2000 &&
-          request.resource.data.contextDate == request.time &&
           request.resource.data.createdAt == request.time &&
           request.resource.data.updatedAt == request.time &&
           request.resource.data.keys().hasOnly([

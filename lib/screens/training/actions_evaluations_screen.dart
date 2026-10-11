@@ -20,6 +20,7 @@ import 'logbook_dive_confirmation_screen.dart';
 import 'monitor_observation_roster_screen.dart';
 
 class ActionsEvaluationsScreen extends StatefulWidget {
+  final bool embedded;
   final bool previewMode;
   final List<LogbookConfirmationAction> previewConfirmations;
   final List<FormationTask> previewTasks;
@@ -33,6 +34,7 @@ class ActionsEvaluationsScreen extends StatefulWidget {
 
   const ActionsEvaluationsScreen({
     super.key,
+    this.embedded = false,
     this.previewMode = false,
     this.previewConfirmations = const [],
     this.previewTasks = const [],
@@ -72,6 +74,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           child: Column(
             children: [
               _Header(
+                embedded: widget.embedded,
                 controller: _searchController,
                 segment: _segment,
                 onSearchChanged: (value) =>
@@ -199,6 +202,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           'QR',
         ]);
     final showFormationOverview =
+        !widget.embedded &&
         canViewFormation &&
         _segment != ActionsEvaluationsSegment.done &&
         matchesActionsSearch(_searchQuery, const [
@@ -356,12 +360,14 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
 }
 
 class _Header extends StatelessWidget {
+  final bool embedded;
   final TextEditingController controller;
   final ActionsEvaluationsSegment segment;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<ActionsEvaluationsSegment> onSegmentChanged;
 
   const _Header({
+    this.embedded = false,
     required this.controller,
     required this.segment,
     required this.onSearchChanged,
@@ -381,39 +387,40 @@ class _Header extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'Retour',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-              ),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Actions & évaluations',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 23,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Vos actions actives et leur historique',
-                      style: TextStyle(
-                        color: Color(0xD9FFFFFF),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+          if (!embedded)
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'Retour',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
                 ),
-              ),
-            ],
-          ),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Actions & évaluations',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Vos actions actives et leur historique',
+                        style: TextStyle(
+                          color: Color(0xD9FFFFFF),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
