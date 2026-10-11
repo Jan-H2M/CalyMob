@@ -189,6 +189,27 @@ void main() {
     expect(find.text('Scanner une carte papier'), findsNothing);
   });
 
+  testWidgets('canonical app admin keeps full formation actions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewClubStatuten: ['CA', 'E', 'P'],
+          previewPlongeurCode: 'AM',
+          previewAppRole: 'admin',
+        ),
+      ),
+    );
+
+    expect(find.text('Scanner une carte papier'), findsOneWidget);
+    expect(find.text('Avancement des élèves'), findsOneWidget);
+    expect(find.textContaining('carrière, piscine, théorie'), findsOneWidget);
+    expect(
+        find.textContaining('progression et remarques piscine'), findsNothing);
+  });
+
   testWidgets(
     'formation overview is visible to encadrants and opens the member view',
     (tester) async {

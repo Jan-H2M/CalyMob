@@ -91,6 +91,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     final canValidate = PermissionHelper.canValidateLifras(
       clubStatuten: profile.clubStatuten,
       plongeurCode: profile.plongeurCode,
+      appRole: profile.appRole,
     );
 
     // Voir la formation = tout encadrant (ou admin/moniteur). La validation
@@ -98,10 +99,12 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     final formationScope = PermissionHelper.formationTrackingScope(
       clubStatuten: profile.clubStatuten,
       plongeurCode: profile.plongeurCode,
+      appRole: profile.appRole,
     );
     final canSeeFormation = canValidate || formationScope != null;
     final canSeeEmergencyContacts = PermissionHelper.canViewEmergencyContacts(
       profile.clubStatuten,
+      appRole: profile.appRole,
     );
 
     if (mounted) {
@@ -1223,6 +1226,11 @@ class FormationListView extends StatefulWidget {
   final String searchQuery;
   final String? filterLevel;
   final FormationTrackingScope scope;
+  final Future<List<MemberProfile>> Function(String clubId)? profilesLoader;
+  final Future<List<FormationSnapshotDoc>> Function(String clubId)?
+      snapshotsLoader;
+  final Future<List<PoolFormationStudent>> Function(String clubId)?
+      poolStudentsLoader;
 
   const FormationListView({
     super.key,
@@ -1230,6 +1238,9 @@ class FormationListView extends StatefulWidget {
     required this.searchQuery,
     required this.scope,
     this.filterLevel,
+    this.profilesLoader,
+    this.snapshotsLoader,
+    this.poolStudentsLoader,
   });
 
   @override
@@ -1249,10 +1260,10 @@ class _FormationRow {
 }
 
 class _FormationListViewState extends State<FormationListView> {
-  final ProfileService _profileService = ProfileService();
-  final FormationSnapshotReader _reader = FormationSnapshotReader();
-  final PoolFormationOverviewReader _poolReader = PoolFormationOverviewReader();
-  late final Future<List<_FormationRow>> _future;
+  ProfileService? _profileService;
+  FormationSnapshotReader? _reader;
+  PoolFormationOverviewReader? _poolReader;
+  late Future<List<_FormationRow>> _future;
 
   @override
   void initState() {
@@ -1262,7 +1273,9 @@ class _FormationListViewState extends State<FormationListView> {
 
   Future<List<_FormationRow>> _load() async {
     if (widget.scope == FormationTrackingScope.piscineOnly) {
-      final students = await _poolReader.getAllStudents(widget.clubId);
+      final poolLoader = widget.poolStudentsLoader ??
+          (_poolReader ??= PoolFormationOverviewReader()).getAllStudents;
+      final students = await poolLoader(widget.clubId);
       return students
           .map(
             (student) => _FormationRow.pool(
@@ -1272,9 +1285,14 @@ class _FormationListViewState extends State<FormationListView> {
           )
           .toList(growable: false);
     }
+    final profilesLoader = widget.profilesLoader ??
+        (String clubId) => (_profileService ??= ProfileService())
+            .getAllProfiles(clubId, throwOnError: true);
+    final snapshotsLoader = widget.snapshotsLoader ??
+        (_reader ??= FormationSnapshotReader()).getAllSnapshots;
     final results = await Future.wait<dynamic>([
-      _profileService.getAllProfiles(widget.clubId),
-      _reader.getAllSnapshots(widget.clubId),
+      profilesLoader(widget.clubId),
+      snapshotsLoader(widget.clubId),
     ]);
     final profiles = (results[0] as List<MemberProfile>);
     final snaps = (results[1] as List<FormationSnapshotDoc>);
@@ -1294,6 +1312,12 @@ class _FormationListViewState extends State<FormationListView> {
       return a.profile.nom.toLowerCase().compareTo(b.profile.nom.toLowerCase());
     });
     return rows;
+  }
+
+  void _retry() {
+    setState(() {
+      _future = _load();
+    });
   }
 
   List<_FormationRow> _filter(List<_FormationRow> rows) {
@@ -1330,6 +1354,50 @@ class _FormationListViewState extends State<FormationListView> {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        if (snap.hasError) {
+          return Center(
+            key: const Key('formation-load-error'),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    color: Colors.white,
+                    size: 38,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Suivi temporairement indisponible',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Impossible de charger l’avancement des élèves. '
+                    'Veuillez réessayer.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    key: const Key('formation-load-retry'),
+                    onPressed: _retry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Réessayer'),
+                  ),
+                ],
+              ),
+            ),
           );
         }
         final rows = _filter(snap.data ?? const []);

@@ -49,7 +49,7 @@ class FormationSnapshotReader {
       return result;
     } catch (e) {
       debugPrint('⚠️ collectionGroup formation_snapshot impossible: $e');
-      return [];
+      rethrow;
     }
   }
 }

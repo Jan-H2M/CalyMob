@@ -48,4 +48,36 @@ void main() {
     expect(students.single.snapshot.remaining, 2);
     expect(students.single.snapshot.pct, 50);
   });
+
+  test('reader preserves a genuine empty response', () async {
+    final reader = PoolFormationOverviewReader(
+      callableInvoker: (_, __) async => {'students': <Object>[]},
+    );
+
+    await expectLater(reader.getAllStudents('calypso'), completion(isEmpty));
+  });
+
+  test('reader surfaces callable failures instead of returning empty',
+      () async {
+    final reader = PoolFormationOverviewReader(
+      callableInvoker: (_, __) async => throw StateError('HTTP 404'),
+    );
+
+    await expectLater(
+      reader.getAllStudents('calypso'),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('reader surfaces malformed payloads instead of returning empty',
+      () async {
+    final reader = PoolFormationOverviewReader(
+      callableInvoker: (_, __) async => {'unexpected': true},
+    );
+
+    await expectLater(
+      reader.getAllStudents('calypso'),
+      throwsA(isA<FormatException>()),
+    );
+  });
 }

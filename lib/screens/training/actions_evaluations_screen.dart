@@ -25,6 +25,7 @@ class ActionsEvaluationsScreen extends StatefulWidget {
   final List<FormationTask> previewTasks;
   final List<String> previewClubStatuten;
   final String? previewPlongeurCode;
+  final String? previewAppRole;
   final ValueChanged<LogbookConfirmationAction>? onOpenConfirmation;
   final ValueChanged<FormationTask>? onOpenTask;
   final VoidCallback? onOpenHistoricalQr;
@@ -37,6 +38,7 @@ class ActionsEvaluationsScreen extends StatefulWidget {
     this.previewTasks = const [],
     this.previewClubStatuten = const [],
     this.previewPlongeurCode,
+    this.previewAppRole,
     this.onOpenConfirmation,
     this.onOpenTask,
     this.onOpenHistoricalQr,
@@ -93,9 +95,11 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         canScanHistoricalQr: PermissionHelper.canValidateLifras(
           clubStatuten: widget.previewClubStatuten,
           plongeurCode: widget.previewPlongeurCode,
+          appRole: widget.previewAppRole,
         ),
         canViewFormation: PermissionHelper.canViewFormationTracking(
           widget.previewClubStatuten,
+          appRole: widget.previewAppRole,
         ),
       );
     }
@@ -113,9 +117,11 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final canScanHistoricalQr = PermissionHelper.canValidateLifras(
       clubStatuten: member.clubStatuten,
       plongeurCode: member.plongeurCode,
+      appRole: member.appRole,
     );
     final canViewFormation = PermissionHelper.canViewFormationTracking(
       member.clubStatuten,
+      appRole: member.appRole,
     );
 
     final confirmations = FirebaseFirestore.instance
@@ -338,6 +344,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         PermissionHelper.formationTrackingScope(
           clubStatuten: member.clubStatuten,
           plongeurCode: member.plongeurCode,
+          appRole: member.appRole,
         ) ??
         FormationTrackingScope.piscineOnly;
     Navigator.of(context).push(

@@ -112,6 +112,7 @@ class ParcoursHubScreen extends StatelessWidget {
     final formationScope = PermissionHelper.formationTrackingScope(
       clubStatuten: member.clubStatuten,
       plongeurCode: member.plongeurCode,
+      appRole: member.appRole,
     );
 
     return Scaffold(
