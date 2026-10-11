@@ -367,17 +367,20 @@ class SnapshotExercise {
   final String description;
   final String niveau;
   final DateTime? date;
+  final bool personal;
   const SnapshotExercise({
     required this.code,
     required this.description,
     this.niveau = '',
     this.date,
+    this.personal = false,
   });
   factory SnapshotExercise.fromMap(Map<String, dynamic> m) => SnapshotExercise(
         code: m['code']?.toString() ?? '',
         description: m['description']?.toString() ?? '',
         niveau: m['niveau']?.toString() ?? '',
         date: _date(m['date']),
+        personal: m['personal'] == true,
       );
 }
 

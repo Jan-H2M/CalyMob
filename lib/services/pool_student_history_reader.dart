@@ -95,6 +95,7 @@ class PoolStudentHistoryReader {
           personalNotes: session.personalNotes,
           instructorRemark: session.instructorRemark,
           hasLessonDate: session.hasLessonDate,
+          hasQrScan: session.hasQrScan,
           lessons: session.lessons
               .map((lesson) => PoolStudentLesson(
                     level: lesson.level,

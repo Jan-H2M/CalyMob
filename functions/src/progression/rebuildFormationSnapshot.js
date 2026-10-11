@@ -34,6 +34,7 @@ const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
 const { buildPoolFormationProjection } = require('./poolFormationProjection');
+const { exerciseKind } = require('../training/personalExerciseProgress');
 
 const REGION = 'europe-west1';
 const SNAPSHOT_DOC_ID = 'current';
@@ -387,8 +388,16 @@ async function readValidatedExercises(db, clubId, memberId) {
     .collection('exercices_valides').get();
   const validated = [];
   const pending = [];
-  snap.forEach((doc) => {
-    const d = doc.data();
+  const rows = [];
+  snap.forEach(doc => rows.push(doc.data()));
+  const official = new Map();
+  for (const row of rows.filter(row => row.source === 'formation_admin')) {
+    const key = row.exercice_code || row.exercice_id;
+    const old = official.get(key);
+    if (!old || (toDate(row.updated_at || row.date_validation)?.getTime() || 0) >
+        (toDate(old.updated_at || old.date_validation)?.getTime() || 0)) official.set(key, row);
+  }
+  for (const d of rows.filter(row => !official.has(row.exercice_code || row.exercice_id)).concat([...official.values()])) {
     const status = d.status || 'validated'; // legacy = validé
     const item = {
       code: d.exercice_code || d.exercice_id || '',
@@ -397,22 +406,26 @@ async function readValidatedExercises(db, clubId, memberId) {
       validator: d.moniteur_nom || d.moniteur_id || '',
       niveau: d.exercice_niveau || '',
     };
-    if (!item.code) return;
+    if (!item.code) continue;
     if (status === 'validated') validated.push(item);
     else if (status === 'pending') pending.push(item);
-  });
+  }
   return { validated, pending };
 }
 
-async function readPendingClaims(db, clubId, memberId) {
+async function readClaimSources(db, clubId, memberId) {
   const snap = await clubRef(db, clubId)
     .collection('exercise_claims')
     .where('member_id', '==', memberId)
-    .where('status', 'in', OPEN_CLAIM_STATUSES)
     .get();
   const claims = [];
+  const personal = [];
   snap.forEach((doc) => {
     const d = doc.data();
+    if (d.server_verified === true && d.validation_mode === 'personal_only' && d.status === 'personal_done') {
+      personal.push(d);
+    }
+    if (!OPEN_CLAIM_STATUSES.includes(d.status)) return;
     claims.push({
       id: doc.id,
       code: d.exercise_code || d.exercise_id || '',
@@ -423,7 +436,28 @@ async function readPendingClaims(db, clubId, memberId) {
       palanquee_id: d.palanquee_id || null,
     });
   });
-  return claims;
+  return { pendingClaims: claims, personal };
+}
+
+// Presentation counts only. Personal completion never becomes a canonical
+// exercices_valides record, exam result or brevet award.
+function dossierExercises(exercises, official, personal, claims) {
+  const natural = exercise => exerciseKind(exercise) === 'natural';
+  const catalog = new Map(exercises.map(ex => [ex.code, ex]));
+  const validated = new Map(official.validated.filter(row => catalog.has(row.code)).map(row => [row.code, row]));
+  for (const row of personal) {
+    const exercise = catalog.get(row.exercise_code);
+    if (!exercise || exercise.id !== row.exercise_id || !natural(exercise) ||
+        row.server_verified !== true || row.validation_mode !== 'personal_only' || row.status !== 'personal_done' || validated.has(exercise.code)) continue;
+    validated.set(exercise.code, { code: exercise.code, description: exercise.description || '', niveau: exercise.niveau,
+      date: row.performed_date ? toIso(row.performed_date) : null, personal: true });
+  }
+  const pending = official.pending.filter(row => catalog.has(row.code) && !natural(catalog.get(row.code)) && !validated.has(row.code));
+  const pendingClaims = claims.filter(row => catalog.has(row.code) && !natural(catalog.get(row.code)) && !validated.has(row.code));
+  const occupied = new Set([...validated.keys(), ...pending.map(row => row.code), ...pendingClaims.map(row => row.code)]);
+  const remaining = [...catalog.values()].filter(ex => !occupied.has(ex.code))
+    .map(ex => ({ code: ex.code, description: ex.description || '', niveau: ex.niveau }));
+  return { validated: [...validated.values()], pending, pendingClaims, remaining, totalRequired: catalog.size };
 }
 
 async function readObservations(db, clubId, memberId) {
@@ -483,7 +517,7 @@ async function readExercisesForNiveau(db, clubId, niveau) {
   const list = [];
   snap.forEach((doc) => {
     const d = doc.data();
-    if (d.code) list.push({ code: d.code, description: d.description || '', specialite: d.specialite || '' });
+    if (d.code) list.push({ id: doc.id, code: d.code, niveau: d.niveau, description: d.description || '', specialite: d.specialite || '' });
   });
   return list;
 }
@@ -523,12 +557,12 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
 
   const currentCode = member.plongeur_code || '';
   const targetNiveau =
-    targetFromExplicit(member.target_formation_level) || targetFromCurrentCode(currentCode);
+    member.target_formation_level ? targetFromExplicit(member.target_formation_level) : targetFromCurrentCode(currentCode);
   const milColumn = milColumnForNiveau(targetNiveau);
 
   const [
-    { validated, pending },
-    pendingClaims,
+    official,
+    claimSources,
     observations,
     logbookEntries,
     goals,
@@ -536,7 +570,7 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
     milRequirements,
   ] = await Promise.all([
     readValidatedExercises(db, clubId, memberId),
-    readPendingClaims(db, clubId, memberId),
+    readClaimSources(db, clubId, memberId),
     readObservations(db, clubId, memberId),
     readLogbookEntries(db, clubId, memberId),
     readFormationGoals(db, clubId, memberId),
@@ -544,15 +578,9 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
     readMilRequirements(db, clubId),
   ]);
 
-  // Exercices restants = référentiel du niveau visé − validés − pending − claims.
-  const validatedCodes = new Set(validated.map((e) => e.code));
-  const pendingCodes = new Set(pending.map((e) => e.code));
-  const pendingClaimCodes = new Set(pendingClaims.map((c) => c.code));
-  const remaining = exercises
-    .filter((ex) => !validatedCodes.has(ex.code))
-    .filter((ex) => !pendingCodes.has(ex.code))
-    .filter((ex) => !pendingClaimCodes.has(ex.code))
-    .map((ex) => ({ code: ex.code, description: ex.description || '' }));
+  const { validated, pending, pendingClaims, remaining, totalRequired } =
+    dossierExercises(exercises, official, claimSources.personal, claimSources.pendingClaims);
+  const officialCodes = new Set(official.validated.map(e => e.code));
 
   // Observations → per_code + attention_points.
   const grouped = groupObservationsByCode(observations);
@@ -577,8 +605,8 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
   // écrire le résultat dans formation_goals/current (write-back Admin SDK).
   // Convergent : le write ne se produit que s'il y a un changement, donc le
   // rebuild déclenché en cascade ne réécrit rien (pas de boucle).
-  const cleanedGoalCodes = goals.codes.filter((c) => !validatedCodes.has(c));
-  const cleanedRedoCodes = goals.redo_codes.filter((c) => !validatedCodes.has(c));
+  const cleanedGoalCodes = goals.codes.filter((c) => !officialCodes.has(c));
+  const cleanedRedoCodes = goals.redo_codes.filter((c) => !officialCodes.has(c));
   if (
     goals._exists &&
     goals._ref &&
@@ -596,7 +624,6 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
   }
 
   // % : pondéré par nombre d'exercices (D9).
-  const totalRequired = exercises.length;
   const validatedCount = validated.length;
   const exercisePct = totalRequired > 0 ? Math.round((validatedCount / totalRequired) * 100) : 0;
   const brevetPct = {};
@@ -833,6 +860,7 @@ module.exports = {
   groupObservationsByCode,
   computeAttentionPoints,
   targetFromExplicit,
+  dossierExercises,
   targetFromCurrentCode,
   milColumnForNiveau,
   starLabelForNiveau,

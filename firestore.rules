@@ -1329,6 +1329,11 @@ service cloud.firestore {
         // écrit les 'plongeur_code_change' via l'Admin SDK (bypass rules). Le
         // membre peut ajouter ses propres dates d'homologation passées
         // (from='self_service') mais jamais modifier/supprimer ; admin corrige.
+        match /formation_admin_audit/{operationId} {
+          allow read: if isAdmin(clubId);
+          allow write: if false;
+        }
+
         match /brevet_history/{historyId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||

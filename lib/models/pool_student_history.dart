@@ -10,6 +10,7 @@ class PoolStudentSession {
   final String personalNotes;
   final String instructorRemark;
   final bool hasLessonDate;
+  final bool hasQrScan;
 
   const PoolStudentSession({
     required this.id,
@@ -20,6 +21,7 @@ class PoolStudentSession {
     this.personalNotes = '',
     this.instructorRemark = '',
     this.hasLessonDate = true,
+    this.hasQrScan = false,
   });
 
   bool get trainingReported => participation == 'training';
@@ -93,6 +95,7 @@ class PoolStudentSession {
       personalNotes: (merged['personalNotes'] ?? '').toString(),
       instructorRemark: (merged['remarks'] ?? '').toString(),
       hasLessonDate: poolDate(session['date']) != null,
+      hasQrScan: attendance.any((row) => row['scannedAt'] is Timestamp),
     );
   }
 }

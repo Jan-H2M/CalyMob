@@ -2,9 +2,101 @@ import 'package:calymob/models/exercice_lifras.dart';
 import 'package:calymob/models/exercice_valide.dart';
 import 'package:calymob/models/formation_snapshot_doc.dart';
 import 'package:calymob/models/member_formation_dossier.dart';
+import 'package:calymob/models/personal_exercise_progress.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'same personal counts for member and monitor, never exams or another target',
+      () {
+    final dossier = memberDossierSnapshot(
+        memberId: 'synthetic',
+        currentCode: '2',
+        target: NiveauLIFRAS.p3,
+        catalog: [
+          _exercise('P3.RA'),
+          _exercise('P3.EXT'),
+          _exercise('P3.EXP')
+        ],
+        validations: [],
+        personalProgress: [
+          PersonalExerciseProgress(
+              exerciseId: 'P3.RA',
+              done: true,
+              revision: 1,
+              date: DateTime(2026, 10, 1)),
+          const PersonalExerciseProgress(
+              exerciseId: 'P3.EXT', done: true, revision: 1),
+          const PersonalExerciseProgress(
+              exerciseId: 'P3.EXP', done: true, revision: 1),
+          const PersonalExerciseProgress(
+              exerciseId: 'P2.RA', done: true, revision: 1),
+        ]);
+    expect(dossier.validated.map((e) => e.code), ['P3.RA']);
+    expect(dossier.validated.single.personal, true);
+    expect(dossier.modalityProgress[FormationModality.career]!.validated, 1);
+    expect(dossier.examProgress[FormationModality.theory]!.validated, 0);
+    expect(dossier.examProgress[FormationModality.pool]!.validated, 0);
+  });
+  test(
+      'personal unchecked does not erase historical official results; old requests are not done',
+      () {
+    final dossier = memberDossierSnapshot(
+        memberId: 'synthetic',
+        currentCode: '2',
+        target: NiveauLIFRAS.p3,
+        catalog: [
+          _exercise('P3.RA'),
+          _exercise('P3.RT')
+        ],
+        validations: [
+          _validation('P3.RA', ExerciceValideStatus.validated),
+          _validation('P3.RT', ExerciceValideStatus.pending)
+        ],
+        personalProgress: [
+          const PersonalExerciseProgress(
+              exerciseId: 'P3.RA', done: false, revision: 2)
+        ]);
+    expect(dossier.validated.map((e) => e.code), ['P3.RA']);
+    expect(dossier.validated.single.personal, false);
+    expect(dossier.remaining.map((e) => e.code), ['P3.RT']);
+    expect(dossier.pending, isEmpty);
+  });
+  test(
+      'explicit official failed exam overrides an older successful row and stale snapshot',
+      () {
+    final result = ExerciceValide(
+        id: 'official',
+        exerciceId: 'P3.EXT',
+        exerciceCode: 'P3.EXT',
+        exerciceDescription: 'Theory',
+        exerciceNiveau: NiveauLIFRAS.p3,
+        status: ExerciceValideStatus.refused,
+        dateValidation: DateTime(2026, 10, 2),
+        moniteurNom: 'Admin',
+        createdBy: 'synthetic',
+        source: 'formation_admin');
+    final dossier = memberDossierSnapshot(
+        memberId: 'synthetic',
+        currentCode: '2',
+        target: NiveauLIFRAS.p3,
+        catalog: [_exercise('P3.EXT')],
+        validations: [
+          _validation('P3.EXT', ExerciceValideStatus.validated),
+          result
+        ],
+        useSnapshotValidations: true,
+        source: FormationSnapshotDoc.fromMap('synthetic', {
+          'target_level': '3*',
+          'exercises': {
+            'validated': [
+              {'code': 'P3.EXT'}
+            ]
+          },
+        }));
+    expect(dossier.validated, isEmpty);
+    expect(dossier.remaining.single.code, 'P3.EXT');
+  });
   test('explicit goal wins, otherwise uses the same next brevet as MIL', () {
     expect(dossierTargetNiveau(currentCode: 'MC'), NiveauLIFRAS.mf);
     expect(dossierTargetNiveau(currentCode: 'MC', memberTarget: 'MC'),

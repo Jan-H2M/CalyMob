@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
@@ -9,6 +10,8 @@ import '../../models/formation_snapshot_doc.dart';
 import '../../models/member_profile.dart';
 import '../../models/member_formation_dossier.dart';
 import '../../services/lifras_service.dart';
+import '../../models/exercice_valide.dart';
+import '../../services/personal_exercise_progress_service.dart';
 import '../../models/mil_experience_overview.dart';
 import '../../models/pool_formation_snapshot_doc.dart';
 import '../../models/pool_student_history.dart';
@@ -55,6 +58,7 @@ class Student360Screen extends StatefulWidget {
   final List<Map<String, dynamic>> previewObservations;
   final List<PoolStudentSession> previewPoolHistory;
   final bool isOwnProfile;
+  final bool readOnlyProfile;
   final String? ownProfileCaption;
   final FormationSnapshotDoc? providedSnapshot;
   final MilExperienceOverview? providedMilOverview;
@@ -76,6 +80,7 @@ class Student360Screen extends StatefulWidget {
     this.previewObservations = const [],
     this.previewPoolHistory = const [],
     this.isOwnProfile = false,
+    this.readOnlyProfile = false,
     this.ownProfileCaption,
     this.providedSnapshot,
     this.providedMilOverview,
@@ -100,6 +105,12 @@ class _Student360ScreenState extends State<Student360Screen> {
   bool _historyLoading = false;
   bool _historyFailed = false;
   bool _observationsFailed = false;
+  bool _dossierFailed = false;
+  bool get _authenticatedOwn =>
+      !widget.previewMode &&
+      widget.isOwnProfile &&
+      FirebaseAuth.instance.currentUser?.uid == widget.member.id;
+  List<Map<String, dynamic>> _brevetHistory = const [];
 
   @override
   void initState() {
@@ -186,22 +197,39 @@ class _Student360ScreenState extends State<Student360Screen> {
       currentCode: widget.member.plongeurCode,
       snapshotTarget: snapshot?.targetLevel,
     );
-    if (widget.providedSnapshot == null &&
-        snapshot != null &&
-        target != null &&
-        dossierTargetNiveau(memberTarget: snapshot.targetLevel) != target) {
-      // A materialized snapshot may lag behind a changed goal. Rebuild only
-      // its exercise view from the current catalogue; never relabel old counts.
-      final catalog =
-          await LifrasService().getExercicesByNiveau(widget.clubId, target);
-      snapshot = memberDossierSnapshot(
-          memberId: snapshot.memberId,
-          currentCode: widget.member.plongeurCode ?? snapshot.currentCode,
-          target: target,
-          catalog: catalog,
-          validations: const [],
-          source: snapshot,
-          useSnapshotValidations: true);
+    _dossierFailed = false;
+    try {
+      final memberRef = FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(widget.clubId)
+          .collection('members')
+          .doc(widget.member.id);
+      final history = await memberRef.collection('brevet_history').get();
+      _brevetHistory = history.docs.map((d) => d.data()).toList()
+        ..sort((a, b) =>
+            ((b['effective_date'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
+                .compareTo((a['effective_date'] as Timestamp?)
+                        ?.millisecondsSinceEpoch ??
+                    0));
+      if (widget.providedSnapshot == null && target != null) {
+        final catalog =
+            await LifrasService().getExercicesByNiveau(widget.clubId, target);
+        final results = await memberRef.collection('exercices_valides').get();
+        final personal = await PersonalExerciseProgressService()
+            .watch(widget.clubId, widget.member.id)
+            .first;
+        snapshot = memberDossierSnapshot(
+            memberId: widget.member.id,
+            currentCode: widget.member.plongeurCode ?? '',
+            target: target,
+            catalog: catalog,
+            validations:
+                results.docs.map(ExerciceValide.fromFirestore).toList(),
+            personalProgress: personal,
+            source: snapshot);
+      }
+    } catch (_) {
+      _dossierFailed = true;
     }
     final observations = await _loadObservations();
     if (!mounted) return;
@@ -415,7 +443,7 @@ class _Student360ScreenState extends State<Student360Screen> {
               const Tab(text: 'Milieu naturel'),
               const Tab(text: 'Piscine'),
               const Tab(text: 'Expériences brevet'),
-              const Tab(text: 'Objectifs'),
+              const Tab(text: 'Examens & brevet'),
               const Tab(text: 'Observations'),
               if (widget.specialties != null) const Tab(text: 'Spécialités'),
             ],
@@ -427,7 +455,7 @@ class _Student360ScreenState extends State<Student360Screen> {
               _buildExercisesTab(s),
               _buildPoolHistoryTab(snapshot: s),
               _buildMilTab(s),
-              _buildGoalsTab(s),
+              _buildExamsTab(s),
               _buildObservationsTab(s),
               if (widget.specialties != null) widget.specialties!,
             ],
@@ -775,8 +803,10 @@ class _Student360ScreenState extends State<Student360Screen> {
       _addRemark(session: session);
 
   Future<void> _correctPoolGroup(PoolStudentSession session) async {
-    if (widget.isOwnProfile ||
+    if (widget.readOnlyProfile ||
+        (widget.isOwnProfile && !_authenticatedOwn) ||
         widget.scope != FormationTrackingScope.full ||
+        (widget.isOwnProfile && !session.hasQrScan) ||
         session.date == null ||
         !session.hasLessonDate) {
       return;
@@ -1219,6 +1249,23 @@ class _Student360ScreenState extends State<Student360Screen> {
                 ],
               ],
             ),
+          if (widget.isOwnProfile &&
+              !widget.readOnlyProfile &&
+              _authenticatedOwn &&
+              session.hasQrScan &&
+              session.hasLessonDate)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: Key('own-pool-group-${session.id}'),
+                onPressed: session.date == null
+                    ? null
+                    : () => _correctPoolGroup(session),
+                style: _poolActionStyle(),
+                icon: const Icon(Icons.edit_outlined, size: 14),
+                label: const Text('Modifier mon groupe'),
+              ),
+            ),
         ],
         compact: true);
   }
@@ -1259,63 +1306,84 @@ class _Student360ScreenState extends State<Student360Screen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
+        if (_dossierFailed)
+          TextButton.icon(
+              onPressed: _loadFull,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Suivi indisponible · Réessayer')),
         TextButton.icon(
           onPressed: () => MilProtocolCatalogSheet.show(context,
               clubId: widget.clubId, pool: false),
           icon: const Icon(Icons.menu_book_outlined),
           label: const Text('Protocoles MIL · Milieu naturel'),
         ),
-        ...(widget.exerciseSections?.call(false) ??
-            _exerciseSections(s, pool: false)),
+        if (!_dossierFailed)
+          ...(widget.exerciseSections?.call(false) ??
+              _exerciseSections(s, pool: false)),
+        if (s.goalCodes.isNotEmpty || s.goalNote.isNotEmpty)
+          ExpansionTile(
+              title: const Text('Objectifs',
+                  style: TextStyle(color: Colors.white)),
+              children: [
+                ...s.goalCodes.map((code) => _exRow(code,
+                    s.perCode[code]?.lastResult ?? '', Colors.tealAccent)),
+                if (s.goalNote.isNotEmpty)
+                  Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(s.goalNote,
+                          style: const TextStyle(color: Colors.white70))),
+              ]),
       ],
     );
   }
 
   List<Widget> _exerciseSections(FormationSnapshotDoc s, {required bool pool}) {
     bool belongs(String code, String description) =>
-        (formationModalityForExercise(code, description) ==
-            FormationModality.pool) ==
-        pool;
+        formationModalityForExercise(code, description) ==
+        (pool ? FormationModality.pool : FormationModality.career);
     final validated =
         s.validated.where((e) => belongs(e.code, e.description)).toList();
     final pending =
         s.pending.where((e) => belongs(e.code, e.description)).toList();
     final claims =
         s.pendingClaims.where((e) => belongs(e.code, e.label)).toList();
-    final remaining =
-        s.remaining.where((e) => belongs(e.code, e.description)).toList();
+    final remaining = [
+      ...s.remaining.where((e) => belongs(e.code, e.description)),
+      if (!pool) ...pending,
+    ];
     return [
       if (!pool)
         const Text(
-          'Exercices en milieu naturel et théorie',
+          'Épreuves en milieu naturel · suivi personnel et historique',
           style: TextStyle(color: Colors.white70),
         ),
       _section(
-        '✓ Validés (${validated.length})',
+        '✓ Réalisés (${validated.length})',
         validated
-            .map((e) =>
-                _exRow(e.code, e.description, Colors.greenAccent, pool: pool))
+            .map((e) => _exRow(e.code, e.description, Colors.greenAccent,
+                badge: e.personal ? 'Personnel' : 'Historique', pool: pool))
             .toList(),
         emptyText: 'Aucun exercice validé.',
       ),
-      _section(
-        '⏳ En attente (${pending.length + claims.length})',
-        [
-          ...pending.map(
-            (e) =>
-                _exRow(e.code, e.description, Colors.amberAccent, pool: pool),
-          ),
-          ...claims.map(
-            (c) => _exRow(
-              c.code,
-              c.label.isNotEmpty ? c.label : c.status,
-              Colors.amberAccent,
-              pool: pool,
+      if (pool)
+        _section(
+          '⏳ En attente (${pending.length + claims.length})',
+          [
+            ...pending.map(
+              (e) =>
+                  _exRow(e.code, e.description, Colors.amberAccent, pool: pool),
             ),
-          ),
-        ],
-        emptyText: 'Rien en attente.',
-      ),
+            ...claims.map(
+              (c) => _exRow(
+                c.code,
+                c.label.isNotEmpty ? c.label : c.status,
+                Colors.amberAccent,
+                pool: pool,
+              ),
+            ),
+          ],
+          emptyText: 'Rien en attente.',
+        ),
       _section(
         '○ Restants (${remaining.length})',
         remaining.map((e) {
@@ -1441,42 +1509,52 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   // ---- Onglet Objectifs (lecture seule, D7) -------------------------------
-  Widget _buildGoalsTab(FormationSnapshotDoc s) {
-    if (s.goalCodes.isEmpty && s.goalNote.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            "L'élève n'a pas encore défini d'objectifs.",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
-          ),
-        ),
-      );
-    }
+  Widget _buildExamsTab(FormationSnapshotDoc s) {
+    bool exam(SnapshotExercise e) =>
+        RegExp(r'\.(EXT|EXP|T)$', caseSensitive: false).hasMatch(e.code);
+    final completed = s.validated.where(exam).toList();
+    final missing = [...s.pending.where(exam), ...s.remaining.where(exam)];
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
+        const Text(
+            'Résultats officiels et brevets enregistrés dans CalyCompta. Le suivi personnel et les présences ne les valident pas.',
+            style: TextStyle(color: Colors.white70, fontSize: 12)),
+        if (_dossierFailed)
+          TextButton.icon(
+              onPressed: _loadFull,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Résultats indisponibles · Réessayer')),
+        if (!_dossierFailed)
+          _section(
+              'Examens',
+              [
+                ...completed.map((e) => _exRow(
+                    e.code,
+                    '${e.description}${e.date == null ? '' : ' · ${e.date!.day}/${e.date!.month}/${e.date!.year}'}',
+                    Colors.greenAccent,
+                    badge: '✓')),
+                ...missing.map((e) => _exRow(
+                    e.code, e.description, Colors.white54,
+                    badge: 'Non réussi / non renseigné')),
+              ],
+              emptyText: 'Aucun examen renseigné pour ce brevet.'),
         _section(
-          '🎯 Objectifs de l\'élève',
-          s.goalCodes
-              .map(
-                (c) => _exRow(
-                  c,
-                  s.perCode[c]?.lastResult ?? '',
-                  Colors.tealAccent,
-                ),
-              )
-              .toList(),
-          emptyText: 'Aucun exercice ciblé.',
-        ),
-        if (s.goalNote.isNotEmpty)
-          _section('Note', [
-            Text(
-              s.goalNote,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
-            ),
-          ]),
+            'Brevet actuel · ${widget.member.plongeurCode ?? 'Non renseigné'}',
+            _brevetHistory.map((row) {
+              final date = row['effective_date'];
+              final source = row['from'] == 'self_service'
+                  ? 'Historique saisi par le membre'
+                  : 'Historique du brevet';
+              return ListTile(
+                  dense: true,
+                  title: Text('${row['level'] ?? ''}',
+                      style: const TextStyle(color: Colors.white)),
+                  subtitle: Text(
+                      '$source${date is Timestamp ? ' · ${date.toDate().day}/${date.toDate().month}/${date.toDate().year}' : ''}',
+                      style: const TextStyle(color: Colors.white70)));
+            }).toList(),
+            emptyText: 'Aucune date d’attribution renseignée.'),
       ],
     );
   }

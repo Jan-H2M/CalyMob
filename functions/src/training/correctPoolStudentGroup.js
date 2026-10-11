@@ -4,6 +4,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { FieldValue, Filter } = require('firebase-admin/firestore');
 const { normalizeGroupKey } = require('../utils/groupKey');
+const { isActiveMember } = require('../utils/memberStatus');
 
 const fields = ['assignedLevel', 'assignedCourseId', 'assignedToMemberId',
   'groupAssignment', 'hoursReport', 'outcome', 'sentToReserve'];
@@ -95,7 +96,10 @@ async function executeCorrection(db, uid, data) {
   const requested = { memberId, level, hour, courseId };
   return db.runTransaction(async tx => {
     const actor = await tx.get(club.collection('members').doc(uid));
-    if (!actor.exists || !mayCorrect(actor.data())) throw new HttpsError('permission-denied', 'Moniteur encadrant requis.');
+    const ownCorrection = uid === memberId;
+    if (!actor.exists || (ownCorrection && !isActiveMember(actor.data())) || (!ownCorrection && !mayCorrect(actor.data()))) {
+      throw new HttpsError('permission-denied', 'Votre propre séance ou un moniteur encadrant est requis.');
+    }
     const audit = await tx.get(auditRef);
     if (audit.exists) {
       const previous = audit.data();
@@ -132,6 +136,12 @@ async function executeCorrection(db, uid, data) {
     if (!records.size || ![...records.values()].some(doc => doc.data().scannedAt || doc.data().checkinCompletedAt)) {
       throw new HttpsError('failed-precondition', 'Présence enregistrée requise.');
     }
+    // Self-correction requires an EXISTING QR scan. A completed report,
+    // planned group or sign-up alone cannot manufacture attendance.
+    if (ownCorrection && ![...records.values()].some(doc => {
+      const scan = doc.data().scannedAt;
+      return scan && typeof scan.toMillis === 'function' && Number.isFinite(scan.toMillis());
+    })) throw new HttpsError('failed-precondition', 'Présence scannée par QR requise.');
     const before = {};
     for (const doc of records.values()) {
       const value = doc.data();
@@ -151,7 +161,7 @@ async function executeCorrection(db, uid, data) {
     }
     tx.create(auditRef, { actorUid: uid, createdAt: FieldValue.serverTimestamp(),
       sessionDate: session.data().date, memberId, requested, before, after,
-      source: 'calymob_monitor_group_correction' });
+      source: ownCorrection ? 'calymob_member_group_correction' : 'calymob_monitor_group_correction' });
     return { corrected: true, replay: false };
   });
 }

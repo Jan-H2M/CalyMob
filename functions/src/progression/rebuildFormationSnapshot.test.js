@@ -13,9 +13,32 @@ const {
   groupObservationsByCode,
   computeAttentionPoints,
   targetFromExplicit,
+  dossierExercises,
   targetFromCurrentCode,
   milColumnForNiveau,
 } = require('./rebuildFormationSnapshot');
+
+test('personal outdoor completion affects only the current dossier, never exams or old pending queues', () => {
+  const exercises = [{ id: 'ra', code: 'P3.RA', niveau: 'P3' }, { id: 'rt', code: 'P3.RT', niveau: 'P3' },
+    { id: 'ext', code: 'P3.EXT', niveau: 'P3' }, { id: 'exp', code: 'P3.EXP', niveau: 'P3' }];
+  const personal = exercises.map(ex => ({ exercise_id: ex.id, exercise_code: ex.code,
+    status: 'personal_done', server_verified: true, validation_mode: 'personal_only', performed_date: '2026-01-05' }));
+  const result = dossierExercises(exercises,
+    { validated: [{ code: 'P2.RA' }], pending: [{ code: 'P3.RA' }] }, personal,
+    [{ code: 'P3.RT', status: 'submitted' }]);
+  expect(result.validated.map(row => row.code)).toEqual(['P3.RA', 'P3.RT']);
+  expect(result.validated.every(row => row.personal)).toBe(true);
+  expect(result.pending).toEqual([]);
+  expect(result.pendingClaims).toEqual([]);
+  expect(result.remaining.map(row => row.code)).toEqual(['P3.EXT', 'P3.EXP']);
+  expect(result.totalRequired).toBe(4);
+});
+test('unchecked personal item cannot erase an historical result', () => {
+  const result = dossierExercises([{ id: 'ra', code: 'P3.RA', niveau: 'P3' }],
+    { validated: [{ code: 'P3.RA', validator: 'Legacy monitor' }], pending: [] },
+    [{ exercise_id: 'ra', exercise_code: 'P3.RA', status: 'personal_not_done', server_verified: true, validation_mode: 'personal_only' }], []);
+  expect(result.validated).toEqual([{ code: 'P3.RA', validator: 'Legacy monitor' }]);
+});
 
 const RULES = {
   cumulative: true,

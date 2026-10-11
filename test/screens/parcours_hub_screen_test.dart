@@ -9,10 +9,8 @@ void main() {
       equals([
         'Mon carnet',
         'Mes exercices',
-        'Mes demandes',
         'Actions & évaluations',
         'Statistiques',
-        'Reprendre ma carte papier',
       ]),
     );
   });

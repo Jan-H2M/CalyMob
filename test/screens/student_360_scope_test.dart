@@ -140,7 +140,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Protocole synthétique'), findsNothing);
-    expect(find.text('✓ Validés (1)'), findsOneWidget);
+    expect(find.text('✓ Réalisés (1)'), findsOneWidget);
   });
   testWidgets('compact pool card keeps actions side by side on a narrow phone',
       (tester) async {
@@ -362,8 +362,15 @@ void main() {
 
     expect(find.text('Progression par volet'), findsNothing);
     expect(find.text('Préparer la prochaine séance'), findsNothing);
-    expect(find.text('Exercices en milieu naturel et théorie'), findsOneWidget);
+    expect(
+        find.text('Épreuves en milieu naturel · suivi personnel et historique'),
+        findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsOneWidget);
+    expect(find.text('Examen théorique'), findsNothing);
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Examens & brevet'));
+    await tester.tap(find.widgetWithText(Tab, 'Examens & brevet'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('Examen théorique'), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
   });
@@ -460,7 +467,7 @@ void main() {
 
     expect(find.text('Épreuves'), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
-    expect(find.text('Objectifs'), findsOneWidget);
+    expect(find.text('Examens & brevet'), findsOneWidget);
     expect(find.text('Observations'), findsOneWidget);
 
     await tester.tap(find.text('Expériences brevet'));

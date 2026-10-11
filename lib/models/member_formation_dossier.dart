@@ -2,6 +2,20 @@ import 'exercice_lifras.dart';
 import 'exercice_valide.dart';
 import 'formation_snapshot_doc.dart';
 import 'mil_experience_overview.dart';
+import 'personal_exercise_progress.dart';
+
+/// An explicit administrative exam correction takes precedence over legacy rows.
+Iterable<ExerciceValide> dossierExerciseResults(
+    List<ExerciceValide> values, ExerciceLIFRAS exercise) {
+  final matches = values
+      .where(
+          (v) => v.exerciceId == exercise.id || v.exerciceCode == exercise.code)
+      .toList();
+  final official = matches.where((v) => v.source == 'formation_admin').toList()
+    ..sort((a, b) => (b.updatedAt ?? b.dateValidation)
+        .compareTo(a.updatedAt ?? a.dateValidation));
+  return official.isEmpty ? matches : [official.first];
+}
 
 NiveauLIFRAS? dossierTargetNiveau(
     {String? memberTarget, String? currentCode, String? snapshotTarget}) {
@@ -29,6 +43,7 @@ FormationSnapshotDoc memberDossierSnapshot(
     String? unresolvedTarget,
     required List<ExerciceLIFRAS> catalog,
     required List<ExerciceValide> validations,
+    List<PersonalExerciseProgress> personalProgress = const [],
     bool useSnapshotValidations = false,
     FormationSnapshotDoc? source}) {
   final original = source ?? FormationSnapshotDoc.fromMap(memberId, {});
@@ -36,19 +51,35 @@ FormationSnapshotDoc memberDossierSnapshot(
   final pending = <SnapshotExercise>[];
   final remaining = <SnapshotExercise>[];
   for (final exercise in catalog.where((e) => e.niveau == target)) {
-    final matches = validations.where(
-        (v) => v.exerciceId == exercise.id || v.exerciceCode == exercise.code);
+    final matches = dossierExerciseResults(validations, exercise);
+    final personal =
+        personalProgress.where((p) => p.exerciseId == exercise.id && p.done);
+    final isNatural =
+        formationModalityForExercise(exercise.code, exercise.description) ==
+            FormationModality.career;
+    final personalDone = isNatural && personal.isNotEmpty;
+    final officialOverride = matches.any((v) => v.source == 'formation_admin');
+    final officiallyDone = matches.any((v) => v.isValidated);
     final row = SnapshotExercise(
         code: exercise.code,
         description: exercise.description,
-        niveau: exercise.niveau.code);
-    if (matches.any((v) => v.isValidated) ||
+        niveau: exercise.niveau.code,
+        personal: personalDone && !officiallyDone,
+        date: officiallyDone
+            ? matches.firstWhere((v) => v.isValidated).dateValidation
+            : personalDone
+                ? personal.first.date
+                : null);
+    if (officiallyDone ||
+        personalDone ||
         (useSnapshotValidations &&
+            !officialOverride &&
             original.validated.any((v) => v.code == exercise.code))) {
       validated.add(row);
-    } else if (matches.any((v) => v.isPending) ||
-        (useSnapshotValidations &&
-            original.pending.any((v) => v.code == exercise.code))) {
+    } else if (!isNatural &&
+        (matches.any((v) => v.isPending) ||
+            (useSnapshotValidations &&
+                original.pending.any((v) => v.code == exercise.code)))) {
       pending.add(row);
     } else {
       remaining.add(row);
@@ -68,6 +99,9 @@ FormationSnapshotDoc memberDossierSnapshot(
       pendingClaims: original.pendingClaims
           .where((claim) =>
               catalog.any((e) => e.niveau == target && e.code == claim.code))
+          .where((claim) =>
+              formationModalityForExercise(claim.code, claim.label) !=
+              FormationModality.career)
           .toList(),
       perCode: original.perCode,
       attentionPoints: original.attentionPoints,

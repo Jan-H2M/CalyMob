@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -14,6 +16,8 @@ import '../../services/formation_snapshot_reader.dart';
 import '../../services/mil_experience_service.dart';
 import '../../utils/date_formatter.dart';
 import '../../models/member_formation_dossier.dart';
+import '../../models/personal_exercise_progress.dart';
+import '../../services/personal_exercise_progress_service.dart';
 import '../../models/member_profile.dart';
 import '../../utils/permission_helper.dart';
 import '../formation/student_360_screen.dart';
@@ -91,6 +95,16 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   final FormationSnapshotReader _formationReader = FormationSnapshotReader();
   final MilExperienceService _milExperienceService = MilExperienceService();
   final String _clubId = FirebaseConfig.defaultClubId;
+  final PersonalExerciseProgressService _personalService =
+      PersonalExerciseProgressService();
+  StreamSubscription<List<PersonalExerciseProgress>>? _personalSubscription;
+  List<PersonalExerciseProgress> _personalProgress = [];
+  bool _personalLoading = true;
+  bool _personalFailed = false;
+  bool get _mayTrackOwn =>
+      widget.isOwnProfile &&
+      !widget.comparisonReadOnly &&
+      FirebaseAuth.instance.currentUser?.uid == widget.memberId;
 
   // Catalog for self-declaration view
   List<ExerciceLIFRAS> _catalog = [];
@@ -111,6 +125,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   void initState() {
     super.initState();
     if (widget.isOwnProfile) {
+      _watchPersonal();
       // For self: listen to the stream of exercices_valides + load catalog
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final provider = context.read<ExerciceValideProvider>();
@@ -121,6 +136,140 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     } else {
       _loadExercices();
     }
+  }
+
+  void _watchPersonal() {
+    _personalSubscription?.cancel();
+    _personalSubscription =
+        _personalService.watch(_clubId, widget.memberId).listen((rows) {
+      if (mounted) {
+        setState(() {
+          _personalProgress = rows;
+          _personalLoading = false;
+          _personalFailed = false;
+        });
+      }
+    }, onError: (Object error) {
+      if (mounted) {
+        setState(() {
+          _personalLoading = false;
+          _personalFailed = true;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _personalSubscription?.cancel();
+    super.dispose();
+  }
+
+  PersonalExerciseProgress? _personalFor(ExerciceLIFRAS exercise) {
+    final rows = _personalProgress.where((p) => p.exerciseId == exercise.id);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> _editPersonal(ExerciceLIFRAS exercise) async {
+    if (!_mayTrackOwn ||
+        _personalFailed ||
+        formationModalityForExercise(exercise.code, exercise.description) !=
+            FormationModality.career) {
+      return;
+    }
+    final row = _personalFor(exercise);
+    var done = row?.done ?? false;
+    var date = row?.date ?? DateTime.now();
+    var saving = false;
+    String? error;
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+            builder: (context, update) => SafeArea(
+                  child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(exercise.code,
+                                style: Theme.of(context).textTheme.titleLarge),
+                            Text(exercise.description),
+                            const SizedBox(height: 8),
+                            const Text(
+                                'Suivi personnel · la carte LIFRAS reste la référence officielle.'),
+                            SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Épreuve réalisée'),
+                                value: done,
+                                onChanged: saving
+                                    ? null
+                                    : (value) => update(() => done = value)),
+                            if (done)
+                              TextButton.icon(
+                                  icon: const Icon(Icons.calendar_today),
+                                  label: Text(DateFormatter.formatLong(date)),
+                                  onPressed: saving
+                                      ? null
+                                      : () async {
+                                          final picked = await showDatePicker(
+                                              context: context,
+                                              initialDate: date,
+                                              firstDate: DateTime(1900),
+                                              lastDate: DateTime.now());
+                                          if (picked != null &&
+                                              context.mounted) {
+                                            update(() => date = picked);
+                                          }
+                                        }),
+                            if (error != null)
+                              Text(error!,
+                                  style: const TextStyle(color: Colors.red)),
+                            Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton(
+                                      onPressed: saving
+                                          ? null
+                                          : () => Navigator.pop(sheetContext),
+                                      child: const Text('Annuler')),
+                                  FilledButton(
+                                      onPressed: saving
+                                          ? null
+                                          : () async {
+                                              update(() {
+                                                saving = true;
+                                                error = null;
+                                              });
+                                              try {
+                                                await _personalService.save(
+                                                    clubId: _clubId,
+                                                    memberId: widget.memberId,
+                                                    exerciseId: exercise.id,
+                                                    done: done,
+                                                    date: date,
+                                                    revision:
+                                                        row?.revision ?? 0);
+                                                if (sheetContext.mounted) {
+                                                  Navigator.pop(sheetContext);
+                                                }
+                                              } catch (_) {
+                                                if (context.mounted) {
+                                                  update(() {
+                                                    saving = false;
+                                                    error =
+                                                        'Enregistrement impossible. Réessayez ou rechargez votre suivi.';
+                                                  });
+                                                }
+                                              }
+                                            },
+                                      child: Text(saving
+                                          ? 'Enregistrement…'
+                                          : 'Enregistrer')),
+                                ]),
+                          ])),
+                )));
   }
 
   Future<void> _loadCatalog() async {
@@ -386,6 +535,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         }
         if (_isLoadingCatalog ||
             _isLoadingFormationSnapshot ||
+            _personalLoading ||
             provider.isLoading) {
           return const Scaffold(
               body: Center(child: CircularProgressIndicator()));
@@ -396,15 +546,17 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               appBar: AppBar(title: const Text('Mes exercices')),
               body: _buildNoNiveauState());
         }
-        if (_catalogFailed) {
+        if (_catalogFailed || _personalFailed) {
           return Scaffold(
               appBar: AppBar(title: const Text('Mes exercices')),
               body: Center(
                   child: TextButton.icon(
-                      onPressed: _loadCatalog,
+                      onPressed: () {
+                        _loadCatalog();
+                        _watchPersonal();
+                      },
                       icon: const Icon(Icons.refresh),
-                      label:
-                          const Text('Catalogue indisponible · Réessayer'))));
+                      label: const Text('Suivi indisponible · Réessayer'))));
         }
 
         // Split catalog three ways:
@@ -422,7 +574,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         for (final ex in _catalog) {
           final isTN = ex.niveau == NiveauLIFRAS.tn;
           final match = _matchingValidations(provider.exercicesValides, ex);
-          final isValid = match.any((e) => e.isValidated);
+          final isValid = match.any((e) => e.isValidated) ||
+              (formationModalityForExercise(ex.code, ex.description) ==
+                      FormationModality.career &&
+                  _personalFor(ex)?.done == true);
           final isPending = match.any((e) => e.isPending);
 
           if (isTN) {
@@ -444,26 +599,30 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           target: _targetNiveau!,
           catalog: _catalog,
           validations: provider.exercicesValides,
+          personalProgress: _personalProgress,
           source: _formationSnapshot,
         );
         List<Widget> sections(bool pool) {
           bool included(ExerciceLIFRAS ex) => pool
               ? formationModalityForExercise(ex.code, ex.description) ==
                   FormationModality.pool
-              : formationModalityForExercise(ex.code, ex.description) !=
-                  FormationModality.pool;
+              : formationModalityForExercise(ex.code, ex.description) ==
+                  FormationModality.career;
           final todo = targetTodo.where(included).toList();
           final validated = targetValidated.where(included).toList();
           return [
-            _buildSelfActions(),
-            const SizedBox(height: 8),
+            if (!pool)
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text('Suivi personnel · carte LIFRAS officielle',
+                      style: TextStyle(color: Colors.white70, fontSize: 12))),
             _buildSection(
               title: 'À faire',
               icon: Icons.radio_button_unchecked,
               iconColor: Colors.amber,
               emptyText: todo.isEmpty && validated.isEmpty
                   ? 'Aucune épreuve renseignée dans ce volet pour ce brevet.'
-                  : 'Toutes les épreuves de ce volet sont validées.',
+                  : 'Toutes les épreuves de ce volet sont réalisées.',
               children: todo
                   .map((ex) =>
                       _buildTodoRow(ex, isPending: pendingIds.contains(ex.id)))
@@ -471,16 +630,27 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             ),
             const SizedBox(height: 12),
             _buildSection(
-              title: 'Validés',
+              title: 'Réalisés',
               icon: Icons.check_circle,
               iconColor: Colors.greenAccent,
               emptyText: 'Aucune épreuve validée dans ce volet.',
-              children: validated
-                  .map((ex) => _buildValidatedRow(
-                      ex,
-                      _matchingValidations(provider.exercicesValides, ex)
-                          .firstWhere((v) => v.isValidated)))
-                  .toList(),
+              children: validated.map((ex) {
+                final matches =
+                    _matchingValidations(provider.exercicesValides, ex)
+                        .where((v) => v.isValidated);
+                if (matches.isNotEmpty) {
+                  return _buildValidatedRow(ex, matches.first);
+                }
+                final personal = _personalFor(ex)!;
+                return _buildExerciceRow(
+                    exercice: ex,
+                    isValidated: true,
+                    sourceTag: 'Personnel',
+                    trailingText: personal.date == null
+                        ? null
+                        : DateFormatter.formatShort(personal.date!),
+                    onTap: _mayTrackOwn ? () => _editPersonal(ex) : null);
+              }).toList(),
             ),
           ];
         }
@@ -500,6 +670,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           ),
           scope: FormationTrackingScope.full,
           isOwnProfile: true,
+          readOnlyProfile: widget.comparisonReadOnly,
           ownProfileCaption: widget.comparisonReadOnly
               ? '${widget.memberName} · comparaison en lecture seule'
               : null,
@@ -507,14 +678,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           providedMilOverview: _milOverview,
           exerciseSections: sections,
           appBarActions: [
-            IconButton(
-              tooltip: 'Preuve externe',
-              icon: const Icon(Icons.add_a_photo_outlined),
-              onPressed: widget.comparisonReadOnly
-                  ? null
-                  : () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const ExternalProofCaptureScreen())),
-            ),
             IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
@@ -555,11 +718,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     List<ExerciceValide> validations,
     ExerciceLIFRAS exercice,
   ) {
-    return validations.where(
-      (validation) =>
-          validation.exerciceId == exercice.id ||
-          validation.exerciceCode == exercice.code,
-    );
+    return dossierExerciseResults(validations, exercice);
   }
 
   Widget _buildSelfActions() {
@@ -861,13 +1020,18 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   }
 
   Widget _buildTodoRow(ExerciceLIFRAS exercice, {bool isPending = false}) {
+    final personal = exercice.niveau != NiveauLIFRAS.tn &&
+        formationModalityForExercise(exercice.code, exercice.description) ==
+            FormationModality.career;
     return _buildExerciceRow(
       exercice: exercice,
       isValidated: false,
-      hintTag: isPending ? 'demande envoyée' : null,
-      onTap: isPending || widget.comparisonReadOnly
-          ? null
-          : () => _openEvaluationRequest(exercice),
+      hintTag: !personal && isPending ? 'demande envoyée' : null,
+      onTap: personal
+          ? (_mayTrackOwn ? () => _editPersonal(exercice) : null)
+          : isPending || widget.comparisonReadOnly
+              ? null
+              : () => _openEvaluationRequest(exercice),
     );
   }
 

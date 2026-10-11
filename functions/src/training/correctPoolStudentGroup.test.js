@@ -11,6 +11,7 @@ const { executeCorrection, assignmentState, mayCorrect, buildPatch, choices } = 
 
 function fixture({ actor, attendance, duplicate, session } = {}) {
   const data = new Map([
+    ['clubs/calypso/members/student', { member_status: 'active', app_role: 'user', clubStatuten: ['Membre'], plongeur_code: 'P2' }],
     ['clubs/calypso/members/monitor', actor || { app_role: 'user', clubStatuten: ['Encadrant'], plongeur_code: 'MC' }],
     ['clubs/calypso/piscine_sessions/synthetic', session || {
       date: { toMillis: () => 1791230400000 }, type: 'piscine', niveaux: {
@@ -55,6 +56,42 @@ test('only monitor encadrant or admin may correct groups', () => {
   expect(mayCorrect({ clubStatuten: ['Encadrant'], plongeur_code: 'MC' })).toBe(true);
   expect(mayCorrect({ app_role: 'admin' })).toBe(true);
   expect(mayCorrect({ app_role: 'user', clubStatuten: ['Administrateur'] })).toBe(false);
+});
+test('scanned member may correct only their own group without granting monitor powers', async () => {
+  const scan = { toMillis: () => 1791230400000 };
+  const f = fixture({ attendance: { memberId: 'student', scannedAt: scan, remarks: 'preserved' } });
+  await executeCorrection(f.db, 'student', f.request);
+  const row = f.data.get('clubs/calypso/piscine_sessions/synthetic/attendees/student');
+  expect(row.scannedAt).toBe(scan);
+  expect(row.remarks).toBe('preserved');
+  expect(row.hoursReport['2eme_heure'].group.level).toBe('3*');
+  expect(f.data.get('clubs/calypso/piscine_sessions/synthetic/group_corrections/operation1').source)
+    .toBe('calymob_member_group_correction');
+  expect((await executeCorrection(f.db, 'student', f.request)).replay).toBe(true);
+});
+test.each([
+  { memberId: 'student', checkinCompletedAt: 'completed-report' },
+  { memberId: 'student', assignedLevel: '3*' },
+  { memberId: 'student', scannedAt: 'invalid-scan' },
+])('own correction without actual QR timestamp performs zero writes: %j', async attendance => {
+  const f = fixture({ attendance });
+  const before = JSON.stringify([...f.data]);
+  await expect(executeCorrection(f.db, 'student', f.request)).rejects.toThrow();
+  expect(JSON.stringify([...f.data])).toBe(before);
+});
+test('ordinary member cannot correct another student even when scanned', async () => {
+  const f = fixture();
+  f.data.set('clubs/calypso/members/other', { clubStatuten: ['Membre'], plongeur_code: 'MC' });
+  const before = JSON.stringify([...f.data]);
+  await expect(executeCorrection(f.db, 'other', f.request)).rejects.toThrow();
+  expect(JSON.stringify([...f.data])).toBe(before);
+});
+test('inactive member cannot self correct even with a genuine QR scan', async () => {
+  const f = fixture({ attendance: { memberId: 'student', scannedAt: { toMillis: () => 1791230400000 } } });
+  f.data.get('clubs/calypso/members/student').member_status = 'inactive';
+  const before = JSON.stringify([...f.data]);
+  await expect(executeCorrection(f.db, 'student', f.request)).rejects.toThrow();
+  expect(JSON.stringify([...f.data])).toBe(before);
 });
 test('atomic correction preserves scan other hour notes and writes server audit', async () => {
   const { db, data, request } = fixture();
