@@ -1,1 +1,1 @@
-Amélioration du rangement piscine, stabilité des conversations d’équipe, fiabilité du compteur de messages et contrôle renforcé de la confidentialité des anniversaires.
+Nouvelle présentation compacte du parcours de formation, suivi des séances piscine, statistiques LIFRAS par brevet et consultation des protocoles des exercices.
