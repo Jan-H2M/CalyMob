@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/piscine_session.dart';
 import '../models/piscine_attendee.dart';
@@ -29,9 +30,18 @@ class PiscineAttendeeRemovalSnapshot {
 /// Service voor het beheren van piscine sessies
 class PiscineSessionService {
   final FirebaseFirestore _firestore;
+  final Future<void> Function(Map<String, dynamic>) _recordQr;
 
-  PiscineSessionService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  PiscineSessionService(
+      {FirebaseFirestore? firestore,
+      Future<void> Function(Map<String, dynamic>)? recordQr})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _recordQr = recordQr ??
+            ((data) async {
+              await FirebaseFunctions.instanceFor(region: 'europe-west1')
+                  .httpsCallable('recordPoolQrAttendance')
+                  .call(data);
+            });
 
   /// Collectie referentie voor piscine sessies
   CollectionReference<Map<String, dynamic>> _sessionsCollection(String clubId) {
@@ -304,6 +314,12 @@ class PiscineSessionService {
 
     if (alreadyPresent) {
       throw Exception('Ce membre est déjà marqué présent');
+    }
+
+    if (!isGuest) {
+      await _recordQr(
+          {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId});
+      return;
     }
 
     final data = {

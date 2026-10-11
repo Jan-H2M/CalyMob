@@ -59,7 +59,9 @@ test('only monitor encadrant or admin may correct groups', () => {
 });
 test('scanned member may correct only their own group without granting monitor powers', async () => {
   const scan = { toMillis: () => 1791230400000 };
-  const f = fixture({ attendance: { memberId: 'student', scannedAt: scan, remarks: 'preserved' } });
+  const f = fixture({ attendance: { memberId: 'student', scannedAt: scan, scannedBy: 'monitor', remarks: 'preserved' } });
+  f.data.set('clubs/calypso/piscine_sessions/synthetic/qr_scan_receipts/student', {
+    version: 1, memberId: 'student', sessionId: 'synthetic', scannerUid: 'monitor', scannedAt: scan });
   await executeCorrection(f.db, 'student', f.request);
   const row = f.data.get('clubs/calypso/piscine_sessions/synthetic/attendees/student');
   expect(row.scannedAt).toBe(scan);
@@ -73,6 +75,8 @@ test.each([
   { memberId: 'student', checkinCompletedAt: 'completed-report' },
   { memberId: 'student', assignedLevel: '3*' },
   { memberId: 'student', scannedAt: 'invalid-scan' },
+  { memberId: 'student', scannedAt: { toMillis: () => 1791230400000 }, scannedBy: 'monitor',
+    qrVerified: { version: 1, memberId: 'student', scannerUid: 'monitor' } },
 ])('own correction without actual QR timestamp performs zero writes: %j', async attendance => {
   const f = fixture({ attendance });
   const before = JSON.stringify([...f.data]);

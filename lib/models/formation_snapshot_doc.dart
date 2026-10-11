@@ -107,8 +107,12 @@ class FormationSnapshotDoc {
       add(claim.code, claim.label, _FormationExerciseState.pending);
     }
     for (final exercise in remaining) {
-      add(exercise.code, exercise.description,
-          _FormationExerciseState.remaining);
+      add(
+          exercise.code,
+          exercise.description,
+          exercise.status == 'refused'
+              ? _FormationExerciseState.refused
+              : _FormationExerciseState.remaining);
     }
 
     return {
@@ -270,11 +274,13 @@ class FormationModalityProgress {
   final int validated;
   final int pending;
   final int remaining;
+  final int refused;
 
   const FormationModalityProgress({
     required this.validated,
     required this.pending,
     required this.remaining,
+    this.refused = 0,
   });
 
   factory FormationModalityProgress._fromStates(
@@ -283,6 +289,7 @@ class FormationModalityProgress {
     var validated = 0;
     var pending = 0;
     var remaining = 0;
+    var refused = 0;
     for (final state in states) {
       switch (state) {
         case _FormationExerciseState.validated:
@@ -291,12 +298,16 @@ class FormationModalityProgress {
           pending++;
         case _FormationExerciseState.remaining:
           remaining++;
+        case _FormationExerciseState.refused:
+          remaining++;
+          refused++;
       }
     }
     return FormationModalityProgress(
       validated: validated,
       pending: pending,
       remaining: remaining,
+      refused: refused,
     );
   }
 
@@ -324,7 +335,7 @@ FormationModality formationModalityForExercise(
   return FormationModality.career;
 }
 
-enum _FormationExerciseState { validated, pending, remaining }
+enum _FormationExerciseState { validated, pending, refused, remaining }
 
 class _ModalityExerciseState {
   final FormationModality modality;
@@ -368,12 +379,14 @@ class SnapshotExercise {
   final String niveau;
   final DateTime? date;
   final bool personal;
+  final String? status;
   const SnapshotExercise({
     required this.code,
     required this.description,
     this.niveau = '',
     this.date,
     this.personal = false,
+    this.status,
   });
   factory SnapshotExercise.fromMap(Map<String, dynamic> m) => SnapshotExercise(
         code: m['code']?.toString() ?? '',
@@ -381,6 +394,7 @@ class SnapshotExercise {
         niveau: m['niveau']?.toString() ?? '',
         date: _date(m['date']),
         personal: m['personal'] == true,
+        status: m['status']?.toString(),
       );
 }
 

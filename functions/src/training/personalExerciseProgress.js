@@ -51,8 +51,10 @@ async function executePersonalProgress(db, uid, data) {
     if (!actor.exists || !isActiveMember(actor.data()))
       throw new HttpsError('permission-denied', 'Membre actif requis.');
     const exercise = await tx.get(club.collection('exercices_lifras').doc(exerciseId));
-    if (!exercise.exists || exerciseKind(exercise.data()) !== 'natural' ||
-        targetNiveau({ target_formation_level: exercise.data().niveau }) !== targetNiveau(actor.data()))
+    const actorTarget = targetNiveau(actor.data());
+    const catalogTarget = exercise.exists ? targetNiveau({ target_formation_level: exercise.data().niveau }) : null;
+    if (!actorTarget || !catalogTarget || !exercise.exists || exerciseKind(exercise.data()) !== 'natural' ||
+        catalogTarget !== actorTarget)
       throw new HttpsError('failed-precondition', 'Épreuve en milieu naturel de votre brevet visé requise.');
     const event = await tx.get(eventRef);
     const requested = { exerciseId, done, date: done ? date : null };

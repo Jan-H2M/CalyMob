@@ -65,11 +65,14 @@ FormationSnapshotDoc memberDossierSnapshot(
         description: exercise.description,
         niveau: exercise.niveau.code,
         personal: personalDone && !officiallyDone,
+        status: matches.isNotEmpty ? matches.first.status.name : null,
         date: officiallyDone
             ? matches.firstWhere((v) => v.isValidated).dateValidation
             : personalDone
                 ? personal.first.date
-                : null);
+                : matches.isNotEmpty
+                    ? matches.first.dateValidation
+                    : null);
     if (officiallyDone ||
         personalDone ||
         (useSnapshotValidations &&

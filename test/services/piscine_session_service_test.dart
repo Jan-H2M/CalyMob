@@ -24,7 +24,15 @@ void main() {
           .collection('attendees');
     });
 
-    test('adds real members on their canonical attendee document', () async {
+    test(
+        'real member QR delegates to the server without local attendance writes',
+        () async {
+      Map<String, dynamic>? sent;
+      service = PiscineSessionService(
+          firestore: firestore,
+          recordQr: (data) async {
+            sent = data;
+          });
       await service.addAttendee(
         clubId: clubId,
         sessionId: sessionId,
@@ -33,11 +41,9 @@ void main() {
         scannedBy: 'accueil',
       );
 
-      final canonical = await attendees.doc(memberId).get();
-      expect(canonical.exists, isTrue);
-      expect(canonical.data()!['memberId'], memberId);
-      expect(canonical.data()!['memberName'], 'Alice Exemple');
-      expect((await attendees.get()).docs.map((doc) => doc.id), [memberId]);
+      expect(sent,
+          {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId});
+      expect((await attendees.get()).docs, isEmpty);
     });
 
     test('keeps guests on independent generated documents', () async {

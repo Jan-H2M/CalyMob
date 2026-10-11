@@ -34,7 +34,7 @@ const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
 const { buildPoolFormationProjection } = require('./poolFormationProjection');
-const { exerciseKind } = require('../training/personalExerciseProgress');
+const { exerciseKind, targetNiveau: normalizedTarget } = require('../training/personalExerciseProgress');
 
 const REGION = 'europe-west1';
 const SNAPSHOT_DOC_ID = 'current';
@@ -97,7 +97,7 @@ function isZelandeEntry(entry) {
 
 // Niveau explicite `members.target_formation_level` → code niveau LIFRAS.
 function targetFromExplicit(value) {
-  const raw = String(value || '').trim().toUpperCase();
+  const raw = String(value || '').trim().toUpperCase().replaceAll('★', '*');
   const map = {
     '1': 'NB', '1*': 'NB', P1: 'NB', NB: 'NB',
     '2': 'P2', '2*': 'P2', P2: 'P2',
@@ -389,6 +389,7 @@ async function readValidatedExercises(db, clubId, memberId) {
   const validated = [];
   const pending = [];
   const rows = [];
+  const refused = [];
   snap.forEach(doc => rows.push(doc.data()));
   const official = new Map();
   for (const row of rows.filter(row => row.source === 'formation_admin')) {
@@ -405,12 +406,14 @@ async function readValidatedExercises(db, clubId, memberId) {
       date: d.date_validation ? toIso(d.date_validation) : null,
       validator: d.moniteur_nom || d.moniteur_id || '',
       niveau: d.exercice_niveau || '',
+      status,
     };
     if (!item.code) continue;
     if (status === 'validated') validated.push(item);
     else if (status === 'pending') pending.push(item);
+    else if (status === 'refused') refused.push(item);
   }
-  return { validated, pending };
+  return { validated, pending, refused };
 }
 
 async function readClaimSources(db, clubId, memberId) {
@@ -456,7 +459,8 @@ function dossierExercises(exercises, official, personal, claims) {
   const pendingClaims = claims.filter(row => catalog.has(row.code) && !natural(catalog.get(row.code)) && !validated.has(row.code));
   const occupied = new Set([...validated.keys(), ...pending.map(row => row.code), ...pendingClaims.map(row => row.code)]);
   const remaining = [...catalog.values()].filter(ex => !occupied.has(ex.code))
-    .map(ex => ({ code: ex.code, description: ex.description || '', niveau: ex.niveau }));
+    .map(ex => ({ code: ex.code, description: ex.description || '', niveau: ex.niveau,
+      ...((official.refused || []).find(row => row.code === ex.code) || {}) }));
   return { validated: [...validated.values()], pending, pendingClaims, remaining, totalRequired: catalog.size };
 }
 
@@ -512,12 +516,12 @@ async function readExercisesForNiveau(db, clubId, niveau) {
   if (!niveau) return [];
   const snap = await clubRef(db, clubId)
     .collection('exercices_lifras')
-    .where('niveau', '==', niveau)
     .get();
   const list = [];
   snap.forEach((doc) => {
     const d = doc.data();
-    if (d.code) list.push({ id: doc.id, code: d.code, niveau: d.niveau, description: d.description || '', specialite: d.specialite || '' });
+    if (d.code && normalizedTarget({ target_formation_level: d.niveau }) === niveau)
+      list.push({ id: doc.id, code: d.code, niveau, description: d.description || '', specialite: d.specialite || '' });
   });
   return list;
 }

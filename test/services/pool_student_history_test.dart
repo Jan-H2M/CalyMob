@@ -6,6 +6,27 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('legacy/client timestamp is not a verified QR scan for self-correction',
+      () {
+    final date = Timestamp.fromDate(DateTime(2026, 10, 6));
+    expect(
+        PoolStudentSession.fromRecords('s', {
+          'date': date
+        }, [
+          {'scannedAt': date}
+        ]).hasQrScan,
+        false);
+    expect(
+        PoolStudentSession.fromRecords('s', {
+          'date': date
+        }, [
+          {
+            'scannedAt': date,
+            'qrVerified': {'version': 1}
+          }
+        ]).hasQrScan,
+        true);
+  });
   test('mixed instructor and pupil hours count only the recorded pupil lesson',
       () async {
     final db = FakeFirebaseFirestore();

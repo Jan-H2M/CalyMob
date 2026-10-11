@@ -138,9 +138,14 @@ async function executeCorrection(db, uid, data) {
     }
     // Self-correction requires an EXISTING QR scan. A completed report,
     // planned group or sign-up alone cannot manufacture attendance.
+    const receipt = ownCorrection ? await tx.get(sessionRef.collection('qr_scan_receipts').doc(memberId)) : null;
     if (ownCorrection && ![...records.values()].some(doc => {
-      const scan = doc.data().scannedAt;
-      return scan && typeof scan.toMillis === 'function' && Number.isFinite(scan.toMillis());
+      const row = doc.data();
+      const scan = row.scannedAt;
+      const proof = receipt?.exists ? receipt.data() : null;
+      return scan && typeof scan.toMillis === 'function' && Number.isFinite(scan.toMillis()) &&
+        proof?.version === 1 && proof.memberId === memberId && proof.sessionId === sessionId &&
+        proof.scannerUid === row.scannedBy && proof.scannedAt?.toMillis?.() === scan.toMillis();
     })) throw new HttpsError('failed-precondition', 'Présence scannée par QR requise.');
     const before = {};
     for (const doc of records.values()) {

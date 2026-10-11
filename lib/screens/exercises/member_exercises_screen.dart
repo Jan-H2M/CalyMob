@@ -301,8 +301,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     });
 
     try {
-      final exercices =
-          await _lifrasService.getExercicesByNiveau(_clubId, target);
+      final exercices = await _lifrasService
+          .getExercicesByNiveau(_clubId, target, strict: true);
       if (!mounted) return;
       setState(() {
         _catalog = exercices;
@@ -546,7 +546,9 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               appBar: AppBar(title: const Text('Mes exercices')),
               body: _buildNoNiveauState());
         }
-        if (_catalogFailed || _personalFailed) {
+        if (_catalogFailed ||
+            _personalFailed ||
+            provider.errorMessage != null) {
           return Scaffold(
               appBar: AppBar(title: const Text('Mes exercices')),
               body: Center(
@@ -554,6 +556,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                       onPressed: () {
                         _loadCatalog();
                         _watchPersonal();
+                        provider.listenToMemberExercices(
+                            _clubId, widget.memberId);
                       },
                       icon: const Icon(Icons.refresh),
                       label: const Text('Suivi indisponible · Réessayer'))));

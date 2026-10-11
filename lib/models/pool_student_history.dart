@@ -95,7 +95,10 @@ class PoolStudentSession {
       personalNotes: (merged['personalNotes'] ?? '').toString(),
       instructorRemark: (merged['remarks'] ?? '').toString(),
       hasLessonDate: poolDate(session['date']) != null,
-      hasQrScan: attendance.any((row) => row['scannedAt'] is Timestamp),
+      hasQrScan: attendance.any((row) =>
+          row['scannedAt'] is Timestamp &&
+          row['qrVerified'] is Map &&
+          row['qrVerified']['version'] == 1),
     );
   }
 }

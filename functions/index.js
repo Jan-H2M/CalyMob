@@ -474,3 +474,4 @@ const {
   analyzeLogbookDictation,
 } = require('./src/logbookDictation/analyzeLogbookDictation');
 exports.analyzeLogbookDictation = analyzeLogbookDictation;
+exports.recordPoolQrAttendance = require('./src/training/poolQrAttendance').recordPoolQrAttendance;

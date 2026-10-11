@@ -4,8 +4,9 @@ if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8094') throw Error('Local
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
-const admin = require('../functions/node_modules/firebase-admin');
+const { doc, getDoc, setDoc, updateDoc, Timestamp } = require('firebase/firestore');
+const admin = require('firebase-admin');
+const { executeQrAttendance } = require('../functions/src/training/poolQrAttendance');
 const { executePersonalProgress, progressId } = require('../functions/src/training/personalExerciseProgress');
 const { executeOfficialResult } = require('../functions/src/training/officialFormationResults');
 const { executeCorrection, assignmentState } = require('../functions/src/training/correctPoolStudentGroup');
@@ -26,7 +27,7 @@ async function main() {
     await club.collection('members').doc('admin').set({ app_role: 'admin', member_status: 'active', prenom: 'Synthetic' });
     await club.collection('members').doc('monitor').set({ app_role: 'user', member_status: 'active', plongeur_code: 'MC', clubStatuten: ['Encadrant'] });
     for (const [id, code] of [['ra', 'P3.RA'], ['ext', 'P3.EXT'], ['exp', 'P3.EXP']]) {
-      await club.collection('exercices_lifras').doc(id).set({ code, description: 'Synthetic only', niveau: 'P3' });
+      await club.collection('exercices_lifras').doc(id).set({ code, description: 'Synthetic only', niveau: id === 'ra' ? '3' : '3★' });
     }
     await member.collection('formation_goals').doc('current').set({ codes: ['P3.RA'], redo_codes: [] });
     const request = { clubId: 'calypso', memberId: 'student', exerciseId: 'ra', done: true, date: '2026-01-05', expectedRevision: 0, operationId: 'personal1' };
@@ -53,7 +54,10 @@ async function main() {
       hour: '2eme_heure', level: '3*', courseId: 'group2', expectedState: { student: assignmentState(attendance) } };
     await assert.rejects(executeCorrection(db, 'student', correction));
     const scan = admin.firestore.Timestamp.fromDate(new Date('2026-01-06T19:30:00Z'));
-    await attendee.update({ scannedAt: scan });
+    await attendee.update({ scannedAt: scan, scannedBy: 'admin' });
+    await assert.rejects(executeCorrection(db, 'student', correction));
+    await session.collection('qr_scan_receipts').doc('student').set({ version: 1, memberId: 'student',
+      scannerUid: 'admin', sessionId: session.id, scannedAt: scan });
     attendance = (await attendee.get()).data();
     correction.expectedState = { student: assignmentState(attendance) };
     await executeCorrection(db, 'student', correction);
@@ -79,6 +83,26 @@ async function main() {
     const otherDb = env.authenticatedContext('other').firestore();
     const monitorDb = env.authenticatedContext('monitor').firestore();
     const adminDb = env.authenticatedContext('admin').firestore();
+    const spoofSession = club.collection('piscine_sessions').doc('spoof');
+    await spoofSession.set({ date: admin.firestore.Timestamp.fromMillis(Date.now()), type: 'piscine',
+      niveaux: { '3*': { courses_by_hour: { '2eme_heure': [{ id: 'group2', order: 1, theme: 'Synthetic', encadrants: [] }] } } } });
+    const spoofPath = 'clubs/calypso/piscine_sessions/spoof/attendees/student';
+    // Existing legacy scanner rules may allow a timestamp. It is never proof.
+    await assertSucceeds(setDoc(doc(studentDb, spoofPath), {
+      memberId: 'student', memberName: 'Synthetic', scannedBy: 'admin', scannedAt: Timestamp.now(), isGuest: false }));
+    const spoof = (await db.doc(spoofPath).get()).data();
+    await assert.rejects(executeCorrection(db, 'student', { ...correction, sessionId: 'spoof',
+      operationId: 'spoof', expectedState: { student: assignmentState(spoof) } }));
+    await assertFails(setDoc(doc(studentDb, 'clubs/calypso/piscine_sessions/spoof/qr_scan_receipts/student'), {
+      version: 1, memberId: 'student', sessionId: 'spoof', scannerUid: 'admin', scannedAt: Timestamp.now() }));
+    await db.doc(spoofPath).delete();
+    await assert.rejects(executeQrAttendance(db, 'student', { clubId: 'calypso', sessionId: 'spoof', memberId: 'student' }));
+    await assert.rejects(executeQrAttendance(db, 'admin', { clubId: 'calypso', sessionId: 'synthetic-session', memberId: 'student' }));
+    await executeQrAttendance(db, 'admin', { clubId: 'calypso', sessionId: 'spoof', memberId: 'student' });
+    await assert.rejects(executeQrAttendance(db, 'admin', { clubId: 'calypso', sessionId: 'spoof', memberId: 'student' }));
+    const trusted = (await db.doc(spoofPath).get()).data();
+    await executeCorrection(db, 'student', { ...correction, sessionId: 'spoof',
+      operationId: 'trusted', expectedState: { student: assignmentState(trusted) } });
     const personalPath = `clubs/calypso/exercise_claims/${progressId('student', 'ra')}`;
     const auditPath = 'clubs/calypso/members/student/formation_admin_audit/exam1';
     await assertSucceeds(getDoc(doc(studentDb, personalPath)));

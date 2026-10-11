@@ -212,8 +212,8 @@ class _Student360ScreenState extends State<Student360Screen> {
                         ?.millisecondsSinceEpoch ??
                     0));
       if (widget.providedSnapshot == null && target != null) {
-        final catalog =
-            await LifrasService().getExercicesByNiveau(widget.clubId, target);
+        final catalog = await LifrasService()
+            .getExercicesByNiveau(widget.clubId, target, strict: true);
         final results = await memberRef.collection('exercices_valides').get();
         final personal = await PersonalExerciseProgressService()
             .watch(widget.clubId, widget.member.id)
@@ -617,12 +617,14 @@ class _Student360ScreenState extends State<Student360Screen> {
                     _compactBrevetStatus(
                       'Épreuves',
                       'Épreuves en milieu naturel : '
-                          '${natural.total == 0 ? 'non renseignées' : '${natural.validated} sur ${natural.total} réalisées'}'
+                          '${_dossierFailed || natural.total == 0 ? 'non renseignées' : '${natural.validated} sur ${natural.total} réalisées'}'
                           '${natural.pending > 0 ? ' · ${natural.pending} en attente de validation' : ''}',
-                      count: natural.total == 0
+                      count: _dossierFailed || natural.total == 0
                           ? '—'
                           : '${natural.validated}/${natural.total}',
-                      complete: natural.total > 0 &&
+                      unknown: _dossierFailed,
+                      complete: !_dossierFailed &&
+                          natural.total > 0 &&
                           natural.validated == natural.total,
                     ),
                     _compactExamStatus('Théorie', 'Examen théorique',
@@ -655,10 +657,12 @@ class _Student360ScreenState extends State<Student360Screen> {
     final done = progress.total > 0 && progress.validated == progress.total;
     return _compactBrevetStatus(
       label,
-      '$fullLabel : ${progress.total == 0 ? 'non renseigné' : done ? 'réalisé' : progress.remaining == 0 && progress.pending > 0 ? 'en attente de validation' : 'à faire'}'
+      '$fullLabel : ${_dossierFailed || progress.total == 0 || progress.remaining > progress.refused ? 'non renseigné' : done ? 'réussi' : progress.remaining == 0 && progress.pending > 0 ? 'en attente de validation' : 'non réussi'}'
       '${!done && progress.pending > 0 && progress.remaining > 0 ? ' · ${progress.pending} en attente de validation' : ''}',
       complete: done,
-      unknown: progress.total == 0,
+      unknown: _dossierFailed ||
+          progress.total == 0 ||
+          progress.remaining > progress.refused,
       pending: !done && progress.remaining == 0 && progress.pending > 0,
     );
   }
@@ -1535,8 +1539,14 @@ class _Student360ScreenState extends State<Student360Screen> {
                     Colors.greenAccent,
                     badge: '✓')),
                 ...missing.map((e) => _exRow(
-                    e.code, e.description, Colors.white54,
-                    badge: 'Non réussi / non renseigné')),
+                    e.code,
+                    '${e.description}${e.date == null ? '' : ' · ${e.date!.day}/${e.date!.month}/${e.date!.year}'}',
+                    e.status == 'refused' ? Colors.redAccent : Colors.white54,
+                    badge: e.status == 'refused'
+                        ? 'Non réussi'
+                        : s.pending.contains(e)
+                            ? 'En attente'
+                            : 'Non renseigné')),
               ],
               emptyText: 'Aucun examen renseigné pour ce brevet.'),
         _section(

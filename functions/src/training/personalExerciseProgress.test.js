@@ -71,6 +71,14 @@ test('strict date parser rejects rollovers', () => {
   expect(() => parseDate('2026-02-31')).toThrow();
   expect(() => parseDate('bad')).toThrow();
 });
+test('two unsupported targets never authorize a personal specialty write', async () => {
+  const f = fixture();
+  f.rows.get('clubs/synthetic/members/student').target_formation_level = 'unsupported';
+  Object.assign(f.rows.get('clubs/synthetic/exercices_lifras/natural'), { niveau: 'TN', code: 'TN.NB1' });
+  const before = JSON.stringify([...f.rows]);
+  await expect(executePersonalProgress(f.db, 'student', f.request)).rejects.toThrow();
+  expect(JSON.stringify([...f.rows])).toBe(before);
+});
 test('official exam can be corrected, retains one canonical result plus independent audit', async () => {
   const f = fixture();
   const request = { ...f.request, kind: 'exam', exerciseId: 'theory', passed: true };

@@ -283,9 +283,9 @@ void main() {
       expect(icon.color, Colors.greenAccent);
     }
     expect(find.byIcon(Icons.close), findsNothing);
-    await tester.tap(find.byTooltip('Examen théorique : réalisé'));
+    await tester.tap(find.byTooltip('Examen théorique : réussi'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Examen théorique : réalisé'), findsOneWidget);
+    expect(find.text('Examen théorique : réussi'), findsOneWidget);
   });
 
   testWidgets('brevet header separates completed trials exams and experience',
@@ -320,7 +320,7 @@ void main() {
     expect(find.text('3/6'), findsOneWidget);
     expect(find.byTooltip('Épreuves en milieu naturel : 3 sur 6 réalisées'),
         findsOneWidget);
-    expect(find.byTooltip('Examen théorique : réalisé'), findsOneWidget);
+    expect(find.byTooltip('Examen théorique : réussi'), findsOneWidget);
     expect(find.byTooltip('Examen piscine : en attente de validation'),
         findsOneWidget);
     expect(find.byIcon(Icons.check), findsOneWidget);

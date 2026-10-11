@@ -6,6 +6,30 @@ import 'package:calymob/models/personal_exercise_progress.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('failed, pending and absent exam data retain distinct status and date',
+      () {
+    final dossier = memberDossierSnapshot(
+        memberId: 'synthetic',
+        currentCode: '2',
+        target: NiveauLIFRAS.p3,
+        catalog: [
+          _exercise('P3.EXT'),
+          _exercise('P3.EXP'),
+          _exercise('P3.T')
+        ],
+        validations: [
+          _validation('P3.EXT', ExerciceValideStatus.refused),
+          _validation('P3.EXP', ExerciceValideStatus.pending)
+        ]);
+    final failed = dossier.remaining.firstWhere((e) => e.code == 'P3.EXT');
+    expect(failed.status, 'refused');
+    expect(failed.date, DateTime(2026, 10, 1));
+    expect(
+        dossier.remaining.firstWhere((e) => e.code == 'P3.T').status, isNull);
+    expect(dossier.pending.single.status, 'pending');
+    expect(dossier.examProgress[FormationModality.theory]!.refused, 1);
+    expect(dossier.examProgress[FormationModality.theory]!.remaining, 2);
+  });
   test(
       'same personal counts for member and monitor, never exams or another target',
       () {

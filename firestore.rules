@@ -1771,6 +1771,10 @@ service cloud.firestore {
       //         gonflage (map: {19h45, 20h15, 21h30} → array), type ('piscine'|'theorie'),
       //         theorie (optional map: {19h30, 21h45} → {encadrants, theme})
       match /piscine_sessions/{sessionId} {
+        match /qr_scan_receipts/{memberId} {
+          allow read: if isMember(clubId);
+          allow write: if false;
+        }
         // Server-authoritative, immutable historical group correction audit.
         match /group_corrections/{correctionId} {
           allow read: if canValidateLifras(clubId);
@@ -1795,6 +1799,7 @@ service cloud.firestore {
           allow read: if isMember(clubId) || isAdmin(clubId);
           // Create: Any authenticated club member can scan (mobile app scanner)
           allow create: if isMember(clubId)
+            && (!request.resource.data.keys().hasAny(['qrVerified']) || isAdmin(clubId))
             && request.resource.data.scannedAt is timestamp
             && request.resource.data.scannedBy is string
             && request.resource.data.scannedBy.size() > 0

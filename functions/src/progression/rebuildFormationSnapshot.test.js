@@ -45,6 +45,12 @@ const RULES = {
   tolerance_pct: 10,
   zelande: { tolerance_mer_max_40m: true, exclude_deco: true, exclude_beyond_40m: true },
 };
+test('star aliases share the same target and explicit failed exams retain date/status', () => {
+  expect(targetFromExplicit('3★')).toBe('P3');
+  const result = dossierExercises([{ id: 'ext', code: 'P3.EXT', niveau: 'P3' }],
+    { validated: [], pending: [], refused: [{ code: 'P3.EXT', status: 'refused', date: '2026-01-05' }] }, [], []);
+  expect(result.remaining[0]).toMatchObject({ status: 'refused', date: '2026-01-05' });
+});
 
 function dive(overrides = {}) {
   return {
