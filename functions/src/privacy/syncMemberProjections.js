@@ -11,6 +11,7 @@ const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { memberDisplayName } = require('../utils/memberName');
 const { resolveMemberStatus } = require('../utils/memberStatus');
+const { excludedFromDirectory } = require('./memberDirectoryVisibility');
 
 const FUNCTION_REGION = 'europe-west1';
 const CLUB_TIME_ZONE = 'Europe/Brussels';
@@ -86,7 +87,7 @@ function buildMemberDirectoryProjection(data) {
     formation_active: data.formation_active === true,
     target_formation_level: nonEmptyString(data.target_formation_level),
     member_status: resolvedMemberStatus(data),
-    is_test_account: data.is_test_account === true,
+    is_test_account: excludedFromDirectory(data),
     share_email: shareEmail,
     share_phone: sharePhone,
     share_birthday: data.share_birthday !== false,
@@ -136,7 +137,12 @@ const syncMemberProjections = onDocumentWritten(
       }
 
       const data = current.data() || {};
-      transaction.set(directoryRef, buildMemberDirectoryProjection(data));
+      if (excludedFromDirectory(data)) {
+        // Remove only the derived public card, never the private login profile.
+        transaction.delete(directoryRef);
+      } else {
+        transaction.set(directoryRef, buildMemberDirectoryProjection(data));
+      }
       transaction.set(statusRef, buildOperationalStatusProjection(data));
     });
   }

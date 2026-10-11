@@ -40,6 +40,7 @@ function createDb(memberData, staleDirectoryData = {}) {
       set: jest.fn((documentRef, payload) => {
         state.set(documentRef.path, { ...payload });
       }),
+      delete: jest.fn(documentRef => state.delete(documentRef.path)),
     })),
     state,
   };
@@ -48,6 +49,15 @@ function createDb(memberData, staleDirectoryData = {}) {
 
 describe('updateBirthdaySharing callable', () => {
   const belgianBirthday = new Date('1991-07-06T22:00:00.000Z');
+  test('a QA birthday preference cannot recreate a hidden directory card', async () => {
+    const db = createDb({ is_test_account: true });
+    await updateBirthdaySharingHandler({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', shareBirthday: true },
+    }, { db });
+    expect(db.state.has('clubs/calypso/member_directory/member-1')).toBe(false);
+    expect(db.state.get('clubs/calypso/members/member-1').share_birthday).toBe(true);
+  });
 
   test('requires authentication before touching Firestore', async () => {
     const db = createDb({});

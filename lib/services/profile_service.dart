@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/member_profile.dart';
+import '../utils/member_directory_visibility.dart';
 
 typedef ProfileCallableInvoker = Future<Object?> Function(
   String functionName,
@@ -73,7 +74,9 @@ class ProfileService {
           .collection('clubs/$clubId/member_directory')
           .doc(userId)
           .get();
-      if (!doc.exists) return null;
+      if (!doc.exists || excludedFromMemberDirectory(doc.data() ?? {})) {
+        return null;
+      }
       return MemberProfile.fromDirectory(doc);
     } catch (e) {
       debugPrint('❌ Erreur de lecture du répertoire membre: $e');
@@ -93,7 +96,10 @@ class ProfileService {
           .collection('clubs/$clubId/member_directory')
           .doc(userId)
           .get();
-      if (!directoryDoc.exists) return null;
+      if (!directoryDoc.exists ||
+          excludedFromMemberDirectory(directoryDoc.data() ?? {})) {
+        return null;
+      }
 
       Map<String, dynamic>? operationalStatus;
       try {
@@ -587,8 +593,10 @@ class ProfileService {
       final snapshot =
           await _firestore.collection('clubs/$clubId/member_directory').get();
 
-      final profiles =
-          snapshot.docs.map((doc) => MemberProfile.fromDirectory(doc)).toList();
+      final profiles = snapshot.docs
+          .where((doc) => !excludedFromMemberDirectory(doc.data()))
+          .map((doc) => MemberProfile.fromDirectory(doc))
+          .toList();
 
       profiles.sort((a, b) {
         final lastNameCompare = a.nom.toLowerCase().compareTo(

@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { buildMemberDirectoryProjection } = require('./syncMemberProjections');
+const { excludedFromDirectory } = require('./memberDirectoryVisibility');
 
 const FUNCTION_REGION = 'europe-west1';
 
@@ -58,7 +59,11 @@ async function updateBirthdaySharingHandler(request, { db = admin.firestore() } 
     // Replace the public projection in the same transaction. In particular,
     // an opt-out cannot leave a stale true/missing flag with old birthday
     // parts visible while the asynchronous projector is catching up.
-    transaction.set(directoryRef, directoryProjection);
+    if (excludedFromDirectory(nextMemberData)) {
+      transaction.delete(directoryRef);
+    } else {
+      transaction.set(directoryRef, directoryProjection);
+    }
 
     return {
       shareBirthday,
