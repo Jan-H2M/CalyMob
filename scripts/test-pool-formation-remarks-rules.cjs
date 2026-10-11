@@ -17,6 +17,7 @@ const {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } = require('firebase/firestore');
 
@@ -32,6 +33,17 @@ async function main() {
   const poolSnapshotPath =
     'clubs/calypso/members/student/pool_formation_snapshot/current';
   const observationsPath = 'clubs/calypso/member_observations';
+  const fullFormationPaths = [
+    snapshotPath,
+    'clubs/calypso/members/student/exercices_valides/exercise-1',
+    'clubs/calypso/members/student/brevet_history/brevet-1',
+    'clubs/calypso/members/student/formation_goals/current',
+    'clubs/calypso/historical_exercise_claim_batches/batch-1',
+    'clubs/calypso/formation_tasks/task-1',
+    'clubs/calypso/exercise_claims/claim-1',
+    'clubs/calypso/student_logbook_entries/dive-1',
+    `${observationsPath}/career-seeded`,
+  ];
 
   const validPoolRemark = {
     memberId: 'student',
@@ -62,13 +74,21 @@ async function main() {
       });
       await setDoc(doc(db, 'clubs/calypso/members/pool-instructor'), {
         app_role: 'user',
-        clubStatuten: ['Encadrant Piscine'],
+        // Exact privacy-regression variant: Encadrant badge + AM is piscine
+        // scope in Flutter, but used to pass isEncadrantForClub in rules.
+        clubStatuten: ['Encadrant'],
         plongeur_code: 'AM',
       });
-      await setDoc(doc(db, 'clubs/calypso/members/lifras-monitor'), {
-        app_role: 'user',
-        clubStatuten: ['Encadrant'],
-        plongeur_code: 'MC',
+      for (const code of ['MC', 'MF', 'MN']) {
+        await setDoc(doc(db, `clubs/calypso/members/monitor-${code}`), {
+          app_role: 'user',
+          clubStatuten: ['Encadrant'],
+          plongeur_code: code,
+        });
+      }
+      await setDoc(doc(db, 'clubs/calypso/members/admin'), {
+        app_role: 'admin',
+        clubStatuten: [],
       });
       await setDoc(doc(db, snapshotPath), {
         member_id: 'student',
@@ -99,20 +119,65 @@ async function main() {
         exerciceCode: 'P2.RA',
         result: 'acquis',
       });
+      await setDoc(doc(db, fullFormationPaths[1]), {
+        member_id: 'student',
+        exercice_code: 'P2.RA',
+        status: 'validated',
+      });
+      await setDoc(doc(db, fullFormationPaths[2]), {
+        member_id: 'student',
+        brevet_code: 'P1',
+      });
+      await setDoc(doc(db, fullFormationPaths[3]), {
+        member_id: 'student',
+        target_codes: ['P2'],
+      });
+      await setDoc(doc(db, fullFormationPaths[4]), {
+        member_id: 'student',
+        submitted_by: 'student',
+        status: 'submitted',
+      });
+      await setDoc(doc(db, fullFormationPaths[5]), {
+        member_id: 'student',
+        current_assignee_id: 'pool-instructor',
+        type: 'monitor_observation',
+        status: 'waiting_for_other',
+      });
+      await setDoc(doc(db, fullFormationPaths[6]), {
+        member_id: 'student',
+        monitor_id: 'pool-instructor',
+        declared_by: 'student',
+        status: 'submitted',
+        server_verified: false,
+      });
+      await setDoc(doc(db, fullFormationPaths[7]), {
+        member_id: 'student',
+        date: '2026-10-01',
+        depth_max_meters: 20,
+        source: 'manual',
+      });
     });
 
     const ordinaryDb = env.authenticatedContext('ordinary-member').firestore();
     const poolDb = env.authenticatedContext('pool-instructor').firestore();
-    const monitorDb = env.authenticatedContext('lifras-monitor').firestore();
-
-    await assertFails(getDoc(doc(poolDb, snapshotPath)));
-    await assertSucceeds(getDoc(doc(poolDb, poolSnapshotPath)));
-    await assertFails(getDoc(doc(ordinaryDb, snapshotPath)));
-    await assertFails(getDoc(doc(ordinaryDb, poolSnapshotPath)));
-    await assertSucceeds(getDoc(doc(monitorDb, snapshotPath)));
-    await assertSucceeds(getDoc(doc(monitorDb, poolSnapshotPath)));
+    const fullReaderDbs = ['monitor-MC', 'monitor-MF', 'monitor-MN', 'admin']
+      .map(uid => ({uid, db: env.authenticatedContext(uid).firestore()}));
+    const monitorDb = fullReaderDbs[0].db;
     const studentDb = env.authenticatedContext('student').firestore();
-    await assertSucceeds(getDoc(doc(studentDb, snapshotPath)));
+
+    for (const fullPath of fullFormationPaths) {
+      await assertFails(getDoc(doc(poolDb, fullPath)));
+      await assertFails(getDoc(doc(ordinaryDb, fullPath)));
+      await assertSucceeds(getDoc(doc(studentDb, fullPath)));
+      for (const reader of fullReaderDbs) {
+        await assertSucceeds(getDoc(doc(reader.db, fullPath)));
+      }
+    }
+    await assertSucceeds(getDoc(doc(poolDb, poolSnapshotPath)));
+    await assertFails(getDoc(doc(ordinaryDb, poolSnapshotPath)));
+    for (const reader of fullReaderDbs) {
+      await assertSucceeds(getDoc(doc(reader.db, poolSnapshotPath)));
+    }
     await assertSucceeds(getDoc(doc(studentDb, poolSnapshotPath)));
     await assertFails(getDocs(query(
       collectionGroup(poolDb, 'formation_snapshot'),
@@ -126,6 +191,33 @@ async function main() {
       collectionGroup(monitorDb, 'formation_snapshot'),
       where('member_id', '==', 'student'),
     )));
+
+    // An AM must not regain full dossier access through being named as the
+    // assignee/monitor. MC+ retains the existing task and claim workflow.
+    await assertFails(updateDoc(
+      doc(poolDb, fullFormationPaths[5]),
+      {status: 'in_progress'},
+    ));
+    await assertSucceeds(updateDoc(
+      doc(monitorDb, fullFormationPaths[5]),
+      {status: 'in_progress'},
+    ));
+    await assertFails(updateDoc(
+      doc(poolDb, fullFormationPaths[6]),
+      {status: 'accepted'},
+    ));
+    await assertSucceeds(updateDoc(
+      doc(monitorDb, fullFormationPaths[6]),
+      {status: 'accepted'},
+    ));
+    await assertFails(setDoc(
+      doc(poolDb, 'clubs/calypso/formation_tasks/am-manual-reminder'),
+      {type: 'manual_reminder', member_id: 'student'},
+    ));
+    await assertSucceeds(setDoc(
+      doc(monitorDb, 'clubs/calypso/formation_tasks/mc-manual-reminder'),
+      {type: 'manual_reminder', member_id: 'student'},
+    ));
 
     await assertSucceeds(getDoc(
       doc(poolDb, `${observationsPath}/pool-seeded`),
@@ -205,7 +297,7 @@ async function main() {
         category: 'exercice_lifras',
         exerciceCode: '1.2.3',
         result: 'acquis',
-        observerId: 'lifras-monitor',
+        observerId: 'monitor-MC',
         observerName: 'Moniteur LIFRAS',
       },
     ));
