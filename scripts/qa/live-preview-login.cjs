@@ -1,6 +1,6 @@
 'use strict';
 
-// QA-002: local-only normal password sign-in before opening the unmodified app.
+// QA-002: local-only normal password sign-in before opening the full normal app.
 // No custom tokens, impersonation, admin login, password files or log payloads.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -182,7 +182,7 @@ async function start(args, env = process.env) {
     // This URL contains no password, nonce, token or third-party credentials.
     console.log(JSON.stringify({ preview: `${ORIGIN}/__qa/login`,
       identity: EMAIL, profile: 'Encadrant + Moniteur Club', loginWindowSeconds: TTL / 1000,
-      source: root, secretsLogged: false, appModified: false }));
+      source: root, secretsLogged: false, app: 'full Flutter with local-only QA session continuation' }));
     let stopping = false;
     for (const signal of ['SIGINT','SIGTERM']) process.on(signal, async () => {
       if (stopping) return;

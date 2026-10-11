@@ -50,7 +50,7 @@ gebruikersrechten. Ze verandert geen rollen of accounts. Eén kortlevende
 same-origin POST met nonce haalt het wachtwoord rechtstreeks uit Sleutelhanger;
 de officiële Firebase SDK voert normale e-mail/wachtwoordaanmelding uit. De SDK
 bewaart de gewone sessie op deze aparte lokale oorsprong; daarna opent dezelfde
-volledige, ongewijzigde Flutter-build. Geen handmatige tokeninjectie, custom token,
+volledige Flutter-build. Geen handmatige tokeninjectie, custom token,
 admin-impersonatie of demo-authenticatie. Andere lokale app-oorsprongen en Jans
 eigen sessie blijven gescheiden.
 
@@ -64,8 +64,18 @@ toegangsrechten alsnog Jans lokale bevestiging vragen. Verzwak geen OS-beveiligi
 en roteer het wachtwoord niet automatisch. Stoppen van de hulp beëindigt de lokale
 assetserver. Log bij gedeeld Mac-gebruik ook uit in de app.
 
-Dit is een lokale testvoorziening, geen onderdeel van de Flutter-app of een
-appstore-release. De JS SDK-versie volgt `firebase_core_web` (momenteel 12.3.0).
+De app start normaal altijd op `LoginScreen`, zelfs met een bestaande Firebase-
+sessie. Bouw daarom voor deze lokale start eenmaal de volledige normale app met
+`flutter build web --release --dart-define=CALYMOB_LIVE_QA_AUTOSTART=true`.
+Deze opt-in herstelt uitsluitend op `http://localhost:7359` de echte sessie van
+het vaste verborgen MC-account. De private ledengegevens worden opnieuw met de
+gewone Firebase-rechten geladen en gecontroleerd vóór normale navigatie naar het
+startscherm. Andere gebruikers, omgevingen en appstore-builds blijven ongewijzigd;
+zonder de compile-time opt-in is deze overgang uitgeschakeld. Een vereiste
+wachtwoordwijziging wordt niet omzeild.
+
+Dit is een lokale testvoorziening, niet ingeschakeld in een appstore-release.
+De JS SDK-versie volgt `firebase_core_web` (momenteel 12.3.0).
 De bestaande serviceaccountreferentie wordt uitsluitend voor read-only
 preflight gebruikt, nooit aan de browser doorgegeven. Alle echte appgegevens
 worden vervolgens met de gewone rechten van het aangemelde QA-account geladen.
