@@ -23,7 +23,10 @@ class StudentExerciseComparisonScreen extends StatefulWidget {
 
 class _StudentExerciseComparisonScreenState
     extends State<StudentExerciseComparisonScreen> {
-  final _memberData = MemberProvider();
+  // Monitors read the deliberately limited directory projection, not another
+  // person's private member document. This uses the same real profile source
+  // as the monitor's student list and never broadens Firebase permissions.
+  final _memberData = MemberProvider.forDirectoryReads();
   ExerciceValideProvider? _exercises;
   bool _loaded = false;
   Future<void>? _loadFuture;
