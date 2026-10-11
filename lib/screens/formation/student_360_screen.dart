@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/member_profile.dart';
+import '../../models/pool_formation_snapshot_doc.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
@@ -32,8 +33,10 @@ class Student360Screen extends StatefulWidget {
   final String clubId;
   final MemberProfile member;
   final FormationTrackingScope scope;
+  final PoolFormationSnapshotDoc? poolSnapshot;
   final bool previewMode;
   final FormationSnapshotDoc? previewSnapshot;
+  final PoolFormationSnapshotDoc? previewPoolSnapshot;
   final List<Map<String, dynamic>> previewObservations;
 
   const Student360Screen({
@@ -41,8 +44,10 @@ class Student360Screen extends StatefulWidget {
     required this.clubId,
     required this.member,
     required this.scope,
+    this.poolSnapshot,
     this.previewMode = false,
     this.previewSnapshot,
+    this.previewPoolSnapshot,
     this.previewObservations = const [],
   });
 
@@ -55,13 +60,18 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   bool _loading = true;
   FormationSnapshotDoc? _snapshot;
+  PoolFormationSnapshotDoc? _poolSnapshot;
   List<Map<String, dynamic>> _observations = const [];
 
   @override
   void initState() {
     super.initState();
     if (widget.previewMode) {
-      _snapshot = widget.previewSnapshot;
+      if (widget.scope == FormationTrackingScope.piscineOnly) {
+        _poolSnapshot = widget.previewPoolSnapshot;
+      } else {
+        _snapshot = widget.previewSnapshot;
+      }
       _observations = widget.previewObservations
           .where(
             (observation) =>
@@ -69,19 +79,31 @@ class _Student360ScreenState extends State<Student360Screen> {
           )
           .toList(growable: false);
       _loading = false;
+    } else if (widget.scope == FormationTrackingScope.piscineOnly) {
+      _poolSnapshot = widget.poolSnapshot;
+      _loadPoolObservations();
     } else {
       _reader = FormationSnapshotReader();
-      _load();
+      _loadFull();
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _loadFull() async {
     final snapshot =
         await _reader!.getSnapshot(widget.clubId, widget.member.id);
     final observations = await _loadObservations();
     if (!mounted) return;
     setState(() {
       _snapshot = snapshot;
+      _observations = observations;
+      _loading = false;
+    });
+  }
+
+  Future<void> _loadPoolObservations() async {
+    final observations = await _loadObservations();
+    if (!mounted) return;
+    setState(() {
       _observations = observations;
       _loading = false;
     });
@@ -172,9 +194,13 @@ class _Student360ScreenState extends State<Student360Screen> {
                 ? const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   )
-                : _snapshot == null
-                    ? _buildEmpty()
-                    : _buildContent(_snapshot!),
+                : widget.scope == FormationTrackingScope.piscineOnly
+                    ? _poolSnapshot == null
+                        ? _buildEmpty()
+                        : _buildPiscineContent(_poolSnapshot!)
+                    : _snapshot == null
+                        ? _buildEmpty()
+                        : _buildContent(_snapshot!),
           ),
         ),
       ),
@@ -196,9 +222,6 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Widget _buildContent(FormationSnapshotDoc s) {
-    if (widget.scope == FormationTrackingScope.piscineOnly) {
-      return _buildPiscineContent(s);
-    }
     return Column(
       children: [
         _buildHeader(s),
@@ -236,7 +259,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Widget _buildPiscineContent(FormationSnapshotDoc s) {
+  Widget _buildPiscineContent(PoolFormationSnapshotDoc s) {
     return Column(
       children: [
         _buildPiscineHeader(s),
@@ -257,7 +280,10 @@ class _Student360ScreenState extends State<Student360Screen> {
         ),
         Expanded(
           child: TabBarView(
-            children: [_buildPiscineExercisesTab(s), _buildObservationsTab(s)],
+            children: [
+              _buildPiscineProgressTab(s),
+              _buildObservationsTab(null),
+            ],
           ),
         ),
         _buildCta(),
@@ -265,9 +291,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Widget _buildPiscineHeader(FormationSnapshotDoc s) {
-    final progress = s.modalityProgress[FormationModality.pool]!;
-    final total = progress.total;
+  Widget _buildPiscineHeader(PoolFormationSnapshotDoc s) {
     final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
     return Container(
       decoration: BoxDecoration(
@@ -300,14 +324,14 @@ class _Student360ScreenState extends State<Student360Screen> {
                 const SizedBox(height: 8),
                 _fractionProgressBar(
                   'Exercices piscine',
-                  progress.validated,
-                  total,
+                  s.validated,
+                  s.total,
                   AppColors.lichtblauw,
                 ),
-                if (progress.pending > 0) ...[
+                if (s.pending > 0) ...[
                   const SizedBox(height: 7),
                   Text(
-                    '${progress.pending} en attente',
+                    '${s.pending} en attente',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.78),
                       fontSize: 12,
@@ -635,7 +659,9 @@ class _Student360ScreenState extends State<Student360Screen> {
         clubId: widget.clubId,
         memberId: widget.member.id,
         memberName: _fullName,
-        memberNiveau: _snapshot?.targetLevel ?? '',
+        memberNiveau: widget.scope == FormationTrackingScope.full
+            ? _snapshot?.targetLevel ?? ''
+            : '',
         note: note,
         observerId: observerId,
       );
@@ -727,71 +753,59 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   // ---- Onglet Exercices ----------------------------------------------------
-  Widget _buildPiscineExercisesTab(FormationSnapshotDoc s) {
-    bool isPool(String code, String description) =>
-        formationModalityForExercise(code, description) ==
-        FormationModality.pool;
-
-    final validated = s.validated
-        .where((exercise) => isPool(exercise.code, exercise.description))
-        .toList(growable: false);
-    final pending = s.pending
-        .where((exercise) => isPool(exercise.code, exercise.description))
-        .toList(growable: false);
-    final pendingClaims = s.pendingClaims
-        .where((claim) => isPool(claim.code, claim.label))
-        .toList(growable: false);
-    final remaining = s.remaining
-        .where((exercise) => isPool(exercise.code, exercise.description))
-        .toList(growable: false);
-
+  Widget _buildPiscineProgressTab(PoolFormationSnapshotDoc s) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        _section(
-          '✓ Validés en piscine (${validated.length})',
-          validated
-              .map(
-                (exercise) => _exRow(
-                  exercise.code,
-                  exercise.description,
-                  Colors.greenAccent,
-                ),
-              )
-              .toList(),
-          emptyText: 'Aucun exercice piscine validé.',
-        ),
-        _section(
-          '⏳ En attente en piscine (${pending.length + pendingClaims.length})',
-          [
-            ...pending.map(
-              (exercise) => _exRow(
-                exercise.code,
-                exercise.description,
-                Colors.amberAccent,
-              ),
-            ),
-            ...pendingClaims.map(
-              (claim) => _exRow(
-                claim.code,
-                claim.label.isNotEmpty ? claim.label : claim.status,
-                Colors.amberAccent,
-              ),
-            ),
-          ],
-          emptyText: 'Rien en attente en piscine.',
-        ),
-        _section(
-          '○ Restants en piscine (${remaining.length})',
-          remaining
-              .map(
-                (exercise) =>
-                    _exRow(exercise.code, exercise.description, Colors.white54),
-              )
-              .toList(),
-          emptyText: 'Tous les exercices piscine sont couverts.',
-        ),
+        _section('Progression piscine', [
+          _poolCountRow(
+            'Validés',
+            s.validated,
+            Icons.check_circle_outline,
+            Colors.greenAccent,
+          ),
+          _poolCountRow(
+            'En attente',
+            s.pending,
+            Icons.hourglass_top_rounded,
+            Colors.amberAccent,
+          ),
+          _poolCountRow(
+            'Restants',
+            s.remaining,
+            Icons.radio_button_unchecked,
+            Colors.white70,
+          ),
+        ]),
       ],
+    );
+  }
+
+  Widget _poolCountRow(
+    String label,
+    int count,
+    IconData icon,
+    Color color,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label, style: const TextStyle(color: Colors.white)),
+          ),
+          Text(
+            '$count',
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1058,7 +1072,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   // ---- Onglet Observations -------------------------------------------------
-  Widget _buildObservationsTab(FormationSnapshotDoc s) {
+  Widget _buildObservationsTab(FormationSnapshotDoc? s) {
     if (_observations.isEmpty) {
       return Center(
         child: Padding(
@@ -1081,7 +1095,9 @@ class _Student360ScreenState extends State<Student360Screen> {
             (o['contextType'] == 'piscine'
                 ? 'Remarque piscine'
                 : 'Observation');
-        final desc = _lookupDesc(s, o['exerciceCode']?.toString() ?? '');
+        final desc = s == null
+            ? ''
+            : _lookupDesc(s, o['exerciceCode']?.toString() ?? '');
         final note = o['note']?.toString() ?? '';
         final observerName = o['canonicalObserverName']?.toString() ?? '';
         final date = _obsDate(o);

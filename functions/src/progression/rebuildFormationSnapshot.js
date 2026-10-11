@@ -1,10 +1,10 @@
 /**
  * WP-09 — Snapshot de formation matérialisé (SP4).
  *
- * Un seul document `clubs/{clubId}/members/{memberId}/formation_snapshot/current`
- * contient tout l'agrégat de formation d'un membre. Toutes les vues (mobile,
- * web, suggestions) le LISENT au lieu de recalculer — fin de la duplication
- * des deux services clients (Dart + TS).
+ * Le document `clubs/{clubId}/members/{memberId}/formation_snapshot/current`
+ * contient tout l'agrégat de formation d'un membre. Une seconde projection
+ * `pool_formation_snapshot/current`, strictement limitée aux compteurs piscine,
+ * protège les accès des encadrants piscine (MOB-033).
  *
  * Ce fichier expose :
  *   - `rebuildSnapshot(clubId, memberId)` : lit les sources et écrit le doc.
@@ -33,6 +33,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
+const { buildPoolFormationProjection } = require('./poolFormationProjection');
 
 const REGION = 'europe-west1';
 const SNAPSHOT_DOC_ID = 'current';
@@ -503,7 +504,7 @@ function toIso(value) {
 
 /**
  * Reconstruit le snapshot d'un membre et l'écrit dans
- * `members/{memberId}/formation_snapshot/current`.
+ * `members/{memberId}/formation_snapshot/current` et sa projection piscine.
  *
  * @param {string} clubId
  * @param {string} memberId
@@ -636,10 +637,22 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
     },
   };
 
-  await clubRef(db, clubId)
-    .collection('members').doc(memberId)
-    .collection('formation_snapshot').doc(SNAPSHOT_DOC_ID)
-    .set(snapshot, { merge: false });
+  const memberRef = clubRef(db, clubId).collection('members').doc(memberId);
+  const batch = db.batch();
+  batch.set(
+    memberRef.collection('formation_snapshot').doc(SNAPSHOT_DOC_ID),
+    snapshot,
+    { merge: false },
+  );
+  batch.set(
+    memberRef.collection('pool_formation_snapshot').doc(SNAPSHOT_DOC_ID),
+    {
+      ...buildPoolFormationProjection(snapshot),
+      updated_at: FieldValue.serverTimestamp(),
+    },
+    { merge: false },
+  );
+  await batch.commit();
 
   return snapshot;
 }

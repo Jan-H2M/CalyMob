@@ -1338,13 +1338,24 @@ service cloud.firestore {
 
         // WP-09 — snapshot de formation matérialisé. Document dérivé, écrit
         // UNIQUEMENT par les Cloud Functions (Admin SDK, bypass rules). Lecture :
-        // le membre lui-même + tout encadrant (fiche 360° / Who's who — D14).
+        // le membre lui-même + moniteur LIFRAS/admin. Les encadrants piscine
+        // lisent uniquement pool_formation_snapshot ci-dessous.
         // Jamais écrit côté client (le snapshot est un dérivé jetable).
         match /formation_snapshot/{snapshotId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isPiscineFormationEditor(clubId) ||
-            isAdmin(clubId)
+            canValidateLifras(clubId)
+          );
+          allow write: if false;
+        }
+
+        // MOB-033 — projection sans données carrière/théorie/MIL. Elle ne
+        // contient que member_id et les compteurs/progrès piscine et est
+        // écrite par la Cloud Function de reconstruction du snapshot.
+        match /pool_formation_snapshot/{snapshotId} {
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isPiscineFormationEditor(clubId)
           );
           allow write: if false;
         }
@@ -1996,7 +2007,11 @@ service cloud.firestore {
       // formation editors zien de leerlingen die zij begeleiden.
       allow read: if isMember(clubId) && (
         resource.data.memberId == request.auth.uid ||
-        isPiscineFormationEditor(clubId)
+        canValidateLifras(clubId) ||
+        (
+          isPiscineFormationEditor(clubId) &&
+          resource.data.contextType == 'piscine'
+        )
       );
       // Création: de auteur moet altijd zichzelf als observer registreren.
       // Piscine-opmerkingen zijn bewust beperkt tot vrije tekst: geen
@@ -2076,9 +2091,15 @@ service cloud.firestore {
     // contrainte CG que ci-dessus : les règles imbriquées ne s'appliquent PAS
     // aux collection-group queries, il faut une règle {path=**} dédiée avec un
     // club codé en dur (calypso, single-tenant). Restreint aux encadrants de
-    // formation carrière/piscine et admins ; un membre lit son propre snapshot
+    // formation carrière et admins ; un membre lit son propre snapshot
     // via la règle imbriquée sous /members/{memberId}/formation_snapshot).
     match /{path=**}/formation_snapshot/{snapshotId} {
+      allow read: if request.auth != null && canValidateLifras('calypso');
+    }
+
+    // MOB-033 — collection-group dédiée au suivi piscine. Cette projection ne
+    // contient jamais d'exercices carrière/théorie, MIL, objectifs ou notes.
+    match /{path=**}/pool_formation_snapshot/{snapshotId} {
       allow read: if request.auth != null && isPiscineFormationEditor('calypso');
     }
 

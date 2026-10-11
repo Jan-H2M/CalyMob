@@ -1,5 +1,6 @@
 import 'package:calymob/models/formation_snapshot_doc.dart';
 import 'package:calymob/models/member_profile.dart';
+import 'package:calymob/models/pool_formation_snapshot_doc.dart';
 import 'package:calymob/screens/formation/student_360_screen.dart';
 import 'package:calymob/screens/exercises/member_exercises_screen.dart';
 import 'package:calymob/screens/profile/who_is_who_screen.dart';
@@ -16,7 +17,9 @@ void main() {
     expect(find.text('Suivi piscine'), findsOneWidget);
     expect(find.text('Piscine'), findsOneWidget);
     expect(find.text('Observations piscine'), findsOneWidget);
-    expect(find.text('Examen piscine'), findsOneWidget);
+    expect(find.text('Progression piscine'), findsOneWidget);
+    expect(find.text('Validés'), findsOneWidget);
+    expect(find.text('1'), findsNWidgets(3));
     expect(find.text('Expériences brevet'), findsNothing);
     expect(find.text('Remontée assistée carrière'), findsNothing);
     expect(find.text('Examen théorique'), findsNothing);
@@ -139,7 +142,17 @@ Future<void> _pump(
         ),
         scope: scope,
         previewMode: true,
-        previewSnapshot: _snapshot(),
+        previewSnapshot:
+            scope == FormationTrackingScope.full ? _snapshot() : null,
+        previewPoolSnapshot: scope == FormationTrackingScope.piscineOnly
+            ? const PoolFormationSnapshotDoc(
+                memberId: 'student-1',
+                validated: 1,
+                pending: 1,
+                remaining: 1,
+                pct: 33,
+              )
+            : null,
         previewObservations: const [
           {
             'contextType': 'piscine',
