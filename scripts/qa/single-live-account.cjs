@@ -87,6 +87,18 @@ function roleFields(profile) {
     exclude_from_directory: true, qa_managed_by: 'QA-002' };
 }
 
+// Auth is disabled by the caller throughout this state machine. Do not enable
+// if any directory read, repair or verification fails; enable is the last call.
+async function activateHiddenAccount(auth, directoryRef) {
+  if ((await directoryRef.get()).exists) {
+    await directoryRef.delete();
+    if ((await directoryRef.get()).exists) {
+      throw new Error('QA directory exclusion failed; account remains disabled.');
+    }
+  }
+  await auth.updateUser(UID, { disabled: false });
+}
+
 async function run(options, env = process.env) {
   if (!env.QA_SERVICE_ACCOUNT_FILE) throw new Error('Set QA_SERVICE_ACCOUNT_FILE to the existing secured credential.');
   const serviceAccount = JSON.parse(fs.readFileSync(env.QA_SERVICE_ACCOUNT_FILE, 'utf8'));
@@ -162,18 +174,14 @@ async function run(options, env = process.env) {
     await auth.setCustomUserClaims(UID, { app_role: 'user', role: 'user',
       status: 'active', clubId: CLUB, qa: true });
     // A permission/profile switch requires normal password sign-in, not UI spoofing.
-    await auth.updateUser(UID, { disabled: false });
-    if ((await directoryRef.get()).exists) {
-      await auth.updateUser(UID, { disabled: true });
-      throw new Error('QA directory exclusion failed; account disabled.');
-    }
+    await activateHiddenAccount(auth, directoryRef);
     return { project: PROJECT, uid: UID, email: EMAIL, profile: options.profile,
       auditId: auditRef.id, directoryVisible: false, credential: 'macOS Keychain' };
   } finally { await app.delete(); }
 }
 
 module.exports = { PROJECT, UID, EMAIL, KEYCHAIN_SERVICE, profiles, parseArgs,
-  validateEnvironment, assertManaged, roleFields, run };
+  validateEnvironment, assertManaged, roleFields, activateHiddenAccount, run };
 if (require.main === module) {
   run(parseArgs(process.argv.slice(2))).then(result => console.log(JSON.stringify(result)))
     .catch(() => { console.error('QA-002 stopped safely. No credentials logged; inspect the preconditions.'); process.exitCode = 1; });

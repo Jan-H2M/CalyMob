@@ -1,6 +1,34 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseArgs, validateEnvironment, assertManaged, roleFields, UID, EMAIL } = require('./single-live-account.cjs');
+const { activateHiddenAccount } = require('./single-live-account.cjs');
+test('activation happens last, after repair and server verification', async () => {
+  const calls=[]; let visible=true;
+  await activateHiddenAccount({updateUser:async(uid,data)=>{
+    assert.equal(uid,UID); assert.equal(data.disabled,false); calls.push('enable');
+  }}, {get:async()=>{calls.push('get');return {exists:visible};},
+    delete:async()=>{calls.push('delete');visible=false;}});
+  assert.deepEqual(calls,['get','delete','get','enable']);
+});
+test('directory read/delete/reverification failures never enable Auth', async () => {
+  for(const failure of ['first-read','delete','second-read','still-visible']) {
+    let enabled=false,reads=0;
+    const dir={get:async()=>{
+      reads++;
+      if((failure==='first-read'&&reads===1)||(failure==='second-read'&&reads===2)) throw Error('synthetic');
+      return {exists:reads===1||failure==='still-visible'};
+    },delete:async()=>{if(failure==='delete')throw Error('synthetic');}};
+    await assert.rejects(activateHiddenAccount({updateUser:async()=>{enabled=true;}},dir));
+    assert.equal(enabled,false,failure);
+  }
+});
+test('enable failure propagates and has no later success-producing operation', async () => {
+  const calls=[];
+  await assert.rejects(activateHiddenAccount({updateUser:async()=>{
+    calls.push('enable');throw Error('synthetic');
+  }}, {get:async()=>{calls.push('get');return {exists:false};}}));
+  assert.deepEqual(calls,['get','enable']);
+});
 test('writes require explicit opt-in, deployment gate and operator', () => {
   assert.equal(parseArgs([]).apply, false);
   assert.throws(() => parseArgs(['--apply']));
