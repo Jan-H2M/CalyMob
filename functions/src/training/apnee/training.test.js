@@ -128,3 +128,15 @@ test('only matching genuine QR proof permits own correction; roster update prese
   await executeApnee(f.db,'pool',{ ...f.lesson,operationId:'theme',expectedRevision:1,theme:'Autre thème' });
   expect(f.rows.get(path)).toMatchObject({ participation_status:'attended',source:'qr_verified_member_correction',note:'Synthétique' });
 });
+test('remove/re-add clears confirmation provenance until explicitly confirmed again', async () => {
+  const f = await scheduled();
+  const request = { ...f.base,operationId:'attendance',expectedRevision:1,action:'attendance',memberId:'student',sessionId:'session',lessonId:'lesson',status:'attended',note:'Synthétique' };
+  await executeApnee(f.db,'pool',request);
+  await executeApnee(f.db,'pool',{ ...f.lesson,operationId:'remove',expectedRevision:1,memberIds:[] });
+  await executeApnee(f.db,'pool',{ ...f.lesson,operationId:'restore',expectedRevision:2 });
+  const path=`clubs/synthetic/apnee_participations/${participationId('session','lesson','student')}`;
+  expect(f.rows.get(path)).toMatchObject({ participation_status:'rostered',source:'roster_inferred' });
+  const attendance = f.rows.get(path);
+  await executeApnee(f.db,'pool',{ ...request,operationId:'confirm-again',expectedRevision:attendance.revision });
+  expect(f.rows.get(path)).toMatchObject({ participation_status:'attended',source:'manual_verified' });
+});

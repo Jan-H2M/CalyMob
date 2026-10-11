@@ -15,6 +15,16 @@ String apneeTrackName(String track) => track == 'apnee.a1'
 DateTime? apneeDate(dynamic value) =>
     value is Timestamp ? value.toDate() : null;
 
+bool canCorrectApneeParticipation(ApneeRow row,
+        {String? viewerId,
+        required String memberId,
+        bool canManage = false,
+        bool readOnly = false}) =>
+    !readOnly &&
+    apneeDate(row['session_date'])?.isBefore(DateTime.now()) == true &&
+    row['participation_status'] != 'cancelled' &&
+    (canManage || (viewerId == memberId && row['qr_verified'] == true));
+
 bool apneeQrVerified(
     ApneeRow attendee, ApneeRow receipt, String memberId, String sessionId) {
   final proof = attendee['qrVerified'];

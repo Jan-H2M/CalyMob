@@ -10,12 +10,18 @@ class ApneeDossierScreen extends StatelessWidget {
   final String memberName;
   final bool poolOnly;
   final ApneeTrainingService? service;
+  final String? viewerId;
+  final bool canManage;
+  final bool readOnly;
   const ApneeDossierScreen(
       {super.key,
       required this.clubId,
       required this.memberId,
       required this.memberName,
       this.poolOnly = false,
+      this.viewerId,
+      this.canManage = false,
+      this.readOnly = false,
       this.service});
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -45,6 +51,9 @@ class ApneeDossierScreen extends StatelessWidget {
                       .map((row) => _ApneeTrackCard(
                           clubId: clubId,
                           enrollment: row,
+                          viewerId: viewerId,
+                          canManage: canManage,
+                          readOnly: readOnly,
                           poolOnly: poolOnly,
                           service: service ?? ApneeTrainingService()))
                       .toList());
@@ -129,6 +138,7 @@ class ApneeStudentList extends StatelessWidget {
                                       clubId: clubId,
                                       memberId: members[index],
                                       memberName: name,
+                                      canManage: true,
                                       poolOnly: poolOnly))));
                     },
                   ));
@@ -141,10 +151,16 @@ class _ApneeTrackCard extends StatefulWidget {
   final ApneeRow enrollment;
   final bool poolOnly;
   final ApneeTrainingService service;
+  final String? viewerId;
+  final bool canManage;
+  final bool readOnly;
   const _ApneeTrackCard(
       {required this.clubId,
       required this.enrollment,
       required this.poolOnly,
+      required this.viewerId,
+      required this.canManage,
+      required this.readOnly,
       required this.service});
   @override
   State<_ApneeTrackCard> createState() => _ApneeTrackCardState();
@@ -341,6 +357,9 @@ class _ApneeTrackCardState extends State<_ApneeTrackCard> {
                         _ApneeHistory(
                             clubId: widget.clubId,
                             enrollment: widget.enrollment,
+                            viewerId: widget.viewerId,
+                            canManage: widget.canManage,
+                            readOnly: widget.readOnly,
                             service: _service),
                         if (!widget.poolOnly)
                           StreamBuilder<List<ApneeRow>>(
@@ -377,12 +396,103 @@ String _date(dynamic value) {
       : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
+Future<void> editApneeParticipation(BuildContext context, String clubId,
+    ApneeRow row, ApneeTrainingService service) async {
+  var note = row['note'] as String? ?? '';
+  var status = ['absent', 'attended'].contains(row['participation_status'])
+      ? row['participation_status'] as String
+      : '';
+  var busy = false;
+  String? error;
+  await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setState) => AlertDialog(
+              title: Text('${_date(row['session_date'])} · Apnée'),
+              content: SingleChildScrollView(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text(
+                    'Corriger la participation à ce cours. Aucun scan QR ni résultat officiel ne sera créé.'),
+                DropdownButton<String>(
+                    isExpanded: true,
+                    value: status,
+                    items: const [
+                      DropdownMenuItem(
+                          value: '', child: Text('Choisir la participation…')),
+                      DropdownMenuItem(
+                          value: 'attended', child: Text('A participé')),
+                      DropdownMenuItem(
+                          value: 'absent', child: Text('N’a pas participé'))
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (value) => setState(() => status = value!)),
+                TextFormField(
+                    initialValue: note,
+                    onChanged: (value) => note = value,
+                    enabled: !busy,
+                    maxLength: 2000,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                        labelText: 'Remarque de cette séance')),
+                if (error != null)
+                  Text(error!, style: const TextStyle(color: Colors.red)),
+              ])),
+              actions: [
+                TextButton(
+                    onPressed: busy ? null : () => Navigator.pop(dialogContext),
+                    child: const Text('Annuler')),
+                FilledButton(
+                    onPressed: busy || status.isEmpty
+                        ? null
+                        : () async {
+                            setState(() {
+                              busy = true;
+                              error = null;
+                            });
+                            try {
+                              await service.save(clubId, {
+                                'action': 'attendance',
+                                'memberId': row['member_id'],
+                                'sessionId': row['session_id'],
+                                'lessonId': row['course_id'],
+                                'status': status,
+                                'note': note,
+                                'expectedRevision': row['revision'] ?? 0
+                              });
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                            } catch (_) {
+                              if (dialogContext.mounted) {
+                                setState(() {
+                                  busy = false;
+                                  error =
+                                      'Correction impossible. Rechargez la séance.';
+                                });
+                              }
+                            }
+                          },
+                    child: Text(busy ? 'Enregistrement…' : 'Enregistrer'))
+              ],
+            ),
+          ));
+}
+
 class _ApneeHistory extends StatelessWidget {
   final String clubId;
   final ApneeRow enrollment;
   final ApneeTrainingService service;
+  final String? viewerId;
+  final bool canManage;
+  final bool readOnly;
   const _ApneeHistory(
-      {required this.clubId, required this.enrollment, required this.service});
+      {required this.clubId,
+      required this.enrollment,
+      required this.service,
+      required this.viewerId,
+      required this.canManage,
+      required this.readOnly});
   @override
   Widget build(BuildContext context) => StreamBuilder<List<ApneeRow>>(
         stream: service.history(clubId, enrollment['member_id']),
@@ -416,22 +526,25 @@ class _ApneeHistory extends StatelessWidget {
               children: rows
                   .map((row) => ListTile(
                         dense: true,
+                        trailing: canCorrectApneeParticipation(row,
+                                viewerId: viewerId,
+                                memberId: enrollment['member_id'],
+                                canManage: canManage,
+                                readOnly: readOnly)
+                            ? IconButton(
+                                icon: const Icon(Icons.edit_note,
+                                    color: Colors.white),
+                                tooltip:
+                                    'Participation et remarque de cette séance',
+                                onPressed: () => editApneeParticipation(
+                                    context, clubId, row, service))
+                            : null,
                         title: Text(
                             '${_date(row['session_date'])} · ${row['hour'] == '1ere_heure' ? '20h15' : '21h15'} · ${row['theme'] ?? 'Apnée'}',
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 12)),
                         subtitle: Text(
-                            row['participation_status'] == 'absent'
-                                ? 'Absent'
-                                : row['qr_verified'] == true
-                                    ? 'Présence QR vérifiée · cours attribué au roster'
-                                    : row['source'] == 'roster_inferred'
-                                        ? (apneeDate(row['session_date'])
-                                                    ?.isAfter(DateTime.now()) ==
-                                                true
-                                            ? 'Prévu au roster'
-                                            : 'Participation déduite du roster · scan non confirmé')
-                                        : 'Participation confirmée',
+                            '${row['participation_status'] == 'absent' ? 'Absent' : row['qr_verified'] == true ? 'Présence QR vérifiée · cours attribué au roster' : row['source'] == 'roster_inferred' ? (apneeDate(row['session_date'])?.isAfter(DateTime.now()) == true ? 'Prévu au roster' : 'Participation déduite du roster · scan non confirmé') : 'Participation confirmée'}${(row['note'] as String?)?.isNotEmpty == true ? '\n${row['note']}' : ''}',
                             style: const TextStyle(
                                 color: Colors.white70, fontSize: 10)),
                       ))

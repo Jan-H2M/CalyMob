@@ -146,7 +146,9 @@ async function executeApnee(db, uid, input) {
           const old = previous.exists ? previous.data() : {};
           additional.push([pRef, { ...old, member_id: memberId, session_id: data.sessionId, course_id: data.lessonId,
             track: data.track, hour: data.hour, theme: after.theme, instructor_ids: data.instructorIds,
-            session_date: session.data().date, source: old.source || 'roster_inferred',
+            session_date: session.data().date,
+            source: members.includes(memberId) && old.participation_status === 'cancelled'
+              ? 'roster_inferred' : old.source || 'roster_inferred',
             participation_status: members.includes(memberId)
               ? (['absent', 'attended'].includes(old.participation_status) ? old.participation_status : 'rostered') : 'cancelled',
             revision: (old.revision || 0) + 1 }]);
@@ -160,7 +162,8 @@ async function executeApnee(db, uid, input) {
         if (!member.exists || !isActiveMember(member.data())) fail('failed-precondition', 'Membre actif requis.');
         if (session.data().date.toMillis() > Date.now()) fail('failed-precondition', 'Séance future.');
         const enrollment = await tx.get(club.collection('apnee_enrollments').doc(enrollmentId(data.memberId, lesson.data().track)));
-        if (!enrollment.exists || enrollment.data().status !== 'active') fail('failed-precondition', 'Inscription apnée active requise.');
+        if (!enrollment.exists || !['active', 'closed'].includes(enrollment.data().status))
+          fail('failed-precondition', 'Inscription apnée enregistrée requise.');
         if (own) {
           const attendee = await tx.get(sessionRef.collection('attendees').doc(uid));
           const receipt = await tx.get(sessionRef.collection('qr_scan_receipts').doc(uid));

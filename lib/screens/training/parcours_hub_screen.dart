@@ -195,6 +195,7 @@ class ParcoursHubScreen extends StatelessWidget {
             builder: (_) => ApneeDossierScreen(
                 clubId: FirebaseConfig.defaultClubId,
                 memberId: uid,
+                viewerId: uid,
                 memberName: _memberNameForExercises(context))));
         return;
       case 'carnet':

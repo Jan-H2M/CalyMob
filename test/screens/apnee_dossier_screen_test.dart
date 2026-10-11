@@ -1,10 +1,61 @@
 import 'package:calymob/screens/formation/apnee_dossier_screen.dart';
 import 'package:calymob/services/apnee_training_service.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+      'dated participation popup saves attendance and note, never official results',
+      (tester) async {
+    ApneeRow? saved;
+    final service = ApneeTrainingService(
+        firestore: FakeFirebaseFirestore(),
+        invoke: (payload) async {
+          saved = payload;
+        });
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (context) => Scaffold(
+                body: TextButton(
+                    child: const Text('Modifier'),
+                    onPressed: () => editApneeParticipation(
+                        context,
+                        'qa',
+                        {
+                          'member_id': 'student',
+                          'session_id': 'synthetic',
+                          'course_id': 'a1',
+                          'revision': 4,
+                          'session_date':
+                              Timestamp.fromDate(DateTime(2026, 1, 6)),
+                          'participation_status': 'rostered',
+                        },
+                        service))))));
+    await tester.tap(find.text('Modifier'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.enterText(find.byType(TextField), 'Remarque synthétique');
+    expect(
+        tester
+            .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Enregistrer'))
+            .onPressed,
+        isNull);
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A participé').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(saved, containsPair('action', 'attendance'));
+    expect(saved, containsPair('status', 'attended'));
+    expect(saved, containsPair('note', 'Remarque synthétique'));
+    expect(saved, containsPair('expectedRevision', 4));
+    expect(saved, containsPair('sessionId', 'synthetic'));
+    expect(saved!.containsKey('requirementKey'), false);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
       'own apnee dossier works without a SCUBA brevet and displays sourced cards',
       (tester) async {

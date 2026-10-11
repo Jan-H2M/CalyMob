@@ -369,10 +369,20 @@ class _Student360ScreenState extends State<Student360Screen> {
                   ),
                 ),
           actions: [
-            IconButton(tooltip: 'Parcours apnée', icon: const Icon(Icons.water),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ApneeDossierScreen(
-                clubId: widget.clubId, memberId: widget.member.id, memberName: _fullName,
-                poolOnly: widget.scope == FormationTrackingScope.piscineOnly)))),
+            IconButton(
+                tooltip: 'Parcours apnée',
+                icon: const Icon(Icons.water),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => ApneeDossierScreen(
+                        clubId: widget.clubId,
+                        memberId: widget.member.id,
+                        memberName: _fullName,
+                        viewerId: FirebaseAuth.instance.currentUser?.uid,
+                        canManage:
+                            !widget.isOwnProfile && !widget.readOnlyProfile,
+                        readOnly: widget.readOnlyProfile,
+                        poolOnly: widget.scope ==
+                            FormationTrackingScope.piscineOnly)))),
             ...widget.appBarActions,
             if (!widget.isOwnProfile &&
                 widget.scope == FormationTrackingScope.full &&

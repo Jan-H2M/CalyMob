@@ -6,6 +6,38 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
+      'member correction UI requires own genuine QR; comparison stays read-only',
+      () {
+    final row = <String, dynamic>{
+      'session_date': Timestamp.fromDate(DateTime(2026, 1, 6)),
+      'participation_status': 'rostered'
+    };
+    expect(
+        canCorrectApneeParticipation(row,
+            memberId: 'student', viewerId: 'student'),
+        false);
+    row['qr_verified'] = true;
+    expect(
+        canCorrectApneeParticipation(row,
+            memberId: 'student', viewerId: 'student'),
+        true);
+    expect(
+        canCorrectApneeParticipation(row,
+            memberId: 'student', viewerId: 'other'),
+        false);
+    expect(
+        canCorrectApneeParticipation(row, memberId: 'student', canManage: true),
+        true);
+    expect(
+        canCorrectApneeParticipation(row,
+            memberId: 'student', canManage: true, readOnly: true),
+        false);
+    row['session_date'] = Timestamp.fromDate(DateTime(2099));
+    expect(
+        canCorrectApneeParticipation(row, memberId: 'student', canManage: true),
+        false);
+  });
+  test(
       'source catalogue has 79 stable separate requirements and no invented protocol',
       () async {
     final catalog = await ApneeTrainingService.catalog();
