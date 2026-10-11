@@ -28,6 +28,7 @@ FormationSnapshotDoc memberDossierSnapshot(
     required NiveauLIFRAS target,
     required List<ExerciceLIFRAS> catalog,
     required List<ExerciceValide> validations,
+    bool useSnapshotValidations = false,
     FormationSnapshotDoc? source}) {
   final original = source ?? FormationSnapshotDoc.fromMap(memberId, {});
   final validated = <SnapshotExercise>[];
@@ -40,9 +41,13 @@ FormationSnapshotDoc memberDossierSnapshot(
         code: exercise.code,
         description: exercise.description,
         niveau: exercise.niveau.code);
-    if (matches.any((v) => v.isValidated)) {
+    if (matches.any((v) => v.isValidated) ||
+        (useSnapshotValidations &&
+            original.validated.any((v) => v.code == exercise.code))) {
       validated.add(row);
-    } else if (matches.any((v) => v.isPending)) {
+    } else if (matches.any((v) => v.isPending) ||
+        (useSnapshotValidations &&
+            original.pending.any((v) => v.code == exercise.code))) {
       pending.add(row);
     } else {
       remaining.add(row);

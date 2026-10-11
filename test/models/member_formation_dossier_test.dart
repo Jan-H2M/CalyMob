@@ -50,11 +50,17 @@ void main() {
   test('old snapshot requirements cannot be presented as the new goal', () {
     final source = FormationSnapshotDoc.fromMap('synthetic', {
       'target_level': '2*',
-      'goal_note': 'Objectif conservé',
-      'mil_per_requirement': {
-        'total': {'have': 25, 'need': 25}
+      'goals': {'note': 'Objectif conservé'},
+      'mil_experience': {
+        'per_requirement': {
+          'total': {'have': 25, 'need': 25}
+        },
+        'module_pct': 100,
       },
     });
+    expect(source.goalNote, 'Objectif conservé');
+    expect(source.milPerRequirement, isNotEmpty);
+    expect(source.milModulePct, 100);
     final dossier = memberDossierSnapshot(
         memberId: 'synthetic',
         currentCode: '2',
@@ -66,6 +72,31 @@ void main() {
     expect(dossier.milPerRequirement, isEmpty);
     expect(dossier.milModulePct, isNull);
     expect(dossier.goalNote, source.goalNote);
+  });
+
+  test('monitor rebases snapshot statuses on the new goal catalogue', () {
+    final source = FormationSnapshotDoc.fromMap('synthetic', {
+      'target_level': '2*',
+      'current_code': '2',
+      'exercises': {
+        'validated': [
+          {'code': 'P2.RA', 'niveau': 'P2'},
+          {'code': 'P3.RA', 'niveau': 'P3'},
+        ]
+      },
+    });
+    expect(source.validated.length, 2);
+    final dossier = memberDossierSnapshot(
+        memberId: 'synthetic',
+        currentCode: '2',
+        target: NiveauLIFRAS.p3,
+        catalog: [_exercise('P3.RA'), _exercise('P3.EXT')],
+        validations: [],
+        source: source,
+        useSnapshotValidations: true);
+    expect(dossier.targetLevel, '3*');
+    expect(dossier.validated.map((e) => e.code), ['P3.RA']);
+    expect(dossier.remaining.map((e) => e.code), ['P3.EXT']);
   });
 }
 

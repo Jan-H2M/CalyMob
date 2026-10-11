@@ -12,6 +12,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('live target never relabels stale snapshot counters or exercises',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        milOverview:
+            const MilExperienceOverview(preferredBrevet: '3', byBrevet: {}));
+    expect(find.text('1* → 3*'), findsOneWidget);
+    expect(find.byTooltip('Épreuves en milieu naturel : non renseignées'),
+        findsOneWidget);
+    expect(find.byTooltip('Examen théorique : non renseigné'), findsOneWidget);
+    expect(find.text('P2.RA'), findsNothing);
+    expect(find.textContaining('Remontée assistée carrière'), findsNothing);
+  });
   testWidgets('own dossier keeps pupil slots but hides every monitor action',
       (tester) async {
     await _pump(tester,
@@ -498,6 +511,7 @@ Future<void> _pump(
   FormationSnapshotDoc? snapshot,
   Future<MilProtocol?> Function(String, bool)? protocolLoader,
   bool own = false,
+  MilExperienceOverview? milOverview,
   Size size = const Size(1200, 1800),
 }) async {
   tester.view.physicalSize = size;
@@ -538,11 +552,12 @@ Future<void> _pump(
         previewSnapshot: scope == FormationTrackingScope.full
             ? snapshot ?? _snapshot()
             : null,
-        previewMilOverview: scope == FormationTrackingScope.full
-            ? snapshot == null
-                ? _milOverview()
-                : MilExperienceOverview.fromSnapshot(snapshot)
-            : null,
+        previewMilOverview: milOverview ??
+            (scope == FormationTrackingScope.full
+                ? snapshot == null
+                    ? _milOverview()
+                    : MilExperienceOverview.fromSnapshot(snapshot)
+                : null),
         previewPoolSnapshot: scope == FormationTrackingScope.piscineOnly
             ? const PoolFormationSnapshotDoc(
                 memberId: 'student-1',

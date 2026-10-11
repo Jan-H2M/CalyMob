@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/member_profile.dart';
+import '../../models/member_formation_dossier.dart';
+import '../../services/lifras_service.dart';
 import '../../models/mil_experience_overview.dart';
 import '../../models/pool_formation_snapshot_doc.dart';
 import '../../models/pool_student_history.dart';
@@ -155,7 +157,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Future<void> _loadFull() async {
-    final snapshot = widget.providedSnapshot ??
+    var snapshot = widget.providedSnapshot ??
         await _reader!.getSnapshot(
           widget.clubId,
           widget.member.id,
@@ -173,6 +175,29 @@ class _Student360ScreenState extends State<Student360Screen> {
       );
     } catch (error, stackTrace) {
       debugPrint('[student_360] lecture MIL impossible: $error\n$stackTrace');
+    }
+    final target = dossierTargetNiveau(
+      memberTarget: widget.member.targetFormationLevel,
+      currentCode: widget.member.plongeurCode,
+      snapshotTarget: snapshot?.targetLevel,
+    );
+    if (widget.providedSnapshot == null &&
+        snapshot != null &&
+        target != null &&
+        milBrevetCodeForTarget(snapshot.targetLevel) !=
+            milBrevetCodeForTarget(dossierTargetLabel(target))) {
+      // A materialized snapshot may lag behind a changed goal. Rebuild only
+      // its exercise view from the current catalogue; never relabel old counts.
+      final catalog =
+          await LifrasService().getExercicesByNiveau(widget.clubId, target);
+      snapshot = memberDossierSnapshot(
+          memberId: snapshot.memberId,
+          currentCode: widget.member.plongeurCode ?? snapshot.currentCode,
+          target: target,
+          catalog: catalog,
+          validations: const [],
+          source: snapshot,
+          useSnapshotValidations: true);
     }
     final observations = await _loadObservations();
     if (!mounted) return;
@@ -323,6 +348,22 @@ class _Student360ScreenState extends State<Student360Screen> {
       );
 
   Widget _buildContent(FormationSnapshotDoc s) {
+    final preferred = _milOverview?.preferredBrevet;
+    if (preferred != null &&
+        milBrevetCodeForTarget(s.targetLevel) != preferred) {
+      final target = dossierTargetNiveau(memberTarget: preferred);
+      if (target != null) {
+        // Preview or unavailable catalogue: unknown is safer than old-goal
+        // percentages. Normal loads reconcile with the current catalogue above.
+        s = memberDossierSnapshot(
+            memberId: s.memberId,
+            currentCode: s.currentCode,
+            target: target,
+            catalog: const [],
+            validations: const [],
+            source: s);
+      }
+    }
     return Column(
       children: [
         _buildHeader(s),
