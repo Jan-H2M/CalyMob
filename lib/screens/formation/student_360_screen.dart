@@ -26,6 +26,7 @@ import '../../utils/member_name.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/live_qa_session_resume.dart';
 import 'student_exercise_comparison_screen.dart';
+import 'apnee_dossier_screen.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_catalog_sheet.dart';
 import '../../widgets/formation/mil_protocol_sheet.dart';
@@ -368,6 +369,10 @@ class _Student360ScreenState extends State<Student360Screen> {
                   ),
                 ),
           actions: [
+            IconButton(tooltip: 'Parcours apnée', icon: const Icon(Icons.water),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ApneeDossierScreen(
+                clubId: widget.clubId, memberId: widget.member.id, memberName: _fullName,
+                poolOnly: widget.scope == FormationTrackingScope.piscineOnly)))),
             ...widget.appBarActions,
             if (!widget.isOwnProfile &&
                 widget.scope == FormationTrackingScope.full &&

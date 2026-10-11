@@ -6,6 +6,7 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../profile/who_is_who_screen.dart';
 import '../training/actions_evaluations_screen.dart';
+import 'apnee_dossier_screen.dart';
 
 /// Direct instructor entry point for the existing formation overview.
 ///
@@ -35,7 +36,7 @@ class _InstructorFormationOverviewScreenState
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: OceanGradientBackground(
@@ -49,6 +50,7 @@ class _InstructorFormationOverviewScreenState
                   unselectedLabelColor: Colors.white70,
                   tabs: [
                     Tab(text: 'Élèves'),
+                    Tab(text: 'Apnée'),
                     Tab(text: 'Actions en attente'),
                   ],
                 ),
@@ -60,6 +62,8 @@ class _InstructorFormationOverviewScreenState
                         searchQuery: _searchQuery,
                         scope: widget.scope,
                       ),
+                      ApneeStudentList(clubId: FirebaseConfig.defaultClubId, search: _searchQuery,
+                        poolOnly: widget.scope == FormationTrackingScope.piscineOnly),
                       const ActionsEvaluationsScreen(embedded: true),
                     ],
                   ),

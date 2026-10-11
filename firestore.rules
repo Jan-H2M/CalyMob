@@ -652,6 +652,33 @@ service cloud.firestore {
       }
 
       // LIFRAS exercises - can be read by club members (mobile + web), written by admins only
+      // MOB-035: independent apnée enrolment, lessons and signed-card results.
+      // Clients can never fabricate official results, attendance or audit.
+      match /apnee_enrollments/{enrollmentId} {
+        allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+          || isPiscineFormationEditor(clubId));
+        allow write: if false;
+        match /requirements/{requirementId} {
+          allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+            || canValidateLifras(clubId)
+            || (isPiscineFormationEditor(clubId) && resource.data.setting == 'pool'));
+          allow write: if false;
+        }
+        match /awards/{awardId} {
+          allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+            || canValidateLifras(clubId));
+          allow write: if false;
+        }
+      }
+      match /apnee_participations/{participationId} {
+        allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+          || isPiscineFormationEditor(clubId));
+        allow write: if false;
+      }
+      match /apnee_audit/{operationId} {
+        allow read: if isAdmin(clubId);
+        allow write: if false;
+      }
       match /exercices_lifras/{exerciceId} {
         allow read: if isMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
@@ -1771,6 +1798,10 @@ service cloud.firestore {
       //         gonflage (map: {19h45, 20h15, 21h30} → array), type ('piscine'|'theorie'),
       //         theorie (optional map: {19h30, 21h45} → {encadrants, theme})
       match /piscine_sessions/{sessionId} {
+        match /apnee_lessons/{lessonId} {
+          allow read: if isMember(clubId);
+          allow write: if false;
+        }
         match /qr_scan_receipts/{memberId} {
           allow read: if isMember(clubId);
           allow write: if false;

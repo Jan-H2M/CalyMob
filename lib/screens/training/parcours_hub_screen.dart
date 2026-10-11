@@ -16,6 +16,7 @@ import 'actions_evaluations_screen.dart';
 import 'historical_claims_screen.dart';
 import 'mon_carnet_screen.dart';
 import '../formation/my_declarations_screen.dart';
+import '../formation/apnee_dossier_screen.dart';
 import 'stats_screen.dart';
 
 const _parcoursSecondaryText = Color(0xFF5F6B7A);
@@ -88,6 +89,14 @@ const parcoursFormationOverviewEntry = ParcoursHubEntryDefinition(
   color: Color(0xFF0369A1),
 );
 
+const parcoursApneeEntry = ParcoursHubEntryDefinition(
+  key: 'apnee',
+  title: 'Mon parcours apnée',
+  subtitle: 'Suivre A1 / Discovery ou A2, indépendamment du brevet de plongée.',
+  icon: Icons.water_outlined,
+  color: AppColors.info,
+);
+
 class ParcoursHubScreen extends StatelessWidget {
   const ParcoursHubScreen({super.key});
 
@@ -130,6 +139,9 @@ class ParcoursHubScreen extends StatelessWidget {
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[1]),
                     ),
+                    _ParcoursCard(
+                        definition: parcoursApneeEntry,
+                        onTap: () => _open(context, parcoursApneeEntry)),
                     if (formationScope != null)
                       _ParcoursCard(
                         definition: parcoursFormationOverviewEntry,
@@ -176,6 +188,15 @@ class ParcoursHubScreen extends StatelessWidget {
   }) {
     final navigator = Navigator.of(context);
     switch (definition.key) {
+      case 'apnee':
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid == null) return;
+        navigator.push(MaterialPageRoute(
+            builder: (_) => ApneeDossierScreen(
+                clubId: FirebaseConfig.defaultClubId,
+                memberId: uid,
+                memberName: _memberNameForExercises(context))));
+        return;
       case 'carnet':
         navigator.push(
           MaterialPageRoute(builder: (_) => const MonCarnetScreen()),
