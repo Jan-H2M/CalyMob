@@ -39,7 +39,15 @@ class MilProtocolCodeSheet extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             final candidates = snapshot.data ?? const <MilProtocol>[];
-            if (snapshot.hasError || candidates.isEmpty) {
+            if (snapshot.hasError) {
+              return MilProtocolSheet(
+                clubId: clubId,
+                code: code,
+                pool: false,
+                loader: () => Future<MilProtocol?>.error(snapshot.error!),
+              );
+            }
+            if (candidates.isEmpty) {
               return MilProtocolSheet(
                 clubId: clubId,
                 code: code,

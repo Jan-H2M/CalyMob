@@ -4,6 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('pupil protocol lookup preserves unavailable catalogue status',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MilProtocolCodeSheet(
+                clubId: 'calypso',
+                code: 'MC.OP',
+                loader: () =>
+                    Future.error(StateError('synthetic read error'))))));
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('Catalogue MIL indisponible'), findsOneWidget);
+    expect(find.textContaining('Aucun protocole MIL'), findsNothing);
+    expect(find.textContaining('synthetic read error'), findsNothing);
+  });
   testWidgets('asks for medium when a MIL code has two protocols',
       (tester) async {
     const natural = MilProtocol(
