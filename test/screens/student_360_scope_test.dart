@@ -11,6 +11,62 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('brevet header separates completed trials exams and experience',
+      (tester) async {
+    final snapshot = FormationSnapshotDoc.fromMap('student-1', {
+      'target_level': '3*',
+      'current_code': '2',
+      'exercises': {
+        'validated': [
+          for (final code in ['P3.DP1', 'P3.DP2', 'P3.RA'])
+            {'code': code, 'description': 'Épreuve synthétique'},
+          {'code': 'P3.EXT', 'description': 'Examen théorique'},
+        ],
+        'pending_claims': [
+          {'code': 'P3.EXP', 'label': 'Examen piscine'},
+        ],
+        'remaining': [
+          for (final code in ['P3.RS', 'P3.SF1', 'P3.SF2'])
+            {'code': code, 'description': 'Épreuve synthétique'},
+          {'code': 'P3.EXP', 'description': 'Examen piscine'},
+        ],
+      },
+      'mil_experience': {
+        'module_pct': 100,
+        'per_requirement': {
+          'total_milieu_naturel': {'have': 75, 'need': 75},
+          'mer': {'have': 0, 'need': 20, 'data_missing': true},
+        },
+      },
+    });
+    await _pump(tester, scope: FormationTrackingScope.full, snapshot: snapshot);
+    expect(find.text('3 sur 6 réalisées'), findsOneWidget);
+    expect(find.text('Examen théorique'), findsNWidgets(2));
+    expect(find.text('Réalisé'), findsOneWidget);
+    expect(find.text('Examen piscine'), findsOneWidget);
+    expect(find.text('En attente de validation'), findsOneWidget);
+    expect(find.text('À vérifier'), findsOneWidget);
+    expect(find.text('Suffisante'), findsNothing);
+    expect(find.text('Expériences comptabilisées'), findsNothing);
+    expect(find.text('Plongées'), findsNothing);
+    expect(find.text('Progression par volet'), findsNothing);
+  });
+
+  testWidgets('brevet header fits a narrow phone and keeps unknowns honest',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        size: const Size(320, 640),
+        snapshot: FormationSnapshotDoc.fromMap('student-1', {
+          'target_level': '2*',
+          'current_code': '1',
+        }));
+    expect(tester.takeException(), isNull);
+    expect(find.text('Non renseigné'), findsNWidgets(2));
+    expect(find.text('Non renseignée'), findsOneWidget);
+    expect(find.text('Suffisante'), findsNothing);
+  });
+
   testWidgets('natural exercises omit the redundant modality summary',
       (tester) async {
     await _pump(tester, scope: FormationTrackingScope.full);
@@ -19,7 +75,7 @@ void main() {
     expect(find.text('Préparer la prochaine séance'), findsOneWidget);
     expect(find.text('Exercices en milieu naturel et théorie'), findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsOneWidget);
-    expect(find.text('Examen théorique'), findsOneWidget);
+    expect(find.text('Examen théorique'), findsNWidgets(2));
     expect(find.text('Expériences brevet'), findsOneWidget);
   });
 
@@ -111,7 +167,7 @@ void main() {
   ) async {
     await _pump(tester, scope: FormationTrackingScope.full);
 
-    expect(find.text('Exercices'), findsWidgets);
+    expect(find.text('Épreuves en milieu naturel'), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
     expect(find.text('Objectifs'), findsOneWidget);
     expect(find.text('Observations'), findsOneWidget);
@@ -209,8 +265,10 @@ Future<void> _pump(
   WidgetTester tester, {
   required FormationTrackingScope scope,
   List<PoolStudentSession> history = const [],
+  FormationSnapshotDoc? snapshot,
+  Size size = const Size(1200, 1800),
 }) async {
-  tester.view.physicalSize = const Size(1200, 1800);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -228,10 +286,14 @@ Future<void> _pump(
         scope: scope,
         previewMode: true,
         previewPoolHistory: history,
-        previewSnapshot:
-            scope == FormationTrackingScope.full ? _snapshot() : null,
-        previewMilOverview:
-            scope == FormationTrackingScope.full ? _milOverview() : null,
+        previewSnapshot: scope == FormationTrackingScope.full
+            ? snapshot ?? _snapshot()
+            : null,
+        previewMilOverview: scope == FormationTrackingScope.full
+            ? snapshot == null
+                ? _milOverview()
+                : MilExperienceOverview.fromSnapshot(snapshot)
+            : null,
         previewPoolSnapshot: scope == FormationTrackingScope.piscineOnly
             ? const PoolFormationSnapshotDoc(
                 memberId: 'student-1',

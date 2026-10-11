@@ -31,8 +31,8 @@ bool formationObservationVisible(
 /// WP-10 — Fiche élève 360°.
 ///
 /// Lecteur PUR du snapshot matérialisé (WP-09) + observations. En-tête
-/// (photo, trajet, % brevet, % formation, stats) + 4 onglets :
-/// Exercices · Expérience (MIL) · Objectifs (lecture seule, D7) · Observations.
+/// (photo, trajet, épreuves, examens et expérience requise) + onglets :
+/// Milieu naturel · Piscine · Expériences brevet · Objectifs · Observations.
 class Student360Screen extends StatefulWidget {
   final String clubId;
   final MemberProfile member;
@@ -409,6 +409,8 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Widget _buildHeader(FormationSnapshotDoc s) {
     final m = widget.member;
+    final natural = s.modalityProgress[FormationModality.career]!;
+    final exams = s.examProgress;
     final liveTargetCode = _milOverview?.initialBrevet;
     final liveMil =
         liveTargetCode == null ? null : _milOverview?.byBrevet[liveTargetCode];
@@ -432,53 +434,110 @@ class _Student360ScreenState extends State<Student360Screen> {
         ),
       ),
       padding: EdgeInsets.fromLTRB(16, topInset, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _avatar(m, 48),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  trajet.isEmpty ? 'Suivi du brevet' : trajet,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _brevetStatusRow(
+            Icons.scuba_diving,
+            'Épreuves en milieu naturel',
+            natural.total == 0
+                ? 'Non renseignées'
+                : '${natural.validated} sur ${natural.total} réalisées',
+            detail: natural.pending > 0
+                ? '${natural.pending} en attente de validation'
+                : null,
+            complete: natural.total > 0 && natural.validated == natural.total,
+          ),
+          _examStatusRow('Examen théorique', exams[FormationModality.theory]!,
+              Icons.school_outlined),
+          _examStatusRow('Examen piscine', exams[FormationModality.pool]!,
+              Icons.pool_outlined),
+          _brevetStatusRow(
+            Icons.fact_check_outlined,
+            'Expérience requise pour le brevet',
+            liveMil == null || liveMil.requirements.isEmpty
+                ? 'Non renseignée'
+                : liveMil.requiredCount == 0
+                    ? 'Aucune exigence'
+                    : liveMil.isSufficient
+                        ? 'Suffisante'
+                        : liveMil.hasMissingData
+                            ? 'À vérifier'
+                            : 'À compléter',
+            detail: liveMil != null && liveMil.requiredCount > 0
+                ? '${liveMil.attainedCount} sur ${liveMil.requiredCount} exigences atteintes'
+                    '${liveMil.hasMissingData ? ' · données manquantes' : ''}'
+                : null,
+            complete: liveMil?.isSufficient == true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _examStatusRow(
+      String label, FormationModalityProgress progress, IconData icon) {
+    final done = progress.total > 0 && progress.validated == progress.total;
+    return _brevetStatusRow(
+      icon,
+      label,
+      progress.total == 0
+          ? 'Non renseigné'
+          : done
+              ? 'Réalisé'
+              : progress.remaining == 0 && progress.pending > 0
+                  ? 'En attente de validation'
+                  : 'À faire',
+      detail: !done && progress.pending > 0 && progress.remaining > 0
+          ? '${progress.pending} en attente de validation'
+          : null,
+      complete: done,
+    );
+  }
+
+  Widget _brevetStatusRow(IconData icon, String label, String status,
+      {String? detail, bool complete = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _avatar(m, 64),
-          const SizedBox(width: 14),
+          Icon(icon, color: Colors.white70, size: 20),
+          const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (trajet.isNotEmpty)
-                  Text(
-                    trajet,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
+                Text(label,
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 12)),
+                Text(status,
+                    style: TextStyle(
+                      color: complete ? Colors.greenAccent : Colors.white,
                       fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                _progressBar('Exercices', s.exercisePct, AppColors.lichtblauw),
-                if (liveMil != null || s.hasMil) ...[
-                  const SizedBox(height: 6),
-                  _progressBar(
-                    'Expériences comptabilisées',
-                    liveMil?.modulePct ?? s.milPct,
-                    Colors.amberAccent,
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 4,
-                  children: [
-                    _stat('Plongées', '${s.diveStats.total}'),
-                    _stat('Mer', '${s.diveStats.mer}'),
-                    _stat(
-                      'Prof. max',
-                      s.diveStats.maxDepthMeters == null
-                          ? '—'
-                          : '${s.diveStats.maxDepthMeters!.toStringAsFixed(0)} m',
-                    ),
-                    if (s.attentionCount > 0)
-                      _stat('⚠ Attention', '${s.attentionCount}'),
-                    if (s.pendingCount > 0)
-                      _stat('⏳ En attente', '${s.pendingCount}'),
-                  ],
-                ),
+                      fontSize: 14,
+                    )),
+                if (detail != null)
+                  Text(detail,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 11)),
               ],
             ),
           ),
@@ -526,45 +585,6 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Widget _progressBar(String label, int pct, Color color) {
-    final p = (pct.clamp(0, 100)) / 100.0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 12,
-              ),
-            ),
-            Text(
-              '$pct %',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 3),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: LinearProgressIndicator(
-            value: p,
-            minHeight: 7,
-            backgroundColor: Colors.white.withValues(alpha: 0.18),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _fractionProgressBar(
     String label,
     int validated,
@@ -603,29 +623,6 @@ class _Student360ScreenState extends State<Student360Screen> {
             minHeight: 7,
             backgroundColor: Colors.white.withValues(alpha: 0.18),
             valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stat(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.7),
-            fontSize: 11,
           ),
         ),
       ],

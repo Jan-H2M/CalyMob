@@ -64,7 +64,16 @@ class FormationSnapshotDoc {
   /// instructeurs. Les examens piscine/théorie ont des codes LIFRAS explicites
   /// (`*.EXP`, `*.EXT`, `*.T`) dans le référentiel ; les autres épreuves sont
   /// les épreuves pratiques en milieu naturel (carrière).
-  Map<FormationModality, FormationModalityProgress> get modalityProgress {
+  Map<FormationModality, FormationModalityProgress> get modalityProgress =>
+      _progressByModality();
+
+  /// Examens seulement : une séance ou un exercice piscine n'est pas un examen.
+  Map<FormationModality, FormationModalityProgress> get examProgress =>
+      _progressByModality(examsOnly: true);
+
+  Map<FormationModality, FormationModalityProgress> _progressByModality({
+    bool examsOnly = false,
+  }) {
     final entries = <String, _ModalityExerciseState>{};
     final targetNiveau = _targetNiveauCode(targetLevel);
 
@@ -75,6 +84,7 @@ class FormationSnapshotDoc {
     ) {
       final key = code.trim().toUpperCase();
       if (key.isEmpty) return;
+      if (examsOnly && !formationExerciseIsExam(code, description)) return;
       final existing = entries[key];
       if (existing != null && existing.state.index <= state.index) return;
       entries[key] = _ModalityExerciseState(
@@ -85,7 +95,8 @@ class FormationSnapshotDoc {
 
     for (final exercise in validated) {
       if (!_exerciseMatchesTarget(exercise, targetNiveau)) continue;
-      add(exercise.code, exercise.description, _FormationExerciseState.validated);
+      add(exercise.code, exercise.description,
+          _FormationExerciseState.validated);
     }
     for (final exercise in pending) {
       if (!_exerciseMatchesTarget(exercise, targetNiveau)) continue;
@@ -96,7 +107,8 @@ class FormationSnapshotDoc {
       add(claim.code, claim.label, _FormationExerciseState.pending);
     }
     for (final exercise in remaining) {
-      add(exercise.code, exercise.description, _FormationExerciseState.remaining);
+      add(exercise.code, exercise.description,
+          _FormationExerciseState.remaining);
     }
 
     return {
@@ -162,13 +174,15 @@ class FormationSnapshotDoc {
     return null;
   }
 
-  factory FormationSnapshotDoc.fromMap(String memberId, Map<String, dynamic> data) {
+  factory FormationSnapshotDoc.fromMap(
+      String memberId, Map<String, dynamic> data) {
     final exercises = _asMap(data['exercises']);
     final diveStats = _asMap(data['dive_stats']);
     final mil = _asMap(data['mil_experience']);
     final goals = _asMap(data['goals']);
 
-    List<Map<String, dynamic>> listOf(dynamic v) => (v as List?)
+    List<Map<String, dynamic>> listOf(dynamic v) =>
+        (v as List?)
             ?.whereType<Map>()
             .map((e) => e.cast<String, dynamic>())
             .toList() ??
@@ -201,26 +215,48 @@ class FormationSnapshotDoc {
       memberId: memberId,
       targetLevel: data['target_level']?.toString(),
       currentCode: data['current_code']?.toString() ?? '',
-      validated: listOf(exercises['validated']).map(SnapshotExercise.fromMap).toList(),
-      pending: listOf(exercises['pending']).map(SnapshotExercise.fromMap).toList(),
-      pendingClaims: listOf(exercises['pending_claims']).map(SnapshotClaim.fromMap).toList(),
-      remaining: listOf(exercises['remaining']).map(SnapshotExercise.fromMap).toList(),
+      validated:
+          listOf(exercises['validated']).map(SnapshotExercise.fromMap).toList(),
+      pending:
+          listOf(exercises['pending']).map(SnapshotExercise.fromMap).toList(),
+      pendingClaims: listOf(exercises['pending_claims'])
+          .map(SnapshotClaim.fromMap)
+          .toList(),
+      remaining:
+          listOf(exercises['remaining']).map(SnapshotExercise.fromMap).toList(),
       perCode: perCode,
-      attentionPoints:
-          (data['attention_points'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      attentionPoints: (data['attention_points'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       diveStats: SnapshotDiveStats.fromMap(diveStats),
       milPerRequirement: milReqs,
       milModulePct: mil.isEmpty ? null : _intOrNull(mil['module_pct']),
       brevetPct: brevet,
       formationPct: _int(data['formation_pct']),
-      goalCodes: (goals['codes'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      goalCodes: (goals['codes'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
       goalNote: goals['note']?.toString() ?? '',
-      recentDives: listOf(data['recent_dives']).map(SnapshotRecentDive.fromMap).toList(),
+      recentDives:
+          listOf(data['recent_dives']).map(SnapshotRecentDive.fromMap).toList(),
     );
   }
 }
 
 enum FormationModality { career, pool, theory }
+
+bool formationExerciseIsExam(String code, String description) {
+  final normalized = code.trim().toUpperCase();
+  if (normalized.endsWith('.EXP') ||
+      normalized.endsWith('.EXT') ||
+      normalized.endsWith('.T')) {
+    return true;
+  }
+  final label = description.trim().toLowerCase();
+  return label.contains('examen') &&
+      formationModalityForExercise(code, description) !=
+          FormationModality.career;
+}
 
 extension FormationModalityLabel on FormationModality {
   String get label => switch (this) {
@@ -349,7 +385,8 @@ class SnapshotClaim {
   final String code;
   final String label;
   final String status;
-  const SnapshotClaim({required this.code, required this.label, required this.status});
+  const SnapshotClaim(
+      {required this.code, required this.label, required this.status});
   factory SnapshotClaim.fromMap(Map<String, dynamic> m) => SnapshotClaim(
         code: m['code']?.toString() ?? '',
         label: m['label']?.toString() ?? '',
@@ -361,14 +398,16 @@ class SnapshotPerCode {
   final int attempts;
   final String? lastResult;
   final DateTime? lastDate;
-  const SnapshotPerCode({required this.attempts, this.lastResult, this.lastDate});
+  const SnapshotPerCode(
+      {required this.attempts, this.lastResult, this.lastDate});
 }
 
 class SnapshotMilRequirement {
   final int have;
   final int need;
   final bool dataMissing;
-  const SnapshotMilRequirement({required this.have, required this.need, required this.dataMissing});
+  const SnapshotMilRequirement(
+      {required this.have, required this.need, required this.dataMissing});
   double get ratio => need > 0 ? (have / need).clamp(0.0, 1.0) : 0.0;
 }
 
@@ -383,7 +422,8 @@ class SnapshotRecentDive {
     this.depthMaxMeters,
     this.durationMinutes,
   });
-  factory SnapshotRecentDive.fromMap(Map<String, dynamic> m) => SnapshotRecentDive(
+  factory SnapshotRecentDive.fromMap(Map<String, dynamic> m) =>
+      SnapshotRecentDive(
         date: _date(m['date']),
         locationName: m['location_name']?.toString() ?? 'Lieu inconnu',
         depthMaxMeters: _double(m['depth_max_meters']),

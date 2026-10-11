@@ -2,6 +2,30 @@ import 'package:calymob/models/formation_snapshot_doc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('exam status ignores training and keeps current exam validations', () {
+    final snapshot = _snapshot(
+      targetLevel: '3*',
+      validated: const [
+        SnapshotExercise(code: 'P2.EXT', description: 'Ancien examen'),
+        SnapshotExercise(code: 'P3.EXT', description: 'Examen théorique'),
+        SnapshotExercise(code: 'P3.POOL', description: 'Exercice piscine'),
+      ],
+      pendingClaims: const [
+        SnapshotClaim(
+            code: 'P3.EXP', label: 'Examen piscine', status: 'submitted'),
+      ],
+      remaining: const [
+        SnapshotExercise(code: 'P3.EXP', description: 'Examen piscine'),
+      ],
+    );
+    final exams = snapshot.examProgress;
+    expect(exams[FormationModality.theory]?.validated, 1);
+    expect(exams[FormationModality.theory]?.total, 1);
+    expect(exams[FormationModality.pool]?.validated, 0);
+    expect(exams[FormationModality.pool]?.pending, 1);
+    expect(exams[FormationModality.pool]?.total, 1);
+  });
+
   test('classifies production LIFRAS exam codes by modality', () {
     expect(
       formationModalityForExercise('P2.EXT', 'Examen théorique'),
@@ -21,7 +45,8 @@ void main() {
     );
   });
 
-  test('reports validated pending and remaining progress without duplicates', () {
+  test('reports validated pending and remaining progress without duplicates',
+      () {
     final snapshot = _snapshot(
       validated: const [
         SnapshotExercise(

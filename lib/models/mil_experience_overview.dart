@@ -61,6 +61,16 @@ class MilBrevetExperience {
     required this.requirements,
     required this.modulePct,
   });
+
+  int get requiredCount => requirements.values.where((r) => r.need > 0).length;
+  int get attainedCount => requirements.values
+      .where((r) => r.need > 0 && !r.dataMissing && r.have >= r.need)
+      .length;
+  bool get hasMissingData =>
+      requirements.values.any((r) => r.need > 0 && r.dataMissing);
+
+  /// An aggregate percentage is not proof of meeting every requirement.
+  bool get isSufficient => requiredCount > 0 && attainedCount == requiredCount;
 }
 
 String? milBrevetCodeForTarget(String? value) {
