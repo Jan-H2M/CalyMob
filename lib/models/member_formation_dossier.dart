@@ -25,7 +25,8 @@ String dossierTargetLabel(NiveauLIFRAS target) => switch (target) {
 FormationSnapshotDoc memberDossierSnapshot(
     {required String memberId,
     required String currentCode,
-    required NiveauLIFRAS target,
+    required NiveauLIFRAS? target,
+    String? unresolvedTarget,
     required List<ExerciceLIFRAS> catalog,
     required List<ExerciceValide> validations,
     bool useSnapshotValidations = false,
@@ -53,11 +54,13 @@ FormationSnapshotDoc memberDossierSnapshot(
       remaining.add(row);
     }
   }
-  final sameTarget = milBrevetCodeForTarget(original.targetLevel) ==
-      milBrevetCodeForTarget(dossierTargetLabel(target));
+  final targetLabel =
+      target == null ? unresolvedTarget : dossierTargetLabel(target);
+  final sameTarget = target != null &&
+      dossierTargetNiveau(memberTarget: original.targetLevel) == target;
   return FormationSnapshotDoc(
       memberId: memberId,
-      targetLevel: dossierTargetLabel(target),
+      targetLevel: targetLabel,
       currentCode: currentCode,
       validated: validated,
       pending: pending,

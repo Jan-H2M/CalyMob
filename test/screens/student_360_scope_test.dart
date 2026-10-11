@@ -12,6 +12,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('MN dossier is not emptied merely because MIL has no MN matrix',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        snapshot: FormationSnapshotDoc.fromMap('student-1', {
+          'target_level': 'MN',
+          'current_code': 'MF',
+          'exercises': {
+            'remaining': [
+              {
+                'code': 'MN.TEST',
+                'niveau': 'MN',
+                'description': 'Exercice MN conservé'
+              }
+            ]
+          },
+        }),
+        milOverview:
+            const MilExperienceOverview(preferredBrevet: 'MN', byBrevet: {}));
+    expect(find.text('MF → MN'), findsOneWidget);
+    expect(find.text('MN.TEST'), findsOneWidget);
+    expect(find.text('Exercice MN conservé'), findsOneWidget);
+  });
+  testWidgets('unrecognized explicit target never shows old brevet progress',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        milOverview: const MilExperienceOverview(
+            preferredBrevet: 'UNKNOWN', byBrevet: {}));
+    expect(find.text('1* → UNKNOWN'), findsOneWidget);
+    expect(find.byTooltip('Épreuves en milieu naturel : non renseignées'),
+        findsOneWidget);
+    expect(find.text('P2.RA'), findsNothing);
+  });
   testWidgets('live target never relabels stale snapshot counters or exercises',
       (tester) async {
     await _pump(tester,

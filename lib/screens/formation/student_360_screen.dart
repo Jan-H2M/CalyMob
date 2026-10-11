@@ -184,8 +184,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     if (widget.providedSnapshot == null &&
         snapshot != null &&
         target != null &&
-        milBrevetCodeForTarget(snapshot.targetLevel) !=
-            milBrevetCodeForTarget(dossierTargetLabel(target))) {
+        dossierTargetNiveau(memberTarget: snapshot.targetLevel) != target) {
       // A materialized snapshot may lag behind a changed goal. Rebuild only
       // its exercise view from the current catalogue; never relabel old counts.
       final catalog =
@@ -349,16 +348,17 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Widget _buildContent(FormationSnapshotDoc s) {
     final preferred = _milOverview?.preferredBrevet;
-    if (preferred != null &&
-        milBrevetCodeForTarget(s.targetLevel) != preferred) {
+    if (preferred != null) {
       final target = dossierTargetNiveau(memberTarget: preferred);
-      if (target != null) {
+      if (target == null ||
+          dossierTargetNiveau(memberTarget: s.targetLevel) != target) {
         // Preview or unavailable catalogue: unknown is safer than old-goal
         // percentages. Normal loads reconcile with the current catalogue above.
         s = memberDossierSnapshot(
             memberId: s.memberId,
             currentCode: s.currentCode,
             target: target,
+            unresolvedTarget: preferred,
             catalog: const [],
             validations: const [],
             source: s);
