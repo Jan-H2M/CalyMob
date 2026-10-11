@@ -9,11 +9,16 @@ class MilRequirementsCard extends StatefulWidget {
   final MilExperienceOverview? overview;
   final bool dark;
 
+  /// Shows every requirement of the preferred target brevet in place,
+  /// without exposing the selector or requirements from other brevet levels.
+  final bool inlineExpanded;
+
   const MilRequirementsCard({
     super.key,
     this.snapshot,
     this.overview,
     this.dark = false,
+    this.inlineExpanded = false,
   }) : assert(snapshot != null || overview != null);
 
   @override
@@ -88,8 +93,10 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
             Text(
               overview.isEmpty
                   ? "Les données d'expérience ne sont pas encore disponibles."
-                  : 'Aucune exigence MIL pour le brevet cible. '
-                      'Sélectionnez un brevet pour consulter sa matrice.',
+                  : widget.inlineExpanded
+                      ? 'Aucune exigence MIL disponible pour le brevet cible.'
+                      : 'Aucune exigence MIL pour le brevet cible. '
+                          'Sélectionnez un brevet pour consulter sa matrice.',
               style: TextStyle(color: mutedColor),
             )
           else if (selected.requirements.isEmpty)
@@ -97,14 +104,19 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
               "Aucune exigence d'expérience n'est configurée pour ce brevet.",
               style: TextStyle(color: mutedColor),
             )
-          else ...[
+          else if (widget.inlineExpanded)
+            _MilRequirementsList(
+              experience: selected,
+              textColor: textColor,
+              mutedColor: mutedColor,
+            )
+          else
             _CompactMilSummary(
               experience: selected,
               textColor: textColor,
               mutedColor: mutedColor,
             ),
-          ],
-          if (!overview.isEmpty) ...[
+          if (!overview.isEmpty && !widget.inlineExpanded) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -147,8 +159,6 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
           final overview = _overview;
           final selected =
               selectedCode == null ? null : overview.byBrevet[selectedCode];
-          final requirements =
-              selected?.requirements.entries.toList() ?? const [];
           return FractionallySizedBox(
             heightFactor: 0.9,
             child: Material(
@@ -250,31 +260,18 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
                                 ),
                               ),
                               const SizedBox(height: 14),
-                              if (requirements.isEmpty)
+                              if (selected.requirements.isEmpty)
                                 const Text(
                                   "Aucune exigence d'expérience configurée.",
                                 )
                               else
-                                for (var index = 0;
-                                    index < requirements.length;
-                                    index++) ...[
-                                  if (index > 0)
-                                    Divider(
-                                      color: AppColors.donkerblauw.withValues(
-                                        alpha: 0.10,
-                                      ),
-                                      height: 20,
-                                    ),
-                                  _RequirementRow(
-                                    label: milExperienceLabelFr[
-                                            requirements[index].key] ??
-                                        requirements[index].key,
-                                    requirement: requirements[index].value,
-                                    textColor: AppColors.donkerblauw,
-                                    mutedColor: AppColors.donkerblauw
-                                        .withValues(alpha: 0.68),
+                                _MilRequirementsList(
+                                  experience: selected,
+                                  textColor: AppColors.donkerblauw,
+                                  mutedColor: AppColors.donkerblauw.withValues(
+                                    alpha: 0.68,
                                   ),
-                                ],
+                                ),
                             ],
                           ],
                         ),
@@ -287,6 +284,41 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
           );
         },
       ),
+    );
+  }
+}
+
+class _MilRequirementsList extends StatelessWidget {
+  final MilBrevetExperience experience;
+  final Color textColor;
+  final Color mutedColor;
+
+  const _MilRequirementsList({
+    required this.experience,
+    required this.textColor,
+    required this.mutedColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final requirements = experience.requirements.entries.toList();
+    return Column(
+      children: [
+        for (var index = 0; index < requirements.length; index++) ...[
+          if (index > 0)
+            Divider(
+              color: textColor.withValues(alpha: 0.10),
+              height: 20,
+            ),
+          _RequirementRow(
+            label: milExperienceLabelFr[requirements[index].key] ??
+                requirements[index].key,
+            requirement: requirements[index].value,
+            textColor: textColor,
+            mutedColor: mutedColor,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -373,17 +405,17 @@ class _RequirementRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (requirement.dataMissing) {
-      return Row(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
+          Text(
+            label,
+            style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
           ),
+          const SizedBox(height: 3),
           Text(
             'Données manquantes • requis ${requirement.need}',
-            style: TextStyle(color: mutedColor),
+            style: TextStyle(color: mutedColor, fontSize: 12),
           ),
         ],
       );

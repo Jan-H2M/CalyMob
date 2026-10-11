@@ -1023,9 +1023,10 @@ class _Student360ScreenState extends State<Student360Screen> {
         MilRequirementsCard(
           overview: _milOverview ?? MilExperienceOverview.fromSnapshot(s),
           dark: true,
+          inlineExpanded: true,
         ),
         const SizedBox(height: 14),
-        _section('Profondeurs', [
+        _section('Répartition des plongées par profondeur', [
           _kv('0–10 m', '${zones['0_10'] ?? 0}'),
           _kv('10–20 m', '${zones['10_20'] ?? 0}'),
           _kv('20–30 m', '${zones['20_30'] ?? 0}'),

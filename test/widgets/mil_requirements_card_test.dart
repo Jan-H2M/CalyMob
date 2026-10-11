@@ -97,6 +97,121 @@ void main() {
     expect(find.text('Voir les détails LIFRAS'), findsOneWidget);
   });
 
+  testWidgets(
+      'inline mode shows only every target requirement on a narrow screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const inlineOverview = MilExperienceOverview(
+      preferredBrevet: '2',
+      sourceVersion: 'v2026-test',
+      byBrevet: {
+        '1': MilBrevetExperience(
+          brevetCode: '1',
+          modulePct: 100,
+          requirements: {
+            'total_milieu_naturel': SnapshotMilRequirement(
+              have: 5,
+              need: 5,
+              dataMissing: false,
+            ),
+          },
+        ),
+        '2': MilBrevetExperience(
+          brevetCode: '2',
+          modulePct: 40,
+          requirements: {
+            'total_milieu_naturel': SnapshotMilRequirement(
+              have: 8,
+              need: 20,
+              dataMissing: false,
+            ),
+            'mer': SnapshotMilRequirement(
+              have: 3,
+              need: 5,
+              dataMissing: false,
+            ),
+            'encadrement': SnapshotMilRequirement(
+              have: 0,
+              need: 3,
+              dataMissing: true,
+            ),
+          },
+        ),
+      },
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MilRequirementsCard(
+              overview: inlineOverview,
+              inlineExpanded: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Expériences LIFRAS — Brevet 2*'), findsOneWidget);
+    expect(find.text('Total en milieu naturel'), findsOneWidget);
+    expect(find.text('8/20'), findsOneWidget);
+    expect(find.text('En mer'), findsOneWidget);
+    expect(find.text('3/5'), findsOneWidget);
+    expect(find.text('Encadrement'), findsOneWidget);
+    expect(find.text('Données manquantes • requis 3'), findsOneWidget);
+    expect(find.byKey(const Key('mil-show-details')), findsNothing);
+    expect(find.text('Brevet 1*'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'inline mode never substitutes another configured brevet for the target',
+      (
+    tester,
+  ) async {
+    const unsupportedTarget = MilExperienceOverview(
+      preferredBrevet: 'MN',
+      byBrevet: {
+        'MF': MilBrevetExperience(
+          brevetCode: 'MF',
+          modulePct: 20,
+          requirements: {
+            'total_milieu_naturel': SnapshotMilRequirement(
+              have: 10,
+              need: 100,
+              dataMissing: false,
+            ),
+          },
+        ),
+      },
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MilRequirementsCard(
+            overview: unsupportedTarget,
+            inlineExpanded: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Aucune exigence MIL disponible pour le brevet cible.'),
+      findsOneWidget,
+    );
+    expect(find.text('Brevet MF'), findsNothing);
+    expect(find.text('10/100'), findsNothing);
+    expect(find.byKey(const Key('mil-show-details')), findsNothing);
+  });
+
   testWidgets('missing legacy data is unavailable, never zero requirements', (
     tester,
   ) async {
