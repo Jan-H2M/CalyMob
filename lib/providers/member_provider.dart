@@ -14,6 +14,20 @@ class MemberProvider with ChangeNotifier {
   })  : _firestore = firestore,
         _memberLoader = memberLoader;
 
+  /// Scoped read-only profile source for a monitor's local pupil comparison.
+  /// Does not read another member's private document or change authentication.
+  factory MemberProvider.forDirectoryReads() {
+    return MemberProvider(memberLoader: (clubId, memberId) async {
+      final doc = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(clubId)
+          .collection('member_directory')
+          .doc(memberId)
+          .get();
+      return doc.exists ? doc.data() : null;
+    });
+  }
+
   final FirebaseFirestore? _firestore;
   final Future<Map<String, dynamic>?> Function(String clubId, String userId)?
       _memberLoader;

@@ -10,7 +10,10 @@ class MemberProfile {
   final String nom;
   final String prenom;
   final String email;
+  final String? appRole; // Canonical application role (admin/superadmin/user)
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
+  final String? targetFormationLevel;
+  final bool formationActive;
   final String? plongeurNiveau; // Niveau complet en texte
   final String?
       fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
@@ -79,7 +82,10 @@ class MemberProfile {
     required this.nom,
     required this.prenom,
     required this.email,
+    this.appRole,
     this.plongeurCode,
+    this.targetFormationLevel,
+    this.formationActive = false,
     this.plongeurNiveau,
     this.fonctionDefaut,
     this.clubStatuten = const [],
@@ -130,7 +136,10 @@ class MemberProfile {
       nom: memberLastName(data) ?? '',
       prenom: memberFirstName(data) ?? '',
       email: data['email'] ?? '',
+      appRole: _stringOrNull(data['app_role']),
       plongeurCode: data['plongeur_code'],
+      targetFormationLevel: _stringOrNull(data['target_formation_level']),
+      formationActive: data['formation_active'] == true,
       plongeurNiveau: data['plongeur_niveau'],
       fonctionDefaut: data['fonction_defaut'],
       clubStatuten:
@@ -192,7 +201,10 @@ class MemberProfile {
       nom: memberLastName(data) ?? '',
       prenom: memberFirstName(data) ?? '',
       email: _stringOrNull(data['email']) ?? '',
+      appRole: _stringOrNull(data['app_role']),
       plongeurCode: _stringOrNull(data['plongeur_code']),
+      targetFormationLevel: _stringOrNull(data['target_formation_level']),
+      formationActive: data['formation_active'] == true,
       plongeurNiveau: _stringOrNull(data['plongeur_niveau']),
       fonctionDefaut: _stringOrNull(data['fonction_defaut']),
       clubStatuten:
@@ -302,7 +314,10 @@ class MemberProfile {
     String? nom,
     String? prenom,
     String? email,
+    String? appRole,
     String? plongeurCode,
+    String? targetFormationLevel,
+    bool? formationActive,
     String? plongeurNiveau,
     String? fonctionDefaut,
     List<String>? clubStatuten,
@@ -335,7 +350,10 @@ class MemberProfile {
       nom: nom ?? this.nom,
       prenom: prenom ?? this.prenom,
       email: email ?? this.email,
+      appRole: appRole ?? this.appRole,
       plongeurCode: plongeurCode ?? this.plongeurCode,
+      targetFormationLevel: targetFormationLevel ?? this.targetFormationLevel,
+      formationActive: formationActive ?? this.formationActive,
       plongeurNiveau: plongeurNiveau ?? this.plongeurNiveau,
       fonctionDefaut: fonctionDefaut ?? this.fonctionDefaut,
       clubStatuten: clubStatuten ?? this.clubStatuten,

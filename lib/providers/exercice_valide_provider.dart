@@ -37,16 +37,17 @@ class ExerciceValideProvider with ChangeNotifier {
     _currentClubId = clubId;
     _currentMemberId = memberId;
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     debugPrint('🎧 Démarrage stream exercices validés pour membre: $memberId');
 
-    _subscription = _service
-        .getMemberExercicesValidesStream(clubId, memberId)
-        .listen(
+    _subscription =
+        _service.getMemberExercicesValidesStream(clubId, memberId).listen(
       (exercices) {
         _exercicesValides = exercices;
         _isLoading = false;
+        _errorMessage = null;
         notifyListeners();
         debugPrint('📦 ${exercices.length} exercices validés reçus');
       },
@@ -66,7 +67,8 @@ class ExerciceValideProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _exercicesValides = await _service.getMemberExercicesValides(clubId, memberId);
+      _exercicesValides =
+          await _service.getMemberExercicesValides(clubId, memberId);
       _currentClubId = clubId;
       _currentMemberId = memberId;
     } catch (e) {
@@ -253,9 +255,8 @@ class ExerciceValideProvider with ChangeNotifier {
   /// document bestaat (refused docs tellen niet — die mag de member opnieuw
   /// declareren).
   bool hasValidatedOrPendingFor(String exerciceId) {
-    return _exercicesValides.any((e) =>
-        e.exerciceId == exerciceId &&
-        (e.isValidated || e.isPending));
+    return _exercicesValides.any(
+        (e) => e.exerciceId == exerciceId && (e.isValidated || e.isPending));
   }
 
   /// Obtenir les statistiques
@@ -265,9 +266,7 @@ class ExerciceValideProvider with ChangeNotifier {
 
   /// Filtrer par niveau
   List<ExerciceValide> filterByNiveau(NiveauLIFRAS niveau) {
-    return _exercicesValides
-        .where((e) => e.exerciceNiveau == niveau)
-        .toList();
+    return _exercicesValides.where((e) => e.exerciceNiveau == niveau).toList();
   }
 
   /// Rechercher par code ou description

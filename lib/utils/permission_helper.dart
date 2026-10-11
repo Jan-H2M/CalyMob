@@ -1,5 +1,12 @@
+enum FormationTrackingScope { piscineOnly, full }
+
 /// Helper class for permission checking based on club statutes
 class PermissionHelper {
+  static bool isAppAdmin(String? appRole) {
+    final normalized = appRole?.trim().toLowerCase();
+    return normalized == 'admin' || normalized == 'superadmin';
+  }
+
   /// Exact role gate shared with recordOnSitePayment/recordInstallmentPayment.
   /// Attendance, guest creation and event ownership do not grant this right.
   static bool canConfirmEventPayment({
@@ -63,9 +70,8 @@ class PermissionHelper {
   static bool isAdmin(List<String> clubStatuten) {
     if (clubStatuten.isEmpty) return false;
 
-    final normalizedStatuten = clubStatuten
-        .map((s) => s.toLowerCase().trim())
-        .toList();
+    final normalizedStatuten =
+        clubStatuten.map((s) => s.toLowerCase().trim()).toList();
 
     return adminStatutes.any(
       (adminStatut) => normalizedStatuten.contains(adminStatut.toLowerCase()),
@@ -109,9 +115,8 @@ class PermissionHelper {
       return false;
     }
 
-    final normalizedStatuten = rolesToCheck
-        .map((s) => s.toLowerCase().trim())
-        .toList();
+    final normalizedStatuten =
+        rolesToCheck.map((s) => s.toLowerCase().trim()).toList();
 
     return scannerRoles.any(
       (role) => normalizedStatuten.contains(role.toLowerCase()),
@@ -148,10 +153,56 @@ class PermissionHelper {
         normalized.contains('encadrants et assistants');
   }
 
+  /// Formation tracking is shared by career encadrants and piscine
+  /// encadrants. This grants visibility only; LIFRAS validation remains under
+  /// [canValidateLifras].
+  static bool canViewFormationTracking(
+    List<String> clubStatuten, {
+    String? appRole,
+  }) =>
+      isAppAdmin(appRole) ||
+      isAdmin(clubStatuten) ||
+      isEncadrantPiscine(clubStatuten);
+
+  /// Returns the narrowest formation view the member may use.
+  ///
+  /// Piscine encadrants share the same searchable student list as moniteurs,
+  /// but may only inspect pool progress and pool observations. Full formation
+  /// data remains reserved for LIFRAS validators and administrators.
+  static FormationTrackingScope? formationTrackingScope({
+    required List<String> clubStatuten,
+    required String? plongeurCode,
+    String? appRole,
+  }) {
+    if (canValidateLifras(
+      clubStatuten: clubStatuten,
+      plongeurCode: plongeurCode,
+      appRole: appRole,
+    )) {
+      return FormationTrackingScope.full;
+    }
+    return canViewFormationTracking(clubStatuten, appRole: appRole)
+        ? FormationTrackingScope.piscineOnly
+        : null;
+  }
+
+  /// A piscine encadrant may add a free-text pool remark about a student.
+  /// Exercise results and LIFRAS validation remain forbidden.
+  static bool canAddPoolFormationRemark(
+    List<String> clubStatuten, {
+    String? appRole,
+  }) =>
+      isAppAdmin(appRole) ||
+      isAdmin(clubStatuten) ||
+      isEncadrantPiscine(clubStatuten);
+
   /// Access gate for emergency contacts shared through Who's Who.
   /// Mirrors isEncadrantForClub() + hasCARole() in firestore.rules.
-  static bool canViewEmergencyContacts(List<String> clubStatuten) {
-    if (isAdmin(clubStatuten)) return true;
+  static bool canViewEmergencyContacts(
+    List<String> clubStatuten, {
+    String? appRole,
+  }) {
+    if (isAppAdmin(appRole) || isAdmin(clubStatuten)) return true;
     final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
     return isEncadrant(clubStatuten) ||
         normalized.contains('ca') ||
@@ -165,8 +216,9 @@ class PermissionHelper {
   static bool canValidateLifras({
     required List<String> clubStatuten,
     required String? plongeurCode,
+    String? appRole,
   }) {
-    if (isAdmin(clubStatuten)) return true;
+    if (isAppAdmin(appRole) || isAdmin(clubStatuten)) return true;
     final hasEncadrant = isEncadrant(clubStatuten);
     return hasEncadrant && isMoniteur(plongeurCode);
   }

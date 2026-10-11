@@ -11,6 +11,11 @@ const admin = require('firebase-admin');
 // Initialize Firebase Admin
 admin.initializeApp();
 
+exports.correctPoolStudentGroup = require('./src/training/correctPoolStudentGroup').correctPoolStudentGroup;
+exports.setPersonalExerciseProgress = require('./src/training/personalExerciseProgress').setPersonalExerciseProgress;
+exports.recordOfficialFormationResult = require('./src/training/officialFormationResults').recordOfficialFormationResult;
+exports.manageApneeTraining = require('./src/training/apnee/training').manageApneeTraining;
+
 // Compatibility shim for the firebase-admin v13 modular API: when running
 // the local emulator on Node 25 the legacy `admin.firestore.FieldValue`
 // accessor isn't auto-attached, breaking every `serverTimestamp()` call.
@@ -240,6 +245,11 @@ exports.onFormationGoalsWriteSnapshot = snapshotFns.onFormationGoalsWriteSnapsho
 exports.onMemberFormationFieldsWriteSnapshot = snapshotFns.onMemberFormationFieldsWriteSnapshot;
 exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
 
+// MOB-033 — pool-safe instructor overview. The callable derives a minimal
+// DTO from existing full snapshots, so rollout never depends on a backfill.
+const { getPoolFormationOverviewV1 } = require('./src/progression/getPoolFormationOverview');
+exports.getPoolFormationOverviewV1 = getPoolFormationOverviewV1;
+
 // WP-11 — notifie le chef d'école quand un élève change son brevet visé (D12).
 const { onTargetLevelChanged } = require('./src/progression/onTargetLevelChanged');
 exports.onTargetLevelChanged = onTargetLevelChanged;
@@ -465,3 +475,4 @@ const {
   analyzeLogbookDictation,
 } = require('./src/logbookDictation/analyzeLogbookDictation');
 exports.analyzeLogbookDictation = analyzeLogbookDictation;
+exports.recordPoolQrAttendance = require('./src/training/poolQrAttendance').recordPoolQrAttendance;

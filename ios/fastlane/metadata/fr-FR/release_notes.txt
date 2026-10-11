@@ -1,1 +1,1 @@
-Amélioration du rangement piscine, stabilité des conversations d’équipe, fiabilité du compteur de messages et contrôle renforcé de la confidentialité des anniversaires.
+Suivi simplifié des exercices, correction de ses groupes piscine après présence QR et consultation des examens et brevets enregistrés dans CalyCompta.

@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.23.6+221
+version: 1.25.0+223
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -127,8 +127,10 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/apnee/lifras-preparation-cards-2025-08.json
     - assets/images/
     - assets/animations/
+    - assets/mil/preview_protocols.json
 
   shaders:
     - shaders/ocean.frag

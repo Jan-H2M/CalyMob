@@ -15,6 +15,23 @@ const {
 const admin = require('firebase-admin');
 
 describe('member privacy projections', () => {
+  test('current QA flag prevents delayed triggers from restoring a directory card', async () => {
+    const ref = path => ({ path,
+      collection: name => ref(`${path}/${name}`),
+      doc: id => ref(`${path}/${id}`),
+    });
+    const tx = { get: jest.fn(async () => ({ exists: true,
+      data: () => ({ is_test_account: true, app_role: 'user', plongeur_code: 'MC' }),
+    })), set: jest.fn(), delete: jest.fn() };
+    admin.firestore.mockReturnValue({ collection: name => ref(name),
+      runTransaction: async callback => callback(tx) });
+    await syncMemberProjections({ params: { clubId: 'calypso', memberId: 'qa' },
+      data: { after: { data: () => ({ is_test_account: false }) } } });
+    expect(tx.delete.mock.calls.map(([r]) => r.path))
+      .toEqual(['clubs/calypso/member_directory/qa']);
+    expect(tx.set.mock.calls.map(([r]) => r.path))
+      .toEqual(['clubs/calypso/member_operational_status/qa']);
+  });
   test('directory only includes consented contact and photo fields', () => {
     const projected = buildMemberDirectoryProjection({
       prenom: 'Myriam',

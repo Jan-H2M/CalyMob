@@ -14,30 +14,37 @@ import '../../services/formation_task_service.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../formation/instructor_formation_overview_screen.dart';
 import 'historical_qr_scan_screen.dart';
 import 'logbook_dive_confirmation_screen.dart';
 import 'monitor_observation_roster_screen.dart';
 
 class ActionsEvaluationsScreen extends StatefulWidget {
+  final bool embedded;
   final bool previewMode;
   final List<LogbookConfirmationAction> previewConfirmations;
   final List<FormationTask> previewTasks;
   final List<String> previewClubStatuten;
   final String? previewPlongeurCode;
+  final String? previewAppRole;
   final ValueChanged<LogbookConfirmationAction>? onOpenConfirmation;
   final ValueChanged<FormationTask>? onOpenTask;
   final VoidCallback? onOpenHistoricalQr;
+  final VoidCallback? onOpenFormationOverview;
 
   const ActionsEvaluationsScreen({
     super.key,
+    this.embedded = false,
     this.previewMode = false,
     this.previewConfirmations = const [],
     this.previewTasks = const [],
     this.previewClubStatuten = const [],
     this.previewPlongeurCode,
+    this.previewAppRole,
     this.onOpenConfirmation,
     this.onOpenTask,
     this.onOpenHistoricalQr,
+    this.onOpenFormationOverview,
   });
 
   @override
@@ -67,6 +74,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           child: Column(
             children: [
               _Header(
+                embedded: widget.embedded,
                 controller: _searchController,
                 segment: _segment,
                 onSearchChanged: (value) =>
@@ -90,6 +98,11 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         canScanHistoricalQr: PermissionHelper.canValidateLifras(
           clubStatuten: widget.previewClubStatuten,
           plongeurCode: widget.previewPlongeurCode,
+          appRole: widget.previewAppRole,
+        ),
+        canViewFormation: PermissionHelper.canViewFormationTracking(
+          widget.previewClubStatuten,
+          appRole: widget.previewAppRole,
         ),
       );
     }
@@ -107,6 +120,11 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final canScanHistoricalQr = PermissionHelper.canValidateLifras(
       clubStatuten: member.clubStatuten,
       plongeurCode: member.plongeurCode,
+      appRole: member.appRole,
+    );
+    final canViewFormation = PermissionHelper.canViewFormationTracking(
+      member.clubStatuten,
+      appRole: member.appRole,
     );
 
     final confirmations = FirebaseFirestore.instance
@@ -150,6 +168,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
               confirmations: confirmations,
               tasks: taskSnapshot.data!,
               canScanHistoricalQr: canScanHistoricalQr,
+              canViewFormation: canViewFormation,
             );
           },
         );
@@ -162,6 +181,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     required List<LogbookConfirmationAction> confirmations,
     required List<FormationTask> tasks,
     required bool canScanHistoricalQr,
+    required bool canViewFormation,
   }) {
     final viewModel = ActionsEvaluationsViewModel.build(
       confirmations: confirmations,
@@ -172,7 +192,8 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final visibleConfirmations = viewModel.confirmations;
     final standaloneTasks = viewModel.standaloneTasks;
     final rosters = viewModel.rosters;
-    final showHistoricalQr = canScanHistoricalQr &&
+    final showHistoricalQr =
+        canScanHistoricalQr &&
         _segment != ActionsEvaluationsSegment.done &&
         matchesActionsSearch(_searchQuery, const [
           'Scanner une carte papier',
@@ -180,11 +201,24 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           'Contrôler une ancienne carte d’élève',
           'QR',
         ]);
+    final showFormationOverview =
+        !widget.embedded &&
+        canViewFormation &&
+        _segment != ActionsEvaluationsSegment.done &&
+        matchesActionsSearch(_searchQuery, const [
+          'Suivi des formations',
+          'Avancement des élèves',
+          'Carrière',
+          'Piscine',
+          'Théorie',
+          'Expériences acquises',
+        ]);
 
     if (visibleConfirmations.isEmpty &&
         standaloneTasks.isEmpty &&
         rosters.isEmpty &&
-        !showHistoricalQr) {
+        !showHistoricalQr &&
+        !showFormationOverview) {
       return _StateMessage(
         icon: _searchQuery.trim().isEmpty
             ? Icons.task_alt
@@ -212,6 +246,22 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
+        if (showFormationOverview) ...[
+          const _SectionTitle(
+            icon: Icons.school_outlined,
+            title: 'Suivi des formations',
+          ),
+          const SizedBox(height: 8),
+          _FormationOverviewCard(
+            fullAccess: canScanHistoricalQr,
+            onTap: () => _openFormationOverview(context),
+          ),
+          if (visibleConfirmations.isNotEmpty ||
+              showHistoricalQr ||
+              standaloneTasks.isNotEmpty ||
+              rosters.isNotEmpty)
+            const SizedBox(height: 14),
+        ],
         if (visibleConfirmations.isNotEmpty) ...[
           _SectionTitle(
             icon: Icons.scuba_diving_outlined,
@@ -233,9 +283,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
             title: 'Outils de validation',
           ),
           const SizedBox(height: 8),
-          _HistoricalQrScanCard(
-            onTap: () => _openHistoricalQr(context),
-          ),
+          _HistoricalQrScanCard(onTap: () => _openHistoricalQr(context)),
           if (standaloneTasks.isNotEmpty || rosters.isNotEmpty)
             const SizedBox(height: 14),
         ],
@@ -286,19 +334,40 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final callback = widget.onOpenHistoricalQr;
     if (callback != null) return callback();
     if (widget.previewMode) return;
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()));
+  }
+
+  void _openFormationOverview(BuildContext context) {
+    final callback = widget.onOpenFormationOverview;
+    if (callback != null) return callback();
+    if (widget.previewMode) return;
+    final member = context.read<MemberProvider>();
+    final scope =
+        PermissionHelper.formationTrackingScope(
+          clubStatuten: member.clubStatuten,
+          plongeurCode: member.plongeurCode,
+          appRole: member.appRole,
+        ) ??
+        FormationTrackingScope.piscineOnly;
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
+      MaterialPageRoute(
+        builder: (_) => InstructorFormationOverviewScreen(scope: scope),
+      ),
     );
   }
 }
 
 class _Header extends StatelessWidget {
+  final bool embedded;
   final TextEditingController controller;
   final ActionsEvaluationsSegment segment;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<ActionsEvaluationsSegment> onSegmentChanged;
 
   const _Header({
+    this.embedded = false,
     required this.controller,
     required this.segment,
     required this.onSearchChanged,
@@ -318,39 +387,40 @@ class _Header extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'Retour',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-              ),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Actions & évaluations',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 23,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Vos actions actives et leur historique',
-                      style: TextStyle(
-                        color: Color(0xD9FFFFFF),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+          if (!embedded)
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'Retour',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
                 ),
-              ),
-            ],
-          ),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Actions & évaluations',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Vos actions actives et leur historique',
+                        style: TextStyle(
+                          color: Color(0xD9FFFFFF),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
@@ -507,6 +577,28 @@ class _HistoricalQrScanCard extends StatelessWidget {
       title: 'Scanner une carte papier',
       subtitle: 'Contrôler une ancienne carte d’élève',
       label: 'Validation',
+      date: null,
+      onTap: onTap,
+    );
+  }
+}
+
+class _FormationOverviewCard extends StatelessWidget {
+  final VoidCallback onTap;
+  final bool fullAccess;
+
+  const _FormationOverviewCard({required this.onTap, required this.fullAccess});
+
+  @override
+  Widget build(BuildContext context) {
+    return _ActionCard(
+      icon: Icons.groups_2_outlined,
+      iconColor: const Color(0xFF0369A1),
+      title: 'Avancement des élèves',
+      subtitle: fullAccess
+          ? 'Par personne : carrière, piscine, théorie et expériences acquises'
+          : 'Par personne : progression et remarques piscine',
+      label: 'Vue instructeur',
       date: null,
       onTap: onTap,
     );
@@ -757,10 +849,9 @@ String _shortDate(DateTime value) {
 }
 
 Color _taskColor(FormationTask task) => switch (task.type) {
-      FormationTaskType.poolCheckin ||
-      FormationTaskType.logbookCompletion =>
-        AppColors.middenblauw,
-      FormationTaskType.historicalValidation => const Color(0xFF7C3AED),
-      FormationTaskType.claimRejected => const Color(0xFFC2410C),
-      _ => const Color(0xFF047857),
-    };
+  FormationTaskType.poolCheckin ||
+  FormationTaskType.logbookCompletion => AppColors.middenblauw,
+  FormationTaskType.historicalValidation => const Color(0xFF7C3AED),
+  FormationTaskType.claimRejected => const Color(0xFFC2410C),
+  _ => const Color(0xFF047857),
+};

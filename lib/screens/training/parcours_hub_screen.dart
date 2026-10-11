@@ -8,12 +8,15 @@ import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../providers/member_provider.dart';
 import '../../services/formation_task_service.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../exercises/member_exercises_screen.dart';
+import '../formation/instructor_formation_overview_screen.dart';
 import 'actions_evaluations_screen.dart';
 import 'historical_claims_screen.dart';
 import 'mon_carnet_screen.dart';
 import '../formation/my_declarations_screen.dart';
+import '../formation/apnee_dossier_screen.dart';
 import 'stats_screen.dart';
 
 const _parcoursSecondaryText = Color(0xFF5F6B7A);
@@ -61,13 +64,6 @@ const parcoursHubEntryDefinitions = <ParcoursHubEntryDefinition>[
     color: AppColors.oranje,
   ),
   ParcoursHubEntryDefinition(
-    key: 'declarations',
-    title: 'Mes demandes',
-    subtitle: 'Retrouver vos demandes de rôles et d’évaluation.',
-    icon: Icons.assignment_outlined,
-    color: Colors.purple,
-  ),
-  ParcoursHubEntryDefinition(
     key: 'actions',
     title: 'Actions & évaluations',
     subtitle: 'Répondre aux tâches, décisions et validations en attente.',
@@ -82,14 +78,24 @@ const parcoursHubEntryDefinitions = <ParcoursHubEntryDefinition>[
     icon: Icons.insights_outlined,
     color: AppColors.info,
   ),
-  ParcoursHubEntryDefinition(
-    key: 'paper-card',
-    title: 'Reprendre ma carte papier',
-    subtitle: 'Encoder votre historique papier dans le carnet numérique.',
-    icon: Icons.drive_file_rename_outline,
-    color: AppColors.warning,
-  ),
 ];
+
+@visibleForTesting
+const parcoursFormationOverviewEntry = ParcoursHubEntryDefinition(
+  key: 'formation-overview',
+  title: 'Avancement des élèves',
+  subtitle: 'Rechercher un membre et consulter son parcours de formation.',
+  icon: Icons.groups_2_outlined,
+  color: Color(0xFF0369A1),
+);
+
+const parcoursApneeEntry = ParcoursHubEntryDefinition(
+  key: 'apnee',
+  title: 'Mon parcours apnée',
+  subtitle: 'Suivre A1 / Discovery ou A2, indépendamment du brevet de plongée.',
+  icon: Icons.water_outlined,
+  color: AppColors.info,
+);
 
 class ParcoursHubScreen extends StatelessWidget {
   const ParcoursHubScreen({super.key});
@@ -97,6 +103,12 @@ class ParcoursHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final member = context.watch<MemberProvider>();
+    final formationScope = PermissionHelper.formationTrackingScope(
+      clubStatuten: member.clubStatuten,
+      plongeurCode: member.plongeurCode,
+      appRole: member.appRole,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.donkerblauw,
@@ -128,30 +140,36 @@ class ParcoursHubScreen extends StatelessWidget {
                           _open(context, parcoursHubEntryDefinitions[1]),
                     ),
                     _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[2],
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[2]),
-                    ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[3],
-                      badge: userId == null
-                          ? null
-                          : _ActionsEvaluationsBadge(userId: userId),
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[3]),
-                    ),
+                        definition: parcoursApneeEntry,
+                        onTap: () => _open(context, parcoursApneeEntry)),
+                    if (formationScope != null)
+                      _ParcoursCard(
+                        definition: parcoursFormationOverviewEntry,
+                        badge: userId == null
+                            ? null
+                            : _ActionsEvaluationsBadge(userId: userId),
+                        onTap: () => _open(
+                          context,
+                          parcoursFormationOverviewEntry,
+                          formationScope: formationScope,
+                        ),
+                      ),
+                    if (formationScope == null)
+                      _ParcoursCard(
+                        definition: parcoursHubEntryDefinitions[2],
+                        badge: userId == null
+                            ? null
+                            : _ActionsEvaluationsBadge(userId: userId),
+                        onTap: () =>
+                            _open(context, parcoursHubEntryDefinitions[2]),
+                      ),
                     const SizedBox(height: 12),
                     const _SectionTitle('Historique'),
                     const SizedBox(height: 12),
                     _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[4],
+                      definition: parcoursHubEntryDefinitions[3],
                       onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[4]),
-                    ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[5],
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[5]),
+                          _open(context, parcoursHubEntryDefinitions[3]),
                     ),
                   ],
                 ),
@@ -163,9 +181,23 @@ class ParcoursHubScreen extends StatelessWidget {
     );
   }
 
-  void _open(BuildContext context, ParcoursHubEntryDefinition definition) {
+  void _open(
+    BuildContext context,
+    ParcoursHubEntryDefinition definition, {
+    FormationTrackingScope? formationScope,
+  }) {
     final navigator = Navigator.of(context);
     switch (definition.key) {
+      case 'apnee':
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid == null) return;
+        navigator.push(MaterialPageRoute(
+            builder: (_) => ApneeDossierScreen(
+                clubId: FirebaseConfig.defaultClubId,
+                memberId: uid,
+                viewerId: uid,
+                memberName: _memberNameForExercises(context))));
+        return;
       case 'carnet':
         navigator.push(
           MaterialPageRoute(builder: (_) => const MonCarnetScreen()),
@@ -189,8 +221,15 @@ class ParcoursHubScreen extends StatelessWidget {
         return;
       case 'actions':
         navigator.push(
+          MaterialPageRoute(builder: (_) => const ActionsEvaluationsScreen()),
+        );
+        return;
+      case 'formation-overview':
+        navigator.push(
           MaterialPageRoute(
-            builder: (_) => const ActionsEvaluationsScreen(),
+            builder: (_) => InstructorFormationOverviewScreen(
+              scope: formationScope ?? FormationTrackingScope.piscineOnly,
+            ),
           ),
         );
         return;
@@ -407,8 +446,10 @@ class _ActionsEvaluationsBadge extends StatelessWidget {
         .where('target_member_id', isEqualTo: userId)
         .where('status', isEqualTo: 'pending')
         .snapshots();
-    final taskStream = FormationTaskService()
-        .streamUserInbox(FirebaseConfig.defaultClubId, userId);
+    final taskStream = FormationTaskService().streamUserInbox(
+      FirebaseConfig.defaultClubId,
+      userId,
+    );
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: confirmationStream,

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/firebase_config.dart';
@@ -8,6 +10,7 @@ import '../../providers/member_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../../widgets/ocean_background.dart';
+import '../../utils/live_qa_session_resume.dart';
 import '../home/landing_screen.dart';
 import 'forgot_password_screen.dart';
 import 'force_password_change_screen.dart';
@@ -40,6 +43,41 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     _loadLastLoginEmail();
     _checkBiometricAvailability();
+    if (isLiveQaPreviewOrigin(
+        enabled: liveQaAutostart, isWeb: kIsWeb, uri: Uri.base)) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _resumeLocalQaSession());
+    }
+  }
+
+  Future<void> _resumeLocalQaSession() async {
+    if (!mounted) return;
+    final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
+    try {
+      // Wait for the SDK to restore its real password-authenticated session.
+      final user = await FirebaseAuth.instance
+          .authStateChanges()
+          .first
+          .timeout(const Duration(seconds: 15));
+      if (!mounted || user?.uid != 'calymob-qa-jan') return;
+      await memberProvider.loadMemberData(_clubId, user!.uid);
+      if (!mounted ||
+          authProvider.currentUser?.uid != user.uid ||
+          !memberProvider.isLoadedFor(_clubId, user.uid) ||
+          !canResumeLiveQaSession(
+              authenticatedUid: user.uid,
+              member: memberProvider.memberData)) {
+        return;
+      }
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => memberProvider.requirePasswordChange
+            ? const ForcePasswordChangeScreen()
+            : const LandingScreen(),
+      ));
+    } catch (_) {
+      // Fail closed on the normal login page. Never display credentials/errors.
+    }
   }
 
   Future<void> _loadLastLoginEmail() async {
@@ -234,8 +272,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content:
-                Text('Connexion impossible. Vérifiez votre réseau et réessayez.'),
+            content: Text(
+                'Connexion impossible. Vérifiez votre réseau et réessayez.'),
             backgroundColor: Colors.orange,
           ),
         );
