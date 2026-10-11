@@ -1055,7 +1055,6 @@ class _Student360ScreenState extends State<Student360Screen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         _buildCta(),
-        _modalityProgressSummary(s),
         ..._exerciseSections(s, pool: false),
       ],
     );
@@ -1115,80 +1114,6 @@ class _Student360ScreenState extends State<Student360Screen> {
         emptyText: 'Tous les exercices de l\'objectif sont couverts.',
       ),
     ];
-  }
-
-  Widget _modalityProgressSummary(FormationSnapshotDoc snapshot) {
-    final progress = snapshot.modalityProgress;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.donkerblauw.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Progression par volet',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 9),
-          ...FormationModality.values.map((modality) {
-            final value = progress[modality]!;
-            final total = value.total;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 7),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 68,
-                    child: Text(
-                      modality.label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: LinearProgressIndicator(
-                        value: total == 0 ? 0 : value.validated / total,
-                        minHeight: 7,
-                        backgroundColor: Colors.white.withValues(alpha: 0.16),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          AppColors.lichtblauw,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 70,
-                    child: Text(
-                      total == 0
-                          ? '—'
-                          : '${value.validated}/$total'
-                              '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}',
-                      textAlign: TextAlign.end,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.86),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
   }
 
   Widget _exRow(String code, String subtitle, Color dot, {String? badge}) {

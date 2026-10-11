@@ -11,6 +11,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('natural exercises omit the redundant modality summary',
+      (tester) async {
+    await _pump(tester, scope: FormationTrackingScope.full);
+
+    expect(find.text('Progression par volet'), findsNothing);
+    expect(find.text('Préparer la prochaine séance'), findsOneWidget);
+    expect(find.text('Exercices en milieu naturel et théorie'), findsOneWidget);
+    expect(find.text('Remontée assistée carrière'), findsOneWidget);
+    expect(find.text('Examen théorique'), findsOneWidget);
+    expect(find.text('Expériences brevet'), findsOneWidget);
+  });
+
   testWidgets('pool lesson history and retrospective note live in top pool tab',
       (tester) async {
     await _pump(tester, scope: FormationTrackingScope.full, history: [
