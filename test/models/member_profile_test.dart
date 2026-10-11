@@ -23,6 +23,28 @@ void main() {
       expect(profile.toFirestore(), isNot(contains('app_role')));
     });
 
+    test('maps the current formation target from full and directory profiles',
+        () async {
+      final firestore = FakeFirebaseFirestore();
+      final docRef = firestore.collection('clubs/club1/members').doc('student');
+      await docRef.set({
+        'target_formation_level': '3*',
+        'formation_active': true,
+      });
+
+      final full = MemberProfile.fromFirestore(await docRef.get());
+      final directory = MemberProfile.fromDirectoryData('student', const {
+        'target_formation_level': '3*',
+        'formation_active': true,
+      });
+
+      expect(full.targetFormationLevel, '3*');
+      expect(directory.targetFormationLevel, '3*');
+      expect(full.formationActive, isTrue);
+      expect(directory.formationActive, isTrue);
+      expect(full.copyWith().targetFormationLevel, '3*');
+    });
+
     test('birthday sharing defaults to true and honours opt-out', () async {
       final firestore = FakeFirebaseFirestore();
       final legacyRef =

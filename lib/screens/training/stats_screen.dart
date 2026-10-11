@@ -15,8 +15,59 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../models/formation_snapshot_doc.dart';
+import '../../models/mil_experience_overview.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
+import '../../services/formation_snapshot_reader.dart';
+import '../../services/mil_experience_service.dart';
+import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+
+@visibleForTesting
+class StatsMilExperienceSection extends StatelessWidget {
+  final MilExperienceOverview? overview;
+  final bool loading;
+  final VoidCallback? onRetry;
+
+  const StatsMilExperienceSection({
+    super.key,
+    required this.overview,
+    required this.loading,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Center(
+          child: CircularProgressIndicator(color: Colors.white));
+    }
+    final data = overview;
+    if (data != null && !data.isEmpty) {
+      return MilRequirementsCard(overview: data);
+    }
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              "Les exigences LIFRAS ne sont pas disponibles pour l'instant.",
+              style: TextStyle(color: AppColors.donkerblauw),
+            ),
+          ),
+          if (onRetry != null)
+            TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+        ],
+      ),
+    );
+  }
+}
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -26,8 +77,11 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
+  final FormationSnapshotReader _formationReader = FormationSnapshotReader();
+  final MilExperienceService _milExperienceService = MilExperienceService();
   int? _year; // null = 'Tout'
   List<Map<String, dynamic>> _entries = [];
+  MilExperienceOverview? _milOverview;
   bool _loading = true;
 
   @override
@@ -49,6 +103,7 @@ class _StatsScreenState extends State<StatsScreen> {
         });
         return;
       }
+      final member = context.read<MemberProvider>();
 
       // Always fetch the full member-scoped collection — year filtering is
       // applied client-side in `_computeStats`. The combo (member_id ==,
@@ -65,10 +120,38 @@ class _StatsScreenState extends State<StatsScreen> {
           .collection('student_logbook_entries')
           .where('member_id', isEqualTo: userId);
 
-      final snap = await q.get();
+      final results = await Future.wait([
+        q.get(),
+        _formationReader.getSnapshot(clubId, userId),
+      ]);
+      final snap = results[0] as QuerySnapshot<Map<String, dynamic>>;
+      final formationSnapshot = results[1] as FormationSnapshotDoc?;
+      final entries = snap.docs
+          .map((d) => <String, dynamic>{'id': d.id, ...d.data()})
+          .toList();
+      final preferredBrevet = resolvePreferredMilBrevet(
+        targetFormationLevel: member.targetFormationLevel,
+        currentCode: member.plongeurCode,
+        snapshotTargetLevel: formationSnapshot?.targetLevel,
+      );
+      MilExperienceOverview? overview;
+      try {
+        overview = await _milExperienceService.loadForEntries(
+          clubId: clubId,
+          entries: entries,
+          preferredBrevet: preferredBrevet,
+        );
+      } catch (error, stackTrace) {
+        debugPrint('[stats_screen] lecture MIL impossible: '
+            '$error\n$stackTrace');
+      }
+      overview ??= formationSnapshot == null
+          ? null
+          : MilExperienceOverview.fromSnapshot(formationSnapshot);
       if (!mounted) return;
       setState(() {
-        _entries = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+        _entries = entries;
+        _milOverview = overview;
         _loading = false;
       });
     } catch (err, st) {
@@ -78,6 +161,7 @@ class _StatsScreenState extends State<StatsScreen> {
       if (!mounted) return;
       setState(() {
         _entries = [];
+        _milOverview = null;
         _loading = false;
       });
     }
@@ -112,6 +196,12 @@ class _StatsScreenState extends State<StatsScreen> {
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                         children: [
                           _yearPills(),
+                          const SizedBox(height: 12),
+                          StatsMilExperienceSection(
+                            overview: _milOverview,
+                            loading: false,
+                            onRetry: _load,
+                          ),
                           const SizedBox(height: 12),
                           _kpiGrid(stats),
                           const SizedBox(height: 12),
