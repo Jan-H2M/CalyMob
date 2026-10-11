@@ -51,7 +51,6 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
     final selectedCode = _selectedBrevet;
     final selected =
         selectedCode == null ? null : overview.byBrevet[selectedCode];
-    final requirements = selected?.requirements.entries.toList() ?? const [];
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -80,47 +79,8 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
           if (selected != null) ...[
             const SizedBox(height: 4),
             Text(
-              overview.snapshotFallback
-                  ? 'Cumul carrière • aperçu du brevet cible (snapshot)'
-                  : 'Cumul carrière • module ${selected.modulePct} %'
-                      '${overview.sourceVersion == null ? '' : ' • ${overview.sourceVersion}'}',
+              _sourceLabel(overview),
               style: TextStyle(color: mutedColor),
-            ),
-            if (overview.snapshotFallback) ...[
-              const SizedBox(height: 3),
-              Text(
-                'La matrice complète est momentanément indisponible.',
-                style: TextStyle(color: mutedColor, fontSize: 12),
-              ),
-            ],
-          ],
-          if (overview.byBrevet.length > 1) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: overview.byBrevet.keys.map((code) {
-                final isSelected = code == selectedCode;
-                return ChoiceChip(
-                  label: Text(milBrevetLabel(code)),
-                  selected: isSelected,
-                  onSelected: (_) => setState(() => _selectedBrevet = code),
-                  selectedColor: widget.dark
-                      ? AppColors.lichtblauw.withValues(alpha: 0.34)
-                      : AppColors.middenblauw,
-                  backgroundColor: textColor.withValues(alpha: 0.08),
-                  side: BorderSide(
-                    color:
-                        textColor.withValues(alpha: isSelected ? 0.35 : 0.12),
-                  ),
-                  labelStyle: TextStyle(
-                    color:
-                        isSelected && !widget.dark ? Colors.white : textColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                );
-              }).toList(),
             ),
           ],
           const SizedBox(height: 10),
@@ -132,28 +92,267 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
                       'Sélectionnez un brevet pour consulter sa matrice.',
               style: TextStyle(color: mutedColor),
             )
-          else if (requirements.isEmpty)
+          else if (selected.requirements.isEmpty)
             Text(
               "Aucune exigence d'expérience n'est configurée pour ce brevet.",
               style: TextStyle(color: mutedColor),
             )
-          else
-            for (var index = 0; index < requirements.length; index++) ...[
-              if (index > 0)
-                Divider(
-                  color: textColor.withValues(alpha: 0.10),
-                  height: 18,
+          else ...[
+            _CompactMilSummary(
+              experience: selected,
+              textColor: textColor,
+              mutedColor: mutedColor,
+            ),
+          ],
+          if (!overview.isEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const Key('mil-show-details'),
+                onPressed: () => _showDetails(context),
+                icon: const Icon(Icons.list_alt_outlined, size: 18),
+                label: const Text('Voir les détails LIFRAS'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor:
+                      widget.dark ? Colors.white : AppColors.middenblauw,
+                  side: BorderSide(
+                    color: textColor.withValues(alpha: 0.28),
+                  ),
                 ),
-              _RequirementRow(
-                label: milExperienceLabelFr[requirements[index].key] ??
-                    requirements[index].key,
-                requirement: requirements[index].value,
-                textColor: textColor,
-                mutedColor: mutedColor,
               ),
-            ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  String _sourceLabel(MilExperienceOverview overview) {
+    if (overview.snapshotFallback) {
+      return 'Dernier bilan disponible • cumul carrière';
+    }
+    final version = overview.sourceVersion;
+    return 'Cumul carrière${version == null ? '' : ' • $version'}';
+  }
+
+  Future<void> _showDetails(BuildContext context) async {
+    var selectedCode = _selectedBrevet;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final overview = _overview;
+          final selected =
+              selectedCode == null ? null : overview.byBrevet[selectedCode];
+          final requirements =
+              selected?.requirements.entries.toList() ?? const [];
+          return FractionallySizedBox(
+            heightFactor: 0.9,
+            child: Material(
+              key: const Key('mil-details-sheet'),
+              color: Colors.white,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 8, 8),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Détails des expériences LIFRAS',
+                              style: TextStyle(
+                                color: AppColors.donkerblauw,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            key: const Key('mil-close-details'),
+                            tooltip: 'Fermer',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _sourceLabel(overview),
+                              style: TextStyle(
+                                color: AppColors.donkerblauw.withValues(
+                                  alpha: 0.68,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: overview.byBrevet.keys.map((code) {
+                                final isSelected = code == selectedCode;
+                                return ChoiceChip(
+                                  key: Key('mil-brevet-$code'),
+                                  label: Text(milBrevetLabel(code)),
+                                  selected: isSelected,
+                                  onSelected: (_) {
+                                    setSheetState(() => selectedCode = code);
+                                    setState(() => _selectedBrevet = code);
+                                  },
+                                  selectedColor: AppColors.middenblauw,
+                                  labelStyle: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppColors.donkerblauw,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 18),
+                            if (selected == null)
+                              const Text(
+                                'Sélectionnez un brevet pour consulter '
+                                'toutes ses exigences.',
+                                style: TextStyle(color: AppColors.donkerblauw),
+                              )
+                            else ...[
+                              Text(
+                                milBrevetLabel(selected.brevetCode),
+                                style: const TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Progression des données disponibles : '
+                                '${selected.modulePct} %',
+                                style: TextStyle(
+                                  color: AppColors.donkerblauw.withValues(
+                                    alpha: 0.68,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              if (requirements.isEmpty)
+                                const Text(
+                                  "Aucune exigence d'expérience configurée.",
+                                )
+                              else
+                                for (var index = 0;
+                                    index < requirements.length;
+                                    index++) ...[
+                                  if (index > 0)
+                                    Divider(
+                                      color: AppColors.donkerblauw.withValues(
+                                        alpha: 0.10,
+                                      ),
+                                      height: 20,
+                                    ),
+                                  _RequirementRow(
+                                    label: milExperienceLabelFr[
+                                            requirements[index].key] ??
+                                        requirements[index].key,
+                                    requirement: requirements[index].value,
+                                    textColor: AppColors.donkerblauw,
+                                    mutedColor: AppColors.donkerblauw
+                                        .withValues(alpha: 0.68),
+                                  ),
+                                ],
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CompactMilSummary extends StatelessWidget {
+  final MilBrevetExperience experience;
+  final Color textColor;
+  final Color mutedColor;
+
+  const _CompactMilSummary({
+    required this.experience,
+    required this.textColor,
+    required this.mutedColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = experience.requirements.entries.toList();
+    final known = entries.where((entry) => !entry.value.dataMissing).toList();
+    final unknownCount = entries.length - known.length;
+    final attainedCount =
+        known.where((entry) => entry.value.have >= entry.value.need).length;
+    final missingCount = known.length - attainedCount;
+    final primary = experience.requirements['total_milieu_naturel'] ??
+        (known.isEmpty ? null : known.first.value);
+    final primaryLabel =
+        experience.requirements.containsKey('total_milieu_naturel')
+            ? 'Total en milieu naturel'
+            : (known.isEmpty
+                ? null
+                : milExperienceLabelFr[known.first.key] ?? known.first.key);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (primary != null && primaryLabel != null)
+          _RequirementRow(
+            label: primaryLabel,
+            requirement: primary,
+            textColor: textColor,
+            mutedColor: mutedColor,
+          ),
+        if (primary != null) const SizedBox(height: 10),
+        Text(
+          '$attainedCount exigence${attainedCount == 1 ? '' : 's'} atteinte${attainedCount == 1 ? '' : 's'}'
+          ' • $missingCount à compléter',
+          style: TextStyle(
+            color: textColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (unknownCount > 0) ...[
+          const SizedBox(height: 3),
+          Text(
+            '$unknownCount exigence${unknownCount == 1 ? '' : 's'} '
+            'à vérifier faute de données',
+            style: TextStyle(color: mutedColor, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: 3),
+        Text(
+          'Progression des données disponibles : ${experience.modulePct} %',
+          style: TextStyle(color: mutedColor, fontSize: 12),
+        ),
+      ],
     );
   }
 }
