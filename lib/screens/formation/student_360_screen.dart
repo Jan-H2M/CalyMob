@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
@@ -20,6 +21,8 @@ import '../../services/pool_student_history_reader.dart';
 import '../../services/pool_group_correction_service.dart';
 import '../../utils/member_name.dart';
 import '../../utils/permission_helper.dart';
+import '../../utils/live_qa_session_resume.dart';
+import 'student_exercise_comparison_screen.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_catalog_sheet.dart';
 import '../../widgets/formation/mil_protocol_sheet.dart';
@@ -52,6 +55,7 @@ class Student360Screen extends StatefulWidget {
   final List<Map<String, dynamic>> previewObservations;
   final List<PoolStudentSession> previewPoolHistory;
   final bool isOwnProfile;
+  final String? ownProfileCaption;
   final FormationSnapshotDoc? providedSnapshot;
   final MilExperienceOverview? providedMilOverview;
   final List<Widget> Function(bool pool)? exerciseSections;
@@ -72,6 +76,7 @@ class Student360Screen extends StatefulWidget {
     this.previewObservations = const [],
     this.previewPoolHistory = const [],
     this.isOwnProfile = false,
+    this.ownProfileCaption,
     this.providedSnapshot,
     this.providedMilOverview,
     this.exerciseSections,
@@ -308,18 +313,46 @@ class _Student360ScreenState extends State<Student360Screen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
-          title: Text(
-            widget.isOwnProfile
-                ? 'Mes exercices'
-                : _fullName.isEmpty
-                    ? 'Fiche élève'
-                    : _fullName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          actions: widget.appBarActions,
+          title: widget.ownProfileCaption != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Mes exercices',
+                        style: TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
+                    Text(widget.ownProfileCaption!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 11)),
+                  ],
+                )
+              : Text(
+                  widget.isOwnProfile
+                      ? 'Mes exercices'
+                      : _fullName.isEmpty
+                          ? 'Fiche élève'
+                          : _fullName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+          actions: [
+            ...widget.appBarActions,
+            if (!widget.isOwnProfile &&
+                widget.scope == FormationTrackingScope.full &&
+                isLiveQaPreviewOrigin(
+                    enabled: liveQaAutostart, isWeb: kIsWeb, uri: Uri.base))
+              IconButton(
+                tooltip: 'Comparer avec Mes exercices (lecture seule)',
+                icon: const Icon(Icons.compare_arrows),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => StudentExerciseComparisonScreen(
+                        clubId: widget.clubId, member: widget.member))),
+              ),
+          ],
         ),
         body: OceanBackground(
           child: SafeArea(

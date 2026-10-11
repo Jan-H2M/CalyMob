@@ -42,6 +42,7 @@ class MemberExercisesScreen extends StatefulWidget {
   final String memberName;
   final bool isMonitor; // L'utilisateur actuel est moniteur (peut éditer)
   final bool isOwnProfile; // C'est le profil de l'utilisateur lui-même
+  final bool comparisonReadOnly;
 
   const MemberExercisesScreen({
     super.key,
@@ -49,6 +50,7 @@ class MemberExercisesScreen extends StatefulWidget {
     required this.memberName,
     this.isMonitor = false,
     this.isOwnProfile = false,
+    this.comparisonReadOnly = false,
   });
 
   @override
@@ -491,12 +493,16 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             prenom: member.prenom ?? '',
             email: member.email ?? '',
             photoUrl: member.photoUrl,
+            consentInternalPhoto: member.consentInternalPhoto,
             plongeurCode: member.plongeurCode,
             targetFormationLevel: member.targetFormationLevel,
             formationActive: member.formationActive,
           ),
           scope: FormationTrackingScope.full,
           isOwnProfile: true,
+          ownProfileCaption: widget.comparisonReadOnly
+              ? '${widget.memberName} · comparaison en lecture seule'
+              : null,
           providedSnapshot: snapshot,
           providedMilOverview: _milOverview,
           exerciseSections: sections,
@@ -504,8 +510,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             IconButton(
               tooltip: 'Preuve externe',
               icon: const Icon(Icons.add_a_photo_outlined),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const ExternalProofCaptureScreen())),
+              onPressed: widget.comparisonReadOnly
+                  ? null
+                  : () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const ExternalProofCaptureScreen())),
             ),
             IconButton(
               tooltip: 'Rafraîchir',
@@ -569,7 +577,9 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             icon: const Icon(Icons.fact_check_outlined, size: 18),
             label: const Text('Demander une évaluation',
                 style: TextStyle(fontSize: 12)),
-            onPressed: () => _openEvaluationRequest(),
+            onPressed: widget.comparisonReadOnly
+                ? null
+                : () => _openEvaluationRequest(),
           ),
           TextButton.icon(
             style: TextButton.styleFrom(
@@ -577,10 +587,12 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             icon: const Icon(Icons.history_edu_outlined, size: 18),
             label: const Text('Exercices sur papier',
                 style: TextStyle(fontSize: 12)),
-            onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const HistoricalClaimsScreen())),
+            onPressed: widget.comparisonReadOnly
+                ? null
+                : () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const HistoricalClaimsScreen())),
           ),
         ],
       ),
@@ -588,6 +600,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   }
 
   Future<void> _openEvaluationRequest([ExerciceLIFRAS? selected]) async {
+    if (widget.comparisonReadOnly) return;
     await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => EvaluationRequestScreen(
         exercises: _catalog.map(EvaluationExerciseOption.fromExercise).toList(),
@@ -852,7 +865,9 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       exercice: exercice,
       isValidated: false,
       hintTag: isPending ? 'demande envoyée' : null,
-      onTap: isPending ? null : () => _openEvaluationRequest(exercice),
+      onTap: isPending || widget.comparisonReadOnly
+          ? null
+          : () => _openEvaluationRequest(exercice),
     );
   }
 

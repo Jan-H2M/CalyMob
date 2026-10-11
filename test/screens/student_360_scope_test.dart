@@ -12,6 +12,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('read-only comparison names the pupil on a narrow screen',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        own: true,
+        caption: 'Alice Martin · comparaison en lecture seule',
+        size: const Size(320, 900));
+    expect(find.text('Mes exercices'), findsOneWidget);
+    expect(find.text('Alice Martin · comparaison en lecture seule'),
+        findsOneWidget);
+    expect(find.byTooltip('Comparer avec Mes exercices (lecture seule)'),
+        findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('MN dossier is not emptied merely because MIL has no MN matrix',
       (tester) async {
     await _pump(tester,
@@ -545,6 +559,7 @@ Future<void> _pump(
   FormationSnapshotDoc? snapshot,
   Future<MilProtocol?> Function(String, bool)? protocolLoader,
   bool own = false,
+  String? caption,
   MilExperienceOverview? milOverview,
   Size size = const Size(1200, 1800),
 }) async {
@@ -565,6 +580,7 @@ Future<void> _pump(
         ),
         scope: scope,
         isOwnProfile: own,
+        ownProfileCaption: caption,
         exerciseSections: own
             ? (pool) => [
                   Text(
