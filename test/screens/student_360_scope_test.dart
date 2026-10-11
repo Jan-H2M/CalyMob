@@ -11,6 +11,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('compact complete exams and experience use green checks',
+      (tester) async {
+    await _pump(tester,
+        scope: FormationTrackingScope.full,
+        snapshot: FormationSnapshotDoc.fromMap('student-1', {
+          'target_level': '2*',
+          'current_code': '1',
+          'exercises': {
+            'validated': [
+              {'code': 'P2.RA'},
+              {'code': 'P2.EXT'},
+              {'code': 'P1.EXP'},
+            ],
+          },
+          'mil_experience': {
+            'per_requirement': {
+              'total': {'have': 25, 'need': 25},
+            },
+          },
+        }));
+    expect(find.text('1/1'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNWidgets(3));
+    for (final icon in tester.widgetList<Icon>(find.byIcon(Icons.check))) {
+      expect(icon.color, Colors.greenAccent);
+    }
+    expect(find.byIcon(Icons.close), findsNothing);
+    await tester.tap(find.byTooltip('Examen théorique : réalisé'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Examen théorique : réalisé'), findsOneWidget);
+  });
+
   testWidgets('brevet header separates completed trials exams and experience',
       (tester) async {
     final snapshot = FormationSnapshotDoc.fromMap('student-1', {
@@ -40,13 +71,16 @@ void main() {
       },
     });
     await _pump(tester, scope: FormationTrackingScope.full, snapshot: snapshot);
-    expect(find.text('3 sur 6 réalisées'), findsOneWidget);
-    expect(find.text('Examen théorique'), findsNWidgets(2));
-    expect(find.text('Réalisé'), findsOneWidget);
-    expect(find.text('Examen piscine'), findsOneWidget);
-    expect(find.text('En attente de validation'), findsOneWidget);
-    expect(find.text('À vérifier'), findsOneWidget);
-    expect(find.text('Suffisante'), findsNothing);
+    expect(find.text('3/6'), findsOneWidget);
+    expect(find.byTooltip('Épreuves en milieu naturel : 3 sur 6 réalisées'),
+        findsOneWidget);
+    expect(find.byTooltip('Examen théorique : réalisé'), findsOneWidget);
+    expect(find.byTooltip('Examen piscine : en attente de validation'),
+        findsOneWidget);
+    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(find.byIcon(Icons.hourglass_top), findsOneWidget);
+    expect(find.byIcon(Icons.help_outline), findsOneWidget);
+    expect(find.byIcon(Icons.close), findsNothing);
     expect(find.text('Expériences comptabilisées'), findsNothing);
     expect(find.text('Plongées'), findsNothing);
     expect(find.text('Progression par volet'), findsNothing);
@@ -62,9 +96,18 @@ void main() {
           'current_code': '1',
         }));
     expect(tester.takeException(), isNull);
-    expect(find.text('Non renseigné'), findsNWidgets(2));
-    expect(find.text('Non renseignée'), findsOneWidget);
-    expect(find.text('Suffisante'), findsNothing);
+    expect(find.byIcon(Icons.help_outline), findsNWidgets(3));
+    expect(find.byIcon(Icons.check), findsNothing);
+    final strip = find.byKey(const Key('brevet-status-strip'));
+    expect(tester.getSize(strip).height, lessThan(40));
+    final labels = ['Épreuves', 'Théorie', 'Piscine', 'Exp.'];
+    final y = tester.getCenter(find.text(labels.first)).dy;
+    for (final label in labels.skip(1)) {
+      final center = tester
+          .getCenter(find.descendant(of: strip, matching: find.text(label)));
+      expect(center.dy, closeTo(y, 1));
+      expect(center.dx, lessThan(320));
+    }
   });
 
   testWidgets('natural exercises omit the redundant modality summary',
@@ -75,7 +118,7 @@ void main() {
     expect(find.text('Préparer la prochaine séance'), findsOneWidget);
     expect(find.text('Exercices en milieu naturel et théorie'), findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsOneWidget);
-    expect(find.text('Examen théorique'), findsNWidgets(2));
+    expect(find.text('Examen théorique'), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
   });
 
@@ -98,7 +141,7 @@ void main() {
     ]);
     expect(find.text('Apnée synthétique'), findsNothing);
     expect(find.text('Ajouter une remarque piscine'), findsNothing);
-    await tester.tap(find.text('Piscine').first);
+    await tester.tap(find.widgetWithText(Tab, 'Piscine'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Apnée synthétique'), findsOneWidget);
@@ -167,7 +210,7 @@ void main() {
   ) async {
     await _pump(tester, scope: FormationTrackingScope.full);
 
-    expect(find.text('Épreuves en milieu naturel'), findsOneWidget);
+    expect(find.text('Épreuves'), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
     expect(find.text('Objectifs'), findsOneWidget);
     expect(find.text('Observations'), findsOneWidget);

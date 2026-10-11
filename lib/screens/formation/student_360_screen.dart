@@ -454,94 +454,114 @@ class _Student360ScreenState extends State<Student360Screen> {
             ],
           ),
           const SizedBox(height: 8),
-          _brevetStatusRow(
-            Icons.scuba_diving,
-            'Épreuves en milieu naturel',
-            natural.total == 0
-                ? 'Non renseignées'
-                : '${natural.validated} sur ${natural.total} réalisées',
-            detail: natural.pending > 0
-                ? '${natural.pending} en attente de validation'
-                : null,
-            complete: natural.total > 0 && natural.validated == natural.total,
-          ),
-          _examStatusRow('Examen théorique', exams[FormationModality.theory]!,
-              Icons.school_outlined),
-          _examStatusRow('Examen piscine', exams[FormationModality.pool]!,
-              Icons.pool_outlined),
-          _brevetStatusRow(
-            Icons.fact_check_outlined,
-            'Expérience requise pour le brevet',
-            liveMil == null || liveMil.requirements.isEmpty
-                ? 'Non renseignée'
-                : liveMil.requiredCount == 0
-                    ? 'Aucune exigence'
-                    : liveMil.isSufficient
-                        ? 'Suffisante'
-                        : liveMil.hasMissingData
-                            ? 'À vérifier'
-                            : 'À compléter',
-            detail: liveMil != null && liveMil.requiredCount > 0
-                ? '${liveMil.attainedCount} sur ${liveMil.requiredCount} exigences atteintes'
-                    '${liveMil.hasMissingData ? ' · données manquantes' : ''}'
-                : null,
-            complete: liveMil?.isSufficient == true,
-          ),
+          LayoutBuilder(builder: (context, constraints) {
+            return FittedBox(
+              key: const Key('brevet-status-strip'),
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _compactBrevetStatus(
+                      'Épreuves',
+                      'Épreuves en milieu naturel : '
+                          '${natural.total == 0 ? 'non renseignées' : '${natural.validated} sur ${natural.total} réalisées'}'
+                          '${natural.pending > 0 ? ' · ${natural.pending} en attente de validation' : ''}',
+                      count: natural.total == 0
+                          ? '—'
+                          : '${natural.validated}/${natural.total}',
+                      complete: natural.total > 0 &&
+                          natural.validated == natural.total,
+                    ),
+                    _compactExamStatus('Théorie', 'Examen théorique',
+                        exams[FormationModality.theory]!),
+                    _compactExamStatus('Piscine', 'Examen piscine',
+                        exams[FormationModality.pool]!),
+                    _compactBrevetStatus(
+                      'Exp.',
+                      'Expérience requise pour le brevet : '
+                          '${liveMil == null || liveMil.requirements.isEmpty ? 'non renseignée' : liveMil.requiredCount == 0 ? 'aucune exigence' : liveMil.isSufficient ? 'suffisante' : liveMil.hasMissingData ? 'à vérifier · données manquantes' : 'à compléter'}'
+                          '${liveMil != null && liveMil.requiredCount > 0 ? ' · ${liveMil.attainedCount} sur ${liveMil.requiredCount} exigences atteintes' : ''}',
+                      complete: liveMil?.isSufficient == true,
+                      unknown: liveMil == null ||
+                          liveMil.requirements.isEmpty ||
+                          liveMil.requiredCount == 0 ||
+                          liveMil.hasMissingData,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );
   }
 
-  Widget _examStatusRow(
-      String label, FormationModalityProgress progress, IconData icon) {
+  Widget _compactExamStatus(
+      String label, String fullLabel, FormationModalityProgress progress) {
     final done = progress.total > 0 && progress.validated == progress.total;
-    return _brevetStatusRow(
-      icon,
+    return _compactBrevetStatus(
       label,
-      progress.total == 0
-          ? 'Non renseigné'
-          : done
-              ? 'Réalisé'
-              : progress.remaining == 0 && progress.pending > 0
-                  ? 'En attente de validation'
-                  : 'À faire',
-      detail: !done && progress.pending > 0 && progress.remaining > 0
-          ? '${progress.pending} en attente de validation'
-          : null,
+      '$fullLabel : ${progress.total == 0 ? 'non renseigné' : done ? 'réalisé' : progress.remaining == 0 && progress.pending > 0 ? 'en attente de validation' : 'à faire'}'
+      '${!done && progress.pending > 0 && progress.remaining > 0 ? ' · ${progress.pending} en attente de validation' : ''}',
       complete: done,
+      unknown: progress.total == 0,
+      pending: !done && progress.remaining == 0 && progress.pending > 0,
     );
   }
 
-  Widget _brevetStatusRow(IconData icon, String label, String status,
-      {String? detail, bool complete = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Colors.white70, size: 20),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _compactBrevetStatus(String label, String explanation,
+      {String? count,
+      bool complete = false,
+      bool unknown = false,
+      bool pending = false}) {
+    final color = unknown
+        ? Colors.white70
+        : pending
+            ? Colors.amberAccent
+            : complete
+                ? Colors.greenAccent
+                : Colors.redAccent;
+    return Tooltip(
+      message: explanation,
+      triggerMode: TooltipTriggerMode.tap,
+      excludeFromSemantics: true,
+      child: Semantics(
+        label: explanation,
+        child: ExcludeSemantics(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(label,
                     style:
                         const TextStyle(color: Colors.white70, fontSize: 12)),
-                Text(status,
-                    style: TextStyle(
-                      color: complete ? Colors.greenAccent : Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    )),
-                if (detail != null)
-                  Text(detail,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 11)),
+                const SizedBox(width: 4),
+                if (count != null)
+                  Text(count,
+                      style: TextStyle(
+                          color: complete ? Colors.greenAccent : Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12))
+                else
+                  Icon(
+                      unknown
+                          ? Icons.help_outline
+                          : pending
+                              ? Icons.hourglass_top
+                              : complete
+                                  ? Icons.check
+                                  : Icons.close,
+                      color: color,
+                      size: 17),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
