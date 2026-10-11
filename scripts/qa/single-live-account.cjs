@@ -181,7 +181,7 @@ async function run(options, env = process.env) {
 }
 
 module.exports = { PROJECT, UID, EMAIL, KEYCHAIN_SERVICE, profiles, parseArgs,
-  validateEnvironment, assertManaged, roleFields, activateHiddenAccount, run };
+  validateEnvironment, assertManaged, roleFields, activateHiddenAccount, keychainPassword, run };
 if (require.main === module) {
   run(parseArgs(process.argv.slice(2))).then(result => console.log(JSON.stringify(result)))
     .catch(() => { console.error('QA-002 stopped safely. No credentials logged; inspect the preconditions.'); process.exitCode = 1; });

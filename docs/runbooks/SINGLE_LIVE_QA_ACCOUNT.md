@@ -34,6 +34,42 @@ Het script werkt uitsluitend op het vaste UID/e-mailadres en stopt bij botsingen
 
 ## Zichtbaar testen
 
+### Automatisch aanmelden op deze Mac
+
+Gebruik de lokale hulp `scripts/qa/live-preview-login.cjs`, met de bestaande
+beveiligde serviceaccountreferentie in `QA_SERVICE_ACCOUNT_FILE` en de bestaande
+volledige productieverbonden Flutter-releasebuild:
+
+```sh
+NODE_PATH="$PWD/functions/node_modules" node scripts/qa/live-preview-login.cjs --web-root=/ABSOLUUT/PAD/NAAR/build/web
+```
+
+Open zichtbaar `http://localhost:7359/__qa/login`. De hulp controleert eerst het
+vaste verborgen actieve account, functie Encadrant, niveau MC en gewone
+gebruikersrechten. Ze verandert geen rollen of accounts. Eén kortlevende
+same-origin POST met nonce haalt het wachtwoord rechtstreeks uit Sleutelhanger;
+de officiële Firebase SDK voert normale e-mail/wachtwoordaanmelding uit. De SDK
+bewaart de gewone sessie op deze aparte lokale oorsprong; daarna opent dezelfde
+volledige, ongewijzigde Flutter-build. Geen handmatige tokeninjectie, custom token,
+admin-impersonatie of demo-authenticatie. Andere lokale app-oorsprongen en Jans
+eigen sessie blijven gescheiden.
+
+De hulp luistert alleen op loopback, weigert vreemde Host-/Origin-headers,
+cross-site requests, frames, CORS en hergebruik. De aanmeldroute is na maximaal
+120 seconden of één poging gesloten. Het wachtwoord staat niet in URL, Git,
+stdout, logs of bestanden; het gaat alleen kort door geheugen naar de normale
+Firebase-aanmelding. Start de hulp opnieuw als opnieuw aanmelden nodig is. De
+beveiligde Sleutelhanger moet toegankelijk blijven; macOS kan bij gewijzigde
+toegangsrechten alsnog Jans lokale bevestiging vragen. Verzwak geen OS-beveiliging
+en roteer het wachtwoord niet automatisch. Stoppen van de hulp beëindigt de lokale
+assetserver. Log bij gedeeld Mac-gebruik ook uit in de app.
+
+Dit is een lokale testvoorziening, geen onderdeel van de Flutter-app of een
+appstore-release. De JS SDK-versie volgt `firebase_core_web` (momenteel 12.3.0).
+De bestaande serviceaccountreferentie wordt uitsluitend voor read-only
+preflight gebruikt, nooit aan de browser doorgegeven. Alle echte appgegevens
+worden vervolgens met de gewone rechten van het aangemelde QA-account geladen.
+
 Gebruik de volledige normale Flutter-app, zonder `CALYMOB_LOCAL_QA`, op de productieverbonden preview. Controleer browser, oorsprong, technische identiteit en huidig profiel vóór handelingen. Het aparte emulatorpaneel op 7358 heeft fictieve dossiers en is niet deze aanmelding.
 
 Bekijk eerst alleen de echte leerlingen en voortgang. Toegang hebben is geen opdracht om echte dossiers te wijzigen, financiële acties te doen of berichten te versturen. Voer zulke handelingen alleen uit binnen Jans concrete opdracht. Schrijf nooit synthetische leerlinggegevens naar productie. Het testaccount blijft buiten de gewone directory, zoek- en daarop gebaseerde leerlinglijsten; bevoegde beheerders kunnen de private technische identiteit wel beheren.
