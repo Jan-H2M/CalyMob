@@ -26,6 +26,46 @@ Future<void> frames(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('snapshot fallback MIL is not an explicit live training goal',
+      (tester) async {
+    final oldSnapshot = FormationSnapshotDoc.fromMap('synthetic', {
+      'current_code': '1',
+      'target_level': '2*',
+      'mil': {
+        'module_pct': 20,
+        'per_requirement': {
+          'total': {'have': 5, 'need': 25}
+        }
+      },
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: Student360Screen(
+      clubId: 'qa',
+      member: MemberProfile(
+          id: 'synthetic',
+          nom: 'Test',
+          prenom: 'Élève',
+          email: '',
+          formationActive: true,
+          plongeurCode: '2'),
+      scope: FormationTrackingScope.full,
+      previewMode: true,
+      previewSnapshot: oldSnapshot,
+      poolProtocolCatalogLoader: () async => catalog(),
+    )));
+    await frames(tester);
+    expect(find.text('2 → 3*'), findsOneWidget);
+    await tester.tap(find.widgetWithText(Tab, 'Piscine'));
+    await frames(tester);
+    await tester.tap(find.widgetWithText(Tab, 'Exercices'));
+    await frames(tester);
+    expect(find.text('P3.AD'), findsOneWidget);
+    expect(find.text('P2.AD'), findsNothing);
+    await tester.tap(find.widgetWithText(Tab, 'Expériences brevet'));
+    await frames(tester);
+    expect(find.text('Expériences LIFRAS — Brevet 2*'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
       'live explicit goal wins over stale snapshot in header and pool protocols',
       (tester) async {

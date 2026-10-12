@@ -458,8 +458,10 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   String? _targetFor(FormationSnapshotDoc? snapshot) =>
       resolvePreferredMilBrevet(
-        targetFormationLevel:
-            widget.member.targetFormationLevel ?? _milOverview?.preferredBrevet,
+        targetFormationLevel: widget.member.targetFormationLevel ??
+            (_milOverview?.snapshotFallback == false
+                ? _milOverview?.preferredBrevet
+                : null),
         currentCode: widget.member.plongeurCode,
         snapshotTargetLevel: snapshot?.targetLevel,
       );
@@ -509,7 +511,7 @@ class _Student360ScreenState extends State<Student360Screen> {
         // percentages. Normal loads reconcile with the current catalogue above.
         s = memberDossierSnapshot(
           memberId: s.memberId,
-          currentCode: s.currentCode,
+          currentCode: widget.member.plongeurCode ?? s.currentCode,
           target: target,
           unresolvedTarget: preferred,
           catalog: const [],
