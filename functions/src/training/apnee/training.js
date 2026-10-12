@@ -71,6 +71,12 @@ async function executeApnee(db, uid, input) {
       const enrollment = await tx.get(enrollmentRef);
       if (action === 'enroll') {
         if (!['active', 'closed'].includes(data.status)) fail('invalid-argument', 'Statut requis.');
+        if (data.status === 'active' && data.fromTrack === undefined && data.fromRevision === undefined) {
+          const otherTrack = tracks.find(track => track !== data.track);
+          const other = await tx.get(club.collection('apnee_enrollments').doc(enrollmentId(data.memberId, otherTrack)));
+          if (other.exists && other.data().status === 'active')
+            fail('failed-precondition', 'Un autre brevet est déjà visé. Changez le brevet avec une transition auditée.');
+        }
         if (data.fromTrack !== undefined || data.fromRevision !== undefined) {
           if (data.status !== 'active' || !tracks.includes(data.fromTrack) || data.fromTrack === data.track ||
               !Number.isSafeInteger(data.fromRevision) || data.fromRevision < 0)

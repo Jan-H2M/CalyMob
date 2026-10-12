@@ -54,6 +54,7 @@ async function run(rulesPath) {
     await assert.rejects(executeApnee(db,'student',{ ...operation,action:'attendance',operationId:'no-qr',expectedRevision:1,memberId:'student',sessionId:'lesson-day',lessonId:'a1',status:'attended',note:'Synthetic' }));
     const nextEnrollment=`${base}/apnee_enrollments/${enrollmentId('student','apnee.a2')}`;
     const move={ ...operation,action:'enroll',operationId:'move',memberId:'student',track:'apnee.a2',status:'active',fromTrack:'apnee.a1',fromRevision:1 };
+    await assert.rejects(executeApnee(db,'admin',{ ...operation,action:'enroll',operationId:'parallel-target',memberId:'student',track:'apnee.a2',status:'active' }));
     await assert.rejects(executeApnee(db,'admin',{ ...move,operationId:'stale-source',fromRevision:0 }));
     await assert.rejects(executeApnee(db,'admin',{ ...move,operationId:'stale-destination',expectedRevision:1 }));
     assert.equal((await db.doc(enrolled).get()).data().status,'active');

@@ -71,6 +71,12 @@ test('target change atomically closes previous enrollment, preserves signed resu
   expect(f.rows.get('clubs/synthetic/members/student').target_formation_level).toBe('3*');
   expect([...f.rows.keys()].some(p => /attendees|participations|qr_scan_receipts|exercices_valides|brevet_history/.test(p))).toBe(false);
 });
+test('a second active target without an atomic transition is rejected without writes', async () => {
+  const f = await enrolled();
+  const before = JSON.stringify([...f.rows]);
+  await expect(executeApnee(f.db, 'admin', { ...f.enroll, operationId: 'second-target', track: 'apnee.a2' })).rejects.toThrow('Un autre brevet');
+  expect(JSON.stringify([...f.rows])).toBe(before);
+});
 test.each(['stale-source', 'stale-destination', 'missing-source', 'closed-source', 'same-track', 'bad-source-revision', 'missing-source-revision', 'non-admin'])('target change %s leaves both enrollments untouched', async scenario => {
   const f = await enrolled();
   const request = { ...f.enroll, operationId: 'move', track: 'apnee.a2', fromTrack: 'apnee.a1', fromRevision: 1 };
