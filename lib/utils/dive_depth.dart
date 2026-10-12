@@ -49,8 +49,9 @@ class DiveDepthDistribution {
       }
       buckets[(depth / 5).floor().clamp(0, buckets.length - 1)]++;
       for (final threshold in thresholds.keys) {
-        if (depth >= threshold)
+        if (depth >= threshold) {
           thresholds[threshold] = thresholds[threshold]! + 1;
+        }
       }
     }
     return DiveDepthDistribution(
