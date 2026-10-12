@@ -12,7 +12,7 @@ const { executeCorrection, assignmentState, mayCorrect, buildPatch, choices } = 
 function fixture({ actor, attendance, duplicate, session } = {}) {
   const data = new Map([
     ['clubs/calypso/members/student', { member_status: 'active', app_role: 'user', clubStatuten: ['Membre'], plongeur_code: 'P2' }],
-    ['clubs/calypso/members/monitor', actor || { app_role: 'user', clubStatuten: ['Encadrant'], plongeur_code: 'MC' }],
+    ['clubs/calypso/members/monitor', { member_status: 'active', ...(actor || { app_role: 'user', clubStatuten: ['Encadrant'], plongeur_code: 'MC' }) }],
     ['clubs/calypso/piscine_sessions/synthetic', session || {
       date: { toMillis: () => 1791230400000 }, type: 'piscine', niveaux: {
         '3*': { courses_by_hour: { '2eme_heure': [{ id: 'group2', order: 1,
@@ -56,6 +56,12 @@ test('only monitor encadrant or admin may correct groups', () => {
   expect(mayCorrect({ clubStatuten: ['Encadrant'], plongeur_code: 'MC' })).toBe(true);
   expect(mayCorrect({ app_role: 'admin' })).toBe(true);
   expect(mayCorrect({ app_role: 'user', clubStatuten: ['Administrateur'] })).toBe(false);
+});
+test('inactive monitor cannot change any group or create an audit', async () => {
+  const f = fixture({ actor: { member_status: 'inactive', app_role: 'user', clubStatuten: ['Encadrant'], plongeur_code: 'MC' } });
+  const before = JSON.stringify([...f.data]);
+  await expect(executeCorrection(f.db, 'monitor', f.request)).rejects.toThrow();
+  expect(JSON.stringify([...f.data])).toBe(before);
 });
 test('scanned member may correct only their own group without granting monitor powers', async () => {
   const scan = { toMillis: () => 1791230400000 };
