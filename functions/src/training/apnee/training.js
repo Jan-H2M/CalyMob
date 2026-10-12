@@ -38,7 +38,7 @@ async function executeApnee(db, uid, input) {
   const auditRef = club.collection('apnee_audit').doc(operationId);
   // Reject undeclared payload fields: an audit replay cannot hide new intent.
   const fields = {
-    enroll: ['memberId', 'track', 'status'],
+    enroll: ['memberId', 'track', 'status', 'fromTrack', 'fromRevision'],
     lesson: ['sessionId', 'lessonId', 'track', 'hour', 'theme', 'memberIds', 'instructorIds'],
     result: ['memberId', 'track', 'requirementKey', 'status', 'date', 'validatorName', 'validatorFederation', 'qualificationConfirmed'],
     award: ['memberId', 'track', 'award', 'date', 'validatorName', 'validatorFederation', 'qualificationConfirmed'],
@@ -61,6 +61,8 @@ async function executeApnee(db, uid, input) {
     }
     let ref, before, after;
     const additional = [];
+    // Named audit entries permit Firestore timestamp transforms; arrays do not.
+    const relatedChanges = {};
     if (['enroll', 'result', 'award'].includes(action)) {
       if (!id(data.memberId) || !tracks.includes(data.track)) fail('invalid-argument', 'Membre et trajectoire requis.');
       const member = await tx.get(club.collection('members').doc(data.memberId));
@@ -69,6 +71,28 @@ async function executeApnee(db, uid, input) {
       const enrollment = await tx.get(enrollmentRef);
       if (action === 'enroll') {
         if (!['active', 'closed'].includes(data.status)) fail('invalid-argument', 'Statut requis.');
+        if (data.status === 'active' && data.fromTrack === undefined && data.fromRevision === undefined) {
+          const otherTrack = tracks.find(track => track !== data.track);
+          const other = await tx.get(club.collection('apnee_enrollments').doc(enrollmentId(data.memberId, otherTrack)));
+          if (other.exists && other.data().status === 'active')
+            fail('failed-precondition', 'Un autre brevet est déjà visé. Changez le brevet avec une transition auditée.');
+        }
+        if (data.fromTrack !== undefined || data.fromRevision !== undefined) {
+          if (data.status !== 'active' || !tracks.includes(data.fromTrack) || data.fromTrack === data.track ||
+              !Number.isSafeInteger(data.fromRevision) || data.fromRevision < 0)
+            fail('invalid-argument', 'Ancienne inscription et révision valides requises.');
+          const previousRef = club.collection('apnee_enrollments').doc(enrollmentId(data.memberId, data.fromTrack));
+          const previous = await tx.get(previousRef);
+          const previousData = previous.data();
+          if (!previous.exists || previousData.member_id !== data.memberId || previousData.track !== data.fromTrack || previousData.status !== 'active')
+            fail('failed-precondition', 'Ancienne formation active requise.');
+          if ((previousData.revision || 0) !== data.fromRevision)
+            fail('aborted', 'Ancienne inscription modifiée. Rechargez avant de changer de brevet.');
+          const closed = { ...previousData, status: 'closed', revision: data.fromRevision + 1,
+            recorded_by: uid, updated_at: FieldValue.serverTimestamp() };
+          additional.push([previousRef, closed]);
+          relatedChanges.source_enrollment = { path: previousRef.path, before: previousData, after: closed };
+        }
         ref = enrollmentRef;
         before = enrollment.exists ? enrollment.data() : null;
         after = { member_id: data.memberId, track: data.track, status: data.status,
@@ -194,6 +218,7 @@ async function executeApnee(db, uid, input) {
     tx.set(ref, after);
     for (const [target, value] of additional) tx.set(target, { ...value, updated_at: FieldValue.serverTimestamp() });
     tx.create(auditRef, { actor_uid: uid, action, requested, before: before || null, after,
+      ...(Object.keys(relatedChanges).length ? { related_changes: relatedChanges } : {}),
       revision, created_at: FieldValue.serverTimestamp(), source: 'apnee_training' });
     return { saved: true, replay: false, revision };
   });

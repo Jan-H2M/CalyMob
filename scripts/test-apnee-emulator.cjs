@@ -52,6 +52,25 @@ async function run(rulesPath) {
     assert.equal((await club.collection('members').doc('student').get()).data().plongeur_code,'2');
     await assert.rejects(executeApnee(db,'pool',{ ...official,operationId:'pool-cannot-sign',requirementKey:poolKey }));
     await assert.rejects(executeApnee(db,'student',{ ...operation,action:'attendance',operationId:'no-qr',expectedRevision:1,memberId:'student',sessionId:'lesson-day',lessonId:'a1',status:'attended',note:'Synthetic' }));
+    const nextEnrollment=`${base}/apnee_enrollments/${enrollmentId('student','apnee.a2')}`;
+    const move={ ...operation,action:'enroll',operationId:'move',memberId:'student',track:'apnee.a2',status:'active',fromTrack:'apnee.a1',fromRevision:1 };
+    await assert.rejects(executeApnee(db,'admin',{ ...operation,action:'enroll',operationId:'parallel-target',memberId:'student',track:'apnee.a2',status:'active' }));
+    await assert.rejects(executeApnee(db,'admin',{ ...move,operationId:'stale-source',fromRevision:0 }));
+    await assert.rejects(executeApnee(db,'admin',{ ...move,operationId:'stale-destination',expectedRevision:1 }));
+    assert.equal((await db.doc(enrolled).get()).data().status,'active');
+    assert.equal((await db.doc(nextEnrollment).get()).exists,false);
+    await executeApnee(db,'admin',move);
+    assert.equal((await db.doc(enrolled).get()).data().status,'closed');
+    assert.equal((await db.doc(nextEnrollment).get()).data().status,'active');
+    assert.equal((await db.doc(`${enrolled}/requirements/${poolKey}`).get()).data().status,'validated');
+    assert.equal((await db.collection(`${nextEnrollment}/requirements`).get()).size,0);
+    const audit=(await club.collection('apnee_audit').doc('move').get()).data();
+    assert.equal(audit.related_changes.source_enrollment.before.status,'active');
+    assert.equal(audit.related_changes.source_enrollment.after.status,'closed');
+    assert.equal(audit.related_changes.source_enrollment.after.updated_at.toMillis(),(await db.doc(enrolled).get()).data().updated_at.toMillis());
+    assert.equal((await executeApnee(db,'admin',move)).replay,true);
+    assert.equal((await club.collection('members').doc('student').get()).data().target_formation_level,'3*');
+    assert.equal((await session.collection('attendees').get()).size,0);
     console.log(`PASS apnee transactions and rules: ${path.basename(path.dirname(rulesPath))}; synthetic only`);
   } finally { await db.terminate(); await app.delete(); await env.cleanup(); }
 }

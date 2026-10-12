@@ -54,6 +54,44 @@ test('enrolment is idempotent/audited and creates no attendance, exercises or SC
   expect([...f.rows.keys()].some(p => /attendees|participations|exercices_valides|brevet_history/.test(p))).toBe(false);
   expect(f.rows.get('clubs/synthetic/apnee_audit/op1')).toMatchObject({ actor_uid:'admin', action:'enroll' });
 });
+test('target change atomically closes previous enrollment, preserves signed results and audits both records', async () => {
+  const f = await enrolled();
+  await executeApnee(f.db, 'admin', f.result);
+  const sourcePath = `clubs/synthetic/apnee_enrollments/${enrollmentId('student','apnee.a1')}`;
+  const resultPath = `${sourcePath}/requirements/${f.result.requirementKey}`;
+  const signedResult = f.rows.get(resultPath);
+  const request = { ...f.enroll, operationId: 'move', track: 'apnee.a2', fromTrack: 'apnee.a1', fromRevision: 1 };
+  await executeApnee(f.db, 'admin', request);
+  expect(f.rows.get(sourcePath)).toMatchObject({ status: 'closed', revision: 2, recorded_by: 'admin' });
+  expect(f.rows.get(`clubs/synthetic/apnee_enrollments/${enrollmentId('student','apnee.a2')}`)).toMatchObject({ status: 'active', revision: 1 });
+  expect(f.rows.get(resultPath)).toBe(signedResult);
+  expect(f.rows.get('clubs/synthetic/apnee_audit/move')).toMatchObject({ requested: request,
+    related_changes: { source_enrollment: { path: sourcePath, before: { status: 'active', revision: 1 }, after: { status: 'closed', revision: 2 } } } });
+  expect(await executeApnee(f.db, 'admin', request)).toMatchObject({ replay: true });
+  expect(f.rows.get('clubs/synthetic/members/student').target_formation_level).toBe('3*');
+  expect([...f.rows.keys()].some(p => /attendees|participations|qr_scan_receipts|exercices_valides|brevet_history/.test(p))).toBe(false);
+});
+test('a second active target without an atomic transition is rejected without writes', async () => {
+  const f = await enrolled();
+  const before = JSON.stringify([...f.rows]);
+  await expect(executeApnee(f.db, 'admin', { ...f.enroll, operationId: 'second-target', track: 'apnee.a2' })).rejects.toThrow('Un autre brevet');
+  expect(JSON.stringify([...f.rows])).toBe(before);
+});
+test.each(['stale-source', 'stale-destination', 'missing-source', 'closed-source', 'same-track', 'bad-source-revision', 'missing-source-revision', 'non-admin'])('target change %s leaves both enrollments untouched', async scenario => {
+  const f = await enrolled();
+  const request = { ...f.enroll, operationId: 'move', track: 'apnee.a2', fromTrack: 'apnee.a1', fromRevision: 1 };
+  const sourcePath = `clubs/synthetic/apnee_enrollments/${enrollmentId('student','apnee.a1')}`;
+  if (scenario === 'stale-source') request.fromRevision = 0;
+  if (scenario === 'stale-destination') request.expectedRevision = 1;
+  if (scenario === 'missing-source') f.rows.delete(sourcePath);
+  if (scenario === 'closed-source') f.rows.get(sourcePath).status = 'closed';
+  if (scenario === 'same-track') request.track = 'apnee.a1';
+  if (scenario === 'bad-source-revision') request.fromRevision = -1;
+  if (scenario === 'missing-source-revision') delete request.fromRevision;
+  const before = JSON.stringify([...f.rows]);
+  await expect(executeApnee(f.db, scenario === 'non-admin' ? 'pool' : 'admin', request)).rejects.toThrow();
+  expect(JSON.stringify([...f.rows])).toBe(before);
+});
 test.each(['student','pool','missing'])('%s cannot officially enrol or sign a result', async actor => {
   const f = fixture(); await expect(executeApnee(f.db,actor,f.enroll)).rejects.toThrow();
   const e = await enrolled(); await expect(executeApnee(e.db,actor,e.result)).rejects.toThrow();
