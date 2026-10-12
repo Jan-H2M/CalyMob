@@ -12,6 +12,7 @@ class MilRequirementsCard extends StatefulWidget {
   /// Shows every requirement of the preferred target brevet in place,
   /// without exposing the selector or requirements from other brevet levels.
   final bool inlineExpanded;
+  final bool compactRows;
 
   const MilRequirementsCard({
     super.key,
@@ -19,6 +20,7 @@ class MilRequirementsCard extends StatefulWidget {
     this.overview,
     this.dark = false,
     this.inlineExpanded = false,
+    this.compactRows = false,
   }) : assert(snapshot != null || overview != null);
 
   @override
@@ -61,7 +63,7 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
         selectedCode == null ? null : overview.byBrevet[selectedCode];
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(widget.compactRows ? 12 : 14),
       decoration: BoxDecoration(
         color: surfaceColor,
         borderRadius: BorderRadius.circular(16),
@@ -112,6 +114,7 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
               experience: selected,
               textColor: textColor,
               mutedColor: mutedColor,
+              compact: widget.compactRows,
             )
           else
             _CompactMilSummary(
@@ -295,11 +298,13 @@ class _MilRequirementsList extends StatelessWidget {
   final MilBrevetExperience experience;
   final Color textColor;
   final Color mutedColor;
+  final bool compact;
 
   const _MilRequirementsList({
     required this.experience,
     required this.textColor,
     required this.mutedColor,
+    this.compact = false,
   });
 
   @override
@@ -311,7 +316,7 @@ class _MilRequirementsList extends StatelessWidget {
           if (index > 0)
             Divider(
               color: textColor.withValues(alpha: 0.10),
-              height: 20,
+              height: compact ? 12 : 20,
             ),
           _RequirementRow(
             label: milExperienceLabelFr[requirements[index].key] ??
@@ -319,6 +324,7 @@ class _MilRequirementsList extends StatelessWidget {
             requirement: requirements[index].value,
             textColor: textColor,
             mutedColor: mutedColor,
+            compact: compact,
           ),
         ],
       ],
@@ -397,16 +403,73 @@ class _RequirementRow extends StatelessWidget {
   final SnapshotMilRequirement requirement;
   final Color textColor;
   final Color mutedColor;
+  final bool compact;
 
   const _RequirementRow({
     required this.label,
     required this.requirement,
     required this.textColor,
     required this.mutedColor,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      final known = !requirement.dataMissing;
+      final attained = known && requirement.have >= requirement.need;
+      final statusColor = !known
+          ? mutedColor
+          : attained
+              ? Colors.green
+              : Colors.orange.shade700;
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600))),
+          const SizedBox(width: 8),
+          Text(
+              known
+                  ? '${requirement.have}/${requirement.need}'
+                  : '—/${requirement.need}',
+              style: TextStyle(
+                  color: textColor, fontSize: 13, fontWeight: FontWeight.w800)),
+          const SizedBox(width: 6),
+          Tooltip(
+              message: !known
+                  ? 'Données manquantes'
+                  : attained
+                      ? 'Atteint'
+                      : 'Manque ${requirement.need - requirement.have}',
+              child: Icon(
+                  !known
+                      ? Icons.help_outline
+                      : attained
+                          ? Icons.check_circle_outline
+                          : Icons.remove_circle_outline,
+                  color: statusColor,
+                  size: 17)),
+        ]),
+        if (!attained)
+          Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                  !known
+                      ? 'Données manquantes'
+                      : 'Manque ${requirement.need - requirement.have}',
+                  style: TextStyle(color: statusColor, fontSize: 11))),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+            value: known ? requirement.ratio : 0,
+            minHeight: 3,
+            backgroundColor: textColor.withValues(alpha: 0.12),
+            valueColor: AlwaysStoppedAnimation<Color>(statusColor)),
+      ]);
+    }
     if (requirement.dataMissing) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,

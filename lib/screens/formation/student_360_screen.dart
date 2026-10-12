@@ -1642,6 +1642,16 @@ class _Student360ScreenState extends State<Student360Screen> {
                   style: const TextStyle(color: Colors.white, fontSize: 11),
                 ),
               ),
+            IconButton(
+              key: ValueKey('mil-protocol-info-${pool ? 'pool' : 'mn'}-$code'),
+              tooltip: 'Voir le protocole',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.info_outline,
+                  color: Colors.white70, size: 20),
+              onPressed: code.trim().isEmpty
+                  ? null
+                  : () => _openExerciseProtocol(code, pool),
+            ),
             if (widget.exerciseAction != null && !widget.readOnlyProfile)
               SizedBox(
                   width: 40,

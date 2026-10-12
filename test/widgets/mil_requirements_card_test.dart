@@ -114,7 +114,7 @@ void main() {
 
     expect(find.text('Cumul carrière • v2026-test'), findsOneWidget);
     expect(find.text('8/20'), findsOneWidget);
-    expect(find.text('Voir les détails LIFRAS'), findsOneWidget);
+    expect(find.text('Voir les détails LIFRAS'), findsNothing);
   });
 
   testWidgets(

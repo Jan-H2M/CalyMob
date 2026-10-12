@@ -29,12 +29,14 @@ class StatsMilExperienceSection extends StatelessWidget {
   final MilExperienceOverview? overview;
   final bool loading;
   final VoidCallback? onRetry;
+  final bool hasActiveTraining;
 
   const StatsMilExperienceSection({
     super.key,
     required this.overview,
     required this.loading,
     this.onRetry,
+    this.hasActiveTraining = true,
   });
 
   @override
@@ -43,9 +45,14 @@ class StatsMilExperienceSection extends StatelessWidget {
       return const Center(
           child: CircularProgressIndicator(color: Colors.white));
     }
+    if (!hasActiveTraining) {
+      return const Text('Aucun brevet plongée en préparation.',
+          style: TextStyle(color: Colors.white, fontSize: 12));
+    }
     final data = overview;
     if (data != null && !data.isEmpty) {
-      return MilRequirementsCard(overview: data);
+      return MilRequirementsCard(
+          overview: data, inlineExpanded: true, compactRows: true);
     }
     return Container(
       padding: const EdgeInsets.all(14),
@@ -69,6 +76,70 @@ class StatsMilExperienceSection extends StatelessWidget {
   }
 }
 
+/// Uses the same live goal priority as the pupil fiche. A stored snapshot
+/// cannot silently re-enable a closed SCUBA training (e.g. apnée-only).
+@visibleForTesting
+String? statsTargetBrevet(
+        {required bool formationActive,
+        String? targetFormationLevel,
+        String? currentCode,
+        String? snapshotTargetLevel}) =>
+    formationActive
+        ? resolvePreferredMilBrevet(
+            targetFormationLevel: targetFormationLevel,
+            currentCode: currentCode,
+            snapshotTargetLevel: snapshotTargetLevel)
+        : null;
+
+/// All year-filtered dive KPIs share one small surface instead of large tiles.
+class StatsSummary extends StatelessWidget {
+  final List<Map<String, dynamic>> entries;
+  const StatsSummary({super.key, required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final s = _computeStats(entries);
+    final items = [
+      ('${s.totalDives}', 'plongées'),
+      ('${s.totalHours} h', 'temps total'),
+      ('${s.seaDives}', 'en mer'),
+      ('${s.maxDepth.toStringAsFixed(0)} m', 'prof. max')
+    ];
+    return Container(
+      key: const Key('stats-compact-summary'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(12)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          for (final item in items)
+            Expanded(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(item.$1,
+                      style: const TextStyle(
+                          color: AppColors.middenblauw,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 19))),
+              Text(item.$2,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: AppColors.donkerblauw, fontSize: 11)),
+            ]))
+        ]),
+        if (s.poolSessions > 0)
+          Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                  '${s.poolSessions} séance${s.poolSessions == 1 ? '' : 's'} piscine',
+                  style: const TextStyle(
+                      color: AppColors.donkerblauw, fontSize: 11))),
+      ]),
+    );
+  }
+}
+
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
@@ -83,6 +154,8 @@ class _StatsScreenState extends State<StatsScreen> {
   List<Map<String, dynamic>> _entries = [];
   MilExperienceOverview? _milOverview;
   bool _loading = true;
+  bool _hasActiveTraining = false;
+  String? _loadError;
 
   @override
   void initState() {
@@ -92,7 +165,10 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
       const clubId = FirebaseConfig.defaultClubId;
       final userId = context.read<AuthProvider>().currentUser?.uid;
@@ -129,7 +205,8 @@ class _StatsScreenState extends State<StatsScreen> {
       final entries = snap.docs
           .map((d) => <String, dynamic>{'id': d.id, ...d.data()})
           .toList();
-      final preferredBrevet = resolvePreferredMilBrevet(
+      final preferredBrevet = statsTargetBrevet(
+        formationActive: member.formationActive,
         targetFormationLevel: member.targetFormationLevel,
         currentCode: member.plongeurCode,
         snapshotTargetLevel: formationSnapshot?.targetLevel,
@@ -148,10 +225,20 @@ class _StatsScreenState extends State<StatsScreen> {
       overview ??= formationSnapshot == null
           ? null
           : MilExperienceOverview.fromSnapshot(formationSnapshot);
+      // Rebind the historical fallback to the live goal; never relabel its
+      // counts as another brevet, nor pick the first configured matrix.
+      if (overview != null) {
+        overview = MilExperienceOverview(
+            byBrevet: overview.byBrevet,
+            preferredBrevet: preferredBrevet ?? 'UNKNOWN',
+            sourceVersion: overview.sourceVersion,
+            snapshotFallback: overview.snapshotFallback);
+      }
       if (!mounted) return;
       setState(() {
         _entries = entries;
         _milOverview = overview;
+        _hasActiveTraining = member.formationActive;
         _loading = false;
       });
     } catch (err, st) {
@@ -162,6 +249,7 @@ class _StatsScreenState extends State<StatsScreen> {
       setState(() {
         _entries = [];
         _milOverview = null;
+        _loadError = 'Impossible de charger les statistiques. Réessayez.';
         _loading = false;
       });
     }
@@ -192,28 +280,41 @@ class _StatsScreenState extends State<StatsScreen> {
                 child: _loading
                     ? const Center(
                         child: CircularProgressIndicator(color: Colors.white))
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        children: [
-                          _yearPills(),
-                          const SizedBox(height: 12),
-                          StatsMilExperienceSection(
-                            overview: _milOverview,
-                            loading: false,
-                            onRetry: _load,
+                    : _loadError != null
+                        ? Center(
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                Text(_loadError!,
+                                    style:
+                                        const TextStyle(color: Colors.white)),
+                                TextButton(
+                                    onPressed: _load,
+                                    child: const Text('Réessayer')),
+                              ]))
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                            children: [
+                              _yearPills(),
+                              const SizedBox(height: 8),
+                              StatsSummary(entries: filtered),
+                              const SizedBox(height: 8),
+                              _countersCard(stats),
+                              const SizedBox(height: 8),
+                              StatsMilExperienceSection(
+                                overview: _milOverview,
+                                loading: false,
+                                onRetry: _load,
+                                hasActiveTraining: _hasActiveTraining,
+                              ),
+                              const SizedBox(height: 8),
+                              _depthHistogramCard(stats),
+                              const SizedBox(height: 8),
+                              _monthsCard(stats),
+                              const SizedBox(height: 8),
+                              _locationsCard(stats),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          _kpiGrid(stats),
-                          const SizedBox(height: 12),
-                          _depthHistogramCard(stats),
-                          const SizedBox(height: 12),
-                          _monthsCard(stats),
-                          const SizedBox(height: 12),
-                          _countersCard(stats),
-                          const SizedBox(height: 12),
-                          _locationsCard(stats),
-                        ],
-                      ),
               ),
             ],
           ),
@@ -233,7 +334,7 @@ class _StatsScreenState extends State<StatsScreen> {
           ),
           const Expanded(
             child: Text(
-              'Mon carnet',
+              'Statistiques',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 22,
@@ -292,67 +393,6 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  Widget _kpiGrid(_Stats s) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 2.2,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      children: [
-        _kpi('${s.totalDives}', 'plongées'),
-        _kpi('${s.totalHours} h', 'temps total'),
-        _kpi('${s.seaDives}', 'en mer', highlight: true),
-        _kpi('${s.maxDepth.toStringAsFixed(0)} m', 'profondeur max'),
-        if (s.poolSessions > 0) _kpi('${s.poolSessions}', 'séances piscine'),
-      ],
-    );
-  }
-
-  Widget _kpi(String value, String label, {bool highlight = false}) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: highlight
-            ? LinearGradient(
-                colors: [
-                  const Color(0xFF6BCBE8).withValues(alpha: 0.95),
-                  const Color(0xFF0083B0).withValues(alpha: 0.85),
-                ],
-              )
-            : null,
-        color: highlight ? null : Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              color: highlight ? Colors.white : AppColors.middenblauw,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(
-              color: highlight
-                  ? Colors.white.withValues(alpha: 0.95)
-                  : AppColors.donkerblauw.withValues(alpha: 0.7),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _depthHistogramCard(_Stats s) {
     final maxVal = s.depthHistogram.fold<int>(0, (a, b) => b > a ? b : a);
     return Container(
@@ -395,7 +435,7 @@ class _StatsScreenState extends State<StatsScreen> {
           const SizedBox(height: 4),
           // Bars row
           SizedBox(
-            height: 80,
+            height: 44,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(8, (i) {
@@ -474,7 +514,7 @@ class _StatsScreenState extends State<StatsScreen> {
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: 70,
+            height: 44,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(12, (i) {

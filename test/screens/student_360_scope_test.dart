@@ -133,7 +133,7 @@ void main() {
           sourceVersion: 'test',
           referenceUrls: const []);
     });
-    final row = find.byKey(const ValueKey('mil-protocol-mn-P2.RA'));
+    final row = find.byKey(const ValueKey('mil-protocol-info-mn-P2.RA'));
     await tester.ensureVisible(row);
     await tester.tap(row);
     await tester.pump();
