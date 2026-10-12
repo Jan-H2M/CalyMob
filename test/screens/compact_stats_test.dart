@@ -6,6 +6,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
 void main() {
+  test('hidden own profile without a directory still reads fresh metadata',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final doc = db.doc('clubs/calypso/members/hidden-self');
+    await doc.set({'formation_active': false, 'plongeur_code': 'MC'});
+    final goal = await StatsTrainingGoal.load(db, 'calypso', 'hidden-self');
+    expect(goal.active, false);
+    expect(goal.brevet, isNull);
+    await doc
+        .update({'formation_active': true, 'target_formation_level': 'MF'});
+    expect((await StatsTrainingGoal.load(db, 'calypso', 'hidden-self')).brevet,
+        'MF');
+  });
   test('opening stats rereads the changed directory instead of login cache',
       () async {
     final db = FakeFirebaseFirestore();

@@ -101,7 +101,11 @@ class StatsTrainingGoal {
       FirebaseFirestore db, String clubId, String memberId,
       {String? snapshotTargetLevel}) async {
     final doc = await db.doc('clubs/$clubId/member_directory/$memberId').get();
-    final data = doc.data();
+    // Hidden technical accounts deliberately have no directory projection.
+    // Stats is self-scoped: their own current member document remains readable
+    // under the existing Firestore rules. Never substitute another identity.
+    final data = doc.data() ??
+        (await db.doc('clubs/$clubId/members/$memberId').get()).data();
     if (data == null) throw StateError('Formation actuelle indisponible');
     final active = data['formation_active'] == true;
     return StatsTrainingGoal(
