@@ -1,8 +1,19 @@
+import 'dart:io';
+
 import 'package:calymob/screens/training/parcours_hub_screen.dart';
 import 'package:calymob/models/formation_task.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('apnee has no standalone Parcours entry or route', () {
+    final source = File('lib/screens/training/parcours_hub_screen.dart')
+        .readAsStringSync();
+    expect(source, isNot(contains('Mon parcours apnée')));
+    expect(source, isNot(contains('ApneeEnrollmentVisibility')));
+    expect(source, isNot(contains('ApneeDossierScreen')));
+    expect(parcoursHubEntryDefinitions.any((entry) => entry.key == 'apnee'),
+        false);
+  });
   test('Parcours hub keeps the agreed entry order', () {
     expect(
       parcoursHubEntryDefinitions.map((entry) => entry.title).toList(),

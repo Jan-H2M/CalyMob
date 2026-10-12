@@ -6,6 +6,123 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'scanned legacy apnee roster joins the shared dated pool history without validating participation',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final date = Timestamp.fromDate(DateTime(2026, 9, 29));
+    final session = db.doc('clubs/club/piscine_sessions/legacy-apnee');
+    await session.set({'date': date});
+    await session.collection('attendees').doc('student').set({
+      'memberId': 'student',
+      'scannedAt': date,
+    });
+    await session.collection('apnee_lessons').doc('a1').set({
+      'track': 'apnee.a1',
+      'hour': '1ere_heure',
+      'theme': 'Synthetic apnee',
+      'member_ids': ['student'],
+      'instructor_ids': ['teacher'],
+    });
+    await db
+        .doc('clubs/club/member_directory/teacher')
+        .set({'prenom': 'Synthetic', 'nom': 'Teacher'});
+    final p = db.doc('clubs/club/apnee_participations/participation');
+    await p.set({
+      'member_id': 'student',
+      'session_id': 'legacy-apnee',
+      'course_id': 'a1',
+      'track': 'apnee.a1',
+      'hour': '1ere_heure',
+      'participation_status': 'rostered',
+    });
+    final reader = PoolStudentHistoryReader(firestore: db);
+    var history = await reader.load('club', 'student', automaticLevel: 'AM');
+    var visit = history.single;
+    expect(visit.date, date.toDate());
+    expect(visit.lessons.single.level, 'apnee.a1');
+    expect(visit.lessons.single.hour, '1ere_heure');
+    expect(visit.lessons.single.monitorNames, ['Synthetic Teacher']);
+    expect(visit.lessons.single.theme, 'Synthetic apnee');
+    expect(visit.lessons.single.isPlanned, true);
+    expect(visit.lessons.single.sourceLabel,
+        contains('participation à confirmer'));
+    expect(visit.trainingReported, false);
+    expect(visit.hasQrScan, false);
+    expect(
+        poolTrainingVisits(history)
+            .map((v) => [v.level, v.reported, v.toConfirm]),
+        [
+          ['APNEE.A1', 0, 1]
+        ]);
+    await p.update({'participation_status': 'attended'});
+    history = await reader.load('club', 'student');
+    expect(history.single.trainingReported, true);
+    expect(poolTrainingVisits(history).single.reported, 1);
+    // Read-only history never materializes a fabricated attendee group.
+    expect(
+        (await session.collection('attendees').doc('student').get())
+            .data()!
+            .keys,
+        ['memberId', 'scannedAt']);
+    for (final status in ['cancelled', 'absent']) {
+      await p.update({'participation_status': status});
+      expect((await reader.load('club', 'student')).single.lessons, isEmpty);
+    }
+    await p.update({'participation_status': 'rostered'});
+    await session.collection('attendees').doc('student').delete();
+    expect(await reader.load('club', 'student'), isEmpty);
+  });
+
+  test(
+      'apnee roster does not override actual same-hour activity, foreign roster, mismatched track or deleted course',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final date = Timestamp.fromDate(DateTime(2026, 9, 29));
+    final session = db.doc('clubs/club/piscine_sessions/legacy-apnee');
+    await session.set({'date': date});
+    final attendee = session.collection('attendees').doc('student');
+    await attendee.set({
+      'scannedAt': date,
+      'hoursReport': {
+        '1ere_heure': {
+          'role': 'eleve',
+          'group': {'level': '3*'}
+        }
+      }
+    });
+    final course = session.collection('apnee_lessons').doc('a1');
+    await course.set({
+      'track': 'apnee.a1',
+      'hour': '1ere_heure',
+      'member_ids': ['student'],
+      'theme': 'Synthetic'
+    });
+    final p = db.doc('clubs/club/apnee_participations/participation');
+    await p.set({
+      'member_id': 'student',
+      'session_id': 'legacy-apnee',
+      'course_id': 'a1',
+      'track': 'apnee.a1',
+      'hour': '1ere_heure',
+      'participation_status': 'attended'
+    });
+    final reader = PoolStudentHistoryReader(firestore: db);
+    expect((await reader.load('club', 'student')).single.lessons.single.level,
+        '3*');
+    await attendee.set({'scannedAt': date});
+    await p.update({'member_id': 'other'});
+    expect((await reader.load('club', 'student')).single.lessons, isEmpty);
+    await p.update({'member_id': 'student', 'track': 'apnee.a2'});
+    expect((await reader.load('club', 'student')).single.lessons, isEmpty);
+    await p.update({'track': 'apnee.a1'});
+    await course.update({
+      'member_ids': ['other']
+    });
+    expect((await reader.load('club', 'student')).single.lessons, isEmpty);
+    await course.delete();
+    expect((await reader.load('club', 'student')).single.lessons, isEmpty);
+  });
   test('apnee attendance resolves the exact dated course hour and instructor',
       () async {
     final db = FakeFirebaseFirestore();

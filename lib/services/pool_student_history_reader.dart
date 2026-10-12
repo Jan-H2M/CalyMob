@@ -11,6 +11,10 @@ class PoolStudentHistoryReader {
 
   Future<List<PoolStudentSession>> load(String clubId, String memberId,
       {String? automaticLevel}) async {
+    final apnee = await _firestore
+        .collection('clubs/$clubId/apnee_participations')
+        .where('member_id', isEqualTo: memberId)
+        .get();
     final sessions = await _firestore
         .collection('clubs')
         .doc(clubId)
@@ -53,26 +57,42 @@ class PoolStudentHistoryReader {
                   row['checkinCompletedAt'] != null)) {
             return null;
           }
-          final hasApnee = records.values.any((row) =>
-              '${row['assignedLevel']}'.startsWith('apnee.') ||
-              '${poolMap(row['groupAssignment'])['level']}'
-                  .startsWith('apnee.') ||
-              poolMap(row['hoursReport']).values.any((report) =>
-                  '${poolMap(poolMap(report)['group'])['level']}'
-                      .startsWith('apnee.')));
-          final resolved = hasApnee
-              ? poolSessionWithApneeLessons(
-                  data,
-                  (await session.reference.collection('apnee_lessons').get())
-                      .docs
-                      .map((row) => {...row.data(), 'id': row.id})
-                      .toList())
-              : data;
+          final participationRows = apnee.docs
+              .map((row) => row.data())
+              .where((row) =>
+                  row['session_id'] == session.id &&
+                  ['rostered', 'attended']
+                      .contains(row['participation_status']))
+              .toList();
+          final hasApnee = participationRows.isNotEmpty ||
+              records.values.any((row) =>
+                  '${row['assignedLevel']}'.startsWith('apnee.') ||
+                  '${poolMap(row['groupAssignment'])['level']}'
+                      .startsWith('apnee.') ||
+                  poolMap(row['hoursReport']).values.any((report) =>
+                      '${poolMap(poolMap(report)['group'])['level']}'
+                          .startsWith('apnee.')));
+          final apneeLessons = hasApnee
+              ? (await session.reference.collection('apnee_lessons').get())
+                  .docs
+                  .map((row) => {...row.data(), 'id': row.id})
+                  .toList()
+              : <Map<String, dynamic>>[];
+          final resolved =
+              hasApnee ? poolSessionWithApneeLessons(data, apneeLessons) : data;
           return PoolStudentSession.fromRecords(
             session.id,
             resolved,
             records.values.toList(),
             automaticLevel: automaticLevel,
+            apneeParticipations: participationRows
+                .where((row) => apneeLessons.any((lesson) =>
+                    lesson['id'] == row['course_id'] &&
+                    lesson['track'] == row['track'] &&
+                    lesson['hour'] == row['hour'] &&
+                    (lesson['member_ids'] is List &&
+                        (lesson['member_ids'] as List).contains(memberId))))
+                .toList(),
           );
         }),
       );

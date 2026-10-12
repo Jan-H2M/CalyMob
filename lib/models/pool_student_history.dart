@@ -64,7 +64,8 @@ class PoolStudentSession {
 
   factory PoolStudentSession.fromRecords(String id,
       Map<String, dynamic> session, List<Map<String, dynamic>> attendance,
-      {String? automaticLevel}) {
+      {String? automaticLevel,
+      List<Map<String, dynamic>> apneeParticipations = const []}) {
     // Duplicate QR documents count once. Prefer the completed report, while
     // retaining legacy assignments when the canonical record lacks them.
     attendance = [...attendance]
@@ -104,6 +105,45 @@ class PoolStudentSession {
       );
     }
     final rawOutcome = merged['outcome']?.toString() ?? '';
+    // Legacy apnée rosters live separately from the QR attendee. Join only
+    // dated courses verified by the reader; never turn a roster into a report
+    // or replace an explicitly recorded activity for the same hour.
+    for (final hour in const ['1ere_heure', '2eme_heure']) {
+      final rows = apneeParticipations
+          .where((row) =>
+              row['session_id'] == id &&
+              row['hour'] == hour &&
+              const ['apnee.a1', 'apnee.a2'].contains(row['track']) &&
+              const ['rostered', 'attended']
+                  .contains(row['participation_status']))
+          .toList();
+      if (rows.length != 1 ||
+          hours.containsKey(hour) ||
+          lessons.any((lesson) => lesson.hour == hour) ||
+          (rawOutcome.isNotEmpty &&
+              rawOutcome != 'training' &&
+              rawOutcome != 'encadrant')) {
+        continue;
+      }
+      final row = rows.single;
+      final reported = row['participation_status'] == 'attended';
+      final lesson = _lesson(
+          session, {'level': row['track'], 'course_id': row['course_id']}, hour,
+          participationReported: reported);
+      lessons.add(PoolStudentLesson(
+        level: lesson.level,
+        group: lesson.group,
+        hour: lesson.hour,
+        theme: lesson.theme,
+        monitorIds: lesson.monitorIds,
+        monitorNames: lesson.monitorNames,
+        isPlanned: !reported,
+        participationReported: reported,
+        sourceLabel: reported
+            ? 'Participation apnée rapportée'
+            : 'Cours apnée attribué au roster · participation à confirmer',
+      ));
+    }
     if (lessons.isEmpty &&
         rawOutcome.isEmpty &&
         hours.isEmpty &&
@@ -120,7 +160,8 @@ class PoolStudentSession {
     }
     final training = rawOutcome == 'training' ||
         (rawOutcome.isEmpty &&
-            hours.values.any((value) => poolMap(value)['role'] == 'eleve'));
+            (hours.values.any((value) => poolMap(value)['role'] == 'eleve') ||
+                lessons.any((lesson) => lesson.participationReported)));
     return PoolStudentSession(
       id: id,
       date: poolDate(session['date']) ?? poolDate(merged['scannedAt']),
