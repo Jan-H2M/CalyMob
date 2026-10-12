@@ -178,6 +178,52 @@ class StatsSummary extends StatelessWidget {
   }
 }
 
+class StatsYearPicker extends StatelessWidget {
+  final List<Map<String, dynamic>> entries;
+  final int? value;
+  final ValueChanged<int?> onChanged;
+  const StatsYearPicker(
+      {super.key,
+      required this.entries,
+      required this.value,
+      required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final years = entries
+        .map((entry) => entry['date'])
+        .whereType<Timestamp>()
+        .map((date) => date.toDate().year)
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    return Row(children: [
+      const Text('Période',
+          style: TextStyle(color: Colors.white, fontSize: 13)),
+      const SizedBox(width: 10),
+      Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+              color: Colors.white, borderRadius: BorderRadius.circular(10)),
+          child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+            key: const Key('stats-year-picker'),
+            value: value,
+            hint: const Text('Tout'),
+            isDense: true,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            style: const TextStyle(color: AppColors.donkerblauw, fontSize: 13),
+            items: [
+              const DropdownMenuItem<int>(value: null, child: Text('Tout')),
+              for (final year in years)
+                DropdownMenuItem<int>(value: year, child: Text('$year'))
+            ],
+            onChanged: onChanged,
+          ))),
+    ]);
+  }
+}
+
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
@@ -198,7 +244,6 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   void initState() {
     super.initState();
-    _year = DateTime.now().year;
     _load();
   }
 
@@ -333,7 +378,11 @@ class _StatsScreenState extends State<StatsScreen> {
                         : ListView(
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
                             children: [
-                              _yearPills(),
+                              StatsYearPicker(
+                                  entries: _entries,
+                                  value: _year,
+                                  onChanged: (year) =>
+                                      setState(() => _year = year)),
                               const SizedBox(height: 8),
                               StatsSummary(entries: filtered),
                               const SizedBox(height: 8),
@@ -382,52 +431,6 @@ class _StatsScreenState extends State<StatsScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  /// Years present in `_entries`, sorted newest-first, plus a final `null`
-  /// representing "Tout". When the carnet is empty (or still loading) we
-  /// surface the current year as a stable default.
-  List<int?> _availableYears() {
-    final years = <int>{};
-    for (final e in _entries) {
-      final ts = e['date'];
-      if (ts is Timestamp) years.add(ts.toDate().year);
-    }
-    final sorted = years.toList()..sort((a, b) => b.compareTo(a));
-    if (sorted.isEmpty) sorted.add(DateTime.now().year);
-    return <int?>[...sorted, null];
-  }
-
-  Widget _yearPills() {
-    // Derive the visible year set from the actual data — historical divers
-    // typically span 10+ years and the hard-coded "last 3" list was hiding
-    // most of their carnet. Fall back to the current year when empty so the
-    // pills never collapse to a single "Tout".
-    final years = _availableYears();
-    return Wrap(
-      spacing: 6,
-      children: years.map((y) {
-        final isOn = y == _year;
-        return ChoiceChip(
-          label: Text(y == null ? 'Tout' : '$y'),
-          selected: isOn,
-          onSelected: (_) {
-            // Year filter applied client-side now — no need to re-query.
-            setState(() => _year = y);
-          },
-          labelStyle: TextStyle(
-            color: isOn ? Colors.white : AppColors.donkerblauw,
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-          ),
-          selectedColor: AppColors.middenblauw,
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        );
-      }).toList(),
     );
   }
 

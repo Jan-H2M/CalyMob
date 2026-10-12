@@ -4,8 +4,37 @@ import 'package:calymob/screens/training/stats_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() {
+  testWidgets('single year dropdown defaults to all and keeps historical years',
+      (tester) async {
+    int? selected;
+    final entries = [
+      for (final year in [2026, 2000, 1995, 2026])
+        <String, dynamic>{'date': Timestamp.fromDate(DateTime(year, 1, 1))}
+    ];
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: StatefulBuilder(
+                builder: (context, setState) => StatsYearPicker(
+                    entries: entries,
+                    value: selected,
+                    onChanged: (year) => setState(() => selected = year))))));
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.text('Tout'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('stats-year-picker')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1995').last);
+    await tester.pumpAndSettle();
+    expect(selected, 1995);
+    await tester.tap(find.byKey(const Key('stats-year-picker')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tout').last);
+    await tester.pumpAndSettle();
+    expect(selected, isNull);
+    expect(find.text('Tout'), findsOneWidget);
+  });
   testWidgets('acquired brevet reference retains the full inline list',
       (tester) async {
     const data = MilExperienceOverview(preferredBrevet: '4', byBrevet: {
