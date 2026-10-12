@@ -7,6 +7,22 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() {
+  test('fresh canonical self profile wins over a stale directory projection',
+      () async {
+    final db = FakeFirebaseFirestore();
+    await db.doc('clubs/calypso/member_directory/pupil').set({
+      'formation_active': true,
+      'plongeur_code': '2*',
+      'target_formation_level': '3*'
+    });
+    await db
+        .doc('clubs/calypso/members/pupil')
+        .set({'formation_active': false, 'plongeur_code': '4*'});
+    final goal = await StatsTrainingGoal.load(db, 'calypso', 'pupil',
+        snapshotTargetLevel: 'AM');
+    expect(goal.active, false);
+    expect(goal.brevet, '4');
+  });
   testWidgets('single year dropdown defaults to all and keeps historical years',
       (tester) async {
     int? selected;

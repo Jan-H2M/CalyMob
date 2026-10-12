@@ -107,16 +107,16 @@ class StatsTrainingGoal {
   const StatsTrainingGoal({required this.active, this.brevet});
 
   /// MemberProvider is a login cache, not authoritative after an enrollment
-  /// change. Read the same safe live directory as the pupil fiche on each load.
+  /// change. StatsScreen passes only its authenticated user's ID: reread that
+  /// user's canonical member metadata (including hidden technical accounts).
   static Future<StatsTrainingGoal> load(
       FirebaseFirestore db, String clubId, String memberId,
       {String? snapshotTargetLevel}) async {
-    final doc = await db.doc('clubs/$clubId/member_directory/$memberId').get();
-    // Hidden technical accounts deliberately have no directory projection.
-    // Stats is self-scoped: their own current member document remains readable
-    // under the existing Firestore rules. Never substitute another identity.
+    final doc = await db.doc('clubs/$clubId/members/$memberId').get();
+    // Legacy directory-only members remain readable under the existing rules.
+    // Never substitute another identity or broaden permissions.
     final data = doc.data() ??
-        (await db.doc('clubs/$clubId/members/$memberId').get()).data();
+        (await db.doc('clubs/$clubId/member_directory/$memberId').get()).data();
     if (data == null) throw StateError('Formation actuelle indisponible');
     final active = data['formation_active'] == true;
     return StatsTrainingGoal(
