@@ -22,6 +22,16 @@ def verify_android_store_release(action = 'upload', options = {}, external_submi
 end
 
 platform :android do
+  desc "Read version codes without uploading or publishing a release"
+  lane :status do
+    require 'json'
+    codes = {}
+    %w[production internal alpha beta].each do |track|
+      codes[track] = google_play_track_version_codes(track: track)
+    end
+    UI.message("CALYMOB_PLAY_STATUS=#{JSON.generate(codes)}")
+  end
+
   desc "Upload AAB to Google Play Store (Production track)"
   lane :deploy do
     verify_android_store_release

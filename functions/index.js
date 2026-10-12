@@ -15,6 +15,9 @@ exports.correctPoolStudentGroup = require('./src/training/correctPoolStudentGrou
 exports.setPersonalExerciseProgress = require('./src/training/personalExerciseProgress').setPersonalExerciseProgress;
 exports.recordOfficialFormationResult = require('./src/training/officialFormationResults').recordOfficialFormationResult;
 exports.manageApneeTraining = require('./src/training/apnee/training').manageApneeTraining;
+exports.manageFormationEnrollment = require('./src/training/formationEnrollment').manageFormationEnrollment;
+exports.onQrTrainingGroupCreated = require('./src/training/assignQrTrainingGroup').onQrTrainingGroupCreated;
+exports.assignApneePoolCourse = require('./src/training/assignApneePoolCourse').assignApneePoolCourse;
 
 // Compatibility shim for the firebase-admin v13 modular API: when running
 // the local emulator on Node 25 the legacy `admin.firestore.FieldValue`

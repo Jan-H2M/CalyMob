@@ -85,6 +85,8 @@ function buildMemberDirectoryProjection(data) {
     fonction_defaut: nonEmptyString(data.fonction_defaut),
     clubStatuten: stringList(data.clubStatuten),
     formation_active: data.formation_active === true,
+    formation_revision: Number.isSafeInteger(data.formation_revision) ? data.formation_revision : 0,
+    formation_track: nonEmptyString(data.formation_track),
     target_formation_level: nonEmptyString(data.target_formation_level),
     member_status: resolvedMemberStatus(data),
     is_test_account: excludedFromDirectory(data),

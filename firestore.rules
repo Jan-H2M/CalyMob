@@ -1087,7 +1087,10 @@ service cloud.firestore {
         // projection can never match the admin's uid. Mirrors the update rule.
         // This is a server-owned read projection. New writes are only allowed
         // from the accounting/admin command layer (Admin SDK in production).
-        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && request.resource.data.get('formation_active', false) == false
+          && request.resource.data.get('formation_revision', 0) == 0
+          && request.resource.data.get('formation_track', null) == null;
 
         // Delete: Club members can unregister themselves (mobile app)
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
@@ -1195,7 +1198,7 @@ service cloud.firestore {
         allow update: if isAdmin(clubId)
           && hasValidSession(clubId)
           && !request.resource.data.diff(resource.data).affectedKeys()
-               .hasAny(['share_birthday']);
+               .hasAny(['share_birthday', 'formation_active', 'target_formation_level', 'formation_revision', 'formation_track']);
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Unread cursor v1. These documents are intentionally self-owned only:
@@ -1482,9 +1485,14 @@ service cloud.firestore {
 
       // Boutique access audits are server-only. Even an admin client cannot
       // forge the actor or detach the record from its settings transaction.
+      match /formation_enrollment_audit/{auditId} {
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow write: if false;
+      }
       match /audit_logs/{auditId} {
         allow read: if isAdmin(clubId) && hasValidSession(clubId);
         allow create: if isMember(clubId)
+          && request.resource.data.get('action', '') != 'formation_enrollment'
           && !isBoutiqueAccessAudit(request.resource.data);
         allow update, delete: if false; // Audit logs are immutable
       }
@@ -1807,6 +1815,14 @@ service cloud.firestore {
           allow write: if false;
         }
         // Server-authoritative, immutable historical group correction audit.
+        match /qr_training_assignments/{memberId} {
+          allow read: if isAdmin(clubId);
+          allow write: if false;
+        }
+        match /apnee_group_corrections/{correctionId} {
+          allow read: if isAdmin(clubId);
+          allow write: if false;
+        }
         match /group_corrections/{correctionId} {
           allow read: if canValidateLifras(clubId);
           allow write: if false;

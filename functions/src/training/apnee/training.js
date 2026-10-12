@@ -26,7 +26,7 @@ const equal = (a, b) => JSON.stringify(normalized(a)) === JSON.stringify(normali
 
 /** All writes are explicit, optimistic, idempotent and audited. No scanner,
  * SCUBA snapshot, financial document or brevet is inferred from an enrolment. */
-async function executeApnee(db, uid, input) {
+async function executeApnee(db, uid, input, enforceQrRoster = false) {
   if (!uid) fail('unauthenticated', 'Authentification requise.');
   const data = input || {};
   if (!data || typeof data !== 'object' || Array.isArray(data)) fail('invalid-argument', 'Objet requis.');
@@ -140,6 +140,14 @@ async function executeApnee(db, uid, input) {
             ![...data.memberIds, ...data.instructorIds].every(id) ||
             new Set(data.memberIds).size !== data.memberIds.length || new Set(data.instructorIds).size !== data.instructorIds.length)
           fail('invalid-argument', 'Cours, horaire et participants valides requis.');
+        if (enforceQrRoster && !equal([...data.memberIds].sort(), [...(lesson.data()?.member_ids || [])].sort()))
+          fail('failed-precondition', 'Affectez les élèves présents par QR dans Participants, pas dans le planning du cours.');
+        // Jan confirms Calypso's sole apnée instructor. Existing historical
+        // rosters may remain unchanged; a new assignment never broadens it.
+        if (enforceQrRoster && clubId === 'calypso' &&
+            data.instructorIds.some(value => value !== 'HdwINlp0bbaS7QG7fhKx') &&
+            !equal([...data.instructorIds].sort(), [...(lesson.data()?.instructor_ids || [])].sort()))
+          fail('failed-precondition', 'Yves LEFLOT est le moniteur apnée de ce club.');
         if (lesson.exists && (lesson.data().track !== data.track || lesson.data().hour !== data.hour))
           fail('failed-precondition', 'Gardez le trajet et le créneau du cours existant.');
         const parallel = await tx.get(sessionRef.collection('apnee_lessons').where('hour', '==', data.hour));
@@ -224,8 +232,11 @@ async function executeApnee(db, uid, input) {
   });
 }
 
-exports.manageApneeTraining = onCall({ region: 'europe-west1' }, request =>
-  executeApnee(admin.firestore(), request.auth?.uid, request.data));
+exports.manageApneeTraining = onCall({ region: 'europe-west1' }, request => {
+  if (request.data?.action === 'enroll')
+    fail('failed-precondition', 'Utilisez l’inscription commune Plongée / Apnée.');
+  return executeApnee(admin.firestore(), request.auth?.uid, request.data, true);
+});
 exports.executeApnee = executeApnee;
 exports.enrollmentId = enrollmentId;
 exports.participationId = participationId;
