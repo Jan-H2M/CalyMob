@@ -111,6 +111,7 @@ FormationSnapshotDoc memberDossierSnapshot(
       diveStats: original.diveStats,
       milPerRequirement: sameTarget ? original.milPerRequirement : {},
       milModulePct: sameTarget ? original.milModulePct : null,
+      milCountingVersion: sameTarget ? original.milCountingVersion : null,
       brevetPct: original.brevetPct,
       formationPct: original.formationPct,
       goalCodes: original.goalCodes,

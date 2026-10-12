@@ -4,6 +4,8 @@ import 'package:calymob/services/mil_experience_service.dart';
 import 'package:calymob/utils/dive_depth.dart';
 import 'package:calymob/models/formation_snapshot_doc.dart';
 import 'package:calymob/models/mil_experience_overview.dart';
+import 'package:calymob/models/member_formation_dossier.dart';
+import 'package:calymob/models/exercice_lifras.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -29,6 +31,27 @@ void main() {
         .byBrevet['3']!;
     expect(fixed.requirements['prof_30m']!.dataMissing, false);
     expect(fixed.requirements['prof_30m']!.have, 51);
+    final reconstructed = memberDossierSnapshot(
+        memberId: 'pupil',
+        currentCode: '2',
+        target: NiveauLIFRAS.p3,
+        catalog: [],
+        validations: [],
+        source: snapshot('cumulative-general-depths-v2'));
+    final fallback = MilExperienceOverview.fromSnapshot(reconstructed)
+        .byBrevet['3']!;
+    expect(reconstructed.milCountingVersion, 'cumulative-general-depths-v2');
+    expect(fallback.requirements['prof_30m']!.dataMissing, false);
+    expect(fallback.requirements['prof_30m']!.have, 51);
+    final changedTarget = memberDossierSnapshot(
+        memberId: 'pupil',
+        currentCode: '2',
+        target: NiveauLIFRAS.p4,
+        catalog: [],
+        validations: [],
+        source: snapshot('cumulative-general-depths-v2'));
+    expect(changedTarget.milCountingVersion, isNull);
+    expect(changedTarget.milPerRequirement, isEmpty);
   });
   final cases = jsonDecode(
           File('test/fixtures/mil_depth_cumulative.json').readAsStringSync())
