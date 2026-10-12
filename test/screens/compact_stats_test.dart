@@ -68,6 +68,12 @@ void main() {
   test('stats uses live target and never reactivates historical SCUBA', () {
     expect(
         statsTargetBrevet(
+            formationActive: false,
+            currentCode: 'NB',
+            snapshotTargetLevel: 'AM'),
+        isNull);
+    expect(
+        statsTargetBrevet(
             formationActive: true,
             currentCode: '2*',
             snapshotTargetLevel: '2*'),

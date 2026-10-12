@@ -97,7 +97,9 @@ String? statsTargetBrevet(
             targetFormationLevel: targetFormationLevel,
             currentCode: currentCode,
             snapshotTargetLevel: snapshotTargetLevel)
-        : milBrevetCodeForTarget(currentCode);
+        : currentCode?.trim().toUpperCase() == 'NB'
+            ? null
+            : milBrevetCodeForTarget(currentCode);
 
 class StatsTrainingGoal {
   final bool active;
