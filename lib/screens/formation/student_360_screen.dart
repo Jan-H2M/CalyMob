@@ -11,6 +11,7 @@ import '../../models/member_profile.dart';
 import '../../models/member_formation_dossier.dart';
 import '../../services/lifras_service.dart';
 import '../../models/exercice_valide.dart';
+import '../../models/exercice_lifras.dart';
 import '../../services/personal_exercise_progress_service.dart';
 import '../../models/mil_experience_overview.dart';
 import '../../models/pool_formation_snapshot_doc.dart';
@@ -32,7 +33,6 @@ import '../../widgets/formation/active_formation_panel.dart';
 import '../../widgets/formation/pool_formation_tabs.dart';
 import '../../widgets/formation/pool_brevet_protocols.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
-import '../../widgets/formation/mil_protocol_catalog_sheet.dart';
 import '../../widgets/formation/mil_protocol_sheet.dart';
 import '../../widgets/ocean_background.dart';
 
@@ -71,6 +71,8 @@ class Student360Screen extends StatefulWidget {
   final FormationSnapshotDoc? providedSnapshot;
   final MilExperienceOverview? providedMilOverview;
   final List<Widget> Function(bool pool)? exerciseSections;
+  final FormationSnapshotDoc? providedSpecialties;
+  final Future<void> Function(String code)? exerciseAction;
   final Widget? specialties;
   final List<Widget> appBarActions;
 
@@ -96,6 +98,8 @@ class Student360Screen extends StatefulWidget {
     this.providedSnapshot,
     this.providedMilOverview,
     this.exerciseSections,
+    this.providedSpecialties,
+    this.exerciseAction,
     this.specialties,
     this.appBarActions = const [],
   });
@@ -109,6 +113,7 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   bool _loading = true;
   FormationSnapshotDoc? _snapshot;
+  FormationSnapshotDoc? _specialtiesSnapshot;
   MilExperienceOverview? _milOverview;
   PoolFormationSnapshotDoc? _poolSnapshot;
   List<Map<String, dynamic>> _observations = const [];
@@ -125,6 +130,11 @@ class _Student360ScreenState extends State<Student360Screen> {
   @override
   void initState() {
     super.initState();
+    _specialtiesSnapshot = widget.providedSpecialties ??
+        (widget.previewMode
+            ? FormationSnapshotDoc.fromMap(
+                widget.member.id, {'target_level': 'TN'})
+            : null);
     if (widget.previewMode) {
       _poolHistory = widget.previewPoolHistory;
     } else {
@@ -220,6 +230,13 @@ class _Student360ScreenState extends State<Student360Screen> {
           strict: true,
         );
         final results = await memberRef.collection('exercices_valides').get();
+        _specialtiesSnapshot = memberDossierSnapshot(
+          memberId: widget.member.id,
+          currentCode: widget.member.plongeurCode ?? '',
+          target: NiveauLIFRAS.tn,
+          catalog: catalog,
+          validations: results.docs.map(ExerciceValide.fromFirestore).toList(),
+        );
         final personal = await PersonalExerciseProgressService()
             .watch(widget.clubId, widget.member.id)
             .first;
@@ -327,6 +344,9 @@ class _Student360ScreenState extends State<Student360Screen> {
     if (widget.providedSnapshot != null) {
       _snapshot = widget.providedSnapshot;
     }
+    if (widget.providedSpecialties != null) {
+      _specialtiesSnapshot = widget.providedSpecialties;
+    }
     if (widget.providedMilOverview != null) {
       _milOverview = widget.providedMilOverview;
     }
@@ -335,11 +355,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: widget.scope == FormationTrackingScope.piscineOnly
-          ? 2
-          : widget.specialties == null
-              ? 4
-              : 5,
+      length: widget.scope == FormationTrackingScope.piscineOnly ? 2 : 5,
       initialIndex:
           widget.initialApnee && widget.scope == FormationTrackingScope.full
               ? 1
@@ -351,40 +367,21 @@ class _Student360ScreenState extends State<Student360Screen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
-          title: widget.ownProfileCaption != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Mes exercices',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      widget.ownProfileCaption!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                )
-              : Text(
-                  widget.isOwnProfile
-                      ? 'Mes exercices'
-                      : _fullName.isEmpty
-                          ? 'Fiche élève'
-                          : _fullName,
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_fullName.isEmpty ? 'Fiche élève' : _fullName,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              Text(
+                  widget.ownProfileCaption ??
+                      (widget.isOwnProfile ? 'Mes exercices' : 'Fiche élève'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            ],
+          ),
           actions: [
             ...widget.appBarActions,
             if (!widget.isOwnProfile &&
@@ -459,19 +456,21 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Future<List<MilProtocol>> _emptyPreviewProtocols() async => const [];
 
+  String? _targetFor(FormationSnapshotDoc? snapshot) =>
+      resolvePreferredMilBrevet(
+        targetFormationLevel:
+            widget.member.targetFormationLevel ?? _milOverview?.preferredBrevet,
+        currentCode: widget.member.plongeurCode,
+        snapshotTargetLevel: snapshot?.targetLevel,
+      );
+
   Widget _buildPoolTabs(
       {FormationSnapshotDoc? snapshot,
       PoolFormationSnapshotDoc? poolSnapshot,
       FormationPoolContext? poolContext}) {
     final apneeOnly = poolContext?.scubaActive == false &&
         poolContext?.activeApneeLabel != null;
-    final target = apneeOnly
-        ? null
-        : _milOverview?.preferredBrevet ??
-            snapshot?.targetLevel ??
-            widget.member.targetFormationLevel ??
-            poolAutomaticFormationLevel(
-                widget.member.plongeurCode, widget.member.formationActive);
+    final target = apneeOnly ? null : _targetFor(snapshot);
     return PoolFormationTabs(
       initiallyApnee: poolContext?.initiallyApnee ?? false,
       apnee: poolContext?.apnee,
@@ -501,7 +500,7 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Widget _buildContent(
       FormationSnapshotDoc s, FormationPoolContext? poolContext) {
-    final preferred = _milOverview?.preferredBrevet;
+    final preferred = _targetFor(s);
     if (preferred != null) {
       final target = dossierTargetNiveau(memberTarget: preferred);
       if (target == null ||
@@ -525,20 +524,20 @@ class _Student360ScreenState extends State<Student360Screen> {
         if (s.attentionPoints.isNotEmpty) _buildAttentionBanner(s),
         Container(
           color: AppColors.donkerblauw.withValues(alpha: 0.82),
-          child: TabBar(
+          child: const TabBar(
             isScrollable: true,
             labelColor: Colors.white,
-            unselectedLabelColor: const Color(0xFFD3E2EF),
+            unselectedLabelColor: Color(0xFFD3E2EF),
             indicatorColor: AppColors.lichtblauw,
             indicatorWeight: 3,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+            labelStyle: TextStyle(fontWeight: FontWeight.w600),
+            unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500),
             tabs: [
-              const Tab(text: 'Milieu naturel'),
-              const Tab(text: 'Piscine'),
-              const Tab(text: 'Expériences brevet'),
-              const Tab(text: 'Observations'),
-              if (widget.specialties != null) const Tab(text: 'Spécialités'),
+              Tab(text: 'Milieu naturel'),
+              Tab(text: 'Piscine'),
+              Tab(text: 'Expériences brevet'),
+              Tab(text: 'Observations'),
+              Tab(text: 'Spécialités'),
             ],
           ),
         ),
@@ -549,7 +548,7 @@ class _Student360ScreenState extends State<Student360Screen> {
               _buildPoolTabs(snapshot: s, poolContext: poolContext),
               _buildMilTab(s),
               _buildObservationsTab(s),
-              if (widget.specialties != null) widget.specialties!,
+              widget.specialties ?? _buildSpecialtiesTab(),
             ],
           ),
         ),
@@ -671,8 +670,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     final m = widget.member;
     final natural = s.modalityProgress[FormationModality.career]!;
     final exams = s.examProgress;
-    final liveTargetCode =
-        _milOverview?.preferredBrevet ?? _milOverview?.initialBrevet;
+    final liveTargetCode = _targetFor(s);
     final liveMil =
         liveTargetCode == null ? null : _milOverview?.byBrevet[liveTargetCode];
     // Le panneau foncé remonte derrière l'AppBar transparente + la status bar
@@ -1448,15 +1446,6 @@ class _Student360ScreenState extends State<Student360Screen> {
             icon: const Icon(Icons.refresh),
             label: const Text('Suivi indisponible · Réessayer'),
           ),
-        TextButton.icon(
-          onPressed: () => MilProtocolCatalogSheet.show(
-            context,
-            clubId: widget.clubId,
-            pool: false,
-          ),
-          icon: const Icon(Icons.menu_book_outlined),
-          label: const Text('Protocoles MIL · Milieu naturel'),
-        ),
         if (!_dossierFailed)
           ...(widget.exerciseSections?.call(false) ??
               _exerciseSections(s, pool: false)),
@@ -1488,10 +1477,25 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  List<Widget> _exerciseSections(FormationSnapshotDoc s, {required bool pool}) {
+  Widget _buildSpecialtiesTab() {
+    final data = _specialtiesSnapshot;
+    if (data == null) {
+      return Center(
+          child: TextButton(
+              onPressed: _loadFull,
+              child: const Text('Spécialités indisponibles · Réessayer')));
+    }
+    return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        children: _exerciseSections(data, pool: false, specialties: true));
+  }
+
+  List<Widget> _exerciseSections(FormationSnapshotDoc s,
+      {required bool pool, bool specialties = false}) {
     bool belongs(String code, String description) =>
+        specialties ||
         formationModalityForExercise(code, description) ==
-        (pool ? FormationModality.pool : FormationModality.career);
+            (pool ? FormationModality.pool : FormationModality.career);
     final validated =
         s.validated.where((e) => belongs(e.code, e.description)).toList();
     final pending =
@@ -1503,7 +1507,10 @@ class _Student360ScreenState extends State<Student360Screen> {
       if (!pool) ...pending,
     ];
     return [
-      if (!pool)
+      if (specialties)
+        const Text('Spécialités (Tous niveaux)',
+            style: TextStyle(color: Colors.white70)),
+      if (!pool && !specialties)
         const Text(
           'Épreuves en milieu naturel · suivi personnel et historique',
           style: TextStyle(color: Colors.white70),
@@ -1516,7 +1523,10 @@ class _Student360ScreenState extends State<Student360Screen> {
                 e.code,
                 e.description,
                 Colors.greenAccent,
-                badge: e.personal ? 'Personnel' : 'Historique',
+                badge: [
+                  e.personal ? 'Personnel' : 'Historique',
+                  if (e.date != null) _sessionDate(e.date)
+                ].join(' · '),
                 pool: pool,
               ),
             )
@@ -1562,6 +1572,17 @@ class _Student360ScreenState extends State<Student360Screen> {
     ];
   }
 
+  Future<void> _openExerciseProtocol(String code, bool pool) =>
+      MilProtocolSheet.show(
+        context,
+        clubId: widget.clubId,
+        code: code,
+        pool: pool,
+        loader: widget.protocolLoader == null
+            ? null
+            : () => widget.protocolLoader!(code, pool),
+      );
+
   Widget _exRow(
     String code,
     String subtitle,
@@ -1571,17 +1592,8 @@ class _Student360ScreenState extends State<Student360Screen> {
   }) {
     return InkWell(
       key: ValueKey('mil-protocol-${pool ? 'pool' : 'mn'}-$code'),
-      onTap: code.trim().isEmpty
-          ? null
-          : () => MilProtocolSheet.show(
-                context,
-                clubId: widget.clubId,
-                code: code,
-                pool: pool,
-                loader: widget.protocolLoader == null
-                    ? null
-                    : () => widget.protocolLoader!(code, pool),
-              ),
+      onTap:
+          code.trim().isEmpty ? null : () => _openExerciseProtocol(code, pool),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
@@ -1628,6 +1640,21 @@ class _Student360ScreenState extends State<Student360Screen> {
                   style: const TextStyle(color: Colors.white, fontSize: 11),
                 ),
               ),
+            if (widget.exerciseAction != null && !widget.readOnlyProfile)
+              SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: IconButton(
+                    tooltip: 'Suivi de l’exercice',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.edit_outlined,
+                        color: Colors.white70, size: 18),
+                    onPressed: code.trim().isEmpty
+                        ? null
+                        : () => widget.exerciseAction!(code),
+                  ))
+            else
+              const SizedBox(width: 40, height: 40),
           ],
         ),
       ),
@@ -1637,11 +1664,18 @@ class _Student360ScreenState extends State<Student360Screen> {
   // ---- Onglet Expérience (MIL) --------------------------------------------
   Widget _buildMilTab(FormationSnapshotDoc s) {
     final zones = s.diveStats.zones;
+    final source = _milOverview ?? MilExperienceOverview.fromSnapshot(s);
+    final overview = MilExperienceOverview(
+      byBrevet: source.byBrevet,
+      preferredBrevet: _targetFor(s),
+      sourceVersion: source.sourceVersion,
+      snapshotFallback: source.snapshotFallback,
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         MilRequirementsCard(
-          overview: _milOverview ?? MilExperienceOverview.fromSnapshot(s),
+          overview: overview,
           dark: true,
           inlineExpanded: true,
         ),

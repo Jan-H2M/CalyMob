@@ -19,7 +19,7 @@ void main() {
         own: true,
         caption: 'Alice Martin · comparaison en lecture seule',
         size: const Size(320, 900));
-    expect(find.text('Mes exercices'), findsOneWidget);
+    expect(find.text('Alice Martin'), findsOneWidget);
     expect(find.text('Alice Martin · comparaison en lecture seule'),
         findsOneWidget);
     expect(find.byTooltip('Comparer avec Mes exercices (lecture seule)'),

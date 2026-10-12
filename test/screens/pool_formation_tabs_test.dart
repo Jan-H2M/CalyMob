@@ -26,6 +26,125 @@ Future<void> frames(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+      'live explicit goal wins over stale snapshot in header and pool protocols',
+      (tester) async {
+    for (final target in ['3*', 'UNKNOWN']) {
+      await tester.pumpWidget(MaterialApp(
+          home: Student360Screen(
+        clubId: 'qa',
+        member: MemberProfile(
+            id: 'synthetic',
+            nom: 'Test',
+            prenom: 'Élève',
+            email: '',
+            formationActive: true,
+            plongeurCode: '1',
+            targetFormationLevel: target),
+        scope: FormationTrackingScope.full,
+        previewMode: true,
+        previewSnapshot: FormationSnapshotDoc.fromMap(
+            'synthetic', {'current_code': '1', 'target_level': '2*'}),
+        poolProtocolCatalogLoader: () async => catalog(),
+      )));
+      await frames(tester);
+      expect(find.text('1 → $target'), findsOneWidget);
+      await tester.tap(find.widgetWithText(Tab, 'Piscine'));
+      await frames(tester);
+      await tester.tap(find.widgetWithText(Tab, 'Exercices'));
+      await frames(tester);
+      expect(find.text('P2.AD'), findsNothing);
+      expect(
+          find.text('P3.AD'), target == '3*' ? findsOneWidget : findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets(
+      'monitor and pupil use the same exercise rows and specialties, preserving own action and protocol',
+      (tester) async {
+    final sizes = <Size>[];
+    var actions = 0;
+    for (final own in [false, true]) {
+      await tester.pumpWidget(MaterialApp(
+          home: Student360Screen(
+        clubId: 'qa',
+        member: MemberProfile(
+            id: 'synthetic',
+            nom: 'Test',
+            prenom: 'Élève',
+            email: '',
+            formationActive: true),
+        scope: FormationTrackingScope.full,
+        previewMode: true,
+        isOwnProfile: own,
+        exerciseAction: own
+            ? (_) async {
+                actions++;
+              }
+            : null,
+        previewSnapshot: FormationSnapshotDoc.fromMap('synthetic', {
+          'current_code': '2',
+          'target_level': '3*',
+          'exercises': {
+            'remaining': [
+              {
+                'code': 'P3.RA',
+                'description': 'Épreuve synthétique',
+                'niveau': 'P3'
+              }
+            ]
+          },
+        }),
+        providedSpecialties: FormationSnapshotDoc.fromMap('synthetic', {
+          'target_level': 'TN',
+          'exercises': {
+            'remaining': [
+              {
+                'code': 'NTB.T',
+                'description': 'Théorie spécialité',
+                'niveau': 'TN'
+              }
+            ]
+          },
+        }),
+        protocolLoader: (code, pool) async => MilProtocol(
+            key: 'mn__$code',
+            code: code,
+            medium: 'mn',
+            sectionId: 'synthetic',
+            title: 'Protocole synthétique',
+            body: 'Instruction de test',
+            sourceUrl: 'https://synthetic.invalid',
+            sourceVersion: 'QA',
+            referenceUrls: const []),
+      )));
+      await frames(tester);
+      expect(find.text('Élève Test'), findsOneWidget);
+      expect(find.text('○ Restants (1)'), findsOneWidget);
+      final row = find.byKey(const ValueKey('mil-protocol-mn-P3.RA'));
+      sizes.add(tester.getSize(row));
+      if (own) {
+        await tester.tap(find.byTooltip('Suivi de l’exercice'));
+        await frames(tester);
+      }
+      await tester.tap(find.text('P3.RA'));
+      await frames(tester);
+      expect(find.text('Protocole synthétique'), findsOneWidget);
+      await tester.tap(find.byTooltip('Fermer le protocole'));
+      await frames(tester);
+      await tester.ensureVisible(find.widgetWithText(Tab, 'Spécialités'));
+      await tester.tap(find.widgetWithText(Tab, 'Spécialités'));
+      await frames(tester);
+      expect(find.text('NTB.T'), findsOneWidget);
+      expect(find.text('Protocoles MIL · Milieu naturel'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    }
+    expect(sizes[0], sizes[1]);
+    expect(actions, 1);
+  });
   test(
       '3-star pool list contains all seven P3 pool protocols, not natural exercises or other levels',
       () {

@@ -158,7 +158,9 @@ class _ActiveFormationPanelState extends State<ActiveFormationPanel> {
                   : null,
               message: snapshot.hasError
                   ? 'Formation actuelle indisponible. Rechargez la fiche.'
-                  : null,
+                  : conflict
+                      ? 'Plusieurs inscriptions actives : plongée et/ou apnée. À vérifier dans CalyCompta.'
+                      : null,
             );
           }
           final selected = showApnee &&

@@ -38,9 +38,13 @@ void main() {
     expect(source, isNot(contains('_buildSelfActions')));
     expect(source, isNot(contains("Text('Demander une évaluation'")));
     expect(source, isNot(contains('Exercices sur papier')));
-    expect(source, contains('Spécialités (Tous niveaux)'));
-    expect(source, contains('_buildValidatedRow'));
-    expect(source, contains('MilProtocolCodeSheet.show'));
+    expect(
+        File('lib/screens/formation/student_360_screen.dart')
+            .readAsStringSync(),
+        contains('Spécialités (Tous niveaux)'));
+    expect(source, contains('_showValidatedDetails'));
+    expect(source, contains('exerciseAction: _openDossierExercise'));
+    expect(source, contains('providedSpecialties: memberDossierSnapshot'));
     // A precise exercise can still use its existing evaluation workflow.
     expect(source, contains('_openEvaluationRequest(exercice)'));
   });
