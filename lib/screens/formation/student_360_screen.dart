@@ -28,7 +28,7 @@ import '../../utils/live_qa_session_resume.dart';
 import 'student_exercise_comparison_screen.dart';
 import 'apnee_dossier_screen.dart';
 import '../../services/apnee_training_service.dart';
-import '../../widgets/formation/formation_navigation.dart';
+import '../../widgets/formation/active_formation_panel.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_catalog_sheet.dart';
 import '../../widgets/formation/mil_protocol_sheet.dart';
@@ -101,7 +101,6 @@ class Student360Screen extends StatefulWidget {
 }
 
 class _Student360ScreenState extends State<Student360Screen> {
-  late bool _apnee = widget.initialApnee;
   FormationSnapshotReader? _reader;
 
   bool _loading = true;
@@ -414,43 +413,37 @@ class _Student360ScreenState extends State<Student360Screen> {
         body: OceanBackground(
           child: SafeArea(
             top: false,
-            child: Column(
-              children: [
-                FormationDisciplineSelector(
-                  apnee: _apnee,
-                  onChanged: (value) => setState(() => _apnee = value),
-                ),
-                Expanded(
-                  child: _apnee
-                      ? ApneeDossierScreen(
-                          embedded: true,
-                          service: widget.apneeService,
-                          clubId: widget.clubId,
-                          memberId: widget.member.id,
-                          memberName: _fullName,
-                          viewerId: widget.previewMode
-                              ? null
-                              : FirebaseAuth.instance.currentUser?.uid,
-                          canManage:
-                              !widget.isOwnProfile && !widget.readOnlyProfile,
-                          readOnly: widget.readOnlyProfile,
-                          poolOnly: widget.scope ==
-                              FormationTrackingScope.piscineOnly,
-                        )
-                      : _loading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.white),
-                            )
-                          : widget.scope == FormationTrackingScope.piscineOnly
-                              ? _poolSnapshot == null
-                                  ? _buildHistoryWithoutSnapshot()
-                                  : _buildPiscineContent(_poolSnapshot!)
-                              : _snapshot == null
-                                  ? _buildHistoryWithoutSnapshot()
-                                  : _buildContent(_snapshot!),
-                ),
-              ],
+            child: ActiveFormationPanel(
+              clubId: widget.clubId,
+              memberId: widget.member.id,
+              fallbackScubaActive: widget.member.formationActive,
+              initialApnee: widget.initialApnee,
+              live: !widget.previewMode || widget.apneeService != null,
+              service: widget.apneeService,
+              apnee: (_) => ApneeDossierScreen(
+                embedded: true,
+                service: widget.apneeService,
+                clubId: widget.clubId,
+                memberId: widget.member.id,
+                memberName: _fullName,
+                viewerId: widget.previewMode
+                    ? null
+                    : FirebaseAuth.instance.currentUser?.uid,
+                canManage: !widget.isOwnProfile && !widget.readOnlyProfile,
+                readOnly: widget.readOnlyProfile,
+                poolOnly: widget.scope == FormationTrackingScope.piscineOnly,
+              ),
+              scuba: (_) => _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
+                  : widget.scope == FormationTrackingScope.piscineOnly
+                      ? _poolSnapshot == null
+                          ? _buildHistoryWithoutSnapshot()
+                          : _buildPiscineContent(_poolSnapshot!)
+                      : _snapshot == null
+                          ? _buildHistoryWithoutSnapshot()
+                          : _buildContent(_snapshot!),
             ),
           ),
         ),

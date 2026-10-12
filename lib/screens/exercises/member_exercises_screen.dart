@@ -22,7 +22,7 @@ import '../../models/member_profile.dart';
 import '../../utils/permission_helper.dart';
 import '../formation/student_360_screen.dart';
 import '../formation/apnee_dossier_screen.dart';
-import '../../widgets/formation/formation_navigation.dart';
+import '../../widgets/formation/active_formation_panel.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_code_sheet.dart';
@@ -92,27 +92,23 @@ class MemberFormationExperienceSection extends StatelessWidget {
 }
 
 class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
-  bool _standaloneApnee = false;
-
   Widget _selfUnavailable(Widget scuba) => Scaffold(
       appBar: AppBar(title: const Text('Mes exercices')),
       body: OceanGradientBackground(
           creatures: CreatureSet.fish,
-          child: Column(children: [
-            FormationDisciplineSelector(
-                apnee: _standaloneApnee,
-                onChanged: (value) => setState(() => _standaloneApnee = value)),
-            Expanded(
-                child: _standaloneApnee
-                    ? ApneeDossierScreen(
-                        embedded: true,
-                        clubId: _clubId,
-                        memberId: widget.memberId,
-                        memberName: widget.memberName,
-                        viewerId: FirebaseAuth.instance.currentUser?.uid,
-                        readOnly: widget.comparisonReadOnly)
-                    : scuba),
-          ])));
+          child: ActiveFormationPanel(
+            clubId: _clubId,
+            memberId: widget.memberId,
+            fallbackScubaActive: context.read<MemberProvider>().formationActive,
+            apnee: (_) => ApneeDossierScreen(
+                embedded: true,
+                clubId: _clubId,
+                memberId: widget.memberId,
+                memberName: widget.memberName,
+                viewerId: FirebaseAuth.instance.currentUser?.uid,
+                readOnly: widget.comparisonReadOnly),
+            scuba: (_) => scuba,
+          )));
   final ExerciceValideService _service = ExerciceValideService();
   final LifrasService _lifrasService = LifrasService();
   final FormationSnapshotReader _formationReader = FormationSnapshotReader();
@@ -692,7 +688,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           ),
           scope: FormationTrackingScope.full,
           isOwnProfile: true,
-          initialApnee: _standaloneApnee,
           readOnlyProfile: widget.comparisonReadOnly,
           ownProfileCaption: widget.comparisonReadOnly
               ? '${widget.memberName} · comparaison en lecture seule'
