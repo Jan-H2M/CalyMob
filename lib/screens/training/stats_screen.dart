@@ -44,14 +44,21 @@ class StatsMilExperienceSection extends StatelessWidget {
       return const Center(
           child: CircularProgressIndicator(color: Colors.white));
     }
-    if (!hasActiveTraining) {
+    if (!hasActiveTraining && (overview == null || overview!.isEmpty)) {
       return const Text('Aucun brevet plongée en préparation.',
           style: TextStyle(color: Colors.white, fontSize: 12));
     }
     final data = overview;
     if (data != null && !data.isEmpty) {
-      return MilRequirementsCard(
-          overview: data, inlineExpanded: true, compactRows: true);
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (!hasActiveTraining)
+          const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text('Brevet plongée acquis · référence informative',
+                  style: TextStyle(color: Colors.white, fontSize: 12))),
+        MilRequirementsCard(
+            overview: data, inlineExpanded: true, compactRows: true),
+      ]);
     }
     return Container(
       padding: const EdgeInsets.all(14),
@@ -77,6 +84,8 @@ class StatsMilExperienceSection extends StatelessWidget {
 
 /// Uses the same live goal priority as the pupil fiche. A stored snapshot
 /// cannot silently re-enable a closed SCUBA training (e.g. apnée-only).
+/// Without active SCUBA, the acquired brevet is an explicitly labelled
+/// informative reference, never an inferred future training goal.
 @visibleForTesting
 String? statsTargetBrevet(
         {required bool formationActive,
@@ -88,7 +97,7 @@ String? statsTargetBrevet(
             targetFormationLevel: targetFormationLevel,
             currentCode: currentCode,
             snapshotTargetLevel: snapshotTargetLevel)
-        : null;
+        : milBrevetCodeForTarget(currentCode);
 
 class StatsTrainingGoal {
   final bool active;

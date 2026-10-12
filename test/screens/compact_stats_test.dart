@@ -6,6 +6,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
 void main() {
+  testWidgets('acquired brevet reference retains the full inline list',
+      (tester) async {
+    const data = MilExperienceOverview(preferredBrevet: '4', byBrevet: {
+      '4': MilBrevetExperience(brevetCode: '4', modulePct: 100, requirements: {
+        'total_milieu_naturel':
+            SnapshotMilRequirement(have: 437, need: 100, dataMissing: false),
+        'mer': SnapshotMilRequirement(have: 294, need: 30, dataMissing: false),
+      }),
+      'AM': MilBrevetExperience(brevetCode: 'AM', modulePct: 0, requirements: {
+        'total_milieu_naturel':
+            SnapshotMilRequirement(have: 0, need: 150, dataMissing: false),
+      }),
+    });
+    await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+            body: StatsMilExperienceSection(
+                overview: data, loading: false, hasActiveTraining: false))));
+    expect(find.text('Brevet plongée acquis · référence informative'),
+        findsOneWidget);
+    expect(find.text('437/100'), findsOneWidget);
+    expect(find.text('294/30'), findsOneWidget);
+    expect(find.text('0/150'), findsNothing);
+    expect(find.text('Voir les détails LIFRAS'), findsNothing);
+  });
   test('hidden own profile without a directory still reads fresh metadata',
       () async {
     final db = FakeFirebaseFirestore();
@@ -13,7 +37,7 @@ void main() {
     await doc.set({'formation_active': false, 'plongeur_code': 'MC'});
     final goal = await StatsTrainingGoal.load(db, 'calypso', 'hidden-self');
     expect(goal.active, false);
-    expect(goal.brevet, isNull);
+    expect(goal.brevet, 'MC');
     await doc
         .update({'formation_active': true, 'target_formation_level': 'MF'});
     expect((await StatsTrainingGoal.load(db, 'calypso', 'hidden-self')).brevet,
@@ -39,7 +63,7 @@ void main() {
     final apneeOnly = await StatsTrainingGoal.load(db, 'calypso', 'pupil',
         snapshotTargetLevel: '2*');
     expect(apneeOnly.active, false);
-    expect(apneeOnly.brevet, isNull);
+    expect(apneeOnly.brevet, '2');
   });
   test('stats uses live target and never reactivates historical SCUBA', () {
     expect(
@@ -67,7 +91,7 @@ void main() {
             formationActive: false,
             currentCode: '4*',
             snapshotTargetLevel: 'AM'),
-        isNull);
+        '4');
   });
 
   testWidgets('all compact target requirements are inline at 320px',
