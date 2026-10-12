@@ -58,10 +58,24 @@ class BoutiqueVariant {
 
   bool get hasStock => stockCount == null || stockCount! > 0 || allowBackorder;
 
+  /// Returns the persisted label when available, otherwise a readable label
+  /// derived from the canonical Boutique variant attributes.
+  String get displayLabel {
+    final persistedLabel = label.trim();
+    if (persistedLabel.isNotEmpty) return persistedLabel;
+
+    final fallbackParts = ['size', 'color', 'coupe']
+        .map((key) => attributes[key]?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toList();
+
+    return fallbackParts.isNotEmpty ? fallbackParts.join(' · ') : 'Standard';
+  }
+
   factory BoutiqueVariant.fromMap(Map<String, dynamic> data) {
     return BoutiqueVariant(
       id: data['id']?.toString() ?? '',
-      label: data['label']?.toString() ?? 'Standard',
+      label: data['label']?.toString() ?? '',
       sku: data['sku']?.toString(),
       attributes: Map<String, dynamic>.from(data['attributes'] ?? {}),
       stockCount: _nullableInt(data['stockCount']),
