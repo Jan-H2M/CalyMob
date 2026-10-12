@@ -57,11 +57,12 @@ class _ApneeDossierScreenState extends State<ApneeDossierScreen> {
                       ? rows.first['track'] as String
                       : 'apnee.a1');
           return Column(children: [
-            FormationLevelSelector(
-              selected: selectedTrack,
-              levels: apneeFormationLevels,
-              onChanged: (value) => setState(() => _track = value),
-            ),
+            if (!widget.embedded)
+              FormationLevelSelector(
+                selected: selectedTrack,
+                levels: apneeFormationLevels,
+                onChanged: (value) => setState(() => _track = value),
+              ),
             Expanded(
               child: Builder(builder: (context) {
                 if (snapshot.hasError) {
@@ -75,9 +76,13 @@ class _ApneeDossierScreenState extends State<ApneeDossierScreen> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final selected = snapshot.data!
-                    .where((row) => row['track'] == selectedTrack)
-                    .toList();
+                // Embedded pupil fiches show the actual active enrollment,
+                // never an unrelated level selected by a second navigation row.
+                final selected = widget.embedded
+                    ? active
+                    : snapshot.data!
+                        .where((row) => row['track'] == selectedTrack)
+                        .toList();
                 if (selected.isEmpty) {
                   return const Center(
                     child: Text(

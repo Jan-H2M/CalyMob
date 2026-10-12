@@ -94,10 +94,15 @@ void main() {
     await tester.tap(find.widgetWithText(Tab, 'Piscine'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Examen piscine conservé'), findsOneWidget);
+    expect(find.text('Examen piscine conservé'), findsNothing);
     expect(find.text('06/10/2026 · Piscine'), findsOneWidget);
     expect(find.byTooltip('Ajouter une remarque à cette séance'), findsNothing);
     expect(find.byTooltip('Modifier le groupe de cette séance'), findsNothing);
+    await tester.tap(find.widgetWithText(Tab, 'Exercices'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.text('Examen piscine conservé'), findsOneWidget);
     await tester.ensureVisible(find.widgetWithText(Tab, 'Observations'));
     await tester.tap(find.widgetWithText(Tab, 'Observations'));
     await tester.pump();
@@ -367,11 +372,8 @@ void main() {
         findsOneWidget);
     expect(find.text('Remontée assistée carrière'), findsOneWidget);
     expect(find.text('Examen théorique'), findsNothing);
-    await tester.ensureVisible(find.widgetWithText(Tab, 'Examens & brevet'));
-    await tester.tap(find.widgetWithText(Tab, 'Examens & brevet'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Examen théorique'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Examens & brevet'), findsNothing);
+    expect(find.byKey(const Key('brevet-status-strip')), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
   });
 
@@ -419,6 +421,11 @@ void main() {
     expect(find.text('Suivi piscine'), findsOneWidget);
     expect(find.text('Piscine'), findsOneWidget);
     expect(find.text('Observations piscine'), findsOneWidget);
+    expect(find.text('Progression piscine'), findsNothing);
+    await tester.tap(find.widgetWithText(Tab, 'Exercices'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
     expect(find.text('Progression piscine'), findsOneWidget);
     expect(find.text('Validés'), findsOneWidget);
     expect(find.text('1'), findsNWidgets(3));
@@ -429,7 +436,8 @@ void main() {
     expect(find.text('Ajouter une remarque piscine'), findsNothing);
     expect(find.text('Préparer la prochaine séance'), findsNothing);
 
-    await tester.drag(find.byType(TabBarView), const Offset(-1200, 0));
+    await tester.tap(find.widgetWithText(Tab, 'Observations piscine'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Bonne maîtrise du vidage de masque.'), findsOneWidget);
@@ -467,7 +475,7 @@ void main() {
 
     expect(find.text('Épreuves'), findsOneWidget);
     expect(find.text('Expériences brevet'), findsOneWidget);
-    expect(find.text('Examens & brevet'), findsOneWidget);
+    expect(find.text('Examens & brevet'), findsNothing);
     expect(find.text('Observations'), findsOneWidget);
 
     await tester.tap(find.text('Expériences brevet'));

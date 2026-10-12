@@ -39,7 +39,9 @@ class _ApneeEnrollmentVisibilityState extends State<ApneeEnrollmentVisibility> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.clubId != widget.clubId ||
         oldWidget.memberId != widget.memberId ||
-        oldWidget.service != widget.service) _data = _watch();
+        oldWidget.service != widget.service) {
+      _data = _watch();
+    }
   }
 
   @override
@@ -65,6 +67,7 @@ class ActiveFormationPanel extends StatefulWidget {
   final ApneeTrainingService? service;
   final WidgetBuilder scuba;
   final WidgetBuilder apnee;
+  final bool embedApneeInPool;
   const ActiveFormationPanel(
       {super.key,
       required this.clubId,
@@ -74,6 +77,7 @@ class ActiveFormationPanel extends StatefulWidget {
       required this.apnee,
       this.initialApnee = false,
       this.live = true,
+      this.embedApneeInPool = false,
       this.service});
   @override
   State<ActiveFormationPanel> createState() => _ActiveFormationPanelState();
@@ -116,9 +120,15 @@ class _ActiveFormationPanelState extends State<ActiveFormationPanel> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.live)
+    if (widget.embedApneeInPool && !widget.live) {
+      return _poolContent(
+          showApnee: widget.initialApnee,
+          scubaActive: widget.fallbackScubaActive);
+    }
+    if (!widget.live) {
       return _content(_selected ?? widget.initialApnee,
           showApnee: widget.initialApnee);
+    }
     return StreamBuilder<List<List<ApneeRow>>>(
         key: ObjectKey(_data),
         stream: _data,
@@ -139,6 +149,18 @@ class _ActiveFormationPanelState extends State<ActiveFormationPanel> {
                   apneeFormationLevels.containsKey(row['track']))
               .toList();
           final conflict = active.length + (scubaActive ? 1 : 0) > 1;
+          if (widget.embedApneeInPool) {
+            return _poolContent(
+              showApnee: !snapshot.hasError && active.isNotEmpty,
+              scubaActive: scubaActive,
+              activeApneeLabel: active.length == 1
+                  ? apneeFormationLevels[active.single['track']]
+                  : null,
+              message: snapshot.hasError
+                  ? 'Formation actuelle indisponible. Rechargez la fiche.'
+                  : null,
+            );
+          }
           final selected = showApnee &&
               (_selected ??
                   (widget.initialApnee || (!conflict && active.length == 1)));
@@ -166,6 +188,32 @@ class _ActiveFormationPanelState extends State<ActiveFormationPanel> {
         });
   }
 
+  Widget _poolContent(
+          {required bool showApnee,
+          required bool scubaActive,
+          String? activeApneeLabel,
+          String? message}) =>
+      FormationPoolContext(
+        apnee: showApnee
+            ? KeyedSubtree(
+                key: ObjectKey(_data), child: Builder(builder: widget.apnee))
+            : null,
+        scubaActive: scubaActive,
+        activeApneeLabel: activeApneeLabel,
+        initiallyApnee: widget.initialApnee,
+        child: Column(children: [
+          if (message != null)
+            Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(message,
+                    style: const TextStyle(color: Colors.white70))),
+          Expanded(
+              child: KeyedSubtree(
+                  key: ValueKey('${widget.clubId}/${widget.memberId}'),
+                  child: Builder(builder: widget.scuba))),
+        ]),
+      );
+
   Widget _content(bool apnee,
           {required bool showApnee, String? message, bool resolving = false}) =>
       Column(children: [
@@ -188,4 +236,27 @@ class _ActiveFormationPanelState extends State<ActiveFormationPanel> {
                     child:
                         Builder(builder: apnee ? widget.apnee : widget.scuba))),
       ]);
+}
+
+/// Live enrollment metadata shared with the nested pool tabs, never a write.
+class FormationPoolContext extends InheritedWidget {
+  final Widget? apnee;
+  final bool scubaActive;
+  final String? activeApneeLabel;
+  final bool initiallyApnee;
+  const FormationPoolContext(
+      {super.key,
+      required super.child,
+      required this.apnee,
+      required this.scubaActive,
+      this.activeApneeLabel,
+      this.initiallyApnee = false});
+  static FormationPoolContext? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FormationPoolContext>();
+  @override
+  bool updateShouldNotify(FormationPoolContext oldWidget) =>
+      apnee != oldWidget.apnee ||
+      scubaActive != oldWidget.scubaActive ||
+      activeApneeLabel != oldWidget.activeApneeLabel ||
+      initiallyApnee != oldWidget.initiallyApnee;
 }

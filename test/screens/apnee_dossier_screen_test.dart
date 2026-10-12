@@ -7,6 +7,36 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
+      'embedded apnee dossier has no level selector and shows active enrollment only',
+      (tester) async {
+    await tester.runAsync(ApneeTrainingService.catalog);
+    final db = FakeFirebaseFirestore();
+    await db
+        .doc('clubs/qa/apnee_enrollments/enrol')
+        .set({'member_id': 'student', 'track': 'apnee.a1', 'status': 'active'});
+    await db
+        .doc('clubs/qa/apnee_enrollments/old')
+        .set({'member_id': 'student', 'track': 'apnee.a2', 'status': 'closed'});
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ApneeDossierScreen(
+      clubId: 'qa',
+      memberId: 'student',
+      memberName: 'Élève synthétique',
+      embedded: true,
+      service: ApneeTrainingService(firestore: db),
+    ))));
+    for (var i = 0; i < 6; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('1★ apnée · A1 / Discovery'), findsOneWidget);
+    expect(find.text('2★ apnée · A2'), findsNothing);
+    expect(find.byType(SegmentedButton<String>), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
       'dated participation popup saves attendance and note, never official results',
       (tester) async {
     ApneeRow? saved;

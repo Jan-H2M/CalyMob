@@ -23,6 +23,8 @@ import '../../utils/permission_helper.dart';
 import '../formation/student_360_screen.dart';
 import '../formation/apnee_dossier_screen.dart';
 import '../../widgets/formation/active_formation_panel.dart';
+import '../../widgets/formation/pool_formation_tabs.dart';
+import '../../widgets/formation/pool_brevet_protocols.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_code_sheet.dart';
@@ -99,6 +101,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             clubId: _clubId,
             memberId: widget.memberId,
             fallbackScubaActive: context.read<MemberProvider>().formationActive,
+            embedApneeInPool: true,
             apnee: (_) => ApneeDossierScreen(
                 embedded: true,
                 clubId: _clubId,
@@ -106,7 +109,13 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 memberName: widget.memberName,
                 viewerId: FirebaseAuth.instance.currentUser?.uid,
                 readOnly: widget.comparisonReadOnly),
-            scuba: (_) => scuba,
+            scuba: (context) => PoolFormationTabs(
+              sessions: scuba,
+              exercises: PoolBrevetProtocols(
+                  clubId: _clubId,
+                  target: context.read<MemberProvider>().targetFormationLevel),
+              apnee: FormationPoolContext.maybeOf(context)?.apnee,
+            ),
           )));
   final ExerciceValideService _service = ExerciceValideService();
   final LifrasService _lifrasService = LifrasService();
