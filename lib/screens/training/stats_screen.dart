@@ -18,7 +18,6 @@ import '../../config/firebase_config.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/mil_experience_overview.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/member_provider.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/mil_experience_service.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
@@ -90,6 +89,30 @@ String? statsTargetBrevet(
             currentCode: currentCode,
             snapshotTargetLevel: snapshotTargetLevel)
         : null;
+
+class StatsTrainingGoal {
+  final bool active;
+  final String? brevet;
+  const StatsTrainingGoal({required this.active, this.brevet});
+
+  /// MemberProvider is a login cache, not authoritative after an enrollment
+  /// change. Read the same safe live directory as the pupil fiche on each load.
+  static Future<StatsTrainingGoal> load(
+      FirebaseFirestore db, String clubId, String memberId,
+      {String? snapshotTargetLevel}) async {
+    final doc = await db.doc('clubs/$clubId/member_directory/$memberId').get();
+    final data = doc.data();
+    if (data == null) throw StateError('Formation actuelle indisponible');
+    final active = data['formation_active'] == true;
+    return StatsTrainingGoal(
+        active: active,
+        brevet: statsTargetBrevet(
+            formationActive: active,
+            targetFormationLevel: data['target_formation_level'] as String?,
+            currentCode: data['plongeur_code'] as String?,
+            snapshotTargetLevel: snapshotTargetLevel));
+  }
+}
 
 /// All year-filtered dive KPIs share one small surface instead of large tiles.
 class StatsSummary extends StatelessWidget {
@@ -179,7 +202,6 @@ class _StatsScreenState extends State<StatsScreen> {
         });
         return;
       }
-      final member = context.read<MemberProvider>();
 
       // Always fetch the full member-scoped collection — year filtering is
       // applied client-side in `_computeStats`. The combo (member_id ==,
@@ -205,12 +227,13 @@ class _StatsScreenState extends State<StatsScreen> {
       final entries = snap.docs
           .map((d) => <String, dynamic>{'id': d.id, ...d.data()})
           .toList();
-      final preferredBrevet = statsTargetBrevet(
-        formationActive: member.formationActive,
-        targetFormationLevel: member.targetFormationLevel,
-        currentCode: member.plongeurCode,
+      final goal = await StatsTrainingGoal.load(
+        FirebaseFirestore.instance,
+        clubId,
+        userId,
         snapshotTargetLevel: formationSnapshot?.targetLevel,
       );
+      final preferredBrevet = goal.brevet;
       MilExperienceOverview? overview;
       try {
         overview = await _milExperienceService.loadForEntries(
@@ -238,7 +261,7 @@ class _StatsScreenState extends State<StatsScreen> {
       setState(() {
         _entries = entries;
         _milOverview = overview;
-        _hasActiveTraining = member.formationActive;
+        _hasActiveTraining = goal.active;
         _loading = false;
       });
     } catch (err, st) {

@@ -3,8 +3,31 @@ import 'package:calymob/models/mil_experience_overview.dart';
 import 'package:calymob/screens/training/stats_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
 void main() {
+  test('opening stats rereads the changed directory instead of login cache',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final doc = db.doc('clubs/calypso/member_directory/pupil');
+    await doc.set({'formation_active': true, 'plongeur_code': '2*'});
+    expect(
+        (await StatsTrainingGoal.load(db, 'calypso', 'pupil',
+                snapshotTargetLevel: '2*'))
+            .brevet,
+        '3');
+    await doc.update({'target_formation_level': '4*'});
+    expect(
+        (await StatsTrainingGoal.load(db, 'calypso', 'pupil',
+                snapshotTargetLevel: '2*'))
+            .brevet,
+        '4');
+    await doc.update({'formation_active': false});
+    final apneeOnly = await StatsTrainingGoal.load(db, 'calypso', 'pupil',
+        snapshotTargetLevel: '2*');
+    expect(apneeOnly.active, false);
+    expect(apneeOnly.brevet, isNull);
+  });
   test('stats uses live target and never reactivates historical SCUBA', () {
     expect(
         statsTargetBrevet(
