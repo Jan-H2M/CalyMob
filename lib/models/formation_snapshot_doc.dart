@@ -22,6 +22,7 @@ class FormationSnapshotDoc {
   final SnapshotDiveStats diveStats;
   final Map<String, SnapshotMilRequirement> milPerRequirement;
   final int? milModulePct;
+  final String? milCountingVersion;
 
   final Map<String, int> brevetPct;
   final int formationPct;
@@ -44,6 +45,7 @@ class FormationSnapshotDoc {
     required this.diveStats,
     required this.milPerRequirement,
     required this.milModulePct,
+    this.milCountingVersion,
     required this.brevetPct,
     required this.formationPct,
     required this.goalCodes,
@@ -236,6 +238,7 @@ class FormationSnapshotDoc {
       diveStats: SnapshotDiveStats.fromMap(diveStats),
       milPerRequirement: milReqs,
       milModulePct: mil.isEmpty ? null : _intOrNull(mil['module_pct']),
+      milCountingVersion: mil['counting_version'] as String?,
       brevetPct: brevet,
       formationPct: _int(data['formation_pct']),
       goalCodes: (goals['codes'] as List?)?.map((e) => e.toString()).toList() ??

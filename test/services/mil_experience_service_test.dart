@@ -59,7 +59,7 @@ void main() {
       2,
       reason: 'MIL is lifetime-based and must ignore calendar-year filters',
     );
-    expect(overview.byBrevet['2']!.requirements['prof_20m']!.have, 1);
+    expect(overview.byBrevet['2']!.requirements['prof_20m']!.have, 2);
     expect(overview.byBrevet['3']!.requirements['mer_50m']!.have, 1);
     expect(
       overview.byBrevet['AM']!.requirements['encadrement']!.dataMissing,
@@ -101,9 +101,9 @@ void main() {
     ], rules);
 
     expect(counts['total_milieu_naturel'], 8);
-    expect(counts['prof_20m'], 3);
-    expect(counts['prof_30m'], 2);
-    expect(counts['prof_40m'], 1);
+    expect(counts['prof_20m'], 8);
+    expect(counts['prof_30m'], 7);
+    expect(counts['prof_40m'], 4);
     expect(counts['mer'], 5);
     expect(counts['mer_30m'], 3);
     expect(counts['mer_40m'], 2);

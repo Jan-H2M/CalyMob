@@ -14,7 +14,8 @@
  *
  * Règles de calcul (glossaire + D9/D10 du PRD Carnet) :
  *   - comptage cumulatif (une plongée mer 50 m compte pour mer/30/40/45/50) ;
- *   - tolérance 10 % de profondeur « en nos eaux » (eau douce) : prof_20/30/40 ;
+ *   - prof_20/30/40 cumulatifs, mer comprise ; tolérance 10 % uniquement
+ *     en « Nos Eaux » (dont la Zélande), MIL §7.4.2 ;
  *   - Zélande : tolérance 10 % sur mer ≤ 40 m, déco et > 40 m non comptées ;
  *   - encadrement / encadrement_mer : AUCUN champ carnet ne les capture →
  *     `have = 0` + `data_missing = true` (décision Jan 2026-07-07, §6). Ces
@@ -181,11 +182,13 @@ function computeExperienceCounts(entries, countingRules) {
     if (cnt.nuit === true) c.nuit += 1;
     if (cnt.surveillance === true) c.surveillance_ciel += 1;
 
-    // Profondeur « en nos eaux » (eau douce) : tolérance 10 %.
-    if (!sea && d != null) {
-      if (d >= 20 * tolFactor) c.prof_20m += 1;
-      if (d >= 30 * tolFactor) c.prof_30m += 1;
-      if (d >= 40 * tolFactor) c.prof_40m += 1;
+    // General depths include sea dives. Nos Eaux affects tolerance only;
+    // Zélande is also Nos Eaux, independently of sea-specific exclusions.
+    if (d != null) {
+      const f = !sea || zelande ? tolFactor : 1;
+      if (d >= 20 * f) c.prof_20m += 1;
+      if (d >= 30 * f) c.prof_30m += 1;
+      if (d >= 40 * f) c.prof_40m += 1;
     }
 
     if (sea) {
@@ -257,7 +260,8 @@ function computeMilExperience(entries, milRequirements, milColumn) {
   }
 
   const modulePct = sumNeed > 0 ? Math.round((sumHave / sumNeed) * 100) : 0;
-  return { per_requirement: perRequirement, module_pct: modulePct };
+  return { per_requirement: perRequirement, module_pct: modulePct,
+    counting_version: 'cumulative-general-depths-v2' };
 }
 
 // ===========================================================================

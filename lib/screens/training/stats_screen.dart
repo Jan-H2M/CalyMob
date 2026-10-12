@@ -22,6 +22,7 @@ import '../../services/formation_snapshot_reader.dart';
 import '../../services/mil_experience_service.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../utils/dive_depth.dart';
 
 @visibleForTesting
 class StatsMilExperienceSection extends StatelessWidget {
@@ -457,14 +458,14 @@ class _StatsScreenState extends State<StatsScreen> {
           const SizedBox(height: 12),
           // Numbers row
           Row(
-            children: List.generate(8, (i) {
+            children: List.generate(diveDepthLabels.length, (i) {
               final v = s.depthHistogram[i];
               return Expanded(
                 child: Center(
                   child: Text(
                     '$v',
                     style: TextStyle(
-                      color: i == 7 ? AppColors.oranje : AppColors.donkerblauw,
+                      color: i == 8 ? AppColors.oranje : AppColors.donkerblauw,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
                     ),
@@ -479,7 +480,7 @@ class _StatsScreenState extends State<StatsScreen> {
             height: 44,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(8, (i) {
+              children: List.generate(diveDepthLabels.length, (i) {
                 final v = s.depthHistogram[i];
                 final h = maxVal == 0 ? 0.0 : (v / maxVal);
                 return Expanded(
@@ -489,7 +490,7 @@ class _StatsScreenState extends State<StatsScreen> {
                       heightFactor: h,
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: i == 7
+                          gradient: i == 8
                               ? const LinearGradient(
                                   colors: [Color(0xFFFCD9A6), AppColors.oranje],
                                   begin: Alignment.topCenter,
@@ -515,18 +516,28 @@ class _StatsScreenState extends State<StatsScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          const Row(
+          Row(
             children: [
-              Expanded(child: Center(child: Text('5', style: _axisStyle))),
-              Expanded(child: Center(child: Text('10', style: _axisStyle))),
-              Expanded(child: Center(child: Text('15', style: _axisStyle))),
-              Expanded(child: Center(child: Text('20', style: _axisStyle))),
-              Expanded(child: Center(child: Text('25', style: _axisStyle))),
-              Expanded(child: Center(child: Text('30', style: _axisStyle))),
-              Expanded(child: Center(child: Text('35', style: _axisStyle))),
-              Expanded(child: Center(child: Text('40+', style: _axisStyle))),
+              for (final label in diveDepthLabels)
+                Expanded(child: Center(child: Text(label, style: _axisStyle))),
             ],
           ),
+          const SizedBox(height: 8),
+          Text('Profondeurs réelles · seuils cumulatifs',
+              style: TextStyle(
+                  color: AppColors.donkerblauw.withValues(alpha: 0.7),
+                  fontSize: 11)),
+          Wrap(spacing: 14, children: [
+            for (final threshold in [20, 30, 40])
+              Text('≥ $threshold m : ${s.depths.atLeast[threshold]}',
+                  style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+          ]),
+          if (s.depths.unknown > 0)
+            Text('Profondeur non renseignée : ${s.depths.unknown}',
+                style: const TextStyle(color: AppColors.oranje, fontSize: 11)),
         ],
       ),
     );
@@ -759,6 +770,7 @@ class _Stats {
   final int exerciseDives;
   final int poolSessions;
   final List<int> depthHistogram;
+  final DiveDepthDistribution depths;
   final List<int> months;
   final List<Map<String, dynamic>> topLocations;
 
@@ -775,6 +787,7 @@ class _Stats {
     required this.exerciseDives,
     required this.poolSessions,
     required this.depthHistogram,
+    required this.depths,
     required this.months,
     required this.topLocations,
   });
@@ -786,7 +799,7 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
   int sea = 0, nitrox = 0, deco = 0, night = 0, dp = 0, sf = 0, exo = 0;
   int totalDives = 0;
   int poolSessions = 0;
-  final histogram = List<int>.filled(8, 0);
+  final depths = DiveDepthDistribution.fromEntries(entries);
   final months = List<int>.filled(12, 0);
   final locationCounts = <String, Map<String, dynamic>>{};
 
@@ -800,18 +813,16 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     totalDives += 1;
     final dur = e['duration_minutes'];
     if (dur is num) totalMinutes += dur.toInt();
-    final depth = e['depth_max_meters'];
-    if (depth is num) {
-      if (depth > maxDepth) maxDepth = depth.toDouble();
-      final bucket = (depth / 5).floor().clamp(0, 7);
-      histogram[bucket] += 1;
+    final depth = parseDiveDepth(e['depth_max_meters']);
+    if (depth != null) {
+      if (depth > maxDepth) maxDepth = depth;
     }
     final ts = e['date'];
     if (ts is Timestamp) {
       months[ts.toDate().month - 1] += 1;
     }
     final c = (e['counters'] as Map?) ?? {};
-    if (c['mer'] == true) sea += 1;
+    if (c['mer'] == true || e['water_type'] == 'sea') sea += 1;
     if (c['nitrox'] == true) nitrox += 1;
     if (c['deco'] == true) deco += 1;
     if (c['nuit'] == true) night += 1;
@@ -860,7 +871,8 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     sfDives: sf,
     exerciseDives: exo,
     poolSessions: poolSessions,
-    depthHistogram: histogram,
+    depthHistogram: depths.buckets,
+    depths: depths,
     months: months,
     topLocations: top,
   );

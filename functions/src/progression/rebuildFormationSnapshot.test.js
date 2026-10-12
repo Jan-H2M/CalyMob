@@ -76,8 +76,10 @@ describe('computeExperienceCounts', () => {
     // total = 5 lignes « mer », + total_milieu_naturel.
     const merLines = c.mer + c.mer_30m + c.mer_40m + c.mer_45m + c.mer_50m;
     expect(merLines).toBe(5);
-    // une plongée mer ne compte PAS dans les lignes « nos eaux ».
-    expect(c.prof_30m).toBe(0);
+    // MIL §7.4.2: sea depth experience also satisfies general depths.
+    expect(c.prof_20m).toBe(1);
+    expect(c.prof_30m).toBe(1);
+    expect(c.prof_40m).toBe(1);
     expect(c.total_milieu_naturel).toBe(1);
   });
 
