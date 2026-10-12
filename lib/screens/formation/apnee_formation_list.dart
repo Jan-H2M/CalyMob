@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
 import '../../models/member_profile.dart';
 import '../../services/apnee_training_service.dart';
+import '../../services/formation_enrollment_service.dart';
 import '../../utils/member_directory_visibility.dart';
 import '../../utils/member_name.dart';
 import '../../widgets/formation/formation_navigation.dart';
+import '../../widgets/formation/formation_student_tile.dart';
 import 'student_360_screen.dart';
 import '../../utils/permission_helper.dart';
 
@@ -33,22 +35,18 @@ ApneeRow apneeEnrollmentChange(
   String memberId,
   String track, {
   bool toggle = false,
+  int expectedRevision = 0,
 }) {
   ApneeRow? destination;
-  ApneeRow? source;
   for (final row in rows.where((row) => row['member_id'] == memberId)) {
     if (row['track'] == track) destination = row;
-    if (row['track'] != track && row['status'] == 'active') source = row;
   }
   final closing = toggle && destination?['status'] == 'active';
   return {
-    'action': 'enroll',
     'memberId': memberId,
     'track': track,
-    'status': closing ? 'closed' : 'active',
-    'expectedRevision': destination?['revision'] ?? 0,
-    if (!closing && source != null) 'fromTrack': source['track'],
-    if (!closing && source != null) 'fromRevision': source['revision'] ?? 0,
+    'active': !closing,
+    'expectedRevision': expectedRevision,
   };
 }
 
@@ -69,6 +67,7 @@ class _ApneeFormationListState extends State<ApneeFormationList> {
     String memberId,
     String track, {
     bool toggle = false,
+    required int expectedRevision,
   }) async {
     if (!widget.canEnroll || _busy) return;
     setState(() {
@@ -76,10 +75,15 @@ class _ApneeFormationListState extends State<ApneeFormationList> {
       _message = null;
     });
     try {
-      await _service.save(
-        widget.clubId,
-        apneeEnrollmentChange(enrollments, memberId, track, toggle: toggle),
-      );
+      final change = apneeEnrollmentChange(enrollments, memberId, track,
+          toggle: toggle, expectedRevision: expectedRevision);
+      await FormationEnrollmentService(
+              firestore: _service.db, invoke: _service.invoke)
+          .save(widget.clubId,
+              memberId: memberId,
+              track: track,
+              active: change['active'],
+              expectedRevision: expectedRevision);
       if (mounted)
         setState(() {
           _track = track;
@@ -145,27 +149,38 @@ class _ApneeFormationListState extends State<ApneeFormationList> {
             final name = memberDisplayName(row, fallback: 'Membre');
             final enrollment = current[id];
             final enrolled = enrollment?['status'] == 'active';
-            return Card(
-              color: const Color(0xCC173853),
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-              child: ListTile(
-                dense: true,
-                title: Text(name, style: const TextStyle(color: Colors.white)),
-                leading: IconButton(
-                  tooltip: enrolled
-                      ? 'Retirer de la formation'
-                      : 'Démarrer la formation',
-                  icon: Icon(
-                    Icons.school,
-                    color: enrolled ? Colors.lightBlueAccent : Colors.white54,
-                  ),
-                  onPressed: widget.canEnroll && !_busy
-                      ? () => _change(enrollments, id, _track, toggle: true)
-                      : null,
-                ),
-                subtitle: enrolled
-                    ? DropdownButton<String>(
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: FormationStudentTile(
+                name: name,
+                avatar: CircleAvatar(
+                    radius: 15,
+                    backgroundColor: const Color(0xFF406187),
+                    child: Text(
+                        name
+                            .split(RegExp(r'\s+'))
+                            .where((part) => part.isNotEmpty)
+                            .take(2)
+                            .map((part) => part[0])
+                            .join()
+                            .toUpperCase(),
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 11))),
+                active: enrolled,
+                onToggle: widget.canEnroll && !_busy
+                    ? () => _change(enrollments, id, _track,
+                        toggle: true,
+                        expectedRevision: row['formation_revision'] ?? 0)
+                    : null,
+                goal: enrolled
+                    ? DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                        isDense: true,
+                        isExpanded: true,
                         value: _track,
+                        disabledHint: Text(_track == 'apnee.a1' ? '1★' : '2★',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11)),
                         dropdownColor: const Color(0xFF173853),
                         style:
                             const TextStyle(color: Colors.white, fontSize: 12),
@@ -178,12 +193,13 @@ class _ApneeFormationListState extends State<ApneeFormationList> {
                         onChanged: widget.canEnroll && !_busy
                             ? (value) {
                                 if (value != null && value != _track)
-                                  _change(enrollments, id, value);
+                                  _change(enrollments, id, value,
+                                      expectedRevision:
+                                          row['formation_revision'] ?? 0);
                               }
                             : null,
-                      )
+                      ))
                     : null,
-                trailing: const Icon(Icons.chevron_right, color: Colors.white),
                 onTap: enrollment == null
                     ? null
                     : () => Navigator.of(context).push(

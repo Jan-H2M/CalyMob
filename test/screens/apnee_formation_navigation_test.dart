@@ -6,9 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test(
-      'all enrollment routes transfer the same source revision without changing SCUBA',
-      () {
+  test('all enrollment routes use one cross-discipline revision', () {
     final rows = <ApneeRow>[
       {
         'member_id': 'student',
@@ -23,19 +21,19 @@ void main() {
         'revision': 7
       }
     ];
-    expect(apneeEnrollmentChange(rows, 'student', 'apnee.a2', toggle: true), {
-      'action': 'enroll',
-      'memberId': 'student',
-      'track': 'apnee.a2',
-      'status': 'active',
-      'expectedRevision': 7,
-      'fromTrack': 'apnee.a1',
-      'fromRevision': 3
-    });
+    expect(
+        apneeEnrollmentChange(rows, 'student', 'apnee.a2',
+            toggle: true, expectedRevision: 11),
+        {
+          'memberId': 'student',
+          'track': 'apnee.a2',
+          'active': true,
+          'expectedRevision': 11,
+        });
     expect(
         apneeEnrollmentChange(rows, 'student', 'apnee.a1',
-            toggle: true)['status'],
-        'closed');
+            toggle: true)['active'],
+        false);
     expect(
         apneeEnrollmentChange(rows, 'student', 'apnee.a1', toggle: true)
             .containsKey('fromTrack'),
@@ -63,6 +61,7 @@ void main() {
     for (final row in <ApneeRow>[
       {
         'id': 'student',
+        'formation_revision': 11,
         'prenom': 'Élève',
         'nom': 'Synthétique',
         'member_status': 'active'
@@ -109,8 +108,8 @@ void main() {
     await tester
         .tap(find.descendant(of: tile, matching: find.byType(IconButton)));
     await tester.pump(const Duration(milliseconds: 50));
-    expect(saved, containsPair('fromTrack', 'apnee.a1'));
-    expect(saved, containsPair('fromRevision', 3));
+    expect(saved, containsPair('expectedRevision', 11));
+    expect(saved, containsPair('active', true));
     expect(saved!.containsKey('target_formation_level'), false);
     expect(tester.takeException(), isNull);
   });

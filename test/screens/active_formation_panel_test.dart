@@ -17,13 +17,15 @@ void main() {
     return db;
   }
 
-  Widget subject(FakeFirebaseFirestore db) => MaterialApp(
+  Widget subject(FakeFirebaseFirestore db,
+          {String memberId = 'student', ApneeTrainingService? service}) =>
+      MaterialApp(
           home: Scaffold(
               body: ActiveFormationPanel(
         clubId: 'qa',
-        memberId: 'student',
+        memberId: memberId,
         fallbackScubaActive: true,
-        service: ApneeTrainingService(firestore: db),
+        service: service ?? ApneeTrainingService(firestore: db),
         scuba: (_) => const Text('Ancien snapshot 4 → AM'),
         apnee: (_) => const Text('Formation A1'),
       )));
@@ -77,5 +79,61 @@ void main() {
     await tester.pumpWidget(subject(await fixture(apnee: false)));
     await settle(tester);
     expect(find.textContaining('Aucune formation active'), findsOneWidget);
+    expect(find.text('Apnée'), findsNothing);
+  });
+  testWidgets('scuba-only learners have no apnee tab or content',
+      (tester) async {
+    await tester.pumpWidget(subject(await fixture(scuba: true, apnee: false)));
+    await settle(tester);
+    expect(find.text('Apnée'), findsNothing);
+    expect(find.text('Formation A1'), findsNothing);
+  });
+  testWidgets('past apnee stays accessible with a symmetric historical label',
+      (tester) async {
+    final db = await fixture(scuba: true);
+    await db.doc('clubs/qa/apnee_enrollments/a1').update({'status': 'closed'});
+    await tester.pumpWidget(subject(db));
+    await settle(tester);
+    await tester.tap(find.text('Apnée'));
+    await settle(tester);
+    expect(find.text('Historique apnée · Formation actuelle : Plongée'),
+        findsOneWidget);
+  });
+  testWidgets(
+      'identity switch clears manual selection and watches the new learner',
+      (tester) async {
+    final db = await fixture();
+    final service = ApneeTrainingService(firestore: db);
+    await db
+        .doc('clubs/qa/member_directory/other')
+        .set({'formation_active': true});
+    await tester.pumpWidget(subject(db, service: service));
+    await settle(tester);
+    await tester.tap(find.text('Apnée'));
+    await settle(tester);
+    await tester.pumpWidget(subject(db, memberId: 'other', service: service));
+    await settle(tester);
+    expect(find.text('Formation A1'), findsNothing);
+    expect(find.text('Apnée'), findsNothing);
+    expect(find.text('Ancien snapshot 4 → AM'), findsOneWidget);
+  });
+  testWidgets(
+      'personal apnee shortcut stays hidden until the member has an enrollment',
+      (tester) async {
+    final db = await fixture(apnee: false);
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ApneeEnrollmentVisibility(
+                clubId: 'qa',
+                memberId: 'student',
+                service: ApneeTrainingService(firestore: db),
+                child: const Text('Mon parcours apnée')))));
+    await settle(tester);
+    expect(find.text('Mon parcours apnée'), findsNothing);
+    await db
+        .doc('clubs/qa/apnee_enrollments/a1')
+        .set({'member_id': 'student', 'track': 'apnee.a1', 'status': 'active'});
+    await settle(tester);
+    expect(find.text('Mon parcours apnée'), findsOneWidget);
   });
 }

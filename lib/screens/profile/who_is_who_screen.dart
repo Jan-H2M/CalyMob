@@ -22,6 +22,7 @@ import '../exercises/member_exercises_screen.dart';
 import '../formation/student_360_screen.dart';
 import '../../widgets/formation/formation_navigation.dart';
 import '../../services/scuba_enrollment_service.dart';
+import '../../widgets/formation/formation_student_tile.dart';
 import '../../models/member_formation_dossier.dart';
 
 @visibleForTesting
@@ -1501,15 +1502,43 @@ class _FormationListViewState extends State<FormationListView> {
 
   Widget _buildRow(BuildContext context, _FormationRow row) {
     final m = row.profile;
-    final full = row.fullSnapshot;
+    final target = _targetFor(row);
     final pool = row.poolSnapshot;
-    final trajet = full == null
-        ? ''
-        : full.targetLevel != null && full.targetLevel!.isNotEmpty
-            ? '${full.currentCode.isEmpty ? '—' : full.currentCode} → ${full.targetLevel}'
-            : full.currentCode;
-
-    return GestureDetector(
+    final current = m.plongeurCode ?? row.fullSnapshot?.currentCode ?? '—';
+    final trajet =
+        target == null || !m.formationActive ? current : '$current → $target';
+    return FormationStudentTile(
+      name: m.fullName,
+      subtitle: trajet,
+      avatar: _photo(m, 30),
+      active: m.formationActive,
+      showEnrollment: widget.showTargetLevels,
+      onToggle:
+          widget.canEnroll && !_savingEnrollment ? () => _enroll(row) : null,
+      goal: widget.showTargetLevels && m.formationActive
+          ? DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isDense: true,
+                isExpanded: true,
+                value: target,
+                hint: const Text('—', style: TextStyle(color: Colors.white70)),
+                disabledHint: Text(scubaFormationLevels[target] ?? '—',
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 11)),
+                dropdownColor: const Color(0xFF173853),
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+                items: scubaFormationLevels.entries
+                    .map((level) => DropdownMenuItem(
+                        value: level.key, child: Text(level.value)))
+                    .toList(),
+                onChanged: widget.canEnroll && !_savingEnrollment
+                    ? (value) {
+                        if (value != null) _enroll(row, target: value);
+                      }
+                    : null,
+              ),
+            )
+          : null,
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -1522,229 +1551,6 @@ class _FormationListViewState extends State<FormationListView> {
           ),
         );
       },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.showTargetLevels)
-              IconButton(
-                  tooltip: m.formationActive
-                      ? 'Retirer de la formation'
-                      : 'Démarrer la formation',
-                  icon: Icon(Icons.school,
-                      color: m.formationActive
-                          ? Colors.lightBlueAccent
-                          : Colors.white54),
-                  onPressed: widget.canEnroll && !_savingEnrollment
-                      ? () => _enroll(row)
-                      : null),
-            _photo(m, 48),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          m.fullName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      if (full != null && full.attentionCount > 0)
-                        _badge('⚠ ${full.attentionCount}', Colors.redAccent),
-                      if (full != null && full.pendingCount > 0)
-                        _badge('⏳ ${full.pendingCount}', Colors.amberAccent),
-                      if (full != null && full.goalCount > 0)
-                        _badge('🎯 ${full.goalCount}', Colors.tealAccent),
-                    ],
-                  ),
-                  if (trajet.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(
-                        trajet,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  if (widget.showTargetLevels && m.formationActive)
-                    DropdownButton<String>(
-                        value: _targetFor(row),
-                        hint: const Text('Brevet visé',
-                            style: TextStyle(color: Colors.white70)),
-                        dropdownColor: const Color(0xFF173853),
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                        items: scubaFormationLevels.entries
-                            .map((level) => DropdownMenuItem(
-                                value: level.key, child: Text(level.value)))
-                            .toList(),
-                        onChanged: widget.canEnroll && !_savingEnrollment
-                            ? (value) {
-                                if (value != null) _enroll(row, target: value);
-                              }
-                            : null),
-                  const SizedBox(height: 6),
-                  if (pool != null)
-                    _poolProgress(pool)
-                  else if (full != null)
-                    _modalityProgress(full),
-                  if (full != null) ...[
-                    const SizedBox(height: 6),
-                    _miniBar(
-                      'Exercices',
-                      full.exercisePct,
-                      AppColors.lichtblauw,
-                    ),
-                    if (full.hasMil) ...[
-                      const SizedBox(height: 4),
-                      _miniBar('Exp. MIL', full.milPct, Colors.amberAccent),
-                    ],
-                    const SizedBox(height: 6),
-                    Text(
-                      full.pedagogicalLine,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _badge(String text, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(left: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _modalityProgress(FormationSnapshotDoc snapshot) {
-    final progress = snapshot.modalityProgress;
-    final modalities = formationListModalities(widget.scope);
-    return Wrap(
-      spacing: 5,
-      runSpacing: 5,
-      children: modalities.map((modality) {
-        final value = progress[modality]!;
-        final detail = value.total == 0
-            ? '—'
-            : '${value.validated}/${value.total}'
-                '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}';
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          ),
-          child: Text(
-            '${modality.label} $detail',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.92),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _poolProgress(PoolFormationSnapshotDoc snapshot) {
-    final detail = snapshot.total == 0
-        ? '—'
-        : '${snapshot.validated}/${snapshot.total}'
-            '${snapshot.pending > 0 ? ' · ${snapshot.pending}⏳' : ''}';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      child: Text(
-        'Piscine $detail',
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.92),
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _miniBar(String label, int pct, Color color) {
-    final p = (pct.clamp(0, 100)) / 100.0;
-    return Row(
-      children: [
-        SizedBox(
-          width: 64,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 11,
-            ),
-          ),
-        ),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: LinearProgressIndicator(
-              value: p,
-              minHeight: 6,
-              backgroundColor: Colors.white.withValues(alpha: 0.16),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '$pct %',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
     );
   }
 

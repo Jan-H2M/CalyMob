@@ -17,6 +17,7 @@ import 'historical_claims_screen.dart';
 import 'mon_carnet_screen.dart';
 import '../formation/my_declarations_screen.dart';
 import '../formation/apnee_dossier_screen.dart';
+import '../../widgets/formation/active_formation_panel.dart';
 import 'stats_screen.dart';
 
 const _parcoursSecondaryText = Color(0xFF5F6B7A);
@@ -139,9 +140,13 @@ class ParcoursHubScreen extends StatelessWidget {
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[1]),
                     ),
-                    _ParcoursCard(
-                        definition: parcoursApneeEntry,
-                        onTap: () => _open(context, parcoursApneeEntry)),
+                    if (userId != null)
+                      ApneeEnrollmentVisibility(
+                          clubId: FirebaseConfig.defaultClubId,
+                          memberId: userId,
+                          child: _ParcoursCard(
+                              definition: parcoursApneeEntry,
+                              onTap: () => _open(context, parcoursApneeEntry))),
                     if (formationScope != null)
                       _ParcoursCard(
                         definition: parcoursFormationOverviewEntry,
