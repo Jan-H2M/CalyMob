@@ -26,7 +26,6 @@ import '../../widgets/formation/active_formation_panel.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_code_sheet.dart';
-import '../training/historical_claims_screen.dart';
 import '../training/external_proof_capture_screen.dart';
 import '../training/evaluation_request_screen.dart';
 import 'validate_exercise_screen.dart';
@@ -707,8 +706,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           specialties: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _buildSelfActions(),
-              const SizedBox(height: 8),
               _buildSection(
                 title: 'Spécialités (Tous niveaux)',
                 icon: Icons.workspace_premium_outlined,
@@ -737,43 +734,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     ExerciceLIFRAS exercice,
   ) {
     return dossierExerciseResults(validations, exercice);
-  }
-
-  Widget _buildSelfActions() {
-    return Container(
-      decoration: BoxDecoration(
-          color: AppColors.donkerblauw.withValues(alpha: 0.65),
-          borderRadius: BorderRadius.circular(12)),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        children: [
-          TextButton.icon(
-            style: TextButton.styleFrom(
-                foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
-            icon: const Icon(Icons.fact_check_outlined, size: 18),
-            label: const Text('Demander une évaluation',
-                style: TextStyle(fontSize: 12)),
-            onPressed: widget.comparisonReadOnly
-                ? null
-                : () => _openEvaluationRequest(),
-          ),
-          TextButton.icon(
-            style: TextButton.styleFrom(
-                foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
-            icon: const Icon(Icons.history_edu_outlined, size: 18),
-            label: const Text('Exercices sur papier',
-                style: TextStyle(fontSize: 12)),
-            onPressed: widget.comparisonReadOnly
-                ? null
-                : () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const HistoricalClaimsScreen())),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _openEvaluationRequest([ExerciceLIFRAS? selected]) async {
