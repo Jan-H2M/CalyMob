@@ -75,7 +75,7 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(find.text('1★ apnée · A1 / Discovery'), findsOneWidget);
+    expect(find.text('1★ apnée · A1 / Discovery'), findsNWidgets(2));
     expect(find.textContaining('Théorie  · Validation ○'), findsOneWidget);
     expect(find.textContaining('0/0'), findsNothing);
     expect(tester.takeException(), isNull);

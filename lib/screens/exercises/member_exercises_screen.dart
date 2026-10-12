@@ -21,6 +21,8 @@ import '../../services/personal_exercise_progress_service.dart';
 import '../../models/member_profile.dart';
 import '../../utils/permission_helper.dart';
 import '../formation/student_360_screen.dart';
+import '../formation/apnee_dossier_screen.dart';
+import '../../widgets/formation/formation_navigation.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_code_sheet.dart';
@@ -90,6 +92,27 @@ class MemberFormationExperienceSection extends StatelessWidget {
 }
 
 class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
+  bool _standaloneApnee = false;
+
+  Widget _selfUnavailable(Widget scuba) => Scaffold(
+      appBar: AppBar(title: const Text('Mes exercices')),
+      body: OceanGradientBackground(
+          creatures: CreatureSet.fish,
+          child: Column(children: [
+            FormationDisciplineSelector(
+                apnee: _standaloneApnee,
+                onChanged: (value) => setState(() => _standaloneApnee = value)),
+            Expanded(
+                child: _standaloneApnee
+                    ? ApneeDossierScreen(
+                        embedded: true,
+                        clubId: _clubId,
+                        memberId: widget.memberId,
+                        memberName: widget.memberName,
+                        viewerId: FirebaseAuth.instance.currentUser?.uid,
+                        readOnly: widget.comparisonReadOnly)
+                    : scuba),
+          ])));
   final ExerciceValideService _service = ExerciceValideService();
   final LifrasService _lifrasService = LifrasService();
   final FormationSnapshotReader _formationReader = FormationSnapshotReader();
@@ -530,37 +553,32 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               _loadFormationSnapshot();
             }
           });
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+          return _selfUnavailable(
+              const Center(child: CircularProgressIndicator()));
         }
         if (_isLoadingCatalog ||
             _isLoadingFormationSnapshot ||
             _personalLoading ||
             provider.isLoading) {
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+          return _selfUnavailable(
+              const Center(child: CircularProgressIndicator()));
         }
 
         if (_targetNiveau == null) {
-          return Scaffold(
-              appBar: AppBar(title: const Text('Mes exercices')),
-              body: _buildNoNiveauState());
+          return _selfUnavailable(_buildNoNiveauState());
         }
         if (_catalogFailed ||
             _personalFailed ||
             provider.errorMessage != null) {
-          return Scaffold(
-              appBar: AppBar(title: const Text('Mes exercices')),
-              body: Center(
-                  child: TextButton.icon(
-                      onPressed: () {
-                        _loadCatalog();
-                        _watchPersonal();
-                        provider.listenToMemberExercices(
-                            _clubId, widget.memberId);
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Suivi indisponible · Réessayer'))));
+          return _selfUnavailable(Center(
+              child: TextButton.icon(
+                  onPressed: () {
+                    _loadCatalog();
+                    _watchPersonal();
+                    provider.listenToMemberExercices(_clubId, widget.memberId);
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Suivi indisponible · Réessayer'))));
         }
 
         // Split catalog three ways:
@@ -674,6 +692,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           ),
           scope: FormationTrackingScope.full,
           isOwnProfile: true,
+          initialApnee: _standaloneApnee,
           readOnlyProfile: widget.comparisonReadOnly,
           ownProfileCaption: widget.comparisonReadOnly
               ? '${widget.memberName} · comparaison en lecture seule'

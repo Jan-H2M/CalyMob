@@ -27,6 +27,8 @@ import '../../utils/permission_helper.dart';
 import '../../utils/live_qa_session_resume.dart';
 import 'student_exercise_comparison_screen.dart';
 import 'apnee_dossier_screen.dart';
+import '../../services/apnee_training_service.dart';
+import '../../widgets/formation/formation_navigation.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
 import '../../widgets/formation/mil_protocol_catalog_sheet.dart';
 import '../../widgets/formation/mil_protocol_sheet.dart';
@@ -59,6 +61,8 @@ class Student360Screen extends StatefulWidget {
   final List<Map<String, dynamic>> previewObservations;
   final List<PoolStudentSession> previewPoolHistory;
   final bool isOwnProfile;
+  final bool initialApnee;
+  final ApneeTrainingService? apneeService;
   final bool readOnlyProfile;
   final String? ownProfileCaption;
   final FormationSnapshotDoc? providedSnapshot;
@@ -81,6 +85,8 @@ class Student360Screen extends StatefulWidget {
     this.previewObservations = const [],
     this.previewPoolHistory = const [],
     this.isOwnProfile = false,
+    this.initialApnee = false,
+    this.apneeService,
     this.readOnlyProfile = false,
     this.ownProfileCaption,
     this.providedSnapshot,
@@ -95,6 +101,7 @@ class Student360Screen extends StatefulWidget {
 }
 
 class _Student360ScreenState extends State<Student360Screen> {
+  late bool _apnee = widget.initialApnee;
   FormationSnapshotReader? _reader;
 
   bool _loading = true;
@@ -157,7 +164,9 @@ class _Student360ScreenState extends State<Student360Screen> {
         widget.clubId,
         widget.member.id,
         automaticLevel: poolAutomaticFormationLevel(
-            widget.member.plongeurCode, widget.member.formationActive),
+          widget.member.plongeurCode,
+          widget.member.formationActive,
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -175,10 +184,7 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Future<void> _loadFull() async {
     var snapshot = widget.providedSnapshot ??
-        await _reader!.getSnapshot(
-          widget.clubId,
-          widget.member.id,
-        );
+        await _reader!.getSnapshot(widget.clubId, widget.member.id);
     MilExperienceOverview? milOverview = widget.providedMilOverview;
     try {
       milOverview ??= await MilExperienceService().load(
@@ -207,27 +213,32 @@ class _Student360ScreenState extends State<Student360Screen> {
           .doc(widget.member.id);
       final history = await memberRef.collection('brevet_history').get();
       _brevetHistory = history.docs.map((d) => d.data()).toList()
-        ..sort((a, b) =>
-            ((b['effective_date'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
-                .compareTo((a['effective_date'] as Timestamp?)
-                        ?.millisecondsSinceEpoch ??
-                    0));
+        ..sort(
+          (a, b) =>
+              ((b['effective_date'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
+                  .compareTo(
+            (a['effective_date'] as Timestamp?)?.millisecondsSinceEpoch ?? 0,
+          ),
+        );
       if (widget.providedSnapshot == null && target != null) {
-        final catalog = await LifrasService()
-            .getExercicesByNiveau(widget.clubId, target, strict: true);
+        final catalog = await LifrasService().getExercicesByNiveau(
+          widget.clubId,
+          target,
+          strict: true,
+        );
         final results = await memberRef.collection('exercices_valides').get();
         final personal = await PersonalExerciseProgressService()
             .watch(widget.clubId, widget.member.id)
             .first;
         snapshot = memberDossierSnapshot(
-            memberId: widget.member.id,
-            currentCode: widget.member.plongeurCode ?? '',
-            target: target,
-            catalog: catalog,
-            validations:
-                results.docs.map(ExerciceValide.fromFirestore).toList(),
-            personalProgress: personal,
-            source: snapshot);
+          memberId: widget.member.id,
+          currentCode: widget.member.plongeurCode ?? '',
+          target: target,
+          catalog: catalog,
+          validations: results.docs.map(ExerciceValide.fromFirestore).toList(),
+          personalProgress: personal,
+          source: snapshot,
+        );
       }
     } catch (_) {
       _dossierFailed = true;
@@ -337,7 +348,8 @@ class _Student360ScreenState extends State<Student360Screen> {
               ? 5
               : 6,
       child: Scaffold(
-        extendBodyBehindAppBar: true,
+        backgroundColor: AppColors.donkerblauw,
+        extendBodyBehindAppBar: false,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -347,14 +359,22 @@ class _Student360ScreenState extends State<Student360Screen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Mes exercices',
-                        style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold)),
-                    Text(widget.ownProfileCaption!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 11)),
+                    const Text(
+                      'Mes exercices',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      widget.ownProfileCaption!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 )
               : Text(
@@ -369,58 +389,77 @@ class _Student360ScreenState extends State<Student360Screen> {
                   ),
                 ),
           actions: [
-            IconButton(
-                tooltip: 'Parcours apnée',
-                icon: const Icon(Icons.water),
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ApneeDossierScreen(
-                        clubId: widget.clubId,
-                        memberId: widget.member.id,
-                        memberName: _fullName,
-                        viewerId: FirebaseAuth.instance.currentUser?.uid,
-                        canManage:
-                            !widget.isOwnProfile && !widget.readOnlyProfile,
-                        readOnly: widget.readOnlyProfile,
-                        poolOnly: widget.scope ==
-                            FormationTrackingScope.piscineOnly)))),
             ...widget.appBarActions,
             if (!widget.isOwnProfile &&
                 widget.scope == FormationTrackingScope.full &&
                 isLiveQaPreviewOrigin(
-                    enabled: liveQaAutostart, isWeb: kIsWeb, uri: Uri.base))
+                  enabled: liveQaAutostart,
+                  isWeb: kIsWeb,
+                  uri: Uri.base,
+                ))
               IconButton(
                 tooltip: 'Comparer avec Mes exercices (lecture seule)',
                 icon: const Icon(Icons.compare_arrows),
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
                     builder: (_) => StudentExerciseComparisonScreen(
-                        clubId: widget.clubId, member: widget.member))),
+                      clubId: widget.clubId,
+                      member: widget.member,
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
         body: OceanBackground(
           child: SafeArea(
             top: false,
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
-                : widget.scope == FormationTrackingScope.piscineOnly
-                    ? _poolSnapshot == null
-                        ? _buildHistoryWithoutSnapshot()
-                        : _buildPiscineContent(_poolSnapshot!)
-                    : _snapshot == null
-                        ? _buildHistoryWithoutSnapshot()
-                        : _buildContent(_snapshot!),
+            child: Column(
+              children: [
+                FormationDisciplineSelector(
+                  apnee: _apnee,
+                  onChanged: (value) => setState(() => _apnee = value),
+                ),
+                Expanded(
+                  child: _apnee
+                      ? ApneeDossierScreen(
+                          embedded: true,
+                          service: widget.apneeService,
+                          clubId: widget.clubId,
+                          memberId: widget.member.id,
+                          memberName: _fullName,
+                          viewerId: widget.previewMode
+                              ? null
+                              : FirebaseAuth.instance.currentUser?.uid,
+                          canManage:
+                              !widget.isOwnProfile && !widget.readOnlyProfile,
+                          readOnly: widget.readOnlyProfile,
+                          poolOnly: widget.scope ==
+                              FormationTrackingScope.piscineOnly,
+                        )
+                      : _loading
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                  color: Colors.white),
+                            )
+                          : widget.scope == FormationTrackingScope.piscineOnly
+                              ? _poolSnapshot == null
+                                  ? _buildHistoryWithoutSnapshot()
+                                  : _buildPiscineContent(_poolSnapshot!)
+                              : _snapshot == null
+                                  ? _buildHistoryWithoutSnapshot()
+                                  : _buildContent(_snapshot!),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHistoryWithoutSnapshot() => Padding(
-        padding: const EdgeInsets.only(top: kToolbarHeight),
-        child: _buildPoolHistoryTab(),
-      );
+  Widget _buildHistoryWithoutSnapshot() =>
+      Padding(padding: EdgeInsets.zero, child: _buildPoolHistoryTab());
 
   Widget _buildContent(FormationSnapshotDoc s) {
     final preferred = _milOverview?.preferredBrevet;
@@ -431,13 +470,14 @@ class _Student360ScreenState extends State<Student360Screen> {
         // Preview or unavailable catalogue: unknown is safer than old-goal
         // percentages. Normal loads reconcile with the current catalogue above.
         s = memberDossierSnapshot(
-            memberId: s.memberId,
-            currentCode: s.currentCode,
-            target: target,
-            unresolvedTarget: preferred,
-            catalog: const [],
-            validations: const [],
-            source: s);
+          memberId: s.memberId,
+          currentCode: s.currentCode,
+          target: target,
+          unresolvedTarget: preferred,
+          catalog: const [],
+          validations: const [],
+          source: s,
+        );
       }
     }
     return Column(
@@ -512,7 +552,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   Widget _buildPiscineHeader(PoolFormationSnapshotDoc s) {
-    final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
+    const topInset = 8.0;
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -576,7 +616,7 @@ class _Student360ScreenState extends State<Student360Screen> {
         liveTargetCode == null ? null : _milOverview?.byBrevet[liveTargetCode];
     // Le panneau foncé remonte derrière l'AppBar transparente + la status bar
     // (SafeArea top:false) → titre « Alison » et stats toujours sur fond foncé.
-    final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
+    const topInset = 8.0;
     final target = liveTargetCode == null
         ? s.targetLevel
         : const {'1', '2', '3', '4'}.contains(liveTargetCode)
@@ -619,56 +659,67 @@ class _Student360ScreenState extends State<Student360Screen> {
             ],
           ),
           const SizedBox(height: 8),
-          LayoutBuilder(builder: (context, constraints) {
-            return FittedBox(
-              key: const Key('brevet-status-strip'),
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _compactBrevetStatus(
-                      'Épreuves',
-                      'Épreuves en milieu naturel : '
-                          '${_dossierFailed || natural.total == 0 ? 'non renseignées' : '${natural.validated} sur ${natural.total} réalisées'}'
-                          '${natural.pending > 0 ? ' · ${natural.pending} en attente de validation' : ''}',
-                      count: _dossierFailed || natural.total == 0
-                          ? '—'
-                          : '${natural.validated}/${natural.total}',
-                      unknown: _dossierFailed,
-                      complete: !_dossierFailed &&
-                          natural.total > 0 &&
-                          natural.validated == natural.total,
-                    ),
-                    _compactExamStatus('Théorie', 'Examen théorique',
-                        exams[FormationModality.theory]!),
-                    _compactExamStatus('Piscine', 'Examen piscine',
-                        exams[FormationModality.pool]!),
-                    _compactBrevetStatus(
-                      'Exp.',
-                      'Expérience requise pour le brevet : '
-                          '${liveMil == null || liveMil.requirements.isEmpty ? 'non renseignée' : liveMil.requiredCount == 0 ? 'aucune exigence' : liveMil.isSufficient ? 'suffisante' : liveMil.hasMissingData ? 'à vérifier · données manquantes' : 'à compléter'}'
-                          '${liveMil != null && liveMil.requiredCount > 0 ? ' · ${liveMil.attainedCount} sur ${liveMil.requiredCount} exigences atteintes' : ''}',
-                      complete: liveMil?.isSufficient == true,
-                      unknown: liveMil == null ||
-                          liveMil.requirements.isEmpty ||
-                          liveMil.requiredCount == 0 ||
-                          liveMil.hasMissingData,
-                    ),
-                  ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return FittedBox(
+                key: const Key('brevet-status-strip'),
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _compactBrevetStatus(
+                        'Épreuves',
+                        'Épreuves en milieu naturel : '
+                            '${_dossierFailed || natural.total == 0 ? 'non renseignées' : '${natural.validated} sur ${natural.total} réalisées'}'
+                            '${natural.pending > 0 ? ' · ${natural.pending} en attente de validation' : ''}',
+                        count: _dossierFailed || natural.total == 0
+                            ? '—'
+                            : '${natural.validated}/${natural.total}',
+                        unknown: _dossierFailed,
+                        complete: !_dossierFailed &&
+                            natural.total > 0 &&
+                            natural.validated == natural.total,
+                      ),
+                      _compactExamStatus(
+                        'Théorie',
+                        'Examen théorique',
+                        exams[FormationModality.theory]!,
+                      ),
+                      _compactExamStatus(
+                        'Piscine',
+                        'Examen piscine',
+                        exams[FormationModality.pool]!,
+                      ),
+                      _compactBrevetStatus(
+                        'Exp.',
+                        'Expérience requise pour le brevet : '
+                            '${liveMil == null || liveMil.requirements.isEmpty ? 'non renseignée' : liveMil.requiredCount == 0 ? 'aucune exigence' : liveMil.isSufficient ? 'suffisante' : liveMil.hasMissingData ? 'à vérifier · données manquantes' : 'à compléter'}'
+                            '${liveMil != null && liveMil.requiredCount > 0 ? ' · ${liveMil.attainedCount} sur ${liveMil.requiredCount} exigences atteintes' : ''}',
+                        complete: liveMil?.isSufficient == true,
+                        unknown: liveMil == null ||
+                            liveMil.requirements.isEmpty ||
+                            liveMil.requiredCount == 0 ||
+                            liveMil.hasMissingData,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }),
+              );
+            },
+          ),
         ],
       ),
     );
   }
 
   Widget _compactExamStatus(
-      String label, String fullLabel, FormationModalityProgress progress) {
+    String label,
+    String fullLabel,
+    FormationModalityProgress progress,
+  ) {
     final done = progress.total > 0 && progress.validated == progress.total;
     return _compactBrevetStatus(
       label,
@@ -682,11 +733,14 @@ class _Student360ScreenState extends State<Student360Screen> {
     );
   }
 
-  Widget _compactBrevetStatus(String label, String explanation,
-      {String? count,
-      bool complete = false,
-      bool unknown = false,
-      bool pending = false}) {
+  Widget _compactBrevetStatus(
+    String label,
+    String explanation, {
+    String? count,
+    bool complete = false,
+    bool unknown = false,
+    bool pending = false,
+  }) {
     final color = unknown
         ? Colors.white70
         : pending
@@ -706,27 +760,32 @@ class _Student360ScreenState extends State<Student360Screen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(label,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 12)),
+                Text(
+                  label,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
                 const SizedBox(width: 4),
                 if (count != null)
-                  Text(count,
-                      style: TextStyle(
-                          color: complete ? Colors.greenAccent : Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12))
+                  Text(
+                    count,
+                    style: TextStyle(
+                      color: complete ? Colors.greenAccent : Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  )
                 else
                   Icon(
-                      unknown
-                          ? Icons.help_outline
-                          : pending
-                              ? Icons.hourglass_top
-                              : complete
-                                  ? Icons.check
-                                  : Icons.close,
-                      color: color,
-                      size: 17),
+                    unknown
+                        ? Icons.help_outline
+                        : pending
+                            ? Icons.hourglass_top
+                            : complete
+                                ? Icons.check
+                                : Icons.close,
+                    color: color,
+                    size: 17,
+                  ),
               ],
             ),
           ),
@@ -832,67 +891,93 @@ class _Student360ScreenState extends State<Student360Screen> {
     }
     try {
       final service = PoolGroupCorrectionService();
-      final draft =
-          await service.load(widget.clubId, session.id, widget.member.id);
+      final draft = await service.load(
+        widget.clubId,
+        session.id,
+        widget.member.id,
+      );
       if (!mounted) return;
       PoolGroupChoice? selected;
       final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (context) => StatefulBuilder(
-                builder: (context, update) => AlertDialog(
-                  title: Text(
-                      'Modifier le groupe · ${_sessionDate(session.date)}'),
-                  content: SizedBox(
-                      width: 480,
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Text(
-                            'Corrigez l’heure concernée selon la participation réelle. Les autres heures restent inchangées. Aucune épreuve n’est validée.'),
-                        const SizedBox(height: 16),
-                        if (draft.choices.isEmpty)
-                          const Text(
-                              'Aucun groupe renseigné dans le planning de cette séance.')
-                        else
-                          DropdownButtonFormField<PoolGroupChoice>(
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                                labelText: 'Groupe et heure',
-                                border: OutlineInputBorder()),
-                            items: draft.choices
-                                .map((choice) => DropdownMenuItem(
-                                    value: choice,
-                                    child: Text(choice.label,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis)))
-                                .toList(),
-                            onChanged: (choice) =>
-                                update(() => selected = choice),
-                          ),
-                      ])),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Annuler')),
-                    FilledButton(
-                        onPressed: selected == null
-                            ? null
-                            : () => Navigator.pop(context, true),
-                        child: const Text('Enregistrer')),
-                  ],
-                ),
-              ));
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, update) => AlertDialog(
+            title: Text('Modifier le groupe · ${_sessionDate(session.date)}'),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Corrigez l’heure concernée selon la participation réelle. Les autres heures restent inchangées. Aucune épreuve n’est validée.',
+                  ),
+                  const SizedBox(height: 16),
+                  if (draft.choices.isEmpty)
+                    const Text(
+                      'Aucun groupe renseigné dans le planning de cette séance.',
+                    )
+                  else
+                    DropdownButtonFormField<PoolGroupChoice>(
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Groupe et heure',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: draft.choices
+                          .map(
+                            (choice) => DropdownMenuItem(
+                              value: choice,
+                              child: Text(
+                                choice.label,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (choice) => update(() => selected = choice),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: selected == null
+                    ? null
+                    : () => Navigator.pop(context, true),
+                child: const Text('Enregistrer'),
+              ),
+            ],
+          ),
+        ),
+      );
       if (confirmed != true || selected == null || !mounted) return;
       await service.save(
-          widget.clubId, session.id, widget.member.id, draft, selected!);
+        widget.clubId,
+        session.id,
+        widget.member.id,
+        draft,
+        selected!,
+      );
       await _loadPoolHistory();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Groupe corrigé · modification auditée')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Groupe corrigé · modification auditée')),
+      );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
           content: Text(
-              'Correction non enregistrée. Rechargez la séance et réessayez.'),
-          backgroundColor: Colors.redAccent));
+            'Correction non enregistrée. Rechargez la séance et réessayez.',
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
@@ -969,9 +1054,10 @@ class _Student360ScreenState extends State<Student360Screen> {
       setState(() => _observations = observations);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(pool
-                ? 'Remarque piscine enregistrée'
-                : 'Observation enregistrée')),
+          content: Text(
+            pool ? 'Remarque piscine enregistrée' : 'Observation enregistrée',
+          ),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
@@ -1070,16 +1156,20 @@ class _Student360ScreenState extends State<Student360Screen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         TextButton.icon(
-          onPressed: () => MilProtocolCatalogSheet.show(context,
-              clubId: widget.clubId, pool: true),
+          onPressed: () => MilProtocolCatalogSheet.show(
+            context,
+            clubId: widget.clubId,
+            pool: true,
+          ),
           icon: const Icon(Icons.menu_book_outlined),
           label: const Text('Protocoles MIL · Piscine'),
         ),
         _section(
-          'Séances de formation piscine',
-          [
-            if (!_historyLoading && !_historyFailed)
-              ...visits.map((visit) => Padding(
+            'Séances de formation piscine',
+            [
+              if (!_historyLoading && !_historyFailed)
+                ...visits.map(
+                  (visit) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Tooltip(
                       message:
@@ -1090,26 +1180,26 @@ class _Student360ScreenState extends State<Student360Screen> {
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
-                  )),
-            if (_historyLoading) const LinearProgressIndicator(),
-            if (_historyFailed) ...[
-              const Text(
-                'Historique indisponible. Les présences ne sont pas considérées comme nulles.',
-                style: TextStyle(color: Colors.amberAccent),
-              ),
-              TextButton(
-                onPressed: _loadPoolHistory,
-                child: const Text('Réessayer'),
-              ),
+                  ),
+                ),
+              if (_historyLoading) const LinearProgressIndicator(),
+              if (_historyFailed) ...[
+                const Text(
+                  'Historique indisponible. Les présences ne sont pas considérées comme nulles.',
+                  style: TextStyle(color: Colors.amberAccent),
+                ),
+                TextButton(
+                  onPressed: _loadPoolHistory,
+                  child: const Text('Réessayer'),
+                ),
+              ],
+              if (!_historyLoading && !_historyFailed && visits.isEmpty)
+                const Text(
+                  'Aucune séance de formation identifiée.',
+                  style: TextStyle(color: Colors.white70),
+                ),
             ],
-            if (!_historyLoading && !_historyFailed && visits.isEmpty)
-              const Text(
-                'Aucune séance de formation identifiée.',
-                style: TextStyle(color: Colors.white70),
-              ),
-          ],
-          compact: true,
-        ),
+            compact: true),
         ..._poolHistory.map(_poolSessionCard),
         if (snapshot != null)
           ...(widget.exerciseSections?.call(true) ??
@@ -1197,9 +1287,11 @@ class _Student360ScreenState extends State<Student360Screen> {
                     style: const TextStyle(color: Colors.white70),
                   ),
                   if (lesson.sourceLabel.isNotEmpty)
-                    Text(lesson.sourceLabel,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 10)),
+                    Text(
+                      lesson.sourceLabel,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 10),
+                    ),
                 ],
               ),
             ),
@@ -1327,12 +1419,16 @@ class _Student360ScreenState extends State<Student360Screen> {
       children: [
         if (_dossierFailed)
           TextButton.icon(
-              onPressed: _loadFull,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Suivi indisponible · Réessayer')),
+            onPressed: _loadFull,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Suivi indisponible · Réessayer'),
+          ),
         TextButton.icon(
-          onPressed: () => MilProtocolCatalogSheet.show(context,
-              clubId: widget.clubId, pool: false),
+          onPressed: () => MilProtocolCatalogSheet.show(
+            context,
+            clubId: widget.clubId,
+            pool: false,
+          ),
           icon: const Icon(Icons.menu_book_outlined),
           label: const Text('Protocoles MIL · Milieu naturel'),
         ),
@@ -1341,17 +1437,28 @@ class _Student360ScreenState extends State<Student360Screen> {
               _exerciseSections(s, pool: false)),
         if (s.goalCodes.isNotEmpty || s.goalNote.isNotEmpty)
           ExpansionTile(
-              title: const Text('Objectifs',
-                  style: TextStyle(color: Colors.white)),
-              children: [
-                ...s.goalCodes.map((code) => _exRow(code,
-                    s.perCode[code]?.lastResult ?? '', Colors.tealAccent)),
-                if (s.goalNote.isNotEmpty)
-                  Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(s.goalNote,
-                          style: const TextStyle(color: Colors.white70))),
-              ]),
+            title: const Text(
+              'Objectifs',
+              style: TextStyle(color: Colors.white),
+            ),
+            children: [
+              ...s.goalCodes.map(
+                (code) => _exRow(
+                  code,
+                  s.perCode[code]?.lastResult ?? '',
+                  Colors.tealAccent,
+                ),
+              ),
+              if (s.goalNote.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    s.goalNote,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+            ],
+          ),
       ],
     );
   }
@@ -1379,8 +1486,15 @@ class _Student360ScreenState extends State<Student360Screen> {
       _section(
         '✓ Réalisés (${validated.length})',
         validated
-            .map((e) => _exRow(e.code, e.description, Colors.greenAccent,
-                badge: e.personal ? 'Personnel' : 'Historique', pool: pool))
+            .map(
+              (e) => _exRow(
+                e.code,
+                e.description,
+                Colors.greenAccent,
+                badge: e.personal ? 'Personnel' : 'Historique',
+                pool: pool,
+              ),
+            )
             .toList(),
         emptyText: 'Aucun exercice validé.',
       ),
@@ -1410,27 +1524,39 @@ class _Student360ScreenState extends State<Student360Screen> {
           final badge = (pc != null && pc.attempts > 0)
               ? '×${pc.attempts} pratiqué'
               : null;
-          return _exRow(e.code, e.description, Colors.white54,
-              badge: badge, pool: pool);
+          return _exRow(
+            e.code,
+            e.description,
+            Colors.white54,
+            badge: badge,
+            pool: pool,
+          );
         }).toList(),
         emptyText: 'Tous les exercices de l\'objectif sont couverts.',
       ),
     ];
   }
 
-  Widget _exRow(String code, String subtitle, Color dot,
-      {String? badge, bool pool = false}) {
+  Widget _exRow(
+    String code,
+    String subtitle,
+    Color dot, {
+    String? badge,
+    bool pool = false,
+  }) {
     return InkWell(
       key: ValueKey('mil-protocol-${pool ? 'pool' : 'mn'}-$code'),
       onTap: code.trim().isEmpty
           ? null
-          : () => MilProtocolSheet.show(context,
-              clubId: widget.clubId,
-              code: code,
-              pool: pool,
-              loader: widget.protocolLoader == null
-                  ? null
-                  : () => widget.protocolLoader!(code, pool)),
+          : () => MilProtocolSheet.show(
+                context,
+                clubId: widget.clubId,
+                code: code,
+                pool: pool,
+                loader: widget.protocolLoader == null
+                    ? null
+                    : () => widget.protocolLoader!(code, pool),
+              ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
@@ -1537,23 +1663,29 @@ class _Student360ScreenState extends State<Student360Screen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         const Text(
-            'Résultats officiels et brevets enregistrés dans CalyCompta. Le suivi personnel et les présences ne les valident pas.',
-            style: TextStyle(color: Colors.white70, fontSize: 12)),
+          'Résultats officiels et brevets enregistrés dans CalyCompta. Le suivi personnel et les présences ne les valident pas.',
+          style: TextStyle(color: Colors.white70, fontSize: 12),
+        ),
         if (_dossierFailed)
           TextButton.icon(
-              onPressed: _loadFull,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Résultats indisponibles · Réessayer')),
+            onPressed: _loadFull,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Résultats indisponibles · Réessayer'),
+          ),
         if (!_dossierFailed)
           _section(
               'Examens',
               [
-                ...completed.map((e) => _exRow(
+                ...completed.map(
+                  (e) => _exRow(
                     e.code,
                     '${e.description}${e.date == null ? '' : ' · ${e.date!.day}/${e.date!.month}/${e.date!.year}'}',
                     Colors.greenAccent,
-                    badge: '✓')),
-                ...missing.map((e) => _exRow(
+                    badge: '✓',
+                  ),
+                ),
+                ...missing.map(
+                  (e) => _exRow(
                     e.code,
                     '${e.description}${e.date == null ? '' : ' · ${e.date!.day}/${e.date!.month}/${e.date!.year}'}',
                     e.status == 'refused' ? Colors.redAccent : Colors.white54,
@@ -1561,25 +1693,32 @@ class _Student360ScreenState extends State<Student360Screen> {
                         ? 'Non réussi'
                         : s.pending.contains(e)
                             ? 'En attente'
-                            : 'Non renseigné')),
+                            : 'Non renseigné',
+                  ),
+                ),
               ],
               emptyText: 'Aucun examen renseigné pour ce brevet.'),
         _section(
-            'Brevet actuel · ${widget.member.plongeurCode ?? 'Non renseigné'}',
-            _brevetHistory.map((row) {
-              final date = row['effective_date'];
-              final source = row['from'] == 'self_service'
-                  ? 'Historique saisi par le membre'
-                  : 'Historique du brevet';
-              return ListTile(
-                  dense: true,
-                  title: Text('${row['level'] ?? ''}',
-                      style: const TextStyle(color: Colors.white)),
-                  subtitle: Text(
-                      '$source${date is Timestamp ? ' · ${date.toDate().day}/${date.toDate().month}/${date.toDate().year}' : ''}',
-                      style: const TextStyle(color: Colors.white70)));
-            }).toList(),
-            emptyText: 'Aucune date d’attribution renseignée.'),
+          'Brevet actuel · ${widget.member.plongeurCode ?? 'Non renseigné'}',
+          _brevetHistory.map((row) {
+            final date = row['effective_date'];
+            final source = row['from'] == 'self_service'
+                ? 'Historique saisi par le membre'
+                : 'Historique du brevet';
+            return ListTile(
+              dense: true,
+              title: Text(
+                '${row['level'] ?? ''}',
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                '$source${date is Timestamp ? ' · ${date.toDate().day}/${date.toDate().month}/${date.toDate().year}' : ''}',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            );
+          }).toList(),
+          emptyText: 'Aucune date d’attribution renseignée.',
+        ),
       ],
     );
   }
@@ -1595,9 +1734,12 @@ class _Student360ScreenState extends State<Student360Screen> {
         if (i == 0) {
           if (widget.isOwnProfile) {
             return const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text('Observations de vos encadrants',
-                    style: TextStyle(color: Colors.white70)));
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Observations de vos encadrants',
+                style: TextStyle(color: Colors.white70),
+              ),
+            );
           }
           if (widget.scope == FormationTrackingScope.piscineOnly) {
             return const Padding(
@@ -1612,9 +1754,10 @@ class _Student360ScreenState extends State<Student360Screen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.donkerblauw,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
+                backgroundColor: AppColors.donkerblauw,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
               onPressed: () => _addRemark(),
               icon: const Icon(Icons.add_comment_outlined),
               label: const Text('Ajouter une observation'),
@@ -1755,8 +1898,12 @@ class _Student360ScreenState extends State<Student360Screen> {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   // ---- Section « carte de verre » ------------------------------------------
-  Widget _section(String title, List<Widget> children,
-      {String? emptyText, bool compact = false}) {
+  Widget _section(
+    String title,
+    List<Widget> children, {
+    String? emptyText,
+    bool compact = false,
+  }) {
     return Container(
       margin: EdgeInsets.only(bottom: compact ? 8 : 14),
       padding: EdgeInsets.all(compact ? 10 : 14),
