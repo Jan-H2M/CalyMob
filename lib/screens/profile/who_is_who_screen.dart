@@ -1510,34 +1510,18 @@ class _FormationListViewState extends State<FormationListView> {
     return FormationStudentTile(
       name: m.fullName,
       subtitle: trajet,
-      avatar: _photo(m, 30),
+      avatar: FormationStudentAvatar(member: m),
       active: m.formationActive,
       showEnrollment: widget.showTargetLevels,
       onToggle:
           widget.canEnroll && !_savingEnrollment ? () => _enroll(row) : null,
       goal: widget.showTargetLevels && m.formationActive
-          ? DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                isDense: true,
-                isExpanded: true,
-                value: target,
-                hint: const Text('—', style: TextStyle(color: Colors.white70)),
-                disabledHint: Text(scubaFormationLevels[target] ?? '—',
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 11)),
-                dropdownColor: const Color(0xFF173853),
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-                items: scubaFormationLevels.entries
-                    .map((level) => DropdownMenuItem(
-                        value: level.key, child: Text(level.value)))
-                    .toList(),
-                onChanged: widget.canEnroll && !_savingEnrollment
-                    ? (value) {
-                        if (value != null) _enroll(row, target: value);
-                      }
-                    : null,
-              ),
-            )
+          ? FormationGoalSelector(
+              value: target,
+              levels: scubaFormationLevels,
+              canEdit: widget.canEnroll,
+              busy: _savingEnrollment,
+              onChanged: (value) => _enroll(row, target: value))
           : null,
       onTap: () {
         Navigator.of(context).push(
@@ -1551,45 +1535,6 @@ class _FormationListViewState extends State<FormationListView> {
           ),
         );
       },
-    );
-  }
-
-  Widget _photo(MemberProfile m, double size) {
-    final hasPhoto = m.hasPhoto && m.consentInternalPhoto && m.photoUrl != null;
-    if (hasPhoto) {
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: m.photoUrl!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => _initials(m, size),
-        ),
-      );
-    }
-    return _initials(m, size);
-  }
-
-  Widget _initials(MemberProfile m, double size) {
-    final initials =
-        '${m.prenom.isNotEmpty ? m.prenom[0] : ''}${m.nom.isNotEmpty ? m.nom[0] : ''}'
-            .toUpperCase();
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: 0.2),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * 0.36,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
     );
   }
 }

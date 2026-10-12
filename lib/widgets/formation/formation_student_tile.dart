@@ -1,4 +1,76 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../models/member_profile.dart';
+
+class FormationStudentAvatar extends StatelessWidget {
+  final MemberProfile member;
+  final double size;
+  const FormationStudentAvatar(
+      {super.key, required this.member, this.size = 30});
+  Widget _initials() => Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+          shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.2)),
+      alignment: Alignment.center,
+      child: Text(
+          '${member.prenom.isNotEmpty ? member.prenom[0] : ''}${member.nom.isNotEmpty ? member.nom[0] : ''}'
+              .toUpperCase(),
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.36,
+              fontWeight: FontWeight.bold)));
+  @override
+  Widget build(BuildContext context) =>
+      member.hasPhoto && member.consentInternalPhoto
+          ? ClipOval(
+              child: CachedNetworkImage(
+                  imageUrl: member.photoUrl!,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => _initials()))
+          : _initials();
+}
+
+/// Identical placement, typography and read-only state in each track.
+class FormationGoalSelector extends StatelessWidget {
+  final String? value;
+  final Map<String, String> levels;
+  final bool canEdit;
+  final bool busy;
+  final ValueChanged<String> onChanged;
+  const FormationGoalSelector(
+      {super.key,
+      required this.value,
+      required this.levels,
+      required this.onChanged,
+      this.canEdit = false,
+      this.busy = false});
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(color: Colors.white70, fontSize: 11);
+    if (!canEdit) return Text(levels[value] ?? '—', style: style);
+    return DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+      isDense: true,
+      isExpanded: true,
+      value: value,
+      hint: const Text('—', style: style),
+      dropdownColor: const Color(0xFF173853),
+      style: style,
+      items: levels.entries
+          .map((level) => DropdownMenuItem(
+              value: level.key, child: Text(level.value, style: style)))
+          .toList(),
+      onChanged: busy
+          ? null
+          : (next) {
+              if (next != null) onChanged(next);
+            },
+    ));
+  }
+}
 
 /// Compact entry to a full learner fiche, identical in both disciplines.
 /// Detailed statistics and progress bars belong in that fiche, not the list.

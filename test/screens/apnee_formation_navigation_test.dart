@@ -131,10 +131,6 @@ void main() {
     }
     expect(tester.widget<IconButton>(find.byType(IconButton).first).onPressed,
         isNull);
-    expect(
-        tester
-            .widget<DropdownButton<String>>(find.byType(DropdownButton<String>))
-            .onChanged,
-        isNull);
+    expect(find.byType(DropdownButton<String>), findsNothing);
   });
 }

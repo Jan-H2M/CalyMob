@@ -153,19 +153,13 @@ class _ApneeFormationListState extends State<ApneeFormationList> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: FormationStudentTile(
                 name: name,
-                avatar: CircleAvatar(
-                    radius: 15,
-                    backgroundColor: const Color(0xFF406187),
-                    child: Text(
-                        name
-                            .split(RegExp(r'\s+'))
-                            .where((part) => part.isNotEmpty)
-                            .take(2)
-                            .map((part) => part[0])
-                            .join()
-                            .toUpperCase(),
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 11))),
+                avatar: FormationStudentAvatar(
+                    member: MemberProfile.fromDirectoryData(id, row)),
+                subtitle: enrolled
+                    ? (_track == 'apnee.a1' ? 'A1 / Discovery' : 'A2')
+                    : enrollment == null
+                        ? 'Non inscrit'
+                        : 'Historique apnée',
                 active: enrolled,
                 onToggle: widget.canEnroll && !_busy
                     ? () => _change(enrollments, id, _track,
@@ -173,32 +167,17 @@ class _ApneeFormationListState extends State<ApneeFormationList> {
                         expectedRevision: row['formation_revision'] ?? 0)
                     : null,
                 goal: enrolled
-                    ? DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                        isDense: true,
-                        isExpanded: true,
+                    ? FormationGoalSelector(
                         value: _track,
-                        disabledHint: Text(_track == 'apnee.a1' ? '1★' : '2★',
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 11)),
-                        dropdownColor: const Color(0xFF173853),
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'apnee.a1', child: Text('1★')),
-                          DropdownMenuItem(
-                              value: 'apnee.a2', child: Text('2★')),
-                        ],
-                        onChanged: widget.canEnroll && !_busy
-                            ? (value) {
-                                if (value != null && value != _track)
-                                  _change(enrollments, id, value,
-                                      expectedRevision:
-                                          row['formation_revision'] ?? 0);
-                              }
-                            : null,
-                      ))
+                        levels: const {'apnee.a1': '1★', 'apnee.a2': '2★'},
+                        canEdit: widget.canEnroll,
+                        busy: _busy,
+                        onChanged: (value) {
+                          if (value != _track)
+                            _change(enrollments, id, value,
+                                expectedRevision:
+                                    row['formation_revision'] ?? 0);
+                        })
                     : null,
                 onTap: enrollment == null
                     ? null
