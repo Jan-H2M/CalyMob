@@ -1087,10 +1087,7 @@ service cloud.firestore {
         // projection can never match the admin's uid. Mirrors the update rule.
         // This is a server-owned read projection. New writes are only allowed
         // from the accounting/admin command layer (Admin SDK in production).
-        allow create: if isAdmin(clubId) && hasValidSession(clubId)
-          && request.resource.data.get('formation_active', false) == false
-          && request.resource.data.get('formation_revision', 0) == 0
-          && request.resource.data.get('formation_track', null) == null;
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Delete: Club members can unregister themselves (mobile app)
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
@@ -1189,7 +1186,10 @@ service cloud.firestore {
           ]);
 
         // Admins can create new members (for user management UI)
-        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && request.resource.data.get('formation_active', false) == false
+          && request.resource.data.get('formation_revision', 0) == 0
+          && request.resource.data.get('formation_track', null) == null;
 
         // Admin clients may edit ordinary member fields, but share_birthday is
         // callable-only for every role. The callable atomically updates the

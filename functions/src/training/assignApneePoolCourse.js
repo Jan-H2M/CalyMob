@@ -1,14 +1,18 @@
 'use strict';
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const { FieldValue } = require('firebase-admin/firestore');
+const { FieldValue, Filter } = require('firebase-admin/firestore');
 const { isActiveMember } = require('../utils/memberStatus');
 const { participationId, mayPlan } = require('./apnee/training');
 const { verifiedQr } = require('./assignQrTrainingGroup');
+const { assignmentState } = require('./correctPoolStudentGroup');
+const { apneeCourseAttendancePatch } = require('./apneeCourseAttendance');
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
-const state = row => ({ assignedLevel: row?.assignedLevel || null, assignedCourseId: row?.assignedCourseId || null,
-  assignedToMemberId: row?.assignedToMemberId || null, sentToReserve: row?.sentToReserve === true });
-const same = (a, b) => Object.keys(a).every(key => a[key] === b?.[key]) && Object.keys(b || {}).length === Object.keys(a).length;
+const state = row => assignmentState(row || {});
+const ordered = value => value && typeof value === 'object'
+  ? Array.isArray(value) ? value.map(ordered)
+    : Object.fromEntries(Object.keys(value).sort().map(key => [key, ordered(value[key])])) : value;
+const same = (a, b) => JSON.stringify(ordered(a)) === JSON.stringify(ordered(b));
 const fail = (code, message) => { throw new HttpsError(code, message); };
 
 /** Actual dated course correction, NOT active enrollment or official validation.
@@ -42,12 +46,27 @@ async function executeApneeCourseAssignment(db, uid, input) {
         !Number.isFinite(session.data().date?.toMillis?.()) || session.data().date.toMillis() > Date.now() ||
         !verifiedQr(attendee.data(), receipt.data(), data.memberId, data.sessionId))
       fail('failed-precondition', 'Séance passée et présence QR vérifiée requises.');
-    const before = state(attendee.data());
+    const matches = await tx.get(sessionRef.collection('attendees').where(Filter.or(
+      Filter.where('memberId', '==', data.memberId), Filter.where('membre_id', '==', data.memberId),
+      Filter.where('member_id', '==', data.memberId))));
+    const records = new Map(matches.docs.map(row => [row.id, row]));
+    records.set(attendee.id, attendee);
+    const before = {};
+    for (const row of records.values()) {
+      const value = row.data();
+      if (value.isGuest === true || [value.memberId, value.membre_id, value.member_id].filter(Boolean)
+        .some(id => id !== data.memberId)) fail('failed-precondition', 'Identité de présence ambiguë.');
+      before[row.id] = state(value);
+    }
     if (!same(before, data.expectedState)) fail('aborted', 'Groupe modifié. Rechargez la séance.');
     const lessons = await tx.get(sessionRef.collection('apnee_lessons'));
     const chosen = lessons.docs.find(row => row.id === data.lessonId);
     if (!chosen || !['apnee.a1', 'apnee.a2'].includes(chosen.data().track)) fail('not-found', 'Cours apnée introuvable.');
     const updates = [];
+    const groupNumber = lessons.docs.filter(row => row.data().track === chosen.data().track &&
+      row.data().hour === chosen.data().hour).findIndex(row => row.id === chosen.id) + 1;
+    const patches = [...records.values()].map(row => ({ row,
+      patch: apneeCourseAttendancePatch(row.data(), chosen.data(), chosen.id, groupNumber) }));
     for (const lesson of lessons.docs) {
       if (lesson.id !== chosen.id && (lesson.data().hour !== chosen.data().hour ||
           !(lesson.data().member_ids || []).includes(data.memberId))) continue;
@@ -57,8 +76,11 @@ async function executeApneeCourseAssignment(db, uid, input) {
       const old = previous.data() || {};
       updates.push({ lesson, ref, old, selected });
     }
-    const after = { assignedLevel: chosen.data().track, assignedCourseId: chosen.id, assignedToMemberId: null, sentToReserve: false };
-    tx.update(attendeeRef, after);
+    const after = {};
+    for (const { row, patch } of patches) {
+      after[row.id] = state({ ...row.data(), ...patch });
+      tx.update(row.ref, patch);
+    }
     for (const { lesson, ref, old, selected } of updates) {
       const ids = (lesson.data().member_ids || []).filter(id => id !== data.memberId);
       if (selected) ids.push(data.memberId);

@@ -9,6 +9,7 @@ const { executeFormationEnrollment: enroll } = require('../functions/src/trainin
 const { enrollmentId, participationId } = require('../functions/src/training/apnee/training');
 const { assignQrTrainingGroup: assign } = require('../functions/src/training/assignQrTrainingGroup');
 const { executeApneeCourseAssignment: correct } = require('../functions/src/training/assignApneePoolCourse');
+const { assignmentState, executeCorrection: scubaCorrect } = require('../functions/src/training/correctPoolStudentGroup');
 async function run(rules) {
   const projectId = 'demo-calymob-formation';
   const env = await initializeTestEnvironment({ projectId, firestore: { host: '127.0.0.1', port: 8096,
@@ -34,6 +35,10 @@ async function run(rules) {
     await assert.rejects(enroll(db, 'monitor', { ...request, operationId: 'denied', expectedRevision: 2 }));
     await assert.rejects(enroll(db, 'admin', { ...request, operationId: 'stale' }));
     const actorDb = env.authenticatedContext('admin').firestore();
+    for (const key of ['formation_active', 'formation_revision', 'formation_track'])
+      await assertFails(setDoc(doc(actorDb, `clubs/qa/members/create-${key}`),
+        { member_status: 'active', [key]: key === 'formation_active' ? true : key === 'formation_revision' ? 1 : 'apnee.a1' }));
+    await assertSucceeds(setDoc(doc(actorDb, 'clubs/qa/members/create-contact'), { member_status: 'active', telephone: 'synthetic' }));
     for (const key of ['formation_active', 'target_formation_level', 'formation_revision', 'formation_track'])
       await assertFails(updateDoc(doc(actorDb, 'clubs/qa/members/student'), { [key]: 'forged' }));
     await assertSucceeds(updateDoc(doc(actorDb, 'clubs/qa/members/student'), { telephone: 'synthetic' }));
@@ -55,20 +60,42 @@ async function run(rules) {
     await club.collection('members').doc('student').update({ formation_active: true });
     assert.equal((await assign(db, 'qa', 'pool', 'student')).reason, 'no-sole-training');
     await club.collection('members').doc('student').update({ formation_active: false });
+    for (const explicit of [{ groupAssignment: { level: '3*' } }, { outcome: 'gonflage' }]) {
+      await attendee.update(explicit);
+      assert.equal((await assign(db, 'qa', 'pool', 'student')).reason, 'manual-placement');
+      assert.equal((await club.collection('apnee_participations').get()).size, 0);
+      await attendee.update({ groupAssignment: admin.firestore.FieldValue.delete(), outcome: admin.firestore.FieldValue.delete() });
+    }
     const result = await assign(db, 'qa', 'pool', 'student'); assert.equal(result.assigned, true);
     assert.equal((await attendee.get()).data().assignedLevel, 'apnee.a1');
     assert.equal((await club.collection('apnee_participations').doc(participationId('pool', 'a1', 'student')).get()).data().source, 'verified_qr_training');
     assert.equal((await assign(db, 'qa', 'pool', 'student')).reason, 'already-processed');
     await session.collection('apnee_lessons').doc('group2').set({ track: 'apnee.a1', hour: '1ere_heure', theme: 'Second synthetic group', instructor_ids: ['monitor'], member_ids: [], revision: 1 });
+    const otherHour = { activity: 'formation', role: 'eleve', group: { level: '2*', course_id: 'preserved-other-hour' } };
+    await attendee.update({ 'hoursReport.2eme_heure': otherHour });
+    const legacy = session.collection('attendees').doc('legacy');
+    await legacy.set({ ...(await attendee.get()).data(), membre_id: 'student', remarks: 'preserved legacy remark' });
     const move = { clubId: 'qa', sessionId: 'pool', memberId: 'student', lessonId: 'group2', operationId: 'move',
-      expectedState: { assignedLevel: 'apnee.a1', assignedCourseId: 'a1', assignedToMemberId: null, sentToReserve: false } };
+      expectedState: { student: assignmentState((await attendee.get()).data()), legacy: assignmentState((await legacy.get()).data()) } };
     await assert.rejects(correct(db, 'other', move));
-    await assert.rejects(correct(db, 'monitor', { ...move, expectedState: { ...move.expectedState, assignedCourseId: 'stale' } }));
+    await assert.rejects(correct(db, 'monitor', { ...move, expectedState: { student: { ...move.expectedState.student, assignedCourseId: 'stale' } } }));
     await correct(db, 'student', move);
     assert.equal((await correct(db, 'student', move)).replay, true);
     assert.equal((await attendee.get()).data().assignedCourseId, 'group2');
+    assert.equal((await attendee.get()).data().hoursReport['1ere_heure'].group.course_id, 'group2');
+    assert.equal((await legacy.get()).data().hoursReport['1ere_heure'].group.course_id, 'group2');
+    assert.deepEqual((await attendee.get()).data().hoursReport['2eme_heure'], otherHour);
+    assert.equal((await legacy.get()).data().remarks, 'preserved legacy remark');
     assert.equal((await club.collection('apnee_participations').doc(participationId('pool', 'a1', 'student')).get()).data().participation_status, 'cancelled');
     assert.equal((await club.collection('apnee_participations').doc(participationId('pool', 'group2', 'student')).get()).data().participation_status, 'attended');
+    await session.update({ niveaux: { '3*': { courses_by_hour: { '1ere_heure': [
+      { id: 'scuba-group', order: 0, theme: 'Synthetic SCUBA', encadrants: [] }] } } } });
+    await scubaCorrect(db, 'student', { clubId: 'qa', memberId: 'student', sessionId: 'pool',
+      operationId: 'back-scuba-group', hour: '1ere_heure', level: '3*', courseId: 'scuba-group',
+      expectedState: { student: assignmentState((await attendee.get()).data()), legacy: assignmentState((await legacy.get()).data()) } });
+    assert.equal((await club.collection('apnee_participations').doc(participationId('pool', 'group2', 'student')).get()).data().participation_status, 'cancelled');
+    assert.deepEqual((await attendee.get()).data().hoursReport['2eme_heure'], otherHour);
+    assert.equal((await attendee.get()).data().hoursReport['1ere_heure'].group.level, '3*');
     await assertFails(setDoc(doc(actorDb, 'clubs/qa/piscine_sessions/pool/qr_training_assignments/forged'), { member_id: 'student' }));
     await enroll(db, 'admin', { clubId: 'qa', memberId: 'student', operationId: 'back-scuba', track: 'scuba', active: true, targetLevel: '3*', expectedRevision: 2 });
     member = (await club.collection('members').doc('student').get()).data();

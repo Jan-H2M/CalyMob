@@ -53,9 +53,24 @@ class PoolStudentHistoryReader {
                   row['checkinCompletedAt'] != null)) {
             return null;
           }
+          final hasApnee = records.values.any((row) =>
+              '${row['assignedLevel']}'.startsWith('apnee.') ||
+              '${poolMap(row['groupAssignment'])['level']}'
+                  .startsWith('apnee.') ||
+              poolMap(row['hoursReport']).values.any((report) =>
+                  '${poolMap(poolMap(report)['group'])['level']}'
+                      .startsWith('apnee.')));
+          final resolved = hasApnee
+              ? poolSessionWithApneeLessons(
+                  data,
+                  (await session.reference.collection('apnee_lessons').get())
+                      .docs
+                      .map((row) => {...row.data(), 'id': row.id})
+                      .toList())
+              : data;
           return PoolStudentSession.fromRecords(
             session.id,
-            data,
+            resolved,
             records.values.toList(),
             automaticLevel: automaticLevel,
           );

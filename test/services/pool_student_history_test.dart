@@ -6,6 +6,47 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('apnee attendance resolves the exact dated course hour and instructor',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final date = Timestamp.fromDate(DateTime(2026, 10, 6));
+    final session = db.doc('clubs/club/piscine_sessions/apnee');
+    await session.set({'date': date});
+    await session.collection('apnee_lessons').doc('a1-course').set({
+      'track': 'apnee.a1',
+      'hour': '2eme_heure',
+      'theme': 'Synthetic apnee',
+      'instructor_ids': ['teacher'],
+    });
+    await db
+        .doc('clubs/club/member_directory/teacher')
+        .set({'prenom': 'Synthetic', 'nom': 'Teacher'});
+    await session.collection('attendees').doc('student').set({
+      'memberId': 'student',
+      'scannedAt': date,
+      'assignedLevel': 'apnee.a1',
+      'assignedCourseId': 'a1-course',
+      'hoursReport': {
+        '2eme_heure': {
+          'role': 'eleve',
+          'group': {
+            'level': 'apnee.a1',
+            'course_id': 'a1-course',
+            'hourKey': '2eme_heure',
+            'groupNumber': 1
+          }
+        }
+      }
+    });
+    final history =
+        await PoolStudentHistoryReader(firestore: db).load('club', 'student');
+    final lesson = history.single.lessons.single;
+    expect(lesson.hour, '2eme_heure');
+    expect(lesson.theme, 'Synthetic apnee');
+    expect(lesson.monitorIds, ['teacher']);
+    expect(lesson.monitorNames, ['Synthetic Teacher']);
+    expect(lesson.participationReported, true);
+  });
   test('legacy/client timestamp is not a verified QR scan for self-correction',
       () {
     final date = Timestamp.fromDate(DateTime(2026, 10, 6));

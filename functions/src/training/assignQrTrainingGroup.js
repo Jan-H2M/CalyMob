@@ -5,6 +5,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { isActiveMember } = require('../utils/memberStatus');
 const { excludedFromDirectory } = require('../privacy/memberDirectoryVisibility');
 const { enrollmentId, participationId } = require('./apnee/training');
+const { apneeCourseAttendancePatch } = require('./apneeCourseAttendance');
 const millis = value => value?.toMillis?.();
 const tracks = ['apnee.a1', 'apnee.a2'];
 
@@ -12,7 +13,8 @@ function verifiedQr(attendee, receipt, memberId, sessionId) {
   const proof = attendee?.qrVerified;
   return !!proof && receipt?.version === 1 && receipt.memberId === memberId && receipt.sessionId === sessionId &&
     attendee.memberId === memberId && attendee.isGuest !== true &&
-    (!attendee.membre_id || attendee.membre_id === memberId) && attendee.scannedBy === receipt.scannerUid &&
+    (!attendee.membre_id || attendee.membre_id === memberId) &&
+    (!attendee.member_id || attendee.member_id === memberId) && attendee.scannedBy === receipt.scannerUid &&
     Number.isFinite(millis(receipt.scannedAt)) && millis(receipt.scannedAt) === millis(attendee.scannedAt) &&
     Object.keys(receipt).length === Object.keys(proof).length && Object.keys(receipt).every(key =>
       key === 'scannedAt' ? millis(receipt[key]) === millis(proof[key]) : receipt[key] === proof[key]);
@@ -47,7 +49,7 @@ async function assignQrTrainingGroup(db, clubId, sessionId, memberId) {
     if (!enrolled.length) return { assigned: false, reason: 'scuba' };
     const row = attendee.data();
     // Preserve explicit per-session corrections, including reports from older apps.
-    if (row.assignedLevel || row.assignedCourseId || row.assignedToMemberId || row.hoursReport || row.sentToReserve)
+    if (row.assignedLevel || row.assignedCourseId || row.assignedToMemberId || row.hoursReport || row.sentToReserve || row.groupAssignment || row.outcome)
       return { assigned: false, reason: 'manual-placement' };
     const planned = await tx.get(sessionRef.collection('apnee_lessons').where('track', '==', enrolled[0]));
     const candidates = planned.docs;
@@ -60,7 +62,7 @@ async function assignQrTrainingGroup(db, clubId, sessionId, memberId) {
     const previous = await tx.get(participationRef);
     if (previous.exists && previous.data().source !== 'roster_inferred')
       return { assigned: false, reason: 'historical-correction' };
-    const assignment = { assignedLevel: enrolled[0], assignedCourseId: lesson.id,
+    const assignment = { ...apneeCourseAttendancePatch(row, lessonData, lesson.id),
       assignmentSource: 'verified_qr_training', assignedAt: FieldValue.serverTimestamp() };
     tx.update(attendeeRef, assignment);
     tx.update(lesson.ref, { member_ids: [...new Set([...(lessonData.member_ids || []), memberId])],

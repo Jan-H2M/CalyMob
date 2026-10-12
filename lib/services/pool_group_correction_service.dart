@@ -8,7 +8,7 @@ class PoolGroupChoice {
   const PoolGroupChoice(
       this.level, this.hour, this.courseId, this.number, this.theme);
   String get label =>
-      '${level.replaceAll('*', '★')} · Groupe $number · ${hour == '1ere_heure' ? '1re heure' : '2e heure'}'
+      '${poolFormationLabel(level)} · Groupe $number · ${hour == '1ere_heure' ? '1re heure' : '2e heure'}'
       '${theme.isEmpty ? '' : ' · $theme'}';
 }
 
@@ -84,12 +84,15 @@ class PoolGroupCorrectionDraft {
 
 class PoolGroupCorrectionService {
   final FirebaseFirestore _db;
-  final FirebaseFunctions _functions;
+  final FirebaseFunctions? _injectedFunctions;
+  FirebaseFunctions get _functions =>
+      _injectedFunctions ??
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
+  final Future<void> Function(String, Map<String, dynamic>)? invoke;
   PoolGroupCorrectionService(
-      {FirebaseFirestore? firestore, FirebaseFunctions? functions})
+      {FirebaseFirestore? firestore, FirebaseFunctions? functions, this.invoke})
       : _db = firestore ?? FirebaseFirestore.instance,
-        _functions =
-            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
+        _injectedFunctions = functions;
 
   Future<PoolGroupCorrectionDraft> load(
       String clubId, String sessionId, String memberId) async {
@@ -115,8 +118,10 @@ class PoolGroupCorrectionService {
     final records = {for (final doc in matches.docs) doc.id: doc.data()};
     final canonical = await attendees.doc(memberId).get();
     if (canonical.exists) records[canonical.id] = canonical.data()!;
+    final apnee = await sessionRef.collection('apnee_lessons').get();
     return PoolGroupCorrectionDraft(
-        poolGroupChoices(data),
+        poolGroupChoices(poolSessionWithApneeLessons(data,
+            apnee.docs.map((row) => {...row.data(), 'id': row.id}).toList())),
         {
           for (final record in records.entries)
             record.key: poolAssignmentState(record.value)
@@ -126,15 +131,28 @@ class PoolGroupCorrectionService {
 
   Future<void> save(String clubId, String sessionId, String memberId,
       PoolGroupCorrectionDraft draft, PoolGroupChoice choice) async {
-    await _functions.httpsCallable('correctPoolStudentGroup').call({
+    final apnee = choice.level.startsWith('apnee.');
+    final name = apnee ? 'assignApneePoolCourse' : 'correctPoolStudentGroup';
+    if (apnee && !draft.expectedState.containsKey(memberId)) {
+      throw StateError('Présence QR canonique requise.');
+    }
+    final payload = <String, dynamic>{
       'clubId': clubId,
       'sessionId': sessionId,
       'memberId': memberId,
       'operationId': draft.operationId,
       'expectedState': draft.expectedState,
-      'level': choice.level,
-      'hour': choice.hour,
-      'courseId': choice.courseId,
-    });
+      if (apnee) 'lessonId': choice.courseId,
+      if (!apnee) ...{
+        'level': choice.level,
+        'hour': choice.hour,
+        'courseId': choice.courseId,
+      },
+    };
+    if (invoke != null) {
+      await invoke!(name, payload);
+    } else {
+      await _functions.httpsCallable(name).call(payload);
+    }
   }
 }

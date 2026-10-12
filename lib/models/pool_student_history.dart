@@ -1,5 +1,41 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+String poolFormationLabel(String level) => switch (level.toLowerCase()) {
+      'apnee.a1' => '1★ apnée · A1 / Discovery',
+      'apnee.a2' => '2★ apnée · A2',
+      _ => level.replaceAll('*', '★'),
+    };
+
+/// Adapt the dated apnée planning to the shared pool-card/group renderer.
+/// This is a read-only view: neither enrollment nor attendance is inferred.
+Map<String, dynamic> poolSessionWithApneeLessons(
+    Map<String, dynamic> session, List<Map<String, dynamic>> lessons) {
+  final levels = {...poolMap(session['niveaux'])};
+  for (final track in const ['apnee.a1', 'apnee.a2']) {
+    final byHour = <String, dynamic>{};
+    for (final hour in const ['1ere_heure', '2eme_heure']) {
+      final rows = lessons
+          .where((row) => row['track'] == track && row['hour'] == hour)
+          .toList()
+        ..sort((a, b) => '${a['id']}'.compareTo('${b['id']}'));
+      byHour[hour] = [
+        for (var index = 0; index < rows.length; index++)
+          {
+            'id': rows[index]['id'],
+            'order': index,
+            'theme': rows[index]['theme'] ?? '',
+            'encadrants': [
+              for (final id in (rows[index]['instructor_ids'] as List? ?? []))
+                {'membre_id': id}
+            ],
+          }
+      ];
+    }
+    levels[track] = {'courses_by_hour': byHour};
+  }
+  return {...session, 'niveaux': levels};
+}
+
 /// Read-only history of actual QR attendance, not a LIFRAS validation.
 class PoolStudentSession {
   final String id;

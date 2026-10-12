@@ -5,6 +5,7 @@ const admin = require('firebase-admin');
 const { FieldValue, Filter } = require('firebase-admin/firestore');
 const { normalizeGroupKey } = require('../utils/groupKey');
 const { isActiveMember } = require('../utils/memberStatus');
+const { participationId } = require('./apnee/training');
 
 const fields = ['assignedLevel', 'assignedCourseId', 'assignedToMemberId',
   'groupAssignment', 'hoursReport', 'outcome', 'sentToReserve'];
@@ -97,7 +98,7 @@ async function executeCorrection(db, uid, data) {
   return db.runTransaction(async tx => {
     const actor = await tx.get(club.collection('members').doc(uid));
     const ownCorrection = uid === memberId;
-    if (!actor.exists || (ownCorrection && !isActiveMember(actor.data())) || (!ownCorrection && !mayCorrect(actor.data()))) {
+    if (!actor.exists || !isActiveMember(actor.data()) || (!ownCorrection && !mayCorrect(actor.data()))) {
       throw new HttpsError('permission-denied', 'Votre propre séance ou un moniteur encadrant est requis.');
     }
     const audit = await tx.get(auditRef);
@@ -159,15 +160,42 @@ async function executeCorrection(db, uid, data) {
     if (JSON.stringify(normalized(before)) !== JSON.stringify(normalized(expectedState))) {
       throw new HttpsError('aborted', 'La participation a changé. Rechargez la séance.');
     }
+    // Moving the actual hour back to SCUBA must not retain a simultaneous
+    // Apnée roster/participation for that hour. Never alter the other hour.
+    const apneeChanges = [];
+    const hasApnee = [...records.values()].some(doc => {
+      const row = doc.data();
+      return String(row.assignedLevel || '').startsWith('apnee.') ||
+        String(row.hoursReport?.[hour]?.group?.level || '').startsWith('apnee.');
+    });
+    if (hasApnee && !level.startsWith('apnee.')) {
+      const lessons = await tx.get(sessionRef.collection('apnee_lessons').where('hour', '==', hour));
+      for (const lesson of lessons.docs) {
+        const row = lesson.data();
+        if (row.hour !== hour || !(row.member_ids || []).includes(memberId)) continue;
+        const participationRef = club.collection('apnee_participations').doc(participationId(sessionId, lesson.id, memberId));
+        const participation = await tx.get(participationRef);
+        apneeChanges.push({ lesson, participationRef, before: participation.data() || null });
+      }
+    }
     const after = {};
     for (const doc of records.values()) {
       const patch = buildPatch(doc.data(), option);
       after[doc.id] = assignmentState({ ...doc.data(), ...patch });
       tx.update(doc.ref, patch);
     }
+    for (const change of apneeChanges) {
+      tx.update(change.lesson.ref, { member_ids: change.lesson.data().member_ids.filter(id => id !== memberId),
+        revision: (change.lesson.data().revision || 0) + 1, updated_at: FieldValue.serverTimestamp() });
+      if (change.before) tx.update(change.participationRef, {
+        participation_status: 'cancelled', source: 'scuba_group_correction',
+        revision: (change.before.revision || 0) + 1, updated_at: FieldValue.serverTimestamp() });
+    }
     tx.create(auditRef, { actorUid: uid, createdAt: FieldValue.serverTimestamp(),
       sessionDate: session.data().date, memberId, requested, before, after,
-      source: ownCorrection ? 'calymob_member_group_correction' : 'calymob_monitor_group_correction' });
+      source: ownCorrection ? 'calymob_member_group_correction' : 'calymob_monitor_group_correction',
+      ...(apneeChanges.length ? { apnee_changes: apneeChanges.map(change => ({
+        lesson_id: change.lesson.id, before: change.before, participation_status: 'cancelled' })) } : {}) });
     return { corrected: true, replay: false };
   });
 }

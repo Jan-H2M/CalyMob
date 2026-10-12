@@ -1224,7 +1224,7 @@ class _Student360ScreenState extends State<Student360Screen> {
                       message:
                           'Les séances rapportées ont une participation enregistrée dans ce niveau. Les autres présences restent à confirmer selon le planning. Ce compteur ne valide aucune épreuve.',
                       child: Text(
-                        'Formation ${visit.level.replaceAll('*', '★')} · ${visit.reported} séance${visit.reported == 1 ? '' : 's'} rapportée${visit.reported == 1 ? '' : 's'}'
+                        'Formation ${poolFormationLabel(visit.level)} · ${visit.reported} séance${visit.reported == 1 ? '' : 's'} rapportée${visit.reported == 1 ? '' : 's'}'
                         '${visit.toConfirm == 0 ? '' : ' · ${visit.toConfirm} à confirmer'}',
                         style: const TextStyle(color: Colors.white),
                       ),
@@ -1287,7 +1287,7 @@ class _Student360ScreenState extends State<Student360Screen> {
                               ? 'Formation Moniteur Club'
                               : lesson.level == 'AM'
                                   ? 'Formation Assistant Moniteur'
-                                  : lesson.level,
+                                  : poolFormationLabel(lesson.level),
                       if (lesson.group.isNotEmpty) 'Groupe ${lesson.group}',
                       if (lesson.hour.isNotEmpty)
                         lesson.hour == '1ere_heure'
