@@ -212,6 +212,45 @@ void main() {
     expect(find.byKey(const Key('mil-show-details')), findsNothing);
   });
 
+  testWidgets('inline mode does not invent a target when none is known', (
+    tester,
+  ) async {
+    const noTarget = MilExperienceOverview(
+      byBrevet: {
+        '1': MilBrevetExperience(
+          brevetCode: '1',
+          modulePct: 70,
+          requirements: {
+            'total_milieu_naturel': SnapshotMilRequirement(
+              have: 7,
+              need: 10,
+              dataMissing: false,
+            ),
+          },
+        ),
+      },
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MilRequirementsCard(
+            overview: noTarget,
+            inlineExpanded: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Aucune exigence MIL disponible pour le brevet cible.'),
+      findsOneWidget,
+    );
+    expect(find.text('Brevet 1*'), findsNothing);
+    expect(find.text('7/10'), findsNothing);
+    expect(find.byKey(const Key('mil-show-details')), findsNothing);
+  });
+
   testWidgets('missing legacy data is unavailable, never zero requirements', (
     tester,
   ) async {

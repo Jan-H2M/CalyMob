@@ -53,7 +53,8 @@ class _MilRequirementsCardState extends State<MilRequirementsCard> {
         ? AppColors.donkerblauw.withValues(alpha: 0.62)
         : Colors.white.withValues(alpha: 0.96);
     final overview = _overview;
-    final selectedCode = _selectedBrevet;
+    final selectedCode =
+        widget.inlineExpanded ? overview.preferredBrevet : _selectedBrevet;
     final selected =
         selectedCode == null ? null : overview.byBrevet[selectedCode];
 
