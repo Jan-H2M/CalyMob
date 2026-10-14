@@ -17,8 +17,9 @@ void main() {
     expect(failedLookup.unresolvedCount, 1);
   });
 
-  testWidgets('uses the student card natural-modality total and statuses',
-      (tester) async {
+  testWidgets('uses the student card natural-modality total and statuses', (
+    tester,
+  ) async {
     final snapshot = FormationSnapshotDoc.fromMap('student', {
       'target_level': '2*',
       'exercises': {
@@ -33,21 +34,20 @@ void main() {
           {'code': 'P2.DP', 'label': 'Direction de palanquée'},
         ],
         'remaining': [
-          {
-            'code': 'P2.EXT',
-            'description': 'Examen théorique',
-          },
+          {'code': 'P2.EXT', 'description': 'Examen théorique'},
         ],
       },
     });
     expect(snapshot.modalityProgress[FormationModality.career]!.total, 1);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: FormationExerciseProgress(snapshot: snapshot),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: FormationExerciseProgress(snapshot: snapshot),
+          ),
         ),
       ),
-    ));
+    );
     expect(find.text('Milieu naturel · 1/1'), findsOneWidget);
     await tester.tap(find.text('Milieu naturel · 1/1'));
     await tester.pumpAndSettle();
@@ -57,12 +57,60 @@ void main() {
     expect(find.text('P2.EXT · Examen théorique'), findsNothing);
   });
 
-  testWidgets('warns rather than silently hiding an unresolved wish',
-      (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(body: UnresolvedExerciseWarning(count: 2)),
-    ));
-    expect(find.textContaining('2 souhait(s) d’exercice non identifiés'),
-        findsOneWidget);
+  testWidgets('warns rather than silently hiding an unresolved wish', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: UnresolvedExerciseWarning(count: 2)),
+      ),
+    );
+    expect(
+      find.textContaining('2 souhait(s) d’exercice non identifiés'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('detail sections exclude exercises from a previous target', (
+    tester,
+  ) async {
+    final snapshot = FormationSnapshotDoc.fromMap('student', {
+      'target_level': '2*',
+      'exercises': {
+        'validated': [
+          {'code': 'P1.PL2', 'niveau': 'P1', 'description': 'Ancien brevet'},
+          {'code': 'P2.DP', 'niveau': 'P2', 'description': 'Direction'},
+        ],
+        'pending': [
+          {
+            'code': 'P1.PL3',
+            'niveau': 'P1',
+            'description': 'Ancien en attente',
+          },
+        ],
+        'pending_claims': [
+          {'code': 'P1.PL4', 'label': 'Ancienne demande'},
+        ],
+        'remaining': [
+          {'code': 'P2.RA', 'description': 'Remontée assistée'},
+        ],
+      },
+    });
+
+    expect(snapshot.modalityProgress[FormationModality.career]!.total, 2);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: FormationExerciseProgress(snapshot: snapshot)),
+      ),
+    );
+    expect(find.text('Milieu naturel · 1/2'), findsOneWidget);
+    await tester.tap(find.text('Milieu naturel · 1/2'));
+    await tester.pumpAndSettle();
+    expect(find.text('✓ Réalisés (1)'), findsOneWidget);
+    expect(find.text('⏳ En attente (0)'), findsOneWidget);
+    expect(find.text('○ Restants (1)'), findsOneWidget);
+    expect(find.textContaining('P1.'), findsNothing);
+    expect(find.text('P2.DP · Direction'), findsOneWidget);
+    expect(find.text('P2.RA · Remontée assistée'), findsOneWidget);
   });
 }

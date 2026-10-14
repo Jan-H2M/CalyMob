@@ -41,13 +41,28 @@ class FormationExerciseProgress extends StatelessWidget {
     // One code appears in at most one section, in the same precedence as
     // FormationSnapshotDoc.modalityProgress (validated > pending > remaining).
     final done = snapshot.validated
-        .where((row) => inNatural(row.code, row.description) && first(row.code))
+        .where(
+          (row) =>
+              snapshot.includesCurrentTargetExercise(row) &&
+              inNatural(row.code, row.description) &&
+              first(row.code),
+        )
         .toList();
     final pending = snapshot.pending
-        .where((row) => inNatural(row.code, row.description) && first(row.code))
+        .where(
+          (row) =>
+              snapshot.includesCurrentTargetExercise(row) &&
+              inNatural(row.code, row.description) &&
+              first(row.code),
+        )
         .toList();
     final claims = snapshot.pendingClaims
-        .where((row) => inNatural(row.code, row.label) && first(row.code))
+        .where(
+          (row) =>
+              snapshot.includesCurrentTargetCode(row.code) &&
+              inNatural(row.code, row.label) &&
+              first(row.code),
+        )
         .toList();
     final remaining = snapshot.remaining
         .where((row) => inNatural(row.code, row.description) && first(row.code))
@@ -84,33 +99,20 @@ class FormationExerciseProgress extends StatelessWidget {
             '✓ Réalisés (${done.length})',
             done
                 .map(
-                  (exercise) => _row(
-                    exercise.code,
-                    exercise.description,
-                    Colors.green,
-                  ),
+                  (exercise) =>
+                      _row(exercise.code, exercise.description, Colors.green),
                 )
                 .toList(),
           ),
-          _section(
-            '⏳ En attente (${pending.length + claims.length})',
-            [
-              ...pending.map(
-                (exercise) => _row(
-                  exercise.code,
-                  exercise.description,
-                  Colors.orange,
-                ),
-              ),
-              ...claims.map(
-                (claim) => _row(
-                  claim.code,
-                  claim.label,
-                  Colors.orange,
-                ),
-              ),
-            ],
-          ),
+          _section('⏳ En attente (${pending.length + claims.length})', [
+            ...pending.map(
+              (exercise) =>
+                  _row(exercise.code, exercise.description, Colors.orange),
+            ),
+            ...claims.map(
+              (claim) => _row(claim.code, claim.label, Colors.orange),
+            ),
+          ]),
           _section(
             '○ Restants (${remaining.length})',
             remaining
@@ -129,46 +131,46 @@ class FormationExerciseProgress extends StatelessWidget {
   }
 
   Widget _section(String title, List<Widget> rows) => Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.donkerblauw,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            if (rows.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 3),
-                child: Text(
-                  'Aucun exercice',
-                  style: TextStyle(color: Colors.black54, fontSize: 11),
-                ),
-              )
-            else
-              ...rows,
-          ],
+    padding: const EdgeInsets.only(top: 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.donkerblauw,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
         ),
-      );
+        if (rows.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 3),
+            child: Text(
+              'Aucun exercice',
+              style: TextStyle(color: Colors.black54, fontSize: 11),
+            ),
+          )
+        else
+          ...rows,
+      ],
+    ),
+  );
 
   Widget _row(String code, String description, Color color) => Padding(
-        padding: const EdgeInsets.only(top: 5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.circle, size: 7, color: color),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                description.isEmpty ? code : '$code · $description',
-                style: const TextStyle(fontSize: 11.5),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.only(top: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.circle, size: 7, color: color),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            description.isEmpty ? code : '$code · $description',
+            style: const TextStyle(fontSize: 11.5),
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
