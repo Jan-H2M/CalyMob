@@ -1,0 +1,1 @@
+Amélioration de la connexion après correction de l’adresse e-mail par un administrateur.
