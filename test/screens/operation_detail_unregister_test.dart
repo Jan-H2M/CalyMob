@@ -142,13 +142,16 @@ class _MockProfileService extends Mock implements ProfileService {
   _MockProfileService({this.directoryProfile});
 
   MemberProfile? directoryProfile;
+  var directoryLookups = 0;
 
   @override
   Future<MemberProfile?> getDirectoryProfile(
     String clubId,
     String userId,
-  ) async =>
-      directoryProfile;
+  ) async {
+    directoryLookups++;
+    return directoryProfile;
+  }
 }
 
 class _MockUser extends Mock implements User {
@@ -258,6 +261,79 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('+32000000000'), findsNothing);
     expect(find.text('Numéro indisponible ou non partagé'), findsOneWidget);
+  });
+
+  testWidgets('ordinary member cannot open a participant phone',
+      (tester) async {
+    final now = DateTime(2026, 10, 15);
+    final operation = Operation(
+      id: 'synthetic-event-member-view',
+      type: 'evenement',
+      titre: 'Sortie synthétique',
+      montantPrevu: 0,
+      statut: 'ouvert',
+      dateDebut: DateTime(2027, 10, 15),
+      createdAt: now,
+      updatedAt: now,
+    );
+    final participant = ParticipantOperation(
+      id: 'registration-2',
+      operationId: operation.id,
+      membreId: 'member-2',
+      membrePrenom: 'Alice',
+      membreNom: 'Exemple',
+      prix: 0,
+      dateInscription: now,
+    );
+    final profileService = _MockProfileService(
+      directoryProfile: MemberProfile(
+        id: 'member-2',
+        prenom: 'Alice',
+        nom: 'Exemple',
+        email: '',
+        sharePhone: true,
+        phoneNumber: '+32000000000',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: _MockAuthProvider(_MockUser()),
+          ),
+          ChangeNotifierProvider<EventMessageProvider>.value(
+            value: _MockEventMessageProvider(),
+          ),
+          ChangeNotifierProvider<MemberProvider>.value(
+            value: _MockMemberProvider(),
+          ),
+          ChangeNotifierProvider<OperationProvider>.value(
+            value: _MockOperationProvider(
+              operation,
+              participants: [participant],
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          home: OperationDetailScreen(
+            clubId: 'calypso',
+            operationId: operation.id,
+            operationService: _MockOperationService(participant),
+            profileService: profileService,
+            loadAuxiliaryProfileData: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('Membres inscrits'));
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('Alice Exemple'), findsOneWidget);
+    expect(find.byTooltip('Téléphone de Alice Exemple'), findsNothing);
+    expect(profileService.directoryLookups, 0);
   });
 
   testWidgets(
