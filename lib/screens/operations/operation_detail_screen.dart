@@ -183,6 +183,65 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         normalised.contains('encadrants');
   }
 
+  Future<void> _showParticipantContact({
+    required String memberId,
+    required String memberName,
+  }) async {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null || !_canManagePalanquees(operation)) return;
+
+    // Only the consent-filtered directory may supply contact details. The
+    // private members collection used for avatars must never be a fallback.
+    final profile = await _profileService.getDirectoryProfile(
+      widget.clubId,
+      memberId,
+    );
+    if (!mounted) return;
+    final currentOperation =
+        context.read<OperationProvider>().selectedOperation;
+    if (currentOperation?.id != operation.id ||
+        !_canManagePalanquees(currentOperation!)) {
+      return;
+    }
+
+    final phone = profile?.phoneNumber;
+    if (!canDisplayParticipantPhone(
+      isEventStaff: true,
+      memberId: memberId,
+      directoryMemberId: profile?.id,
+      sharePhone: profile?.sharePhone == true,
+      phoneNumber: phone,
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Numéro indisponible ou non partagé')),
+      );
+      return;
+    }
+    final contactPhone = phone!;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(memberName),
+        content: SelectableText(contactPhone),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Fermer'),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              launchUrl(Uri(scheme: 'tel', path: contactPhone));
+            },
+            icon: const Icon(Icons.phone),
+            label: const Text('Appeler'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Check if operation date is today or in the past
   bool _isOperationTodayOrPast(Operation operation) {
     if (operation.dateDebut == null) return false;
@@ -3302,6 +3361,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         final isCurrentUser =
                             participant.membreId == currentUserId;
                         final isGuest = participant.isGuest;
+                        final canContact = !isGuest &&
+                            participant.membreId.isNotEmpty &&
+                            _canManagePalanquees(
+                              operationProvider.selectedOperation!,
+                            );
 
                         final isPresent = participant.present ?? false;
                         // Organizer can tap on unpaid participants to show payment QR.
@@ -3351,6 +3415,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                                if (canContact)
+                                  IconButton(
+                                    tooltip: 'Téléphone de $displayName',
+                                    icon: const Icon(Icons.phone_outlined),
+                                    iconSize: 19,
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => _showParticipantContact(
+                                      memberId: participant.membreId,
+                                      memberName: displayName,
+                                    ),
+                                  ),
                                 // Guest badge
                                 if (isGuest) ...[
                                   const SizedBox(width: 8),

@@ -1,5 +1,6 @@
 import 'package:calymob/models/operation.dart';
 import 'package:calymob/models/participant_operation.dart';
+import 'package:calymob/models/member_profile.dart';
 import 'package:calymob/models/event_message.dart';
 import 'package:calymob/providers/auth_provider.dart';
 import 'package:calymob/providers/event_message_provider.dart';
@@ -38,11 +39,15 @@ class _MockEventMessageProvider extends Mock implements EventMessageProvider {
 }
 
 class _MockMemberProvider extends Mock implements MemberProvider {
+  _MockMemberProvider({this.statuten = const []});
+
+  final List<String> statuten;
+
   @override
   String? get appRole => 'membre';
 
   @override
-  List<String> get clubStatuten => const [];
+  List<String> get clubStatuten => statuten;
 
   @override
   String? get plongeurCode => null;
@@ -53,11 +58,13 @@ class _MockOperationProvider extends Mock implements OperationProvider {
     this._operation, {
     this.remainingInscriptionAfterUnregister,
     this.unregisterError,
+    this.participants = const [],
   });
 
   final Operation _operation;
   final ParticipantOperation? remainingInscriptionAfterUnregister;
   final Object? unregisterError;
+  final List<ParticipantOperation> participants;
   final unregisterCalls = <Map<String, dynamic>>[];
   var reloadCalls = 0;
   var _isRegistered = true;
@@ -67,7 +74,7 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   Operation? get selectedOperation => _operation;
 
   @override
-  List<ParticipantOperation> get selectedOperationParticipants => const [];
+  List<ParticipantOperation> get selectedOperationParticipants => participants;
 
   @override
   bool get isLoading => false;
@@ -131,7 +138,18 @@ class _MockOperationService extends Mock implements OperationService {
       loadedInscription;
 }
 
-class _MockProfileService extends Mock implements ProfileService {}
+class _MockProfileService extends Mock implements ProfileService {
+  _MockProfileService({this.directoryProfile});
+
+  MemberProfile? directoryProfile;
+
+  @override
+  Future<MemberProfile?> getDirectoryProfile(
+    String clubId,
+    String userId,
+  ) async =>
+      directoryProfile;
+}
 
 class _MockUser extends Mock implements User {
   @override
@@ -151,6 +169,95 @@ void main() {
     setupFirebaseCoreMocks();
     await Firebase.initializeApp();
     await initializeDateFormatting('fr_FR');
+  });
+
+  testWidgets('encadrant sees only a directory-shared participant phone',
+      (tester) async {
+    final now = DateTime(2026, 10, 15);
+    final operation = Operation(
+      id: 'synthetic-event',
+      type: 'evenement',
+      titre: 'Sortie synthétique',
+      montantPrevu: 0,
+      statut: 'ouvert',
+      dateDebut: DateTime(2027, 10, 15),
+      createdAt: now,
+      updatedAt: now,
+    );
+    final participant = ParticipantOperation(
+      id: 'registration-2',
+      operationId: operation.id,
+      membreId: 'member-2',
+      membrePrenom: 'Alice',
+      membreNom: 'Exemple',
+      prix: 0,
+      dateInscription: now,
+    );
+    final operationProvider = _MockOperationProvider(
+      operation,
+      participants: [participant],
+    );
+    final profile = MemberProfile(
+      id: 'member-2',
+      prenom: 'Alice',
+      nom: 'Exemple',
+      email: '',
+      sharePhone: true,
+      phoneNumber: '+32000000000',
+    );
+
+    final profileService = _MockProfileService(directoryProfile: profile);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: _MockAuthProvider(_MockUser()),
+          ),
+          ChangeNotifierProvider<EventMessageProvider>.value(
+            value: _MockEventMessageProvider(),
+          ),
+          ChangeNotifierProvider<MemberProvider>.value(
+            value: _MockMemberProvider(statuten: const ['encadrant']),
+          ),
+          ChangeNotifierProvider<OperationProvider>.value(
+            value: operationProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: OperationDetailScreen(
+            clubId: 'calypso',
+            operationId: operation.id,
+            operationService: _MockOperationService(participant),
+            profileService: profileService,
+            loadAuxiliaryProfileData: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('Membres inscrits'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.ensureVisible(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('+32000000000'), findsOneWidget);
+
+    await tester.tap(find.text('Fermer'));
+    await tester.pump(const Duration(milliseconds: 350));
+    profileService.directoryProfile = MemberProfile(
+      id: 'member-2',
+      prenom: 'Alice',
+      nom: 'Exemple',
+      email: '',
+      sharePhone: false,
+      phoneNumber: '+32000000000',
+    );
+    await tester.tap(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('+32000000000'), findsNothing);
+    expect(find.text('Numéro indisponible ou non partagé'), findsOneWidget);
   });
 
   testWidgets(
