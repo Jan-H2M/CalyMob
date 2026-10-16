@@ -23,6 +23,9 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
   String? _error;
   bool _loading = true, _more = false;
   Timer? _timer;
+  String? _missionCursor;
+  bool _moreMissions = false;
+  int _missionPages = 1;
   @override
   void initState() {
     super.initState();
@@ -51,9 +54,24 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
         widget.service.call(_club, 'missions'),
         if (widget.manager) widget.service.call(_club, 'list')
       ]);
+      final missionPage = results[0];
+      for (var page = 1;
+          page < _missionPages && missionPage['hasMore'] == true;
+          page++) {
+        final next = await widget.service
+            .call(_club, 'missions', {'cursor': missionPage['nextCursor']});
+        missionPage['missions'] = [
+          ...missionPage['missions'] as List,
+          ...next['missions'] as List
+        ];
+        missionPage['hasMore'] = next['hasMore'];
+        missionPage['nextCursor'] = next['nextCursor'];
+      }
       if (!mounted) return;
       setState(() {
-        _missions = (results[0]['missions'] as List)
+        _missionCursor = missionPage['nextCursor'] as String?;
+        _moreMissions = missionPage['hasMore'] == true;
+        _missions = (missionPage['missions'] as List)
             .map((m) => Map<String, dynamic>.from(m as Map))
             .toList();
         if (widget.manager) {
@@ -82,6 +100,31 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
           _units = [];
           _assignees = [];
         });
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMoreMissions() async {
+    if (_missionCursor == null || _loading) return;
+    setState(() => _loading = true);
+    try {
+      final page = await widget.service
+          .call(_club, 'missions', {'cursor': _missionCursor});
+      if (!mounted) return;
+      setState(() {
+        final currentIds = _missions.map((m) => m['id']).toSet();
+        _missions.addAll((page['missions'] as List)
+            .map((m) => Map<String, dynamic>.from(m as Map))
+            .where((m) => !currentIds.contains(m['id'])));
+        _missionCursor = page['nextCursor'] as String?;
+        _moreMissions = page['hasMore'] == true;
+        _missionPages++;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = BoutiqueOperationsService.message(e));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -195,6 +238,10 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
                                     service: widget.service)));
                         if (mounted) _load();
                       }))),
+              if (_moreMissions)
+                OutlinedButton(
+                    onPressed: _loading ? null : _loadMoreMissions,
+                    child: const Text('Afficher les missions suivantes')),
             ])));
   }
 }

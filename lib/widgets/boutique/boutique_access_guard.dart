@@ -219,6 +219,7 @@ MaterialPageRoute<T> boutiqueAccessGuardedRoute<T>({
   required WidgetBuilder builder,
   BuildContext? sourceContext,
   String? requiredSection,
+  String? authBoundUserId,
   BoutiqueAccessService? accessService,
   String? clubId,
   @visibleForTesting String? testUserIdOverride,
@@ -234,8 +235,8 @@ MaterialPageRoute<T> boutiqueAccessGuardedRoute<T>({
       requiredSection: requiredSection,
       accessService: accessService ?? inherited?.accessService,
       clubId: clubId ?? inherited?.clubId ?? FirebaseConfig.defaultClubId,
-      authBoundUserId:
-          inherited?.testUserIdOverride == null ? inherited?.userId : null,
+      authBoundUserId: authBoundUserId ??
+          (inherited?.testUserIdOverride == null ? inherited?.userId : null),
       testUserIdOverride: testUserIdOverride ?? inherited?.testUserIdOverride,
       builder: (context, _) => builder(context),
     ),

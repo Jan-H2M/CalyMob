@@ -102,6 +102,7 @@ class _BoutiquePickupMissionScreenState
     try {
       if (_pending == null) {
         final request = {
+          'expectedActorId': BoutiqueAccessScope.maybeOf(context)!.userId,
           'missionId': widget.missionId,
           'units': _scanned.values.map((u) => u.selection).toList(),
           'idempotencyKey': BoutiqueOperationsService.confirmationKey()
@@ -114,7 +115,7 @@ class _BoutiquePickupMissionScreenState
             builder: (context) => AlertDialog(
                     title: Text('Réceptionner ${p['count']} pièce(s) ?'),
                     content: Text(
-                        'Je confirme leur présence physique à ${p['destination']}.\n\n${p['notificationCount']} acheteur(s) sera/seront averti(s). ${(p['heldOrders'] as List).length} commande(s) restent en attente (paiement ou préparation).'),
+                        'Je confirme leur présence physique à ${p['destination']}.\n\n${p['notificationCount']} acheteur(s) sera/seront averti(s). ${(p['heldOrders'] as List).length} commande(s) restent en attente (paiement ou préparation).${(p['heldOrders'] as List).any((h) => h['reason'] == 'regroup') ? '\nDes commandes sont réparties entre plusieurs missions : demandez au responsable de les regrouper.' : ''}'),
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(context, false),
@@ -123,7 +124,7 @@ class _BoutiquePickupMissionScreenState
                           onPressed: () => Navigator.pop(context, true),
                           child: const Text('Confirmer l’arrivée'))
                     ]));
-        if (confirmed != true) return;
+        if (!mounted || confirmed != true) return;
         _pending = request;
       }
       await widget.service.call(widget.clubId, 'arrive', _pending!);
@@ -144,6 +145,7 @@ class _BoutiquePickupMissionScreenState
   }
 
   Future<void> _revoke() async {
+    final actorId = BoutiqueAccessScope.maybeOf(context)!.userId;
     final yes = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
@@ -158,10 +160,11 @@ class _BoutiquePickupMissionScreenState
                       onPressed: () => Navigator.pop(c, true),
                       child: const Text('Retirer la mission'))
                 ]));
-    if (yes != true) return;
+    if (!mounted || yes != true) return;
     setState(() => _busy = true);
     try {
       await widget.service.call(widget.clubId, 'revoke', {
+        'expectedActorId': actorId,
         'missionId': widget.missionId,
         'idempotencyKey': BoutiqueOperationsService.confirmationKey()
       });

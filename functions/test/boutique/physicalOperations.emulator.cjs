@@ -5,7 +5,8 @@ if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8087' || process.env.GCLO
 const admin = require('firebase-admin');
 admin.initializeApp({ projectId: 'demo-boutique-qr' });
 const db = admin.firestore();
-const { executePhysicalOperation: run } = require('../../src/boutique/physicalOperations');
+const { executePhysicalOperation: execute } = require('../../src/boutique/physicalOperations');
+const run = (db, actor, input, clock) => execute(db, actor, { expectedActorId: actor.uid, ...input }, clock);
 const { sendPickupNotification } = require('../../src/boutique/pickupNotifications');
 let sequence = 0;
 const clubId = `qa_${Date.now()}`, club = db.collection('clubs').doc(clubId);
@@ -101,7 +102,7 @@ test('partial handover is an explicit RB decision; shipping orders and expired m
   await mutate('rb','finishJim',[27],{note:'Contrôle terminé'});
   const task=await mutate('rb','dispatch',[27],{destination:'Piscine',assigneeIds:['helper1'],pickupPoint:true,pickupWindow:'Ce soir',allowPartial:true});
   await mutate('helper1','arrive',[27],{missionId:task.missionId});
-  await club.collection('orders').doc('o9').update({items:[{lineId:'line',qty:1,deliveryMode:'shipping',physicalStockUnitIds:['u27'],fulfillmentStatus:'ready'}]});
+  await club.collection('orders').doc('o9').update({items:[{lineId:'line',qty:1,deliveryMode:'post',physicalStockUnitIds:['u27'],fulfillmentStatus:'ready'}]});
   await assert.rejects(mutate('helper1','deliver',[27],{missionId:task.missionId,recipientMemberId:'buyer9',confirmed:true}),{code:'failed-precondition'});
   await club.collection('boutique_pickup_missions').doc(task.missionId).update({expiresAt:admin.firestore.Timestamp.fromMillis(Date.now()-1000)});
   await assert.rejects(call('helper1','mission',{missionId:task.missionId}),{code:'permission-denied'});
@@ -118,4 +119,72 @@ test('revoking an in-transit mission frees the lock without pretending arrival; 
   await call('rb','revoke',request);
   await assert.rejects(call('rb','revoke',{...request,note:'Different payload'}),{code:'already-exists'});
   await mutate('rb','move',ns,{sourceLocation:'En transport → Réserve',destination:'Réserve'});
+});
+test('split missions hold the complete-order message until RB regroups the actual pieces',async()=>{
+  await club.collection('members').doc('buyer10').set({member_status:'active',display_name:'Acheteur 10'});
+  const ids=['u30','u31','u32'];
+  await club.collection('orders').doc('o10').set({status:'ready',buyer:{userId:'buyer10'},payment:{status:'paid'},items:[{lineId:'line',qty:3,deliveryMode:'pool_pickup',physicalStockUnitIds:ids,fulfillmentStatus:'ready'}]});
+  for (const unitId of ids) await club.collection('boutique_physical_stock_units').doc(unitId).set({productName:'Veste QA',variantLabel:'L',location:'Piscine',destination:'customer_reserved',finish:'returned_embroidered',saleStatus:'sale_ready',requiresEmbroidery:true,customerOrderId:'o10',customerLineId:'line',history:[]});
+  const params={sourceLocation:'Piscine',destination:'Piscine',assigneeIds:['helper1'],confirmed:true,note:'Présence vérifiée',pickupPoint:true,pickupWindow:'Ce soir'};
+  const first=await mutate('rb','dispatch',[30],params);assert.equal(first.notificationCount,0);assert.equal(first.heldOrders[0].reason,'regroup');
+  await mutate('rb','dispatch',[31,32],params);
+  const task=(await call('helper1','mission',{missionId:first.missionId}));assert.equal(task.packets[0].ready,false);
+  const full=await mutate('rb','dispatch',[30,31,32],params);assert.equal(full.notificationCount,1);
+  const notification=(await club.collection('boutique_pickup_notifications').where('orderId','==','o10').get()).docs[0].data();assert.match(notification.body,/Veste QA/);assert.match(notification.body,/Piscine/);
+});
+
+test('an account switch cannot apply a confirmation captured for another actor', async () => {
+  const units = await selection([18]);
+  await assert.rejects(run(db,actor('rb'),{clubId,action:'move',expectedActorId:'other-rb',units,sourceLocation:'Piscine',destination:'Réserve',idempotencyKey:key()}),{code:'permission-denied'});
+  assert.equal((await piece(18)).location,'Piscine');
+});
+test('over 100 historical missions cannot hide a current helper task; live missions paginate without omission',async()=>{
+  await club.collection('members').doc('pager').set({member_status:'active',clubStatuten:['Accueil']});
+  const now=admin.firestore.Timestamp.now(), expiry=admin.firestore.Timestamp.fromMillis(Date.now()+86400000);
+  const task={status:'closed',destination:'Piscine',sourceLocation:'Jim',pickupWindow:'Ce soir',createdAt:now,expiresAt:expiry,createdBy:'rb',unitIds:[],arrivedUnitIds:[],deliveredUnitIds:[],assigneeIds:['pager'],assigneeNames:['Pager'],allowPartial:false,pickupPoint:true};
+  const history=db.batch();for(let i=0;i<120;i++)history.set(club.collection('boutique_pickup_missions').doc(`history-${String(i).padStart(3,'0')}`),task);
+  history.set(club.collection('boutique_pickup_missions').doc('z-current'),{...task,status:'transit'});await history.commit();
+  assert.equal((await call('pager','access')).hasAssignments,true);
+  assert.deepEqual((await call('pager','missions')).missions.map(m=>m.id),['z-current']);
+  const extra=db.batch();for(let i=0;i<100;i++)extra.set(club.collection('boutique_pickup_missions').doc(`active-${String(i).padStart(3,'0')}`),{...task,status:'received'});await extra.commit();
+  const first=await call('pager','missions');assert.equal(first.missions.length,100);assert.equal(first.hasMore,true);assert.ok(first.nextCursor);
+  const second=await call('pager','missions',{cursor:first.nextCursor});assert.equal(second.missions.length,1);assert.equal(second.hasMore,false);
+  assert.equal(new Set([...first.missions,...second.missions].map(m=>m.id)).size,101);
+});
+test('plain club stock cannot skip a reserved customer name; positive Jim route completes required personalization',async()=>{
+  const unitId='u40';
+  await club.collection('members').doc('buyer11').set({member_status:'active'});
+  await club.collection('orders').doc('o11').set({status:'preparing',buyer:{userId:'buyer11'},payment:{status:'paid'},items:[{lineId:'line',qty:1,deliveryMode:'pool_pickup',physicalStockUnitIds:[unitId],customizations:{name:{text:'Client Name'}},fulfillmentStatus:'preparing',productionStatus:'queued'}]});
+  await club.collection('boutique_physical_stock_units').doc(unitId).set({productName:'Plain base + customer name',variantLabel:'M',location:'Réserve',finish:'unembroidered',saleStatus:'not_ready',requiresEmbroidery:false,destination:'customer_reserved',customerOrderId:'o11',customerLineId:'line',history:[]});
+  await assert.rejects(mutate('rb','reviewPlain',[40],{sourceLocation:'Réserve',note:'Contrôlé'}),{code:'failed-precondition'});
+  assert.equal((await piece(40)).saleStatus,'not_ready');
+  await mutate('rb','prepareJim',[40],{sourceLocation:'Réserve'});
+  await mutate('rb','confirmJim',[40],{sourceLocation:'Réserve',destination:'Jim',note:'Pièce reçue pour personnalisation'});
+  await mutate('rb','finishJim',[40],{note:'Nom brodé et vérifié'});
+  const task=await mutate('rb','dispatch',[40],{destination:'Piscine',assigneeIds:['helper1'],pickupPoint:true,pickupWindow:'Ce soir'});
+  await mutate('helper1','arrive',[40],{missionId:task.missionId});
+  const line=(await club.collection('orders').doc('o11').get()).data().items[0];assert.equal(line.productionStatus,'done');assert.equal(line.fulfillmentStatus,'ready');
+  await mutate('helper1','deliver',[40],{missionId:task.missionId,recipientMemberId:'buyer11',confirmed:true});assert.equal((await piece(40)).saleStatus,'sold');
+});
+test('qty2 with only one received piece reports one missing article and records partial quantity before the rest arrives',async()=>{
+  await club.collection('members').doc('buyer12').set({member_status:'active'});
+  const line={lineId:'line',qty:2,deliveryMode:'pool_pickup',physicalStockUnitIds:['u41'],fulfillmentStatus:'preparing'};
+  await club.collection('orders').doc('o12').set({status:'preparing',buyer:{userId:'buyer12'},payment:{status:'paid'},items:[line]});
+  const u={productName:'Polo partiel',variantLabel:'M',location:'Réserve',finish:'unembroidered',saleStatus:'not_ready',requiresEmbroidery:false,destination:'customer_reserved',customerOrderId:'o12',customerLineId:'line',history:[]};
+  await club.collection('boutique_physical_stock_units').doc('u41').set(u);
+  await mutate('rb','reviewPlain',[41],{sourceLocation:'Réserve',note:'Contrôlé'});
+  const task=await mutate('rb','dispatch',[41],{sourceLocation:'Réserve',destination:'Piscine',assigneeIds:['helper1'],pickupPoint:true,pickupWindow:'Ce soir',allowPartial:true});
+  await mutate('helper1','arrive',[41],{missionId:task.missionId});
+  const notice=(await club.collection('boutique_pickup_notifications').where('orderId','==','o12').get()).docs[0].data();assert.match(notice.body,/1 pièce\(s\) encore en attente/);
+  assert.equal((await call('helper1','mission',{missionId:task.missionId})).packets[0].remaining,1);
+  await mutate('helper1','deliver',[41],{missionId:task.missionId,recipientMemberId:'buyer12',confirmed:true});
+  const partial=(await club.collection('orders').doc('o12').get()).data();assert.equal(partial.items[0].deliveredQty,1);assert.equal(partial.items[0].handoverProofType,'member_qr');assert.equal(partial.items[0].fulfillmentStatus,'preparing');
+  // The later real receipt appends a physical ID, preserving existing handover.
+  await club.collection('boutique_physical_stock_units').doc('u42').set(u);
+  await club.collection('orders').doc('o12').update({items:[{...partial.items[0],physicalStockUnitIds:['u41','u42']}]});
+  await mutate('rb','reviewPlain',[42],{sourceLocation:'Réserve',note:'Contrôlé'});
+  const rest=await mutate('rb','dispatch',[42],{sourceLocation:'Réserve',destination:'Piscine',assigneeIds:['helper1'],pickupPoint:true,pickupWindow:'Ce soir'});
+  await mutate('helper1','arrive',[42],{missionId:rest.missionId});
+  await mutate('helper1','deliver',[42],{missionId:rest.missionId,recipientMemberId:'buyer12',confirmed:true});
+  const complete=(await club.collection('orders').doc('o12').get()).data();assert.equal(complete.status,'delivered');assert.equal(complete.items[0].deliveredQty,2);
 });

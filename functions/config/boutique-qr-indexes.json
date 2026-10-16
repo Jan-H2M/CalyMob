@@ -1,0 +1,6 @@
+{
+  "indexes": [
+    {"collectionGroup":"boutique_pickup_missions","queryScope":"COLLECTION","fields":[{"fieldPath":"assigneeIds","arrayConfig":"CONTAINS"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"expiresAt","order":"ASCENDING"}]},
+    {"collectionGroup":"boutique_pickup_missions","queryScope":"COLLECTION","fields":[{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"}]}
+  ]
+}

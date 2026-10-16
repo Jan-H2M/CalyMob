@@ -162,6 +162,7 @@ class _BoutiqueStockSessionScreenState
   }
 
   Map<String, dynamic> _request() => {
+        'expectedActorId': BoutiqueAccessScope.maybeOf(context)!.userId,
         'units': _selection.units.map((u) => u.selection).toList(),
         'sourceLocation': widget.location,
         'idempotencyKey': BoutiqueOperationsService.confirmationKey(),
@@ -229,7 +230,7 @@ class _BoutiqueStockSessionScreenState
                           onPressed: () => Navigator.pop(context, true),
                           child: const Text('Confirmer le lot'))
                     ]));
-        if (approved != true) return;
+        if (!mounted || approved != true) return;
         _pending = request;
         applying = true;
       }
