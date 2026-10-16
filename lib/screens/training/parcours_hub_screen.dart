@@ -8,8 +8,10 @@ import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../providers/member_provider.dart';
 import '../../services/formation_task_service.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../exercises/member_exercises_screen.dart';
+import '../formation/instructor_formation_overview_screen.dart';
 import 'actions_evaluations_screen.dart';
 import 'historical_claims_screen.dart';
 import 'mon_carnet_screen.dart';
@@ -91,12 +93,27 @@ const parcoursHubEntryDefinitions = <ParcoursHubEntryDefinition>[
   ),
 ];
 
+@visibleForTesting
+const parcoursFormationOverviewEntry = ParcoursHubEntryDefinition(
+  key: 'formation-overview',
+  title: 'Avancement des élèves',
+  subtitle: 'Rechercher un membre et consulter son parcours de formation.',
+  icon: Icons.groups_2_outlined,
+  color: Color(0xFF0369A1),
+);
+
 class ParcoursHubScreen extends StatelessWidget {
   const ParcoursHubScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final member = context.watch<MemberProvider>();
+    final formationScope = PermissionHelper.formationTrackingScope(
+      clubStatuten: member.clubStatuten,
+      plongeurCode: member.plongeurCode,
+      appRole: member.appRole,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.donkerblauw,
@@ -132,6 +149,15 @@ class ParcoursHubScreen extends StatelessWidget {
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[2]),
                     ),
+                    if (formationScope != null)
+                      _ParcoursCard(
+                        definition: parcoursFormationOverviewEntry,
+                        onTap: () => _open(
+                          context,
+                          parcoursFormationOverviewEntry,
+                          formationScope: formationScope,
+                        ),
+                      ),
                     _ParcoursCard(
                       definition: parcoursHubEntryDefinitions[3],
                       badge: userId == null
@@ -163,7 +189,11 @@ class ParcoursHubScreen extends StatelessWidget {
     );
   }
 
-  void _open(BuildContext context, ParcoursHubEntryDefinition definition) {
+  void _open(
+    BuildContext context,
+    ParcoursHubEntryDefinition definition, {
+    FormationTrackingScope? formationScope,
+  }) {
     final navigator = Navigator.of(context);
     switch (definition.key) {
       case 'carnet':
@@ -189,8 +219,15 @@ class ParcoursHubScreen extends StatelessWidget {
         return;
       case 'actions':
         navigator.push(
+          MaterialPageRoute(builder: (_) => const ActionsEvaluationsScreen()),
+        );
+        return;
+      case 'formation-overview':
+        navigator.push(
           MaterialPageRoute(
-            builder: (_) => const ActionsEvaluationsScreen(),
+            builder: (_) => InstructorFormationOverviewScreen(
+              scope: formationScope ?? FormationTrackingScope.piscineOnly,
+            ),
           ),
         );
         return;
@@ -407,8 +444,10 @@ class _ActionsEvaluationsBadge extends StatelessWidget {
         .where('target_member_id', isEqualTo: userId)
         .where('status', isEqualTo: 'pending')
         .snapshots();
-    final taskStream = FormationTaskService()
-        .streamUserInbox(FirebaseConfig.defaultClubId, userId);
+    final taskStream = FormationTaskService().streamUserInbox(
+      FirebaseConfig.defaultClubId,
+      userId,
+    );
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: confirmationStream,

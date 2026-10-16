@@ -281,6 +281,15 @@ service cloud.firestore {
       return isAdmin(clubId) || (isEncadrantForClub(clubId) && isMoniteurForClub(clubId));
     }
 
+    // Canonical read gate for a member's complete formation dossier (career,
+    // theory, goals, MIL/dive sources and validation tasks). Keep this named
+    // separately from the write capability so every sensitive read path uses
+    // the same boundary. Piscine-only encadrants use pool_formation_snapshot
+    // and piscine member_observations instead.
+    function canReadFullFormation(clubId) {
+      return canValidateLifras(clubId);
+    }
+
     // Check if user has a valid session (timeout enforcement)
     // Simplified to avoid circular dependencies during login
     // NOTE: Returns true if session doesn't exist (for when autoLogoutEnabled is disabled)
@@ -1292,11 +1301,11 @@ service cloud.firestore {
         // - Un encadrant/admin peut aussi créer directement un exercice déjà validé
         //   (workflow legacy : booking par moniteur dans CalyCompta).
         match /exercices_valides/{exerciceValideId} {
-          // Lecture : le membre lui-même, admin/superadmin, ou encadrant
-          // (encadrants doivent pouvoir voir la progression des membres qu'ils forment)
+          // Lecture : le membre lui-même ou un validateur LIFRAS. Un encadrant
+          // piscine lit uniquement la projection piscine dédiée.
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isEncadrantForClub(clubId)
+            canReadFullFormation(clubId)
           );
 
           // Create :
@@ -1323,8 +1332,7 @@ service cloud.firestore {
         match /brevet_history/{historyId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isEncadrantForClub(clubId) ||
-            isAdmin(clubId)
+            canReadFullFormation(clubId)
           );
           allow create: if isAdmin(clubId)
             || (
@@ -1338,13 +1346,24 @@ service cloud.firestore {
 
         // WP-09 — snapshot de formation matérialisé. Document dérivé, écrit
         // UNIQUEMENT par les Cloud Functions (Admin SDK, bypass rules). Lecture :
-        // le membre lui-même + tout encadrant (fiche 360° / Who's who — D14).
+        // le membre lui-même + moniteur LIFRAS/admin. Les encadrants piscine
+        // lisent uniquement pool_formation_snapshot ci-dessous.
         // Jamais écrit côté client (le snapshot est un dérivé jetable).
         match /formation_snapshot/{snapshotId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isEncadrantForClub(clubId) ||
-            isAdmin(clubId)
+            canReadFullFormation(clubId)
+          );
+          allow write: if false;
+        }
+
+        // MOB-033 — projection sans données carrière/théorie/MIL. Elle ne
+        // contient que member_id et les compteurs/progrès piscine et est
+        // écrite par la Cloud Function de reconstruction du snapshot.
+        match /pool_formation_snapshot/{snapshotId} {
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isPiscineFormationEditor(clubId)
           );
           allow write: if false;
         }
@@ -1352,12 +1371,11 @@ service cloud.firestore {
         // WP-11 — objectifs de l'élève (« Mes objectifs »). Saisie self-service
         // par le membre lui-même uniquement (lecture seule pour le moniteur,
         // D7). La CF WP-09 auto-nettoie les codes validés via l'Admin SDK
-        // (bypass rules). Lecture : le membre + tout encadrant + admin (D14).
+        // (bypass rules). Lecture : le membre + validateur LIFRAS/admin (D14).
         match /formation_goals/{goalId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isEncadrantForClub(clubId) ||
-            isAdmin(clubId)
+            canReadFullFormation(clubId)
           );
           allow write: if isAuthenticated() && request.auth.uid == memberId;
         }
@@ -2067,18 +2085,49 @@ service cloud.firestore {
     }
 
     // ========== CARNET DE FORMATION — Member Observations ==========
-    // Pedagogische observaties op leden — alleen Moniteur+Encadrant of admin.
+    // Pedagogische observaties op leden. Moniteur+Encadrant/admin kan
+    // evalueren; een piscine-encadrant mag daarnaast een tekstuele opmerking
+    // over een zwembadcontext opslaan, zonder oefening of resultaat te boeken.
     // Vóór 2026-04-29 stond hier enkel een observerId-check, wat elke
     // geauthenticeerde clublid liet schrijven via direct API-call. Nu strikt
     // afgestemd op de CARNET_DE_FORMATION_TECH.md intent ("encadrants et admins")
     // én op de LIFRAS-realiteit (alleen Moniteurs valideren).
     match /clubs/{clubId}/member_observations/{observationId} {
-      // Lecture: tous les membres authentifiés
-      allow read: if isAuthenticated() &&
-        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-      // Création: Moniteur+Encadrant of admin, en moet zelf de observer zijn
-      allow create: if canValidateLifras(clubId) &&
-        request.resource.data.observerId == request.auth.uid;
+      // Lecture: de betrokken leerling ziet de eigen observaties; bevoegde
+      // formation editors zien de leerlingen die zij begeleiden.
+      allow read: if isMember(clubId) && (
+        resource.data.memberId == request.auth.uid ||
+        canReadFullFormation(clubId) ||
+        (
+          isPiscineFormationEditor(clubId) &&
+          resource.data.contextType == 'piscine'
+        )
+      );
+      // Création: de auteur moet altijd zichzelf als observer registreren.
+      // Piscine-opmerkingen zijn bewust beperkt tot vrije tekst: geen
+      // exerciceCode/result → nooit een LIFRAS-validatie via de trigger.
+      allow create: if request.resource.data.observerId == request.auth.uid && (
+        canValidateLifras(clubId) || (
+          isPiscineFormationEditor(clubId) &&
+          request.resource.data.memberId is string &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.memberId)) &&
+          request.resource.data.contextType == 'piscine' &&
+          request.resource.data.contextId == 'formation_overview' &&
+          request.resource.data.contextTitle == 'Suivi formation piscine' &&
+          request.resource.data.category == 'general' &&
+          request.resource.data.note is string &&
+          request.resource.data.note.size() > 0 &&
+          request.resource.data.note.size() <= 2000 &&
+          request.resource.data.contextDate == request.time &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.keys().hasOnly([
+            'memberId', 'memberName', 'memberNiveau',
+            'contextType', 'contextId', 'contextDate', 'contextTitle',
+            'category', 'note', 'observerId', 'createdAt', 'updatedAt'
+          ])
+        )
+      );
       // Modification: oorspronkelijke auteur (mits nog steeds Moniteur+Encadrant), of admin
       allow update: if isAdmin(clubId) || (
         canValidateLifras(clubId) &&
@@ -2131,11 +2180,17 @@ service cloud.firestore {
     // 'formation_snapshot' (FormationSnapshotReader.getAllSnapshots). Même
     // contrainte CG que ci-dessus : les règles imbriquées ne s'appliquent PAS
     // aux collection-group queries, il faut une règle {path=**} dédiée avec un
-    // club codé en dur (calypso, single-tenant). Restreint aux encadrants/admin
-    // (la liste est réservée aux encadrants ; un membre lit son propre snapshot
+    // club codé en dur (calypso, single-tenant). Restreint aux encadrants de
+    // formation carrière et admins ; un membre lit son propre snapshot
     // via la règle imbriquée sous /members/{memberId}/formation_snapshot).
     match /{path=**}/formation_snapshot/{snapshotId} {
-      allow read: if request.auth != null && isEncadrantForClub('calypso');
+      allow read: if request.auth != null && canReadFullFormation('calypso');
+    }
+
+    // MOB-033 — collection-group dédiée au suivi piscine. Cette projection ne
+    // contient jamais d'exercices carrière/théorie, MIL, objectifs ou notes.
+    match /{path=**}/pool_formation_snapshot/{snapshotId} {
+      allow read: if request.auth != null && isPiscineFormationEditor('calypso');
     }
 
     // ========================================================================
@@ -2154,7 +2209,7 @@ service cloud.firestore {
     match /clubs/{clubId}/historical_exercise_claim_batches/{batchId} {
       allow read: if isMember(clubId) && (
            resource.data.member_id == request.auth.uid
-        || canValidateLifras(clubId)
+        || canReadFullFormation(clubId)
       );
 
       allow create: if isMember(clubId)
@@ -2169,14 +2224,14 @@ service cloud.firestore {
     }
 
     // --- formation_tasks ---------------------------------------------------
-    // The persistent inbox. Clients can READ their own tasks and tasks where
-    // they're the current assignee; admins/encadrants can read all.
+    // The persistent inbox. Members can READ their own tasks; full LIFRAS
+    // validators can read all.
     // Clients CANNOT create tasks directly — only Cloud Functions do that
     // via the Admin SDK (which bypasses rules anyway), except for the
     // student-facing "historical_validation" task created atomically by the
     // mobile paper-card reprise flow.
-    // Clients can UPDATE only a narrow set of fields on tasks where they're
-    // the current assignee (status transitions + snooze + completion stamps).
+    // Clients can UPDATE only a narrow set of fields on their own student task
+    // or as a full validator (status transitions + snooze + completion stamps).
     match /clubs/{clubId}/formation_tasks/{taskId} {
       function isCompletedMonitorObservation() {
         return resource.data.get('type', '') == 'monitor_observation'
@@ -2205,17 +2260,14 @@ service cloud.firestore {
 
       allow read: if isMember(clubId) && (
            resource.data.member_id == request.auth.uid
-        || resource.data.current_assignee_id == request.auth.uid
-        || isAdmin(clubId)
-        || isEncadrantForClub(clubId)
+        || canReadFullFormation(clubId)
       );
 
       // Clients never create directly — Cloud Functions only (Admin SDK).
-      // Admins/encadrants may create manual_reminder tasks via the cockpit.
+      // Full LIFRAS validators may create manual_reminder tasks via the cockpit.
       // Mobile members may create their own historical_validation task so the
       // pending reprise remains visible in their inbox/QR flow.
-      allow create: if isAdmin(clubId)
-        || isEncadrantForClub(clubId)
+      allow create: if canValidateLifras(clubId)
         || (
           isMember(clubId)
           && request.resource.data.type == 'historical_validation'
@@ -2227,9 +2279,9 @@ service cloud.firestore {
         );
 
       allow update: if isMember(clubId) && (
-           resource.data.current_assignee_id == request.auth.uid
-        || isAdmin(clubId)
-        || isEncadrantForClub(clubId)
+           (resource.data.member_id == request.auth.uid
+            && resource.data.current_assignee_id == request.auth.uid)
+        || canValidateLifras(clubId)
       ) && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly([
               'status',
@@ -2272,9 +2324,7 @@ service cloud.firestore {
     match /clubs/{clubId}/exercise_claims/{claimId} {
       allow read: if isMember(clubId) && (
            resource.data.member_id == request.auth.uid
-        || resource.data.monitor_id == request.auth.uid
-        || isAdmin(clubId)
-        || isEncadrantForClub(clubId)
+        || canReadFullFormation(clubId)
       );
 
       allow create: if isMember(clubId)
@@ -2319,9 +2369,7 @@ service cloud.firestore {
             && request.resource.data.decision == resource.data.decision
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'updated_at']))
-        || resource.data.monitor_id == request.auth.uid
-        || isAdmin(clubId)
-        || isEncadrantForClub(clubId)
+        || canValidateLifras(clubId)
         ))
       );
 
@@ -2329,8 +2377,8 @@ service cloud.firestore {
     }
 
     // --- student_logbook_entries -------------------------------------------
-    // Personal dive log. Member owns their entries. Admins/encadrants can
-    // read for support purposes; buddies do NOT have implicit read access
+    // Personal dive log. Member owns their entries. Full LIFRAS validators
+    // can read for formation support; buddies do NOT have implicit read access
     // (a future buddy_confirmation flow grants per-entry read on request).
     // WP-26 MS-A — surveillance MIL : lecture admin (écran d'approbation à
     // venir), écriture par les Cloud Functions uniquement (Admin SDK).
@@ -2360,8 +2408,7 @@ service cloud.firestore {
     match /clubs/{clubId}/student_logbook_entries/{entryId} {
       allow read: if isMember(clubId) && (
            resource.data.member_id == request.auth.uid
-        || isAdmin(clubId)
-        || isEncadrantForClub(clubId)
+        || canReadFullFormation(clubId)
       );
 
       allow create: if isMember(clubId)

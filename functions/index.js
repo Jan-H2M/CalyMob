@@ -240,6 +240,11 @@ exports.onFormationGoalsWriteSnapshot = snapshotFns.onFormationGoalsWriteSnapsho
 exports.onMemberFormationFieldsWriteSnapshot = snapshotFns.onMemberFormationFieldsWriteSnapshot;
 exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
 
+// MOB-033 — pool-safe instructor overview. The callable derives a minimal
+// DTO from existing full snapshots, so rollout never depends on a backfill.
+const { getPoolFormationOverviewV1 } = require('./src/progression/getPoolFormationOverview');
+exports.getPoolFormationOverviewV1 = getPoolFormationOverviewV1;
+
 // WP-11 — notifie le chef d'école quand un élève change son brevet visé (D12).
 const { onTargetLevelChanged } = require('./src/progression/onTargetLevelChanged');
 exports.onTargetLevelChanged = onTargetLevelChanged;

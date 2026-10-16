@@ -5,6 +5,46 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('MemberProfile', () {
+    test('maps canonical app role without writing it back from the client',
+        () async {
+      final firestore = FakeFirebaseFirestore();
+      final docRef = firestore.collection('clubs/club1/members').doc('admin');
+      await docRef.set({
+        'prenom': 'Jan',
+        'nom': 'Admin',
+        'email': 'admin@example.com',
+        'app_role': 'admin',
+      });
+
+      final profile = MemberProfile.fromFirestore(await docRef.get());
+
+      expect(profile.appRole, 'admin');
+      expect(profile.copyWith().appRole, 'admin');
+      expect(profile.toFirestore(), isNot(contains('app_role')));
+    });
+
+    test('maps the current formation target from full and directory profiles',
+        () async {
+      final firestore = FakeFirebaseFirestore();
+      final docRef = firestore.collection('clubs/club1/members').doc('student');
+      await docRef.set({
+        'target_formation_level': '3*',
+        'formation_active': true,
+      });
+
+      final full = MemberProfile.fromFirestore(await docRef.get());
+      final directory = MemberProfile.fromDirectoryData('student', const {
+        'target_formation_level': '3*',
+        'formation_active': true,
+      });
+
+      expect(full.targetFormationLevel, '3*');
+      expect(directory.targetFormationLevel, '3*');
+      expect(full.formationActive, isTrue);
+      expect(directory.formationActive, isTrue);
+      expect(full.copyWith().targetFormationLevel, '3*');
+    });
+
     test('birthday sharing defaults to true and honours opt-out', () async {
       final firestore = FakeFirebaseFirestore();
       final legacyRef =
@@ -152,7 +192,8 @@ void main() {
       expect(profile.assuranceStatus, ValidationStatus.valid);
     });
 
-    test('requires the manual insurance date only for another federation', () async {
+    test('requires the manual insurance date only for another federation',
+        () async {
       final firestore = FakeFirebaseFirestore();
       final externalRef =
           firestore.collection('clubs/club1/members').doc('external');

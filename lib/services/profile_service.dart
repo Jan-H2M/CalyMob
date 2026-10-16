@@ -579,7 +579,10 @@ class ProfileService {
 
   /// Récupérer les profils limités de l'annuaire (pour "Who's Who").
   /// Never use private `members` documents for a club-wide list.
-  Future<List<MemberProfile>> getAllProfiles(String clubId) async {
+  Future<List<MemberProfile>> getAllProfiles(
+    String clubId, {
+    bool throwOnError = false,
+  }) async {
     try {
       final snapshot =
           await _firestore.collection('clubs/$clubId/member_directory').get();
@@ -599,6 +602,7 @@ class ProfileService {
       return profiles;
     } catch (e) {
       debugPrint('❌ Erreur chargement profils: $e');
+      if (throwOnError) rethrow;
       return [];
     }
   }

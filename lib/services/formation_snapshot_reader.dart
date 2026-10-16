@@ -12,7 +12,15 @@ class FormationSnapshotReader {
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Snapshot d'un membre (null si pas encore matérialisé).
-  Future<FormationSnapshotDoc?> getSnapshot(String clubId, String memberId) async {
+  ///
+  /// Les écrans qui doivent distinguer une absence réelle d'un refus/échec de
+  /// lecture activent [throwOnError] afin de présenter un état d'erreur
+  /// explicite au lieu d'assimiler l'échec à une fiche vide.
+  Future<FormationSnapshotDoc?> getSnapshot(
+    String clubId,
+    String memberId, {
+    bool throwOnError = false,
+  }) async {
     try {
       final doc = await _firestore
           .collection('clubs')
@@ -27,6 +35,7 @@ class FormationSnapshotReader {
       return FormationSnapshotDoc.fromMap(memberId, data);
     } catch (e) {
       debugPrint('⚠️ Lecture formation_snapshot impossible ($memberId): $e');
+      if (throwOnError) rethrow;
       return null;
     }
   }
@@ -49,7 +58,7 @@ class FormationSnapshotReader {
       return result;
     } catch (e) {
       debugPrint('⚠️ collectionGroup formation_snapshot impossible: $e');
-      return [];
+      rethrow;
     }
   }
 }

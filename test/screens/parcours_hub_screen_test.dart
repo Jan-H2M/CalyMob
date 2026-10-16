@@ -26,6 +26,19 @@ void main() {
     expect(badgedEntries, equals(['actions']));
   });
 
+  test(
+    'formation overview is a direct searchable entry without action badge',
+    () {
+      expect(parcoursFormationOverviewEntry.key, 'formation-overview');
+      expect(parcoursFormationOverviewEntry.title, 'Avancement des élèves');
+      expect(
+        parcoursFormationOverviewEntry.subtitle,
+        contains('Rechercher un membre'),
+      );
+      expect(parcoursFormationOverviewEntry.badge, isFalse);
+    },
+  );
+
   test('action badge excludes buddies but keeps event and manual tasks', () {
     expect(
       parcoursOpenActionCount([
