@@ -8,7 +8,7 @@ const { memberDisplayName } = require('../utils/memberName');
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
 const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission']);
-const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview']);
+const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
 const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -21,6 +21,15 @@ const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value
 const active = (member) => member?.member_status === 'active' && member.has_app_access !== false && (!member.app_status || member.app_status === 'active') && member.isActive !== false && member.actif !== false;
 const ready = (unit) => ['returned_embroidered', 'not_required_reviewed'].includes(unit.finish) && unit.saleStatus === 'sale_ready';
 const paid = (order) => order?.payment?.status === 'paid' && !order.payment.lastMatchError && order.paymentAdjustment?.type !== 'additional_payment_due' && order.additional_payment_due !== true && ['paid', 'preparing', 'ready', 'delivered'].includes(order.status);
+// Keep the existing Calypso line customization semantics, including historic
+// snapshot fallback. A plain stock base can still require customer embroidery.
+function lineNeedsProduction(line) {
+  const record = value => value && typeof value === 'object' ? value : null;
+  const custom = record(line?.customizations) ?? record(line?.productSnapshot?.customizations);
+  if (!custom) return false;
+  const filled = value => typeof value === 'string' && value.trim().length > 0;
+  return custom.clubLogo?.enabled === true || filled(custom.name?.text) || filled(custom.certification?.value);
+}
 const revision = (snap) => snap.updateTime ? `${snap.updateTime.seconds}:${snap.updateTime.nanoseconds}` : hash(snap.data());
 const asUnit = (snap) => ({ ...snap.data(), id: snap.id, revision: revision(snap) });
 const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','requiresEmbroidery','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)]]));
@@ -30,8 +39,10 @@ function validate(input, actor) {
   if (!id(actor?.uid)) fail('unauthenticated', 'Connectez-vous à CalyMob.');
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
+  if (input.cursor !== undefined && (!id(input.cursor) || input.action !== 'missions')) fail('invalid-argument', 'Page de missions invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
   if (!MUTATIONS.has(input.action)) return;
+  if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
   if (!id(input.idempotencyKey) || input.idempotencyKey.length < 16) fail('invalid-argument', 'Identifiant de confirmation obligatoire.');
   if (input.action !== 'revoke') {
     if (!Array.isArray(input.units) || !input.units.length || input.units.length > MAX_UNITS || input.units.some(u => !u || Object.keys(u).some(k => !['id', 'revision'].includes(k)) || !id(u.id) || typeof u.revision !== 'string' || !u.revision || u.revision.length > 150) || unique(input.units.map(u => u.id)).length !== input.units.length) fail('invalid-argument', 'Sélectionnez de 1 à 50 pièces différentes.');
@@ -65,22 +76,43 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const author = authorCache.get(mission.createdBy);
       return active(author) && hasBoutiqueResponsibility(author);
     }
-    async function listMissions() {
-      const query = manager ? club.collection('boutique_pickup_missions').where('status', 'in', ['transit', 'received']).limit(100) : club.collection('boutique_pickup_missions').where('assigneeIds', 'array-contains', actor.uid).limit(100);
-      const snap = await tx.get(query), missions = [];
-      for (const doc of snap.docs) if (await missionAuthorized(doc.data(), false, manager)) missions.push({ ...doc.data(), id: doc.id });
-      return { missions, hasMore: snap.size === 100 };
+    async function listMissions(onlyOne = false) {
+      const base = manager
+        ? club.collection('boutique_pickup_missions').where('status', 'in', ['transit', 'received']).orderBy('createdAt', 'desc')
+        : club.collection('boutique_pickup_missions').where('assigneeIds', 'array-contains', actor.uid).where('status', 'in', ['transit', 'received']).where('expiresAt', '>', now).orderBy('expiresAt');
+      let cursor = null;
+      if (input.cursor) {
+        cursor = await tx.get(club.collection('boutique_pickup_missions').doc(input.cursor));
+        if (!cursor.exists) fail('invalid-argument', 'La liste a changé. Actualisez les missions.');
+      }
+      const missions = [], target = onlyOne ? 1 : 100;
+      // Historic/expired jobs are excluded by the query. Also scan past jobs
+      // whose delegating RB has since lost the role: they cannot hide a live job.
+      while (true) {
+        const snap = await tx.get((cursor ? base.startAfter(cursor) : base).limit(100));
+        if (snap.empty) return { missions, hasMore: false, nextCursor: null };
+        for (let i = 0; i < snap.docs.length; i++) {
+          const doc = snap.docs[i]; cursor = doc;
+          if (await missionAuthorized(doc.data(), false, manager)) missions.push({ ...doc.data(), id: doc.id });
+          if (missions.length >= target) {
+            const hasMore = i < snap.docs.length - 1 || snap.size === 100;
+            return { missions, hasMore, nextCursor: hasMore ? cursor.id : null };
+          }
+        }
+        if (snap.size < 100) return { missions, hasMore: false, nextCursor: null };
+      }
     }
     const missionRef = input.missionId ? club.collection('boutique_pickup_missions').doc(input.missionId) : null;
     const missionSnap = missionRef ? await tx.get(missionRef) : null;
     const mission = missionSnap?.exists ? { ...missionSnap.data(), id: missionSnap.id } : null;
     if (input.action === 'access') {
-      const { missions } = await listMissions();
+      if (manager) return { enabled: true, canManage: true, hasAssignments: false };
+      const { missions } = await listMissions(true);
       return { enabled: true, canManage: manager, hasAssignments: missions.length > 0 };
     }
     if (input.action === 'missions') {
       const result = await listMissions();
-      return { missions: result.missions.map(m => ({ id: m.id, destination: m.destination, sourceLocation: m.sourceLocation, pickupWindow: m.pickupWindow, status: m.status, expiresAt: new Date(ms(m.expiresAt)).toISOString(), total: m.unitIds.length, arrived: m.arrivedUnitIds.length, delivered: m.deliveredUnitIds.length, assigneeNames: m.assigneeNames, allowPartial: m.allowPartial, pickupPoint: m.pickupPoint })), hasMore: result.hasMore };
+      return { missions: result.missions.map(m => ({ id: m.id, destination: m.destination, sourceLocation: m.sourceLocation, pickupWindow: m.pickupWindow, status: m.status, expiresAt: new Date(ms(m.expiresAt)).toISOString(), total: m.unitIds.length, arrived: m.arrivedUnitIds.length, delivered: m.deliveredUnitIds.length, assigneeNames: m.assigneeNames, allowPartial: m.allowPartial, pickupPoint: m.pickupPoint })), hasMore: result.hasMore, nextCursor: result.nextCursor };
     }
     if (['mission', 'arrive', 'deliver', 'revoke'].includes(input.action) && !mission) fail('not-found', 'Mission introuvable.');
     if (input.action === 'lookup') {
@@ -154,21 +186,27 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
       if (!line || !(line.physicalStockUnitIds || []).includes(unit.id) || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation de cette pièce a changé.');
     }
+    function needsProduction(unit) {
+      const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
+      return unit.requiresEmbroidery !== false || lineNeedsProduction(line);
+    }
+    const readyForReservation = unit => ready(unit) && (!needsProduction(unit) || unit.finish === 'returned_embroidered');
     function availability(order, location) {
       const outstanding = order.items.filter(i => i.fulfillmentStatus !== 'delivered');
       const physical = outstanding.filter(i => i.deliveryMode !== 'digital');
-      const valid = physical.length > 0 && physical.every(i => Number.isInteger(i.qty) && i.qty > 0 && Array.isArray(i.physicalStockUnitIds) && unique(i.physicalStockUnitIds).length === i.qty && i.deliveryMode === 'pool_pickup');
+      const valid = physical.length > 0 && physical.every(i => Number.isInteger(i.qty) && i.qty > 0 && Array.isArray(i.physicalStockUnitIds) && unique(i.physicalStockUnitIds).length === i.qty && i.deliveryMode === 'pool_pickup' && i.physicalStockUnitIds.every(k => { const u = unitMap.get(k); return u && u.customerOrderId === order.id && u.customerLineId === i.lineId && u.destination === 'customer_reserved'; }));
       const pending = physical.flatMap(i => (i.physicalStockUnitIds || []).map(k => unitMap.get(k)).filter(u => u?.saleStatus !== 'sold'));
-      const eligible = new Set(physical.filter(i => i.deliveryMode === 'pool_pickup').flatMap(i => i.physicalStockUnitIds || []));
-      const available = pending.filter(u => u && eligible.has(u.id) && ready(u) && u.location === location && !u.transportMissionId);
+      const eligible = new Set(physical.filter(i => i.deliveryMode === 'pool_pickup').flatMap(i => (i.physicalStockUnitIds || []).filter(k => { const u = unitMap.get(k); return u && u.customerOrderId === order.id && u.customerLineId === i.lineId && u.destination === 'customer_reserved'; })));
+      const available = pending.filter(u => u && eligible.has(u.id) && readyForReservation(u) && u.location === location && !u.transportMissionId);
       const handoutEligible = physical.every(i => i.deliveryMode === 'pool_pickup');
-      return { handoutEligible, pending, all: valid && pending.length > 0 && pending.every(u => available.includes(u)), available, remaining: pending.length - available.length };
+      const missing = physical.reduce((sum, line) => sum + Math.max(0, (Number.isInteger(line.qty) ? line.qty : 0) - unique(line.physicalStockUnitIds || []).length), 0);
+      return { handoutEligible, pending, pendingTotal: pending.length + missing, all: valid && pending.length > 0 && pending.every(u => available.includes(u)), available, remaining: pending.length + missing - available.length };
     }
     function packetsForMission() {
       const arrived = selected.filter(u => mission.arrivedUnitIds.includes(u.id) && !mission.deliveredUnitIds.includes(u.id) && u.saleStatus !== 'sold');
       return [...orderMap.values()].map(order => {
         const pieces = arrived.filter(u => u.customerOrderId === order.id), state = availability(order, mission.destination);
-        return { orderId: order.id, orderNumber: order.orderNumber || '', buyerId: order.buyer?.userId || '', buyerName: order.buyer?.displayName || pieces[0]?.customerName || 'Membre', units: pieces.map(publicUnit), ready: pieces.length > 0 && paid(order) && pieces.every(u => ready(u) && u.location === mission.destination && u.pickupMissionId === mission.id) && state.handoutEligible && (mission.allowPartial === true || (state.all && state.pending.every(u => pieces.some(p => p.id === u.id)))), partial: !state.all, remaining: state.remaining, blockedReason: !paid(order) ? 'Paiement à vérifier dans Calypso.' : !state.handoutEligible ? 'Mode de livraison à vérifier dans Calypso.' : !state.all && !mission.allowPartial ? 'Commande incomplète : remise partielle non autorisée.' : 'Vérifier la présence et la préparation des pièces.' };
+        return { orderId: order.id, orderNumber: order.orderNumber || '', buyerId: order.buyer?.userId || '', buyerName: order.buyer?.displayName || pieces[0]?.customerName || 'Membre', units: pieces.map(publicUnit), ready: pieces.length > 0 && paid(order) && pieces.every(u => readyForReservation(u) && u.location === mission.destination && u.pickupMissionId === mission.id) && state.handoutEligible && (mission.allowPartial === true || (state.all && state.pending.every(u => pieces.some(p => p.id === u.id)))), partial: !state.all || pieces.length < state.pendingTotal, remaining: Math.max(0, state.pendingTotal - pieces.length), blockedReason: !paid(order) ? 'Paiement à vérifier dans Calypso.' : !state.handoutEligible ? 'Mode de livraison à vérifier dans Calypso.' : !state.all && !mission.allowPartial ? 'Commande incomplète : remise partielle non autorisée.' : state.all && pieces.length < state.pendingTotal && !mission.allowPartial ? 'Commande répartie entre plusieurs missions : demander au responsable de regrouper les pièces.' : 'Vérifier la présence et la préparation des pièces.' };
       }).filter(p => p.units.length > 0);
     }
     if (input.action === 'mission') return { mission: { id: mission.id, status: mission.status, destination: mission.destination, sourceLocation: mission.sourceLocation, pickupWindow: mission.pickupWindow, pickupPoint: mission.pickupPoint, allowPartial: mission.allowPartial, assigneeNames: mission.assigneeNames, expiresAt: new Date(ms(mission.expiresAt)).toISOString(), total: mission.unitIds.length, arrived: mission.arrivedUnitIds.length, delivered: mission.deliveredUnitIds.length }, units: selected.map(publicUnit), packets: packetsForMission() };
@@ -182,11 +220,11 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (input.action === 'move') for (const unit of selected) {
       if (unit.location === input.destination) fail('failed-precondition', 'Choisissez un autre emplacement.');
       if (unit.transportMissionId) fail('failed-precondition', 'Réceptionnez ou retirez d’abord la mission de transport.');
-      updateUnit(unit, { location: input.destination, pickupMissionId: null, ...(['returned_embroidered','not_required_reviewed'].includes(unit.finish) ? { saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: input.destination })]);
+      updateUnit(unit, { location: input.destination, pickupMissionId: null, ...(['returned_embroidered','not_required_reviewed'].includes(unit.finish) ? { saleStatus: unit.destination === 'demo' || (needsProduction(unit) && unit.finish !== 'returned_embroidered') ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: input.destination })]);
     }
     if (input.action === 'prepareJim' || input.action === 'confirmJim') for (const unit of selected) {
       const required = input.action === 'prepareJim' ? 'unembroidered' : 'to_jim', finish = input.action === 'prepareJim' ? 'to_jim' : 'at_jim';
-      if (unit.finish !== required || unit.requiresEmbroidery === false || unit.transportMissionId) fail('failed-precondition', 'Une pièce n’est pas à la bonne étape pour Jim.');
+      if (unit.finish !== required || !needsProduction(unit) || unit.transportMissionId) fail('failed-precondition', 'Une pièce n’est pas à la bonne étape pour Jim.');
       const place = input.action === 'confirmJim' ? input.destination : unit.location;
       if (place === unit.location && input.action === 'confirmJim' && input.confirmed !== true) fail('failed-precondition', 'Confirmez explicitement que les pièces sont déjà chez Jim.');
       updateUnit(unit, { finish, location: place }, [...(place !== unit.location ? [event('moved', { from: unit.location, to: place })] : []), event('finish_changed', { from: unit.finish, to: finish })]);
@@ -196,7 +234,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       updateUnit(unit, { workshopReadyAt: now, workshopReadyBy: actor.uid }, [event('workshop_ready', { to: unit.location })]);
     }
     if (input.action === 'reviewPlain') for (const unit of selected) {
-      if (unit.finish !== 'unembroidered' || unit.requiresEmbroidery !== false || unit.transportMissionId) fail('failed-precondition', 'Cette pièce nécessite une autre étape de préparation.');
+      if (unit.finish !== 'unembroidered' || needsProduction(unit) || unit.transportMissionId) fail('failed-precondition', 'Cette pièce nécessite une autre étape de préparation.');
       updateUnit(unit, { finish: 'not_required_reviewed', saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready' }, [event('finish_changed', { from: unit.finish, to: 'not_required_reviewed' })]);
     }
     if (input.action === 'dispatch') {
@@ -208,7 +246,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (input.pickupPoint === true && !text(input.pickupWindow, 160)) fail('invalid-argument', 'Indiquez un moment d’enlèvement clair pour les acheteurs.');
       nextMission = { id: requestId, status: onSite ? 'received' : 'transit', unitIds: wanted, arrivedUnitIds: onSite ? wanted : [], deliveredUnitIds: [], assigneeIds: input.assigneeIds, assigneeNames: assignees.map(a => a.name), createdBy: actor.uid, createdAt: now, updatedAt: now, expiresAt: admin.firestore.Timestamp.fromMillis(time + 7 * 86400000), sourceLocation: input.sourceLocation, destination: input.destination, pickupWindow: text(input.pickupWindow, 160), pickupPoint: input.pickupPoint === true, allowPartial: input.allowPartial === true };
       for (const unit of selected) {
-        if (unit.transportMissionId || (!ready(unit) && !(unit.finish === 'at_jim' && unit.workshopReadyAt) && !(unit.destination === 'demo' && ['returned_embroidered','not_required_reviewed'].includes(unit.finish)))) fail('failed-precondition', 'Une pièce n’est pas terminée ou se trouve déjà en transport.');
+        if (unit.transportMissionId || (!readyForReservation(unit) && !(unit.finish === 'at_jim' && unit.workshopReadyAt) && !(unit.destination === 'demo' && ['returned_embroidered','not_required_reviewed'].includes(unit.finish)))) fail('failed-precondition', 'Une pièce n’est pas terminée ou se trouve déjà en transport.');
         const location = onSite ? input.destination : `En transport → ${input.destination}`;
         const finished = onSite && unit.finish === 'at_jim' && unit.workshopReadyAt;
         updateUnit(unit, { location, ...(onSite ? {} : { saleStatus: 'not_ready' }), transportMissionId: onSite ? null : nextMission.id, pickupMissionId: onSite ? nextMission.id : null, ...(finished ? { finish: 'returned_embroidered', saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready' } : {}) }, [...(unit.location !== location ? [event('moved', { from: unit.location, to: location })] : []), event(onSite ? 'arrival_confirmed' : 'transport_assigned', { to: input.destination }), ...(finished ? [event('finish_changed', { from: unit.finish, to: 'returned_embroidered' })] : [])]);
@@ -218,7 +256,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       for (const unit of selected) {
         if (mission.arrivedUnitIds.includes(unit.id) || unit.transportMissionId !== mission.id || unit.location !== `En transport → ${mission.destination}`) fail('failed-precondition', 'Une pièce n’est plus dans ce transport.');
         const finished = unit.finish === 'at_jim' && Boolean(unit.workshopReadyAt);
-        if (!finished && !['returned_embroidered','not_required_reviewed'].includes(unit.finish)) fail('failed-precondition', 'Une pièce n’est pas contrôlée pour la réception.');
+        if (!finished && (!['returned_embroidered','not_required_reviewed'].includes(unit.finish) || (needsProduction(unit) && unit.finish !== 'returned_embroidered'))) fail('failed-precondition', 'Une pièce n’est pas contrôlée pour la réception.');
         updateUnit(unit, { location: mission.destination, saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready', transportMissionId: null, pickupMissionId: mission.id, ...(finished ? { finish: 'returned_embroidered', saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: mission.destination }), event('arrival_confirmed', { to: mission.destination }), ...(finished ? [event('finish_changed', { from: unit.finish, to: 'returned_embroidered' })] : [])]);
       }
       nextMission.arrivedUnitIds = unique([...mission.arrivedUnitIds, ...wanted]);
@@ -230,7 +268,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (!recipient.exists) fail('not-found', 'Membre destinataire introuvable dans ce club.');
       for (const unit of selected) {
         const order = orderMap.get(unit.customerOrderId), state = order ? availability(order, mission.destination) : null;
-        if (!order || !paid(order) || order.buyer?.userId !== input.recipientMemberId || !ready(unit) || unit.location !== mission.destination || unit.pickupMissionId !== mission.id || !mission.arrivedUnitIds.includes(unit.id) || !state.handoutEligible || (!mission.allowPartial && (!state.all || state.pending.some(u => !wanted.includes(u.id))))) fail('failed-precondition', 'Vérifiez le destinataire, le paiement et la disponibilité de ces pièces.');
+        if (!order || !paid(order) || order.buyer?.userId !== input.recipientMemberId || !readyForReservation(unit) || unit.location !== mission.destination || unit.pickupMissionId !== mission.id || !mission.arrivedUnitIds.includes(unit.id) || !state.handoutEligible || (!mission.allowPartial && (!state.all || state.pending.some(u => !wanted.includes(u.id))))) fail('failed-precondition', 'Vérifiez le destinataire, le paiement et la disponibilité de ces pièces.');
         const proof = { type: 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, operationId: requestId };
         updateUnit(unit, { saleStatus: 'sold', handover: proof }, [event('sale_changed', { from: unit.saleStatus, to: 'sold' }), event('handover_confirmed', { to: input.recipientMemberId, note: 'QR du membre vérifié et remise physique confirmée.' })]);
       }
@@ -243,12 +281,12 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const items = order.items.map(line => {
         const ids = line.physicalStockUnitIds || [];
         if (!ids.some(k => stagedUnits.has(k))) return line;
-        if (!Number.isInteger(line.qty) || ids.length !== line.qty || unique(ids).length !== line.qty) return line;
+        if (!Number.isInteger(line.qty) || ids.length > line.qty || unique(ids).length !== ids.length) fail('failed-precondition', 'Quantité physique client incohérente.');
         const peers = ids.map(k => unitMap.get(k));
         if (peers.some(u => !u || u.customerOrderId !== order.id || u.customerLineId !== line.lineId)) fail('failed-precondition', 'La réservation client est incohérente.');
         const delivered = peers.filter(u => u.saleStatus === 'sold');
-        const allReady = peers.every(u => ready(u) || u.saleStatus === 'sold');
-        return { ...line, fulfillmentStatus: delivered.length === line.qty ? 'delivered' : allReady ? 'ready' : 'preparing', productionStatus: allReady ? (peers.some(u => u.requiresEmbroidery !== false) ? 'done' : 'not_required') : line.productionStatus || 'in_progress', ...(input.action === 'deliver' ? { deliveredQty: delivered.length, deliveredPhysicalUnitIds: delivered.map(u => u.id), handoverProofType: 'member_qr', ...(delivered.length === line.qty ? { deliveredAt: now, signatureStatus: 'qr_confirmed' } : {}) } : {}) };
+        const allReady = ids.length === line.qty && peers.every(u => readyForReservation(u) || u.saleStatus === 'sold');
+        return { ...line, fulfillmentStatus: delivered.length === line.qty ? 'delivered' : allReady ? 'ready' : 'preparing', productionStatus: allReady ? ((lineNeedsProduction(line) || peers.some(u => u.requiresEmbroidery !== false)) ? 'done' : 'not_required') : peers.some(u => u.finish === 'at_jim') ? 'in_progress' : line.productionStatus || 'queued', ...(delivered.length > 0 && delivered.some(u => u.handover?.type === 'member_qr') ? { deliveredQty: delivered.length, deliveredPhysicalUnitIds: delivered.map(u => u.id), handoverProofType: 'member_qr', ...(delivered.length === line.qty ? { deliveredAt: now, signatureStatus: 'qr_confirmed' } : {}) } : {}) };
       });
       if (JSON.stringify(items) !== JSON.stringify(order.items)) {
         const next = { ...order, items, status: items.every(i => i.fulfillmentStatus === 'delivered') ? 'delivered' : items.every(i => ['ready','delivered'].includes(i.fulfillmentStatus)) ? 'ready' : 'preparing', updatedAt: now };
@@ -258,12 +296,14 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     const notifications = [], held = [];
     if (nextMission?.pickupPoint && (input.action === 'arrive' || (input.action === 'dispatch' && nextMission.status === 'received'))) for (const order of orderMap.values()) {
       const state = availability(order, nextMission.destination);
-      if (!paid(order) || !state.handoutEligible || !state.available.length || (!state.all && !nextMission.allowPartial) || !id(order.buyer?.userId)) { held.push({ orderId: order.id, reason: !paid(order) ? 'payment' : 'incomplete' }); continue; }
-      const notificationId = hash(['boutique-ready-v1', input.clubId, order.id, order.buyer.userId, nextMission.destination, state.available.map(u => u.id).sort()]);
+      const available = state.available.filter(u => u.pickupMissionId === nextMission.id);
+      const complete = state.all && available.length === state.pendingTotal;
+      if (!paid(order) || !state.handoutEligible || !available.length || (!complete && !nextMission.allowPartial) || !id(order.buyer?.userId)) { held.push({ orderId: order.id, reason: !paid(order) ? 'payment' : state.all && available.length < state.pendingTotal ? 'regroup' : 'incomplete' }); continue; }
+      const notificationId = hash(['boutique-ready-v1', input.clubId, order.id, order.buyer.userId, nextMission.destination, available.map(u => u.id).sort()]);
       const historyRef = club.collection('members').doc(order.buyer.userId).collection('notifications').doc(`boutique_${notificationId}`);
       const existing = await tx.get(historyRef);
       if (existing.exists) continue;
-      notifications.push({ notificationId, historyRef, order, unitIds: state.available.map(u => u.id), partial: !state.all, remaining: state.remaining });
+      notifications.push({ notificationId, historyRef, order, unitIds: available.map(u => u.id), partial: !complete, remaining: Math.max(0, state.pendingTotal - available.length) });
     }
     const result = { applied: input.preview !== true, action: input.action, count: wanted.length, missionId: nextMission?.id || null, notificationCount: notifications.length, heldOrders: held, recipientName: input.action === 'deliver' ? orderMap.values().next().value?.buyer?.displayName || 'Membre' : null, destination: nextMission?.destination || input.destination || input.sourceLocation, expiresAt: nextMission ? new Date(ms(nextMission.expiresAt)).toISOString() : null };
     if (input.preview === true) return result;
@@ -272,7 +312,10 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (nextMission) { const { id: missionId, ...data } = nextMission; tx.set(club.collection('boutique_pickup_missions').doc(missionId), { ...data, updatedAt: now }); }
     for (const entry of notifications) {
       const title = entry.partial ? 'Boutique · une partie de votre commande est prête' : 'Boutique · votre commande est prête';
-      const body = `${entry.unitIds.length} article(s) de ${entry.order.orderNumber || 'votre commande'} à retirer : ${nextMission.destination}. ${nextMission.pickupWindow}${entry.partial ? ` · ${entry.remaining} pièce(s) encore en attente.` : ''}`;
+      const labels = new Map();
+      for (const unitId of entry.unitIds) { const u = unitMap.get(unitId), label = `${u.productName || 'Article'}${u.variantLabel ? ` · ${u.variantLabel}` : ''}`.slice(0, 120); labels.set(label, (labels.get(label) || 0) + 1); }
+      const articles = [...labels].slice(0, 3).map(([label, count]) => `${label} ×${count}`).join(', ') + (labels.size > 3 ? ', …' : '');
+      const body = `${entry.unitIds.length} article(s) (${articles}) de ${entry.order.orderNumber || 'votre commande'} à retirer : ${nextMission.destination}. ${nextMission.pickupWindow}${entry.partial ? ` · ${entry.remaining} pièce(s) encore en attente.` : ''}`;
       const data = { type: 'boutique_pickup_ready', clubId: input.clubId, recipientId: entry.order.buyer.userId, messageId: entry.notificationId, orderId: entry.order.id, missionId: nextMission.id };
       tx.create(entry.historyRef, { title, body, type: data.type, category: 'Boutique', data, created_at: now, read: false, read_at: null });
       tx.create(club.collection('boutique_pickup_notifications').doc(entry.notificationId), { status: 'pending', recipientId: entry.order.buyer.userId, orderId: entry.order.id, unitIds: entry.unitIds, missionId: nextMission.id, title, body, data, createdAt: now });
@@ -286,6 +329,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
 
 exports.executePhysicalOperation = executePhysicalOperation;
 exports.paidForPickup = paid;
+exports.lineNeedsProduction = lineNeedsProduction;
 exports.boutiquePhysicalOperations = onCall({ region: REGION, memory: '256MiB', timeoutSeconds: 60, maxInstances: 10 }, async request => {
   const actor = { uid: request.auth?.uid, ...(request.auth?.token && Object.hasOwn(request.auth.token, 'clubId') ? { clubClaim: request.auth.token.clubId } : {}) };
   return executePhysicalOperation(admin.firestore(), actor, request.data);

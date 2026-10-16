@@ -2,7 +2,7 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { REGION } = require('./shared');
-const { paidForPickup } = require('./physicalOperations');
+const { paidForPickup, lineNeedsProduction } = require('./physicalOperations');
 
 // The in-app notification is created atomically with arrival. Claim each push
 // once: an ambiguous network response must never cause repeated buyer messages.
@@ -17,7 +17,7 @@ async function sendPickupNotification(db, clubId, notificationId, send = message
     const m = member.data() || {};
     const [order, mission, ...units] = await Promise.all([tx.get(club.collection('orders').doc(data.orderId)), tx.get(club.collection('boutique_pickup_missions').doc(data.missionId)), ...data.unitIds.map(id => tx.get(club.collection('boutique_physical_stock_units').doc(id)))]);
     const task = mission.data();
-    const current = paidForPickup(order.data()) && order.data().buyer?.userId === data.recipientId && task && !['revoked','closed'].includes(task.status) && task.expiresAt.toMillis() > Date.now() && units.length > 0 && units.every(snap => { const u = snap.data(); return u && u.customerOrderId === data.orderId && u.location === task.destination && u.pickupMissionId === data.missionId && !u.transportMissionId && u.saleStatus === 'sale_ready' && ['returned_embroidered','not_required_reviewed'].includes(u.finish); });
+    const current = paidForPickup(order.data()) && order.data().buyer?.userId === data.recipientId && task && !['revoked','closed'].includes(task.status) && task.expiresAt.toMillis() > Date.now() && units.length > 0 && units.every(snap => { const u = snap.data(), line = order.data()?.items?.find(i => i.lineId === u?.customerLineId && i.physicalStockUnitIds?.includes(snap.id)); return u && line && (!lineNeedsProduction(line) || u.finish === 'returned_embroidered') && u.customerOrderId === data.orderId && u.location === task.destination && u.pickupMissionId === data.missionId && !u.transportMissionId && u.saleStatus === 'sale_ready' && ['returned_embroidered','not_required_reviewed'].includes(u.finish); });
     const enabled = flags.data()?.boutiqueQrEnabled === true && (flags.data()?.boutiqueEnabled === true || flags.data()?.boutiqueMobileEnabled === true) && flags.data()?.boutiqueAccess !== 'masque';
     const tokens = [...new Set((Array.isArray(m.fcm_tokens) ? m.fcm_tokens : [m.fcm_token]).filter(t => typeof t === 'string' && t.length > 0))].slice(0, 500);
     const disabled = !enabled || m.member_status !== 'active' || m.notifications_enabled === false || m.notification_preferences?.boutique === false;

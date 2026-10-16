@@ -75,6 +75,7 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
     try {
       if (_pending == null) {
         final request = {
+          'expectedActorId': BoutiqueAccessScope.maybeOf(context)!.userId,
           'missionId': widget.missionId,
           'units': _scanned.values.map((u) => u.selection).toList(),
           'recipientMemberId': _recipient,
@@ -98,7 +99,7 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
                           onPressed: () => Navigator.pop(c, true),
                           child: const Text('Articles remis'))
                     ]));
-        if (yes != true) return;
+        if (!mounted || yes != true) return;
         _pending = request;
       }
       final result =

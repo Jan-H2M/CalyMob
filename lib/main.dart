@@ -574,6 +574,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           }
           unawaited(navigator.push(boutiqueAccessGuardedRoute(
               clubId: clubId,
+              authBoundUserId: expectedUserId,
               requiredSection: 'commandes',
               builder: (_) => const MesCommandesScreen())));
           break;
