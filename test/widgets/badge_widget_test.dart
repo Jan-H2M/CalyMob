@@ -113,6 +113,12 @@ class MockUnreadCountProvider extends ChangeNotifier
   @override
   Object? get lastRefreshError => null;
   @override
+  int? eventUnreadFor(String operationId) => null;
+  @override
+  int? teamUnreadFor(String channelId) => null;
+  @override
+  int? sessionUnreadFor(String scopeId) => null;
+  @override
   bool hasResolvedAuthorityFor(String clubId, String userId) => false;
   @override
   Future<DateTime?> getEffectiveReadCursor(
@@ -314,13 +320,10 @@ void main() {
       expect(find.text('7'), findsOneWidget);
     });
 
-    testWidgets('piscine badge combines session + team messages',
-        (tester) async {
-      mockProvider.setCounts(
-        total: 8,
-        sessionMessages: 5,
-        teamMessages: 3,
-      );
+    testWidgets('piscine badge combines session + team messages', (
+      tester,
+    ) async {
+      mockProvider.setCounts(total: 8, sessionMessages: 5, teamMessages: 3);
       await tester.pumpWidget(buildApp());
 
       // 5 + 3 = 8
@@ -348,8 +351,9 @@ void main() {
       expect(find.text('5'), findsNothing);
     });
 
-    testWidgets('shows 99+ for overflow in multiple categories',
-        (tester) async {
+    testWidgets('shows 99+ for overflow in multiple categories', (
+      tester,
+    ) async {
       mockProvider.setCounts(
         total: 250,
         eventMessages: 150,
@@ -383,8 +387,11 @@ void main() {
     /// Tests the StreamBuilder pattern used in OperationsListScreen
     /// for per-operation unread counts
     testWidgets('StreamBuilder shows badge from stream data', (tester) async {
-      final controller =
-          Stream<int>.fromIterable([0, 3, 5]).asBroadcastStream();
+      final controller = Stream<int>.fromIterable([
+        0,
+        3,
+        5,
+      ]).asBroadcastStream();
 
       await tester.pumpWidget(
         MaterialApp(

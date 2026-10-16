@@ -10,10 +10,11 @@ import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../services/unread_count_service.dart';
-import '../../services/cursor_unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import 'operation_detail_screen.dart';
+import 'operations_list_filter.dart';
+import 'operations_filter_bar.dart';
 import 'event_search_screen.dart';
 import 'event_type_selector.dart';
 import 'create_event_wizard.dart';
@@ -40,9 +41,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userId = context.read<AuthProvider>().currentUser?.uid;
       context.read<ActivityProvider>().listenToActivities(
-            _clubId,
-            currentUserId: userId,
-          );
+        _clubId,
+        currentUserId: userId,
+      );
     });
   }
 
@@ -205,34 +206,29 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
-          child: Container(
-            height: 50,
-            margin: const EdgeInsets.only(bottom: 10),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _buildFilterChip('all', 'Tout'),
-                const SizedBox(width: 12),
-                _buildFilterChip('plongee', 'Plongées'),
-                const SizedBox(width: 12),
-                _buildFilterChip('piscine', 'Piscine'),
-                const SizedBox(width: 12),
-                _buildFilterChip('sortie', 'Sorties'),
-                // Accès aux activités passées (clôturées) :
-                // - organisateurs/admins : un filtre "Clôturés" dédié pour
-                //   initier les paiements des événements terminés ;
-                // - membres : une bascule "Passés" pour reconsulter une
-                //   activité terminée et ses données de paiement.
-                if (canCreateEvents) ...[
-                  const SizedBox(width: 12),
-                  _buildFilterChip('closed', 'Clôturés'),
-                ] else ...[
-                  const SizedBox(width: 12),
-                  _buildPastToggleChip(activityProvider),
-                ],
-              ],
-            ),
+          child: OperationsFilterBar(
+            selectedFilter: _selectedFilter,
+            canCreateEvents: canCreateEvents,
+            includePast: activityProvider.includePast,
+            onFilterSelected: (value) {
+              // Lazy: subscribe to closed events only when the filter is used.
+              if (value == 'closed') {
+                context.read<ActivityProvider>().listenToClosedActivities(
+                  _clubId,
+                );
+              }
+              setState(() => _selectedFilter = value);
+            },
+            onPastToggled: () {
+              if (!activityProvider.includePast) {
+                // Show every category when looking for an unread past event.
+                setState(() => _selectedFilter = 'all');
+              }
+              context.read<ActivityProvider>().setIncludePast(
+                _clubId,
+                !activityProvider.includePast,
+              );
+            },
           ),
         ),
       ),
@@ -242,77 +238,6 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
           child: RefreshIndicator(
             onRefresh: _refreshActivities,
             child: _buildActivityList(activityProvider),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Toggle om afgelopen (gesloten) activiteiten te tonen, zodat je terug kan
-  /// naar een oude activiteit voor de betaalgegevens.
-  Widget _buildPastToggleChip(ActivityProvider activityProvider) {
-    final isOn = activityProvider.includePast;
-    return GestureDetector(
-      onTap: () {
-        context.read<ActivityProvider>().setIncludePast(_clubId, !isOn);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isOn ? Colors.white : Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
-        ),
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.history,
-              size: 16,
-              color: isOn ? AppColors.donkerblauw : Colors.white,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Passés',
-              style: TextStyle(
-                color: isOn ? AppColors.donkerblauw : Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String value, String label) {
-    final isSelected = _selectedFilter == value;
-    return GestureDetector(
-      onTap: () {
-        // Lazy: abonneer pas op afgesloten events wanneer de chip wordt gekozen.
-        if (value == 'closed') {
-          context.read<ActivityProvider>().listenToClosedActivities(_clubId);
-        }
-        setState(() {
-          _selectedFilter = value;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? AppColors.donkerblauw : Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
           ),
         ),
       ),
@@ -329,25 +254,26 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     final loading = isClosedMode
         ? activityProvider.isLoadingClosed
         : activityProvider.isLoading;
+    final stalled = isClosedMode
+        ? activityProvider.isClosedLoadStalled
+        : activityProvider.isLoadStalled;
+    final hasLoadError = !isClosedMode && activityProvider.errorMessage != null;
+    void retry() {
+      if (isClosedMode) {
+        activityProvider.retryClosedActivities();
+      } else {
+        activityProvider.retryActivities();
+      }
+    }
     if (loading && source.isEmpty) {
       return const LoadingWidget(message: 'Chargement des événements...');
     }
 
-    // Filter op categorie (niet in 'clôturés'-modus: daar tonen we alle categorieën)
-    final filtered = isClosedMode
-        ? List<ActivityItem>.from(source)
-        : source.where((item) {
-            if (_selectedFilter == 'all') return true;
-            return item.categorie == _selectedFilter;
-          }).toList();
-
-    // Tri par date : les vues "passées" — le filtre "Clôturés" (organisateur)
-    // ou la bascule "Passés" (membre) — affichent le plus récent d'abord ;
-    // sinon les prochaines activités d'abord (ordre croissant).
-    final mostRecentFirst = isClosedMode || activityProvider.includePast;
-    filtered.sort(
-      (a, b) =>
-          mostRecentFirst ? b.date.compareTo(a.date) : a.date.compareTo(b.date),
+    final filtered = filterOperationsForView(
+      source,
+      selectedFilter: _selectedFilter,
+      includePast: activityProvider.includePast,
+      now: DateTime.now(),
     );
 
     // Group by month
@@ -358,14 +284,28 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            if (stalled || hasLoadError) ...[
+              const Icon(Icons.sync_problem_rounded,
+                  size: 42, color: Colors.white),
+              const SizedBox(height: 8),
+              const Text(
+                'Le chargement prend trop de temps.',
+                style: TextStyle(color: Colors.white),
+              ),
+              TextButton(
+                onPressed: retry,
+                child: const Text('Réessayer'),
+              ),
+              const SizedBox(height: 16),
+            ],
             Icon(
               _selectedFilter == 'plongee'
                   ? Icons.scuba_diving
                   : _selectedFilter == 'piscine'
-                      ? Icons.pool
-                      : _selectedFilter == 'sortie'
-                          ? Icons.directions_boat
-                          : Icons.event_busy,
+                  ? Icons.pool
+                  : _selectedFilter == 'sortie'
+                  ? Icons.directions_boat
+                  : Icons.event_busy,
               size: 64,
               color: Colors.white.withOpacity(0.7),
             ),
@@ -387,9 +327,26 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-      itemCount: grouped.length,
+      itemCount: grouped.length + ((stalled || hasLoadError) ? 1 : 0),
       itemBuilder: (context, index) {
-        final monthKey = grouped.keys.elementAt(index);
+        if ((stalled || hasLoadError) && index == 0) {
+          return Card(
+            color: Colors.orange.shade50,
+            child: ListTile(
+              leading: Icon(Icons.sync_problem_rounded,
+                  color: Colors.orange.shade800),
+              title: const Text(
+                'Mise à jour indisponible. La dernière liste reste affichée.',
+              ),
+              trailing: TextButton(
+                onPressed: retry,
+                child: const Text('Réessayer'),
+              ),
+            ),
+          );
+        }
+        final groupIndex = index - ((stalled || hasLoadError) ? 1 : 0);
+        final monthKey = grouped.keys.elementAt(groupIndex);
         final monthActivities = grouped[monthKey]!;
 
         return Column(
@@ -509,17 +466,13 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                           colors: item.isDraft
                               ? const [Color(0xFFF59E0B), Color(0xFFB45309)]
                               : item.isCancelled
-                                  ? const [Color(0xFFEF4444), Color(0xFF991B1B)]
-                                  : item.isPiscine
-                                      ? [
-                                          AppColors
-                                              .piscineBlauwLight, // Piscine blauw
-                                          AppColors.piscineBlauw,
-                                        ]
-                                      : [
-                                          AppColors.middenblauw,
-                                          AppColors.donkerblauw
-                                        ],
+                              ? const [Color(0xFFEF4444), Color(0xFF991B1B)]
+                              : item.isPiscine
+                              ? [
+                                  AppColors.piscineBlauwLight, // Piscine blauw
+                                  AppColors.piscineBlauw,
+                                ]
+                              : [AppColors.middenblauw, AppColors.donkerblauw],
                         ),
                       ),
                       child: Column(
@@ -789,18 +742,14 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     // Individuele unread count per operatie via UnreadCountService
     final clubId = FirebaseConfig.defaultClubId;
     final opId = item.operation?.id;
+    final snapshotCount = opId == null
+        ? 0
+        : unreadProvider.eventUnreadFor(opId);
+    if (snapshotCount != null) {
+      return _buildUnreadBadgeValue(item, snapshotCount);
+    }
     if (opId == null) {
       unreadStream = Stream.value(0);
-    } else if (unreadProvider.usesCursorReadState) {
-      unreadStream = unreadProvider.isCursorReady
-          ? Stream.fromFuture(
-              CursorUnreadCountService().countEligibleEventConversation(
-                clubId,
-                userId,
-                opId,
-              ),
-            )
-          : Stream.value(0);
     } else {
       unreadStream = Stream.fromFuture(
         UnreadCountService().countUnreadForOperation(clubId, opId),
@@ -811,54 +760,55 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       stream: unreadStream,
       builder: (context, snapshot) {
         final unreadCount = snapshot.data;
-        final cursorError = unreadProvider.usesCursorReadState &&
-            unreadProvider.isCursorReady &&
-            snapshot.hasError;
-        return Padding(
-          padding: const EdgeInsets.only(right: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (cursorError)
-                const Tooltip(
-                  message: 'Compteur temporairement indisponible',
-                  child: Icon(
-                    Icons.error_outline,
-                    color: Colors.red,
-                    size: 20,
-                  ),
-                )
-              else if (unreadCount != null && unreadCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    unreadCount > 99 ? '99+' : unreadCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              if (cursorError || (unreadCount != null && unreadCount > 0))
-                const SizedBox(width: 6),
-              Icon(
-                Icons.chevron_right,
-                color: item.isPiscine
-                    ? AppColors.piscineBlauw.withOpacity(0.5)
-                    : AppColors.middenblauw.withOpacity(0.5),
-              ),
-            ],
-          ),
+        return _buildUnreadBadgeValue(
+          item,
+          unreadCount ?? 0,
+          unavailable: snapshot.hasError || !snapshot.hasData,
         );
       },
+    );
+  }
+
+  Widget _buildUnreadBadgeValue(
+    ActivityItem item,
+    int unreadCount, {
+    bool unavailable = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (unavailable)
+            const Tooltip(
+              message: 'Compteur temporairement indisponible',
+              child: Icon(Icons.error_outline, color: Colors.red, size: 20),
+            )
+          else if (unreadCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                unreadCount > 99 ? '99+' : unreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          if (unavailable || unreadCount > 0) const SizedBox(width: 6),
+          Icon(
+            Icons.chevron_right,
+            color: item.isPiscine
+                ? AppColors.piscineBlauw.withOpacity(0.5)
+                : AppColors.middenblauw.withOpacity(0.5),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -106,7 +106,8 @@ class ActivityService {
               (op.statut == 'ouvert' ||
                   (includeClosed && op.statut == 'ferme') ||
                   (op.statut == 'annule' &&
-                      shouldShowCancelledOperation(op, DateTime.now())) ||
+                      (includeClosed ||
+                          shouldShowCancelledOperation(op, DateTime.now()))) ||
                   isOwnedDraft ||
                   isLegacyDraft)) {
             activities.add(ActivityItem.fromOperation(op));
@@ -145,14 +146,14 @@ class ActivityService {
     return visibleThrough != null && !visibleThrough.isBefore(now);
   }
 
-  /// Stream van afgesloten (ferme) evenementen.
-  /// Bedoeld voor organisatoren/admins: zo blijven voorbije events bereikbaar
-  /// om betalingen te initiëren (de hoofdlijst toont enkel 'ouvert').
+  /// Stream van afgesloten of geannuleerde evenementen.
+  /// Hun discussies kunnen nog ongelezen zijn nadat ze uit de hoofdlijst
+  /// verdwijnen. Betalingen blijven afhankelijk van de eventstatus.
   Stream<List<ActivityItem>> getClosedOperationsStream(String clubId) {
     return _firestore
         .collection('clubs/$clubId/operations')
         .where('type', isEqualTo: 'evenement')
-        .where('statut', isEqualTo: 'ferme')
+        .where('statut', whereIn: ['ferme', 'annule'])
         .snapshots()
         .map((snapshot) {
       debugPrint(

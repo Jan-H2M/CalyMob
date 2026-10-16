@@ -1,6 +1,7 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:calymob/services/activity_service.dart';
+import 'package:calymob/utils/event_unread_policy.dart';
 
 void main() {
   const clubId = 'club-test';
@@ -196,5 +197,36 @@ void main() {
         .toSet();
 
     expect(ids, containsAll(['closed-recent', 'closed-old']));
+  });
+
+  test('an unread cancelled event is reachable in both past views', () async {
+    final firestore = FakeFirebaseFirestore();
+    final now = DateTime.now();
+    await addOperation(
+      firestore,
+      'cancelled-unread',
+      statut: 'annule',
+      dateDebut: now.subtract(const Duration(days: 3)),
+      dateFin: now.subtract(const Duration(days: 2)),
+    );
+
+    final operation =
+        await firestore.doc('clubs/$clubId/operations/cancelled-unread').get();
+    expect(isUnreadEligibleEvent(operation.data()!, now), isTrue);
+
+    final service = ActivityService(firestore: firestore);
+    final defaultIds = (await service.getAllActivitiesStream(clubId).first)
+        .map((item) => item.id);
+    final memberPastIds = (await service
+            .getAllActivitiesStream(clubId, includeClosed: true)
+            .first)
+        .map((item) => item.id);
+    final organizerPastIds =
+        (await service.getClosedOperationsStream(clubId).first)
+            .map((item) => item.id);
+
+    expect(defaultIds, isNot(contains('cancelled-unread')));
+    expect(memberPastIds, contains('cancelled-unread'));
+    expect(organizerPastIds, contains('cancelled-unread'));
   });
 }
