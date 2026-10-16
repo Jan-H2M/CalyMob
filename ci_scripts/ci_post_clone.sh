@@ -36,15 +36,17 @@ esac
   exit 1
 }
 
-# Generates configuration only. Xcode Cloud compiles, archives, signs and uploads.
-flutter build ios --config-only --release --no-pub \
-  --build-name "$BUILD_NAME" --build-number "$CI_BUILD_NUMBER"
-
+# Flutter's config-only path also prepares Pods: pin pod before invoking it.
 if ! command -v pod >/dev/null 2>&1 || [ "$(pod --version)" != "$COCOAPODS_VERSION" ]; then
   gem install cocoapods --version "$COCOAPODS_VERSION" --no-document --user-install
   export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
 fi
 [ "$(pod --version)" = "$COCOAPODS_VERSION" ] || exit 1
+
+# Generates configuration only. Xcode Cloud compiles, archives, signs and uploads.
+flutter build ios --config-only --release --no-pub \
+  --build-name "$BUILD_NAME" --build-number "$CI_BUILD_NUMBER"
+
 (cd ios && pod install --deployment)
 git diff --exit-code -- pubspec.lock ios/Podfile.lock
 
