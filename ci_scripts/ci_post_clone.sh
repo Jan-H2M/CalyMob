@@ -1,63 +1,62 @@
 #!/bin/sh
+# Runs on Apple's Xcode Cloud workers, never builds a native app locally.
+set -eu
 
-# Xcode Cloud runs scripts from the repository-level ci_scripts directory.
-# Prepare Flutter and CocoaPods before Xcode archives the iOS workspace.
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+. "$SCRIPT_DIR/toolchain.env"
 
-set -e
-
-echo "=== CalyMob Xcode Cloud post-clone ==="
-
-find_repo_root() {
-  current="$1"
-  while [ "$current" != "/" ]; do
-    if [ -f "$current/pubspec.yaml" ] && [ -d "$current/ios" ]; then
-      printf '%s\n' "$current"
-      return 0
-    fi
-    current="$(dirname "$current")"
-  done
-  return 1
-}
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
-if [ -z "$REPO_ROOT" ] && [ -n "${CI_PRIMARY_REPOSITORY_PATH:-}" ]; then
-  REPO_ROOT="$(find_repo_root "$CI_PRIMARY_REPOSITORY_PATH")"
-fi
-if [ -z "$REPO_ROOT" ]; then
-  echo "Could not find CalyMob repository root containing pubspec.yaml and ios/."
-  echo "SCRIPT_DIR=$SCRIPT_DIR"
-  echo "CI_PRIMARY_REPOSITORY_PATH=${CI_PRIMARY_REPOSITORY_PATH:-}"
-  exit 1
-fi
-
-FLUTTER_DIR="$HOME/flutter"
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export FLUTTER_SUPPRESS_ANALYTICS=true
+FLUTTER_DIR="$HOME/calymob-flutter-$FLUTTER_VERSION"
 export PATH="$FLUTTER_DIR/bin:$PATH"
-export LANG="${LANG:-en_US.UTF-8}"
-export LC_ALL="${LC_ALL:-en_US.UTF-8}"
-
-echo "SCRIPT_DIR=$SCRIPT_DIR"
-echo "REPO_ROOT=$REPO_ROOT"
-echo "CI_PRIMARY_REPOSITORY_PATH=${CI_PRIMARY_REPOSITORY_PATH:-}"
-
-cd "$REPO_ROOT"
 
 if [ ! -x "$FLUTTER_DIR/bin/flutter" ]; then
-  echo "Installing Flutter stable..."
-  git clone https://github.com/flutter/flutter.git --depth 1 -b stable "$FLUTTER_DIR"
+  git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$FLUTTER_DIR"
 fi
+[ "$(git -C "$FLUTTER_DIR" rev-parse HEAD)" = "$FLUTTER_REVISION" ] || {
+  echo 'Unexpected Flutter revision; refusing a non-reproducible build.' >&2
+  exit 1
+}
 
+cd "$REPO_ROOT"
 flutter config --no-analytics
 flutter --version
-
-echo "Getting Flutter dependencies..."
-flutter pub get
-
-echo "Pre-caching iOS Flutter engine artifacts..."
 flutter precache --ios
+flutter pub get --enforce-lockfile
 
-echo "Installing CocoaPods dependencies..."
-cd "$REPO_ROOT/ios"
-pod install --repo-update
+# Keep the reviewed marketing version; use Apple's product-wide build counter.
+BUILD_NAME="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)"
+case "${CI_BUILD_NUMBER:-}" in
+  ''|*[!0-9]*) echo 'CI_BUILD_NUMBER must be supplied by Xcode Cloud.' >&2; exit 1 ;;
+esac
+[ "$CI_BUILD_NUMBER" -gt 226 ] || {
+  echo 'Cloud build number must exceed existing App Store Connect build 226.' >&2
+  exit 1
+}
 
-echo "=== CalyMob Xcode Cloud post-clone complete ==="
+# Generates configuration only. Xcode Cloud compiles, archives, signs and uploads.
+flutter build ios --config-only --release --no-pub \
+  --build-name "$BUILD_NAME" --build-number "$CI_BUILD_NUMBER"
+
+if ! command -v pod >/dev/null 2>&1 || [ "$(pod --version)" != "$COCOAPODS_VERSION" ]; then
+  gem install cocoapods --version "$COCOAPODS_VERSION" --no-document --user-install
+  export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+fi
+[ "$(pod --version)" = "$COCOAPODS_VERSION" ] || exit 1
+(cd ios && pod install --deployment)
+git diff --exit-code -- pubspec.lock ios/Podfile.lock
+
+# Real widgets, access control, confirmations and QR parsing; no live Firebase.
+flutter test --no-pub \
+  test/models/boutique \
+  test/models/boutique_product_personalization_test.dart \
+  test/screens/boutique_qr_access_test.dart \
+  test/screens/boutique_qr_confirmation_lifecycle_test.dart \
+  test/screens/boutique_screen_access_test.dart \
+  test/services/boutique_access_service_test.dart \
+  test/widgets/boutique_access_guard_test.dart \
+  test/services/notification_navigation_service_test.dart
+
+echo "CalyMob $BUILD_NAME ($CI_BUILD_NUMBER): dependencies and Flutter tests ready."

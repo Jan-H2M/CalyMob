@@ -1,0 +1,57 @@
+{
+  "data": {
+    "type": "ciWorkflows",
+    "id": "D11B66EC-6E95-43A4-B345-727D1992D72A",
+    "attributes": {
+      "name": "CalyMob iOS — TestFlight",
+      "description": "Manual reviewed CalyMob release: Flutter checks, native iOS tests, Release archive and internal TestFlight distribution. No backend deployment.",
+      "isEnabled": true,
+      "isLockedForEditing": true,
+      "clean": true,
+      "containerFilePath": "ios/Runner.xcworkspace",
+      "branchStartCondition": null,
+      "tagStartCondition": null,
+      "pullRequestStartCondition": null,
+      "scheduledStartCondition": null,
+      "manualBranchStartCondition": {
+        "source": {
+          "isAllMatch": false,
+          "patterns": [{"pattern": "codex/mob-xcode-cloud-20261016", "isPrefix": false}]
+        }
+      },
+      "actions": [
+        {
+          "name": "Test - iOS",
+          "actionType": "TEST",
+          "platform": "IOS",
+          "destination": "ANY_IOS_SIMULATOR",
+          "scheme": "Runner",
+          "isRequiredToPass": true,
+          "testConfiguration": {
+            "kind": "USE_SCHEME_SETTINGS",
+            "testDestinations": [{
+              "kind": "SIMULATOR",
+              "deviceTypeName": "iPhone 17",
+              "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+              "runtimeName": "iOS 26.5",
+              "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+            }]
+          }
+        },
+        {
+          "name": "Archive - iOS TestFlight",
+          "actionType": "ARCHIVE",
+          "platform": "IOS",
+          "destination": "ANY_IOS_DEVICE",
+          "scheme": "Runner",
+          "isRequiredToPass": true,
+          "buildDistributionAudience": "INTERNAL_ONLY"
+        }
+      ]
+    },
+    "relationships": {
+      "xcodeVersion": {"data": {"type": "ciXcodeVersions", "id": "42533094-17d3-46b2-ada5-1f94ceb94b61"}},
+      "macOsVersion": {"data": {"type": "ciMacOsVersions", "id": "c538a952-ac84-4277-bea4-b9dab48bb96c"}}
+    }
+  }
+}
