@@ -127,7 +127,10 @@ options.experimental.replay.onErrorSampleRate = 1.0;
 **1.3 Firestore data model**
 - Collection `bug_reports` aanmaken (geen schema nodig, Firestore is schemaless)
 - Security rules: authenticated users mogen schrijven, alleen admin mag lezen/updaten
-- Firebase Storage pad: `bug_reports/{reportId}/screenshot.png`
+- **SUPERSEDED 2026-10-16 (MOB-041):** the single-image Storage path
+  `bug_reports/{reportId}/screenshot.png` described below is retained only as
+  historical design context. CalyMob now writes an ordered, bounded set at
+  `clubs/{clubId}/bug_reports/{reportId}/screenshot_{index}.png` (maximum five).
 
 ---
 
@@ -180,6 +183,11 @@ Settings scherm
 
 **2.1 CalyMob (Flutter) — Bug Report Modus**
 
+> **SUPERSEDED 2026-10-16 (MOB-041):** references in this section to one
+> screenshot and one preview describe the original flow. The current CalyMob
+> flow retains the draft while the reporter captures up to five screens, and
+> allows removal and reordering before submission.
+
 Technisch:
 - In Settings scherm: knop "Signaler un bug" → activeert bug report modus
 - Bug report modus = globale state (via Provider of eenvoudige ValueNotifier)
@@ -204,8 +212,9 @@ Technisch:
   - Sentry replay ID (via `Sentry.lastEventId` ou `SentryId`)
   - Route/écran actuel
 - Après envoi:
-  1. Upload capture d'écran vers Firebase Storage
-  2. Écriture dans Firestore `bug_reports` collection
+  1. Upload des captures d'écran vers Firebase Storage
+  2. Création unique du document Firestore `bug_reports` avec toutes les
+     métadonnées (l'ancien create-then-update est superseded par MOB-041)
   3. Confirmation: "Merci ! Nous allons examiner votre signalement."
   4. Icône disparaît → mode désactivé
 
