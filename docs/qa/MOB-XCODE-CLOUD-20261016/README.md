@@ -34,6 +34,12 @@ system Ruby 2.6 cannot install the current native gem dependencies. Configuratio
 generation does not compile an iOS app. Apple performs
 native compilation/signing/distribution. No credentials belong in these scripts.
 
+Both Apple actions in build 517 installed all 84 Pods successfully, then the lock
+drift check stopped on identical local-podspec checksum normalization. The checked
+in checksum entries now match this fixed cloud toolchain. Parsed lock comparison
+confirms every resolved dependency version, source and Podfile checksum is
+unchanged. Keep the strict deployment and lock-drift checks enabled.
+
 Marketing version stays 1.26.1. The generated configuration uses CI_BUILD_NUMBER
 from Apple's existing product-wide counter (last observed 514), which must exceed
 226; report the actual run number rather than the pubspec fallback number.
