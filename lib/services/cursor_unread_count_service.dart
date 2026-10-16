@@ -20,19 +20,20 @@ class CursorUnreadCountService {
     DateTime Function()? clock,
     Future<int> Function(Query<Map<String, dynamic>> query)? countQuery,
     Future<bool> Function(String clubId, String userId)? timestampV2Resolver,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _readState = readStateService ?? ReadStateService(firestore: firestore),
-        _clock = clock ?? DateTime.now,
-        _countQuery = countQuery ?? _aggregateCount,
-        _timestampV2Resolver = timestampV2Resolver ??
-            UnreadTimestampAuthorityService(firestore: firestore).shouldUseV2;
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _readState = readStateService ?? ReadStateService(firestore: firestore),
+       _clock = clock ?? DateTime.now,
+       _countQuery = countQuery ?? _aggregateCount,
+       _timestampV2Resolver =
+           timestampV2Resolver ??
+           UnreadTimestampAuthorityService(firestore: firestore).shouldUseV2;
 
   final FirebaseFirestore _firestore;
   final ReadStateService _readState;
   final DateTime Function() _clock;
   final Future<int> Function(Query<Map<String, dynamic>> query) _countQuery;
   final Future<bool> Function(String clubId, String userId)
-      _timestampV2Resolver;
+  _timestampV2Resolver;
 
   static const Duration queryTimeout = Duration(seconds: 8);
   static const int maxConcurrentQueries = 8;
@@ -52,31 +53,44 @@ class CursorUnreadCountService {
     // is not a valid badge and must never replace a complete legacy/previous
     // value in the UI.
     final timestampV2 = await _timestampV2Resolver(clubId, userId);
-    final values = await Future.wait<int>([
-      countAnnouncements(clubId, userId, timestampV2: timestampV2),
-      countEventMessages(clubId, userId, timestampV2: timestampV2),
-      countTeamMessages(
-        clubId,
-        userId,
-        roles,
-        includeAllChannels: includeAllTeamChannels,
-        plongeurCode: plongeurCode,
-        targetFormationLevel: targetFormationLevel,
-        formationActive: formationActive,
-        timestampV2: timestampV2,
-      ),
-      countSessionMessages(
-        clubId,
-        userId,
-        roles,
-        timestampV2: timestampV2,
-      ),
-    ]);
+    final announcementsFuture = countAnnouncements(
+      clubId,
+      userId,
+      timestampV2: timestampV2,
+    );
+    final eventScopesFuture = countEventMessageScopes(
+      clubId,
+      userId,
+      timestampV2: timestampV2,
+    );
+    final teamScopesFuture = countTeamMessageScopes(
+      clubId,
+      userId,
+      roles,
+      includeAllChannels: includeAllTeamChannels,
+      plongeurCode: plongeurCode,
+      targetFormationLevel: targetFormationLevel,
+      formationActive: formationActive,
+      timestampV2: timestampV2,
+    );
+    final sessionScopesFuture = countSessionMessageScopes(
+      clubId,
+      userId,
+      roles,
+      timestampV2: timestampV2,
+    );
+    final announcements = await announcementsFuture;
+    final eventScopes = await eventScopesFuture;
+    final teamScopes = await teamScopesFuture;
+    final sessionScopes = await sessionScopesFuture;
     return CursorUnreadBreakdown(
-      announcements: values[0],
-      events: values[1],
-      teams: values[2],
-      sessions: values[3],
+      announcements: announcements,
+      events: _sum(eventScopes),
+      teams: _sum(teamScopes),
+      sessions: _sum(sessionScopes),
+      eventScopes: eventScopes,
+      teamScopes: teamScopes,
+      sessionScopes: sessionScopes,
     );
   }
 
@@ -117,7 +131,8 @@ class CursorUnreadCountService {
                 data['visibility'] != 'deleted';
           })
           .map(
-            (document) => () => countAnnouncementThread(
+            (document) =>
+                () => countAnnouncementThread(
                   clubId,
                   userId,
                   document.id,
@@ -142,11 +157,13 @@ class CursorUnreadCountService {
     }
     final useTimestampV2 =
         timestampV2 ?? await _timestampV2Resolver(clubId, userId);
-    final activity = _timestampValue(useTimestampV2
-        ? announcement['unread_activity_at']
-        : announcement['last_activity_at'] ??
-            announcement['last_reply_at'] ??
-            announcement['created_at']);
+    final activity = _timestampValue(
+      useTimestampV2
+          ? announcement['unread_activity_at']
+          : announcement['last_activity_at'] ??
+                announcement['last_reply_at'] ??
+                announcement['created_at'],
+    );
     if (activity == null) {
       throw StateError('Announcement $announcementId has no valid activity.');
     }
@@ -160,6 +177,19 @@ class CursorUnreadCountService {
   }
 
   Future<int> countEventMessages(
+    String clubId,
+    String userId, {
+    bool? timestampV2,
+  }) async {
+    final scopes = await countEventMessageScopes(
+      clubId,
+      userId,
+      timestampV2: timestampV2,
+    );
+    return scopes.values.fold<int>(0, (total, value) => total + value);
+  }
+
+  Future<Map<String, int>> countEventMessageScopes(
     String clubId,
     String userId, {
     bool? timestampV2,
@@ -183,30 +213,36 @@ class CursorUnreadCountService {
         operationIds.add(path[3]);
       }
     }
-    final tasks = operationIds
-        .map(
-          (operationId) => () async {
-            final operation = await _firestore
-                .doc('clubs/$clubId/operations/$operationId')
-                .get()
-                .timeout(queryTimeout);
-            if (!operation.exists ||
-                !isUnreadEligibleEvent(
-                  operation.data() ?? const {},
-                  _clock(),
-                )) {
-              return 0;
-            }
-            return countEventConversation(
-              clubId,
-              userId,
-              operationId,
-              timestampV2: useTimestampV2,
-            );
-          },
-        )
-        .toList();
-    return _sumBounded(tasks);
+    final ids = operationIds.toList(growable: false);
+    final values = await _runBounded(
+      ids
+          .map(
+            (operationId) => () async {
+              final operation = await _firestore
+                  .doc('clubs/$clubId/operations/$operationId')
+                  .get()
+                  .timeout(queryTimeout);
+              if (!operation.exists ||
+                  !isUnreadEligibleEvent(
+                    operation.data() ?? const {},
+                    _clock(),
+                  )) {
+                return 0;
+              }
+              return countEventConversation(
+                clubId,
+                userId,
+                operationId,
+                timestampV2: useTimestampV2,
+              );
+            },
+          )
+          .toList(),
+    );
+    return <String, int>{
+      for (var index = 0; index < ids.length; index++)
+        ids[index]: values[index],
+    };
   }
 
   Future<int> countEventConversation(
@@ -274,7 +310,30 @@ class CursorUnreadCountService {
     String? targetFormationLevel,
     bool formationActive = false,
     bool? timestampV2,
-  }) {
+  }) async {
+    final scopes = await countTeamMessageScopes(
+      clubId,
+      userId,
+      roles,
+      includeAllChannels: includeAllChannels,
+      plongeurCode: plongeurCode,
+      targetFormationLevel: targetFormationLevel,
+      formationActive: formationActive,
+      timestampV2: timestampV2,
+    );
+    return scopes.values.fold<int>(0, (total, value) => total + value);
+  }
+
+  Future<Map<String, int>> countTeamMessageScopes(
+    String clubId,
+    String userId,
+    List<String> roles, {
+    bool includeAllChannels = false,
+    String? plongeurCode,
+    String? targetFormationLevel,
+    bool formationActive = false,
+    bool? timestampV2,
+  }) async {
     final channels = ClubRoleUtils.getVisibleTeamChannelIds(
       roles,
       includeAllChannels: includeAllChannels,
@@ -282,36 +341,25 @@ class CursorUnreadCountService {
       targetFormationLevel: targetFormationLevel,
       formationActive: formationActive,
     );
-    return _countTeamMessagesWithAuthority(
-      clubId,
-      userId,
-      channels,
-      timestampV2,
-    );
-  }
-
-  Future<int> _countTeamMessagesWithAuthority(
-    String clubId,
-    String userId,
-    List<String> channels,
-    bool? timestampV2,
-  ) async {
     final useTimestampV2 =
         timestampV2 ?? await _timestampV2Resolver(clubId, userId);
-    return _sumBounded(
+    final values = await _runBounded(
       channels
           .map(
-            (channelId) => () async {
-              return countTeamChannel(
-                clubId,
-                userId,
-                channelId,
-                timestampV2: useTimestampV2,
-              );
-            },
+            (channelId) =>
+                () => countTeamChannel(
+                  clubId,
+                  userId,
+                  channelId,
+                  timestampV2: useTimestampV2,
+                ),
           )
           .toList(),
     );
+    return <String, int>{
+      for (var index = 0; index < channels.length; index++)
+        channels[index]: values[index],
+    };
   }
 
   Future<int> countTeamChannel(
@@ -344,6 +392,21 @@ class CursorUnreadCountService {
     List<String> roles, {
     bool? timestampV2,
   }) async {
+    final scopes = await countSessionMessageScopes(
+      clubId,
+      userId,
+      roles,
+      timestampV2: timestampV2,
+    );
+    return scopes.values.fold<int>(0, (total, value) => total + value);
+  }
+
+  Future<Map<String, int>> countSessionMessageScopes(
+    String clubId,
+    String userId,
+    List<String> roles, {
+    bool? timestampV2,
+  }) async {
     final useTimestampV2 =
         timestampV2 ?? await _timestampV2Resolver(clubId, userId);
     final sessions = await _firestore
@@ -351,12 +414,20 @@ class CursorUnreadCountService {
         .where('statut', isEqualTo: 'publie')
         .get()
         .timeout(queryTimeout);
+    final scopeIds = <String>[];
     final tasks = <Future<int> Function()>[];
     for (final session in sessions.docs) {
       for (final scope in sessionUnreadScopesForMember(
         session.data(),
         userId,
       )) {
+        scopeIds.add(
+          readStateSessionScopeId(
+            session.id,
+            scope.groupType,
+            scope.groupLevel,
+          ),
+        );
         tasks.add(
           () => _countSessionScope(
             clubId,
@@ -369,7 +440,11 @@ class CursorUnreadCountService {
         );
       }
     }
-    return _sumBounded(tasks);
+    final values = await _runBounded(tasks);
+    return <String, int>{
+      for (var index = 0; index < scopeIds.length; index++)
+        scopeIds[index]: values[index],
+    };
   }
 
   Future<int> _countSessionScope(
@@ -422,8 +497,13 @@ class CursorUnreadCountService {
   }
 
   Future<int> _sumBounded(List<Future<int> Function()> tasks) async {
+    final results = await _runBounded(tasks);
+    return results.fold<int>(0, (total, value) => total + value);
+  }
+
+  Future<List<int>> _runBounded(List<Future<int> Function()> tasks) async {
     if (tasks.isEmpty) {
-      return 0;
+      return const <int>[];
     }
     var next = 0;
     final results = List<int>.filled(tasks.length, 0);
@@ -453,7 +533,7 @@ class CursorUnreadCountService {
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }
-    return results.fold<int>(0, (total, value) => total + value);
+    return results;
   }
 }
 
@@ -478,8 +558,8 @@ List<SessionUnreadScope> sessionUnreadScopesForMember(
   bool assigned(Object? raw) {
     if (raw is! List) return false;
     return raw.whereType<Map>().any(
-          (member) => member['membre_id']?.toString() == userId,
-        );
+      (member) => member['membre_id']?.toString() == userId,
+    );
   }
 
   final scopes = <SessionUnreadScope>[];
@@ -509,8 +589,10 @@ List<SessionUnreadScope> sessionUnreadScopesForMember(
     }
   }
   if (anyEncadrant) {
-    scopes.insert(assigned(session['accueil']) ? 1 : 0,
-        const SessionUnreadScope('encadrants'));
+    scopes.insert(
+      assigned(session['accueil']) ? 1 : 0,
+      const SessionUnreadScope('encadrants'),
+    );
   }
   return scopes;
 }
@@ -526,23 +608,32 @@ class CursorUnreadBreakdown {
     required this.announcements,
     required this.teams,
     required this.sessions,
+    this.eventScopes = const <String, int>{},
+    this.teamScopes = const <String, int>{},
+    this.sessionScopes = const <String, int>{},
   });
 
   final int events;
   final int announcements;
   final int teams;
   final int sessions;
+  final Map<String, int> eventScopes;
+  final Map<String, int> teamScopes;
+  final Map<String, int> sessionScopes;
 
   int get communication => announcements + teams + sessions;
   int get total => events + communication;
 
   Map<String, int> toLegacyMap() => <String, int>{
-        'announcements': announcements,
-        'event_messages': events,
-        'team_messages': teams,
-        'session_messages': sessions,
-      };
+    'announcements': announcements,
+    'event_messages': events,
+    'team_messages': teams,
+    'session_messages': sessions,
+  };
 }
+
+int _sum(Map<String, int> values) =>
+    values.values.fold<int>(0, (total, value) => total + value);
 
 bool isCursorCountableRegistration(Map<String, dynamic> data) {
   final status = data['registration_status']?.toString().trim().toLowerCase();

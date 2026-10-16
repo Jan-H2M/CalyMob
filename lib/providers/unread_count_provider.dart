@@ -77,6 +77,9 @@ class UnreadCountProvider extends ChangeNotifier {
   int _eventMessages = 0;
   int _teamMessages = 0;
   int _sessionMessages = 0;
+  Map<String, int> _eventScopes = const <String, int>{};
+  Map<String, int> _teamScopes = const <String, int>{};
+  Map<String, int> _sessionScopes = const <String, int>{};
   bool _isListening = false;
   bool _isRefreshing = false;
   bool _refreshQueued = false;
@@ -134,6 +137,18 @@ class UnreadCountProvider extends ChangeNotifier {
       (_cursorMode != UnreadCursorV1Mode.on || _cursorReady);
   Object? get lastRefreshError => _lastRefreshError;
 
+  /// Per-row values from the same complete cursor snapshot as the home badge.
+  /// `null` means this installation is using the legacy counter path.
+  int? eventUnreadFor(String operationId) => usesCursorReadState && _cursorReady
+      ? (_eventScopes[operationId] ?? 0)
+      : null;
+  int? teamUnreadFor(String channelId) => usesCursorReadState && _cursorReady
+      ? (_teamScopes[channelId] ?? 0)
+      : null;
+  int? sessionUnreadFor(String scopeId) => usesCursorReadState && _cursorReady
+      ? (_sessionScopes[scopeId] ?? 0)
+      : null;
+
   /// Notification/deep-link navigation may start only after this identity's
   /// authority is known and its local namespace is active. Cursor bootstrap
   /// itself may still be retrying; screens then remain cursor-pending and
@@ -174,8 +189,12 @@ class UnreadCountProvider extends ChangeNotifier {
         _readState == null) {
       return null;
     }
-    return (await _readState!
-            .getEffectiveCursor(clubId, userId, section, scopeId: scopeId))
+    return (await _readState!.getEffectiveCursor(
+      clubId,
+      userId,
+      section,
+      scopeId: scopeId,
+    ))
         ?.toDate();
   }
 
@@ -444,20 +463,14 @@ class UnreadCountProvider extends ChangeNotifier {
     if (!_isListenContextCurrent(clubId, userId, listenGeneration)) return;
     _contextReady = true;
     if (_flagResolved) {
-      unawaited(_loadAuthorityCacheAndRefresh(
-        clubId,
-        userId,
-        listenGeneration,
-      ));
+      unawaited(
+        _loadAuthorityCacheAndRefresh(clubId, userId, listenGeneration),
+      );
     }
     _configureRefreshTimer();
   }
 
-  bool _isListenContextCurrent(
-    String clubId,
-    String userId,
-    int generation,
-  ) =>
+  bool _isListenContextCurrent(String clubId, String userId, int generation) =>
       _isListening &&
       _clubId == clubId &&
       _userId == userId &&
@@ -510,11 +523,9 @@ class UnreadCountProvider extends ChangeNotifier {
     debugPrint('🔀 unread cursor v1 mode=$_cursorMode');
     _configureRefreshTimer();
     if (_contextReady) {
-      unawaited(_loadAuthorityCacheAndRefresh(
-        clubId,
-        userId,
-        _listenGeneration,
-      ));
+      unawaited(
+        _loadAuthorityCacheAndRefresh(clubId, userId, _listenGeneration),
+      );
     }
   }
 
@@ -549,11 +560,7 @@ class UnreadCountProvider extends ChangeNotifier {
   }
 
   /// Laad cached counts uit SharedPreferences (instant, geen netwerk)
-  String _cachePrefixFor(
-    String clubId,
-    String userId,
-    String authority,
-  ) {
+  String _cachePrefixFor(String clubId, String userId, String authority) {
     final identity = base64Url
         .encode(utf8.encode('$clubId\u0000$userId'))
         .replaceAll('=', '');
@@ -563,9 +570,7 @@ class UnreadCountProvider extends ChangeNotifier {
   String _cacheSnapshotPrefix(String prefix, String token) =>
       '${prefix}snapshot_${token}_';
 
-  Future<void> _withCacheMutationLock(
-    Future<void> Function() operation,
-  ) {
+  Future<void> _withCacheMutationLock(Future<void> Function() operation) {
     final result = _cacheMutationTail.then<void>((_) => operation());
     _cacheMutationTail = result.then<void>(
       (_) {},
@@ -722,6 +727,9 @@ class UnreadCountProvider extends ChangeNotifier {
     _eventMessages = 0;
     _teamMessages = 0;
     _sessionMessages = 0;
+    _eventScopes = const <String, int>{};
+    _teamScopes = const <String, int>{};
+    _sessionScopes = const <String, int>{};
     notifyListeners();
     if (clearOsBadge) _updateBadgeImmediate(0);
   }
@@ -811,11 +819,7 @@ class UnreadCountProvider extends ChangeNotifier {
             () async {
               final snapshot = await _tracker.exportReadState();
               await _readState!.bootstrapFromLegacy(clubId, userId, snapshot);
-              await _tracker.clearPendingMirrorsUpTo(
-                clubId,
-                userId,
-                snapshot,
-              );
+              await _tracker.clearPendingMirrorsUpTo(clubId, userId, snapshot);
             }());
       } catch (error) {
         _lastRefreshError = error;
@@ -839,6 +843,12 @@ class UnreadCountProvider extends ChangeNotifier {
     final becameReady = !_cursorReady;
     _cursorReady = true;
     _lastRefreshError = null;
+    final scopesChanged = !mapEquals(_eventScopes, cursor.eventScopes) ||
+        !mapEquals(_teamScopes, cursor.teamScopes) ||
+        !mapEquals(_sessionScopes, cursor.sessionScopes);
+    _eventScopes = Map<String, int>.unmodifiable(cursor.eventScopes);
+    _teamScopes = Map<String, int>.unmodifiable(cursor.teamScopes);
+    _sessionScopes = Map<String, int>.unmodifiable(cursor.sessionScopes);
     if (becameReady) _configureRefreshTimer();
     _applyCounts(
       cursor.announcements,
@@ -846,7 +856,7 @@ class UnreadCountProvider extends ChangeNotifier {
       cursor.teams,
       cursor.sessions,
       source: 'cursor',
-      notifyEvenIfUnchanged: becameReady,
+      notifyEvenIfUnchanged: becameReady || scopesChanged,
     );
   }
 

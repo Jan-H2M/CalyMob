@@ -433,11 +433,21 @@ Voorbeeld body fallback:
 
 ### 9.4 Landing badge
 
+> **SUPERSEDED (2026-10-16, MOB-040):** the current badge also includes
+> published pool-session conversations. Its canonical cursor-mode total and
+> the destination row badges now come from one complete scoped snapshot.
+
 Gebruik:
 
 - `unreadProvider.announcements + unreadProvider.teamMessages`
 
 ### 9.5 Per-channel badges in de hub
+
+> **SUPERSEDED (2026-10-16, MOB-040):** rebuilding independent row queries
+> allowed the landing total and visible rows to disagree. Cursor-mode row
+> values are now retained in `UnreadCountProvider` from the same all-or-nothing
+> refresh that supplies the landing badge. The legacy approach below remains
+> documented for rollback compatibility.
 
 Aanbevolen aanpak voor v1:
 

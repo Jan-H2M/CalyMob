@@ -38,6 +38,86 @@ void main() {
     LocalReadTracker().resetForTesting();
   });
 
+  test('cursor home totals and destination rows share one snapshot', () async {
+    final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+    const snapshot = CursorUnreadBreakdown(
+      announcements: 1,
+      events: 3,
+      teams: 4,
+      sessions: 5,
+      eventScopes: {'event-a': 3},
+      teamScopes: {'general': 4},
+      sessionScopes: {'session-a_accueil': 5},
+    );
+    final provider = UnreadCountProvider(
+      flagStream: (_) => flags.stream,
+      legacyRefresh: () async => const <String, int>{},
+      cursorRefresh: () async => snapshot,
+      cursorBootstrap: () async {},
+      badgeUpdater: (_) {},
+    );
+    provider.listen('club', 'member');
+    flags.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    await waitUntil(() => provider.isCursorReady);
+
+    expect(provider.eventMessages, provider.eventUnreadFor('event-a'));
+    expect(provider.teamMessages, provider.teamUnreadFor('general'));
+    expect(
+      provider.sessionMessages,
+      provider.sessionUnreadFor('session-a_accueil'),
+    );
+    expect(provider.eventUnreadFor('missing'), 0);
+
+    provider.dispose();
+    await flags.close();
+  });
+
+  test('equal totals still publish changed destination-row scopes', () async {
+    final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+    var snapshot = const CursorUnreadBreakdown(
+      announcements: 0,
+      events: 2,
+      teams: 0,
+      sessions: 0,
+      eventScopes: {'event-a': 2},
+    );
+    final provider = UnreadCountProvider(
+      flagStream: (_) => flags.stream,
+      legacyRefresh: () async => const <String, int>{},
+      cursorRefresh: () async => snapshot,
+      cursorBootstrap: () async {},
+      badgeUpdater: (_) {},
+    );
+    provider.listen('club', 'member');
+    flags.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    await waitUntil(() => provider.isCursorReady);
+    var notifications = 0;
+    provider.addListener(() => notifications++);
+
+    snapshot = const CursorUnreadBreakdown(
+      announcements: 0,
+      events: 2,
+      teams: 0,
+      sessions: 0,
+      eventScopes: {'event-b': 2},
+    );
+    await provider.refresh();
+
+    expect(provider.eventMessages, 2);
+    expect(provider.eventUnreadFor('event-a'), 0);
+    expect(provider.eventUnreadFor('event-b'), 2);
+    expect(notifications, greaterThan(0));
+
+    provider.dispose();
+    await flags.close();
+  });
+
   test(
     'OFF uses legacy UI and writer; shadow keeps legacy UI but calculates cursor',
     () async {

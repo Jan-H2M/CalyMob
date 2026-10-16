@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/piscine_session.dart';
+import '../../models/read_state.dart';
 import '../../models/session_message.dart';
 import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
@@ -14,6 +17,7 @@ import '../../services/cursor_unread_count_service.dart';
 import '../../services/piscine_session_service.dart';
 import '../../services/session_message_service.dart';
 import '../../utils/club_role_utils.dart';
+import '../../utils/retained_stream_loader.dart';
 import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'notification_history_screen.dart';
@@ -142,7 +146,8 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                     _searchQuery = value;
                   });
                 },
-                onMarkAllTap: unreadProvider.usesCursorReadState &&
+                onMarkAllTap:
+                    unreadProvider.usesCursorReadState &&
                         unreadProvider.isCursorReady
                     ? _showMarkAllMenu
                     : null,
@@ -355,8 +360,11 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
           Row(
             children: [
               IconButton(
-                icon:
-                    const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white,
+                  size: 28,
+                ),
                 tooltip: 'Retour',
                 onPressed: () {
                   final navigator = Navigator.of(context);
@@ -427,11 +435,7 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.search,
-                  size: 17,
-                  color: Color(0xFF4D6680),
-                ),
+                const Icon(Icons.search, size: 17, color: Color(0xFF4D6680)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
@@ -531,8 +535,9 @@ class _CommunicationFilterBar extends StatelessWidget {
                         filter.label,
                         maxLines: 1,
                         style: TextStyle(
-                          color:
-                              selected ? Colors.white : AppColors.donkerblauw,
+                          color: selected
+                              ? Colors.white
+                              : AppColors.donkerblauw,
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                         ),
@@ -553,10 +558,7 @@ class _CommunicationAvatar extends StatelessWidget {
   final IconData icon;
   final List<Color> colors;
 
-  const _CommunicationAvatar({
-    required this.icon,
-    required this.colors,
-  });
+  const _CommunicationAvatar({required this.icon, required this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -588,10 +590,7 @@ class _CommunicationTag extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _CommunicationTag({
-    required this.label,
-    required this.color,
-  });
+  const _CommunicationTag({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -661,8 +660,8 @@ class _CommunicationChatRow extends StatelessWidget {
                 color: unreadStatusUnavailable
                     ? Colors.orange.shade700
                     : unreadCount > 0
-                        ? const Color(0xFFB8DCF2)
-                        : const Color(0xFFE4EDF3),
+                    ? const Color(0xFFB8DCF2)
+                    : const Color(0xFFE4EDF3),
                 width: unreadCount > 0 || unreadStatusUnavailable ? 1.5 : 1,
               ),
             ),
@@ -788,13 +787,13 @@ class _UnreadDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 9,
-        height: 9,
-        decoration: const BoxDecoration(
-          color: Color(0xFFE54B55),
-          shape: BoxShape.circle,
-        ),
-      );
+    width: 9,
+    height: 9,
+    decoration: const BoxDecoration(
+      color: Color(0xFFE54B55),
+      shape: BoxShape.circle,
+    ),
+  );
 }
 
 class _UnreadBadge extends StatelessWidget {
@@ -888,56 +887,76 @@ class _TeamChannelsInboxSection extends StatefulWidget {
 
 class _TeamChannelsInboxSectionState extends State<_TeamChannelsInboxSection> {
   final TeamChannelService _channelService = TeamChannelService();
-  List<TeamChannel> _lastChannels = const [];
+  late final RetainedStreamLoader<List<TeamChannel>> _loader;
+
+  Stream<List<TeamChannel>> _stream() => _channelService.getChannelsForUser(
+    FirebaseConfig.defaultClubId,
+    widget.roles,
+    includeAllChannels: widget.includeAllChannels,
+    plongeurCode: widget.plongeurCode,
+    targetFormationLevel: widget.targetFormationLevel,
+    formationActive: widget.formationActive,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _loader = RetainedStreamLoader<List<TeamChannel>>(streamFactory: _stream)
+      ..addListener(_onChanged);
+    unawaited(_loader.start());
+  }
+
+  @override
+  void didUpdateWidget(covariant _TeamChannelsInboxSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roles.toString() != widget.roles.toString() ||
+        oldWidget.includeAllChannels != widget.includeAllChannels ||
+        oldWidget.plongeurCode != widget.plongeurCode ||
+        oldWidget.targetFormationLevel != widget.targetFormationLevel ||
+        oldWidget.formationActive != widget.formationActive) {
+      _loader.replaceFactory(_stream);
+      unawaited(_loader.start());
+    }
+  }
+
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _loader.removeListener(_onChanged);
+    _loader.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    const clubId = FirebaseConfig.defaultClubId;
-
-    return StreamBuilder<List<TeamChannel>>(
-      stream: _channelService.getChannelsForUser(
-        clubId,
-        widget.roles,
-        includeAllChannels: widget.includeAllChannels,
-        plongeurCode: widget.plongeurCode,
-        targetFormationLevel: widget.targetFormationLevel,
-        formationActive: widget.formationActive,
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-          _lastChannels = snapshot.data!;
-        }
-        final sourceChannels =
-            snapshot.hasData ? snapshot.data! : _lastChannels;
-        final channels = sourceChannels
-            .where((channel) => _teamChannelMatchesSearch(
-                  channel,
-                  widget.searchQuery,
-                ))
-            .toList();
-        if (channels.isEmpty && snapshot.hasError) {
-          return const _CommunicationLoadError(
-            label: 'Impossible de charger les discussions d’équipe.',
-          );
-        }
-        if (channels.isEmpty) return const SizedBox.shrink();
-        return Column(
-          children: [
-            if (snapshot.hasError)
-              const _CommunicationLoadError(
-                label:
-                    'Mise à jour des discussions indisponible. Les données précédentes restent affichées.',
-              ),
-            ...channels.map(
-              (channel) => _TeamChannelChatRow(
-                channel: channel,
-                hideIfRead: widget.filter == _CommunicationFilter.unread,
-                searchQuery: widget.searchQuery,
-              ),
-            ),
-          ],
-        );
-      },
+    final channels = (_loader.value ?? const <TeamChannel>[])
+        .where(
+          (channel) => _teamChannelMatchesSearch(channel, widget.searchQuery),
+        )
+        .toList();
+    if (!_loader.hasValue && _loader.isLoading) {
+      return const _CommunicationLoadPending();
+    }
+    return Column(
+      children: [
+        if (_loader.isStalled || _loader.error != null)
+          _CommunicationLoadError(
+            label: _loader.hasValue
+                ? 'Mise à jour des discussions indisponible. Les données précédentes restent affichées.'
+                : 'Impossible de charger les discussions d’équipe.',
+            onRetry: _loader.retry,
+          ),
+        ...channels.map(
+          (channel) => _TeamChannelChatRow(
+            channel: channel,
+            hideIfRead: widget.filter == _CommunicationFilter.unread,
+            searchQuery: widget.searchQuery,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -959,20 +978,23 @@ class _TeamChannelChatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const clubId = FirebaseConfig.defaultClubId;
-    final accentColor = _teamChannelAccentColor(channel.type);
     final unreadProvider = context.watch<UnreadCountProvider>();
     final userId = context.watch<AuthProvider>().currentUser?.uid;
     final cursorAuthority = unreadProvider.usesCursorReadState;
+    final snapshotCount = unreadProvider.teamUnreadFor(channel.id);
+    if (snapshotCount != null) {
+      return _buildRow(context, snapshotCount, statusUnavailable: false);
+    }
 
     return FutureBuilder<int>(
       future: cursorAuthority
           ? (!unreadProvider.isCursorReady || userId == null
-              ? null
-              : _cursorUnreadCountService.countTeamChannel(
-                  clubId,
-                  userId,
-                  channel.id,
-                ))
+                ? null
+                : _cursorUnreadCountService.countTeamChannel(
+                    clubId,
+                    userId,
+                    channel.id,
+                  ))
           : _unreadCountService.countUnreadForTeamChannel(clubId, channel.id),
       builder: (context, snapshot) {
         final statusUnavailable = snapshot.hasError || !snapshot.hasData;
@@ -984,35 +1006,50 @@ class _TeamChannelChatRow extends StatelessWidget {
         )) {
           return const SizedBox.shrink();
         }
-        return _CommunicationChatRow(
-          avatar: _CommunicationAvatar(
-            icon: channel.type.iconData,
-            colors: [
-              accentColor.withValues(alpha: 0.80),
-              accentColor,
-            ],
-          ),
-          title: channel.name,
-          sender: channel.type.displayName,
-          preview: channel.description ?? channel.type.description,
-          timeLabel: unreadCount > 0 ? '10:22' : '09:55',
-          unreadCount: unreadCount,
-          unreadStatusUnavailable: statusUnavailable,
-          searchQuery: searchQuery,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => TeamChatScreen(channel: channel),
-              ),
-            );
-          },
+        return _buildRow(
+          context,
+          unreadCount,
+          statusUnavailable: statusUnavailable,
+        );
+      },
+    );
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    int unreadCount, {
+    required bool statusUnavailable,
+  }) {
+    final accentColor = _teamChannelAccentColor(channel.type);
+    if (shouldHideCommunicationUnreadRow(
+      hideIfRead: hideIfRead,
+      unreadCount: unreadCount,
+      statusUnavailable: statusUnavailable,
+    )) {
+      return const SizedBox.shrink();
+    }
+    return _CommunicationChatRow(
+      avatar: _CommunicationAvatar(
+        icon: channel.type.iconData,
+        colors: [accentColor.withValues(alpha: 0.80), accentColor],
+      ),
+      title: channel.name,
+      sender: channel.type.displayName,
+      preview: channel.description ?? channel.type.description,
+      timeLabel: unreadCount > 0 ? '10:22' : '09:55',
+      unreadCount: unreadCount,
+      unreadStatusUnavailable: statusUnavailable,
+      searchQuery: searchQuery,
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => TeamChatScreen(channel: channel)),
         );
       },
     );
   }
 }
 
-class _SessionChatsInboxSection extends StatelessWidget {
+class _SessionChatsInboxSection extends StatefulWidget {
   const _SessionChatsInboxSection({
     required this.filter,
     required this.searchQuery,
@@ -1025,50 +1062,78 @@ class _SessionChatsInboxSection extends StatelessWidget {
   static final SessionMessageService _messageService = SessionMessageService();
 
   @override
+  State<_SessionChatsInboxSection> createState() =>
+      _SessionChatsInboxSectionState();
+}
+
+class _SessionChatsInboxSectionState extends State<_SessionChatsInboxSection> {
+  late final RetainedStreamLoader<List<PiscineSession>> _loader;
+
+  @override
+  void initState() {
+    super.initState();
+    _loader = RetainedStreamLoader<List<PiscineSession>>(
+      streamFactory: () => _SessionChatsInboxSection._sessionService
+          .getPublishedChatSessions(FirebaseConfig.defaultClubId),
+    )..addListener(_onChanged);
+    unawaited(_loader.start());
+  }
+
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _loader.removeListener(_onChanged);
+    _loader.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final userId = context.watch<AuthProvider>().currentUser?.uid;
     if (userId == null) return const SizedBox.shrink();
 
-    return StreamBuilder<List<PiscineSession>>(
-      stream: _sessionService.getPublishedChatSessions(
-        FirebaseConfig.defaultClubId,
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const _CommunicationLoadError(
-            label: 'Impossible de charger les discussions de piscine.',
-          );
-        }
-        if (!snapshot.hasData) {
-          return const _CommunicationLoadPending();
-        }
-        final rows = <Widget>[];
-        for (final session in snapshot.data ?? const <PiscineSession>[]) {
-          for (final group in _messageService.getAvailableGroups(
+    if (!_loader.hasValue && _loader.isLoading) {
+      return const _CommunicationLoadPending();
+    }
+    final rows = <Widget>[];
+    for (final session in _loader.value ?? const <PiscineSession>[]) {
+      for (final group
+          in _SessionChatsInboxSection._messageService.getAvailableGroups(
             session: session,
             userId: userId,
           )) {
-            if (!_matchesSearch(searchQuery, [
-              'Séances piscine',
-              session.formattedDate,
-              session.lieu,
-              group.displayName,
-            ])) {
-              continue;
-            }
-            rows.add(
-              _SessionConversationRow(
-                session: session,
-                group: group,
-                hideIfRead: filter == _CommunicationFilter.unread,
-                searchQuery: searchQuery,
-              ),
-            );
-          }
+        if (!_matchesSearch(widget.searchQuery, [
+          'Séances piscine',
+          session.formattedDate,
+          session.lieu,
+          group.displayName,
+        ])) {
+          continue;
         }
-        if (rows.isEmpty) return const SizedBox.shrink();
-        return Column(children: rows);
-      },
+        rows.add(
+          _SessionConversationRow(
+            session: session,
+            group: group,
+            hideIfRead: widget.filter == _CommunicationFilter.unread,
+            searchQuery: widget.searchQuery,
+          ),
+        );
+      }
+    }
+    return Column(
+      children: [
+        if (_loader.isStalled || _loader.error != null)
+          _CommunicationLoadError(
+            label: _loader.hasValue
+                ? 'Mise à jour des discussions piscine indisponible. Les données précédentes restent affichées.'
+                : 'Impossible de charger les discussions de piscine.',
+            onRetry: _loader.retry,
+          ),
+        ...rows,
+      ],
     );
   }
 }
@@ -1094,24 +1159,34 @@ class _SessionConversationRow extends StatelessWidget {
     const clubId = FirebaseConfig.defaultClubId;
     final unread = context.watch<UnreadCountProvider>();
     final userId = context.watch<AuthProvider>().currentUser?.uid;
-    final scopeLevel =
-        group.type == SessionGroupType.niveau ? group.level : null;
+    final scopeLevel = group.type == SessionGroupType.niveau
+        ? group.level
+        : null;
     final count = unread.usesCursorReadState
         ? (!unread.isCursorReady || userId == null
-            ? null
-            : _cursor.countSessionChat(
-                clubId,
-                userId,
-                session.id,
-                group.type.value,
-                groupLevel: scopeLevel,
-              ))
+              ? null
+              : _cursor.countSessionChat(
+                  clubId,
+                  userId,
+                  session.id,
+                  group.type.value,
+                  groupLevel: scopeLevel,
+                ))
         : _legacy.countUnreadForSessionChat(
             clubId,
             session.id,
             group.type.value,
             groupLevel: scopeLevel,
           );
+    final scopeId = readStateSessionScopeId(
+      session.id,
+      group.type.value,
+      scopeLevel,
+    );
+    final snapshotCount = unread.sessionUnreadFor(scopeId);
+    if (snapshotCount != null) {
+      return _buildRow(context, snapshotCount, statusUnavailable: false);
+    }
 
     return FutureBuilder<int>(
       future: count,
@@ -1125,30 +1200,47 @@ class _SessionConversationRow extends StatelessWidget {
         )) {
           return const SizedBox.shrink();
         }
-        return _CommunicationChatRow(
-          avatar: const _CommunicationAvatar(
-            icon: Icons.pool_outlined,
-            colors: [Color(0xFF1597BB), Color(0xFF0B5FA5)],
+        return _buildRow(
+          context,
+          unreadCount,
+          statusUnavailable: statusUnavailable,
+        );
+      },
+    );
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    int unreadCount, {
+    required bool statusUnavailable,
+  }) {
+    if (shouldHideCommunicationUnreadRow(
+      hideIfRead: hideIfRead,
+      unreadCount: unreadCount,
+      statusUnavailable: statusUnavailable,
+    )) {
+      return const SizedBox.shrink();
+    }
+    return _CommunicationChatRow(
+      avatar: const _CommunicationAvatar(
+        icon: Icons.pool_outlined,
+        colors: [Color(0xFF1597BB), Color(0xFF0B5FA5)],
+      ),
+      title: group.displayName,
+      sender: session.formattedDate,
+      preview: session.lieu,
+      timeLabel: '',
+      unreadCount: unreadCount,
+      unreadStatusUnavailable: statusUnavailable,
+      searchQuery: searchQuery,
+      tag: 'Piscine',
+      tagColor: const Color(0xFF0B5FA5),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                SessionChatScreen(session: session, chatGroup: group),
           ),
-          title: group.displayName,
-          sender: session.formattedDate,
-          preview: session.lieu,
-          timeLabel: '',
-          unreadCount: unreadCount,
-          unreadStatusUnavailable: statusUnavailable,
-          searchQuery: searchQuery,
-          tag: 'Piscine',
-          tagColor: const Color(0xFF0B5FA5),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SessionChatScreen(
-                  session: session,
-                  chatGroup: group,
-                ),
-              ),
-            );
-          },
         );
       },
     );
@@ -1159,53 +1251,58 @@ bool shouldHideCommunicationUnreadRow({
   required bool hideIfRead,
   required int? unreadCount,
   required bool statusUnavailable,
-}) =>
-    hideIfRead && !statusUnavailable && unreadCount == 0;
+}) => hideIfRead && !statusUnavailable && unreadCount == 0;
 
 class _CommunicationLoadPending extends StatelessWidget {
   const _CommunicationLoadPending();
 
   @override
   Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Center(child: CircularProgressIndicator()),
-      );
+    padding: EdgeInsets.symmetric(vertical: 12),
+    child: Center(child: CircularProgressIndicator()),
+  );
 }
 
 class _CommunicationLoadError extends StatelessWidget {
-  const _CommunicationLoadError({required this.label});
+  const _CommunicationLoadError({required this.label, this.onRetry});
 
   final String label;
+  final Future<void> Function()? onRetry;
 
   @override
   Widget build(BuildContext context) => Semantics(
-        liveRegion: true,
-        child: Container(
-          key: const ValueKey('communication-load-error'),
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.shade700),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.sync_problem_rounded, color: Colors.orange.shade800),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: Colors.orange.shade900,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+    liveRegion: true,
+    child: Container(
+      key: const ValueKey('communication-load-error'),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade700),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.sync_problem_rounded, color: Colors.orange.shade800),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w700,
               ),
-            ],
+            ),
           ),
-        ),
-      );
+          if (onRetry != null)
+            TextButton(
+              onPressed: () => unawaited(onRetry!()),
+              child: const Text('Réessayer'),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 bool _matchesSearch(String query, Iterable<String?> values) {
@@ -1232,11 +1329,7 @@ String _normalizeSearch(String value) {
       .replaceAll(RegExp(r'\s+'), ' ');
 }
 
-List<TextSpan> _highlightSpans(
-  String text,
-  String query,
-  TextStyle baseStyle,
-) {
+List<TextSpan> _highlightSpans(String text, String query, TextStyle baseStyle) {
   final needle = _normalizeSearch(query);
   if (needle.isEmpty || text.isEmpty) {
     return [TextSpan(text: text, style: baseStyle)];
@@ -1272,19 +1365,24 @@ List<TextSpan> _highlightSpans(
 
     final originalStart = originalOffsets[matchIndex];
     final originalEndCharStart = originalOffsets[matchEndIndex];
-    final originalEnd = originalEndCharStart +
+    final originalEnd =
+        originalEndCharStart +
         String.fromCharCode(text.runes.elementAt(matchEndIndex)).length;
 
     if (originalStart > originalIndex) {
-      spans.add(TextSpan(
-        text: text.substring(originalIndex, originalStart),
-        style: baseStyle,
-      ));
+      spans.add(
+        TextSpan(
+          text: text.substring(originalIndex, originalStart),
+          style: baseStyle,
+        ),
+      );
     }
-    spans.add(TextSpan(
-      text: text.substring(originalStart, originalEnd),
-      style: highlightStyle,
-    ));
+    spans.add(
+      TextSpan(
+        text: text.substring(originalStart, originalEnd),
+        style: highlightStyle,
+      ),
+    );
 
     normalizedIndex = matchIndex + needle.length;
     originalIndex = originalEnd;
