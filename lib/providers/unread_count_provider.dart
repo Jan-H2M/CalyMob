@@ -39,25 +39,24 @@ class UnreadCountProvider extends ChangeNotifier {
     Future<SharedPreferences> Function()? preferencesLoader,
     @visibleForTesting
     Future<void> Function(String clubId, String userId, String token)?
-    cacheBeforeCommit,
-  }) : _service =
-           service ?? (legacyRefresh == null ? UnreadCountService() : null),
-       _tracker = tracker ?? LocalReadTracker(),
-       _readState =
-           readState ?? (cursorRefresh == null ? ReadStateService() : null),
-       _cursorService =
-           cursorService ??
-           (cursorRefresh == null ? CursorUnreadCountService() : null),
-       _featureFlags =
-           featureFlags ?? (flagStream == null ? FeatureFlagService() : null),
-       _legacyRefresh = legacyRefresh,
-       _cursorRefresh = cursorRefresh,
-       _cursorBootstrap = cursorBootstrap,
-       _legacySync = legacySync,
-       _badgeUpdater = badgeUpdater,
-       _flagStream = flagStream,
-       _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance,
-       _cacheBeforeCommit = cacheBeforeCommit;
+        cacheBeforeCommit,
+  })  : _service =
+            service ?? (legacyRefresh == null ? UnreadCountService() : null),
+        _tracker = tracker ?? LocalReadTracker(),
+        _readState =
+            readState ?? (cursorRefresh == null ? ReadStateService() : null),
+        _cursorService = cursorService ??
+            (cursorRefresh == null ? CursorUnreadCountService() : null),
+        _featureFlags =
+            featureFlags ?? (flagStream == null ? FeatureFlagService() : null),
+        _legacyRefresh = legacyRefresh,
+        _cursorRefresh = cursorRefresh,
+        _cursorBootstrap = cursorBootstrap,
+        _legacySync = legacySync,
+        _badgeUpdater = badgeUpdater,
+        _flagStream = flagStream,
+        _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance,
+        _cacheBeforeCommit = cacheBeforeCommit;
 
   final UnreadCountService? _service;
   final LocalReadTracker _tracker;
@@ -72,7 +71,7 @@ class UnreadCountProvider extends ChangeNotifier {
   final Stream<UnreadCursorFeatureFlag> Function(String clubId)? _flagStream;
   final Future<SharedPreferences> Function() _preferencesLoader;
   final Future<void> Function(String clubId, String userId, String token)?
-  _cacheBeforeCommit;
+      _cacheBeforeCommit;
 
   int _announcements = 0;
   int _eventMessages = 0;
@@ -195,29 +194,31 @@ class UnreadCountProvider extends ChangeNotifier {
       userId,
       section,
       scopeId: scopeId,
-    ))?.toDate();
+    ))
+        ?.toDate();
   }
 
   Future<void> markAnnouncementSeen(
     String announcementId, {
     String? visibleReplyId,
     DateTime? visibleThroughAt,
-  }) => _acknowledge(
-    (clubId, userId) => _readState!.markAnnouncementSeen(
-      clubId,
-      userId,
-      announcementId,
-      visibleReplyId: visibleReplyId,
-    ),
-    legacyKey: 'announcement_$announcementId',
-    visibleThroughAt: visibleThroughAt,
-  );
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markAnnouncementSeen(
+          clubId,
+          userId,
+          announcementId,
+          visibleReplyId: visibleReplyId,
+        ),
+        legacyKey: 'announcement_$announcementId',
+        visibleThroughAt: visibleThroughAt,
+      );
 
   Future<void> markEventsSeen() => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSectionSeen(clubId, userId, ReadStateSection.events),
-    legacySection: ReadStateSection.events,
-  );
+        (clubId, userId) => _readState!
+            .markSectionSeen(clubId, userId, ReadStateSection.events),
+        legacySection: ReadStateSection.events,
+      );
 
   Future<void> markCommunicationSeen() async {
     await markAnnouncementsSeen();
@@ -226,55 +227,57 @@ class UnreadCountProvider extends ChangeNotifier {
   }
 
   Future<void> markAnnouncementsSeen() => _acknowledge(
-    (clubId, userId) => _readState!.markSectionSeen(
-      clubId,
-      userId,
-      ReadStateSection.announcements,
-    ),
-    legacyKey: 'announcements',
-  );
+        (clubId, userId) => _readState!.markSectionSeen(
+          clubId,
+          userId,
+          ReadStateSection.announcements,
+        ),
+        legacyKey: 'announcements',
+      );
 
   Future<void> markTeamsSeen() => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSectionSeen(clubId, userId, ReadStateSection.teams),
-    legacySection: ReadStateSection.teams,
-  );
+        (clubId, userId) =>
+            _readState!.markSectionSeen(clubId, userId, ReadStateSection.teams),
+        legacySection: ReadStateSection.teams,
+      );
 
   Future<void> markSessionsSeen() => _acknowledge(
-    (clubId, userId) =>
-        _readState!.markSectionSeen(clubId, userId, ReadStateSection.sessions),
-    legacySection: ReadStateSection.sessions,
-  );
+        (clubId, userId) => _readState!
+            .markSectionSeen(clubId, userId, ReadStateSection.sessions),
+        legacySection: ReadStateSection.sessions,
+      );
 
   Future<void> markEventConversationSeen(
     String operationId, {
     required String visibleMessageId,
     DateTime? visibleThroughAt,
-  }) => _acknowledge(
-    (clubId, userId) => _readState!.markEventConversationSeen(
-      clubId,
-      userId,
-      operationId,
-      visibleMessageId: visibleMessageId,
-    ),
-    legacyKey: 'operation_$operationId',
-    visibleThroughAt: visibleThroughAt,
-  );
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markEventConversationSeen(
+          clubId,
+          userId,
+          operationId,
+          visibleMessageId: visibleMessageId,
+        ),
+        legacyKey: 'operation_$operationId',
+        visibleThroughAt: visibleThroughAt,
+      );
 
   Future<void> markTeamChannelSeen(
     String channelId, {
     required String visibleMessageId,
     DateTime? visibleThroughAt,
-  }) => _acknowledge(
-    (clubId, userId) => _readState!.markTeamChannelSeen(
-      clubId,
-      userId,
-      channelId,
-      visibleMessageId: visibleMessageId,
-    ),
-    legacyKey: 'team_$channelId',
-    visibleThroughAt: visibleThroughAt,
-  );
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markTeamChannelSeen(
+          clubId,
+          userId,
+          channelId,
+          visibleMessageId: visibleMessageId,
+        ),
+        legacyKey: 'team_$channelId',
+        visibleThroughAt: visibleThroughAt,
+      );
 
   Future<void> markSessionChatSeen(
     String scopeId, {
@@ -283,19 +286,20 @@ class UnreadCountProvider extends ChangeNotifier {
     String? groupType,
     String? groupLevel,
     DateTime? visibleThroughAt,
-  }) => _acknowledge(
-    (clubId, userId) => _readState!.markSessionChatSeen(
-      clubId,
-      userId,
-      scopeId,
-      visibleMessageId: visibleMessageId,
-      sessionId: sessionId,
-      groupType: groupType,
-      groupLevel: groupLevel,
-    ),
-    legacyKey: 'session_${scopeId.replaceAll('__', '_')}',
-    visibleThroughAt: visibleThroughAt,
-  );
+  }) =>
+      _acknowledge(
+        (clubId, userId) => _readState!.markSessionChatSeen(
+          clubId,
+          userId,
+          scopeId,
+          visibleMessageId: visibleMessageId,
+          sessionId: sessionId,
+          groupType: groupType,
+          groupLevel: groupLevel,
+        ),
+        legacyKey: 'session_${scopeId.replaceAll('__', '_')}',
+        visibleThroughAt: visibleThroughAt,
+      );
 
   Future<void> _acknowledge(
     Future<DateTime> Function(String clubId, String userId) action, {
@@ -409,8 +413,7 @@ class UnreadCountProvider extends ChangeNotifier {
     String? targetFormationLevel,
     bool formationActive = false,
   }) async {
-    final contextChanged =
-        !_isListening ||
+    final contextChanged = !_isListening ||
         _clubId != clubId ||
         _userId != userId ||
         !listEquals(_roles, roles) ||
@@ -840,6 +843,9 @@ class UnreadCountProvider extends ChangeNotifier {
     final becameReady = !_cursorReady;
     _cursorReady = true;
     _lastRefreshError = null;
+    final scopesChanged = !mapEquals(_eventScopes, cursor.eventScopes) ||
+        !mapEquals(_teamScopes, cursor.teamScopes) ||
+        !mapEquals(_sessionScopes, cursor.sessionScopes);
     _eventScopes = Map<String, int>.unmodifiable(cursor.eventScopes);
     _teamScopes = Map<String, int>.unmodifiable(cursor.teamScopes);
     _sessionScopes = Map<String, int>.unmodifiable(cursor.sessionScopes);
@@ -850,7 +856,7 @@ class UnreadCountProvider extends ChangeNotifier {
       cursor.teams,
       cursor.sessions,
       source: 'cursor',
-      notifyEvenIfUnchanged: becameReady,
+      notifyEvenIfUnchanged: becameReady || scopesChanged,
     );
   }
 
@@ -886,11 +892,11 @@ class UnreadCountProvider extends ChangeNotifier {
       );
 
   List<int> _legacyValues(Map<String, int> counts) => <int>[
-    counts['announcements'] ?? 0,
-    counts['event_messages'] ?? 0,
-    counts['team_messages'] ?? 0,
-    counts['session_messages'] ?? 0,
-  ];
+        counts['announcements'] ?? 0,
+        counts['event_messages'] ?? 0,
+        counts['team_messages'] ?? 0,
+        counts['session_messages'] ?? 0,
+      ];
 
   Future<CursorUnreadBreakdown> _loadCursorCounts(
     String clubId,

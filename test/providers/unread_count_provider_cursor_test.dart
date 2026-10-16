@@ -75,6 +75,49 @@ void main() {
     await flags.close();
   });
 
+  test('equal totals still publish changed destination-row scopes', () async {
+    final flags = StreamController<UnreadCursorFeatureFlag>.broadcast();
+    var snapshot = const CursorUnreadBreakdown(
+      announcements: 0,
+      events: 2,
+      teams: 0,
+      sessions: 0,
+      eventScopes: {'event-a': 2},
+    );
+    final provider = UnreadCountProvider(
+      flagStream: (_) => flags.stream,
+      legacyRefresh: () async => const <String, int>{},
+      cursorRefresh: () async => snapshot,
+      cursorBootstrap: () async {},
+      badgeUpdater: (_) {},
+    );
+    provider.listen('club', 'member');
+    flags.add(const UnreadCursorFeatureFlag(
+      enabled: true,
+      mode: UnreadCursorV1Mode.on,
+    ));
+    await waitUntil(() => provider.isCursorReady);
+    var notifications = 0;
+    provider.addListener(() => notifications++);
+
+    snapshot = const CursorUnreadBreakdown(
+      announcements: 0,
+      events: 2,
+      teams: 0,
+      sessions: 0,
+      eventScopes: {'event-b': 2},
+    );
+    await provider.refresh();
+
+    expect(provider.eventMessages, 2);
+    expect(provider.eventUnreadFor('event-a'), 0);
+    expect(provider.eventUnreadFor('event-b'), 2);
+    expect(notifications, greaterThan(0));
+
+    provider.dispose();
+    await flags.close();
+  });
+
   test(
     'OFF uses legacy UI and writer; shadow keeps legacy UI but calculates cursor',
     () async {
