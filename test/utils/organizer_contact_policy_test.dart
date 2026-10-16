@@ -114,4 +114,49 @@ void main() {
       );
     });
   });
+
+  group('canDisplayParticipantPhone', () {
+    test('allows an encadrant to see an exact member opt-in', () {
+      expect(
+        canDisplayParticipantPhone(
+          isEventStaff: true,
+          memberId: 'member-1',
+          directoryMemberId: 'member-1',
+          sharePhone: true,
+          phoneNumber: '+32000000000',
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects non-staff, mismatched IDs and no consent', () {
+      for (final candidate in [
+        (staff: false, id: 'member-1', directoryId: 'member-1', share: true),
+        (staff: true, id: 'member-1', directoryId: 'member-2', share: true),
+        (staff: true, id: 'member-1', directoryId: null, share: true),
+        (staff: true, id: 'member-1', directoryId: 'member-1', share: false),
+      ]) {
+        expect(
+          canDisplayParticipantPhone(
+            isEventStaff: candidate.staff,
+            memberId: candidate.id,
+            directoryMemberId: candidate.directoryId,
+            sharePhone: candidate.share,
+            phoneNumber: '+32000000000',
+          ),
+          isFalse,
+        );
+      }
+      expect(
+        canDisplayParticipantPhone(
+          isEventStaff: true,
+          memberId: 'member-1',
+          directoryMemberId: 'member-1',
+          sharePhone: true,
+          phoneNumber: ' ',
+        ),
+        isFalse,
+      );
+    });
+  });
 }
