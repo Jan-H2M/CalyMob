@@ -132,6 +132,45 @@ void main() {
     expect(find.text('Suivi piscine'), findsOneWidget);
   });
 
+  testWidgets('saved pool remark is not reported as failed if refresh fails', (
+    tester,
+  ) async {
+    var reads = 0;
+    var writes = 0;
+    await _pumpLive(
+      tester,
+      scope: FormationTrackingScope.piscineOnly,
+      observationsLoader: () async {
+        reads += 1;
+        if (reads > 1) throw StateError('refresh unavailable');
+        return const [];
+      },
+      poolRemarkWriter: (note) async {
+        expect(note, 'Bonne séance');
+        writes += 1;
+      },
+    );
+
+    await tester.tap(find.text('Ajouter une remarque piscine'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'Bonne séance');
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(writes, 1);
+    expect(
+      find.text(
+        'Remarque enregistrée, mais la liste n’a pas pu être actualisée.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('La remarque n’a pas pu être enregistrée.'),
+      findsNothing,
+    );
+  });
+
   test('pool observation boundary rejects non-pool records', () {
     expect(
       formationObservationVisible(FormationTrackingScope.piscineOnly, const {
@@ -253,6 +292,7 @@ Future<void> _pumpLive(
   Future<FormationSnapshotDoc?> Function()? snapshotLoader,
   Future<MilExperienceOverview?> Function()? milOverviewLoader,
   required Future<List<Map<String, dynamic>>> Function() observationsLoader,
+  Future<void> Function(String note)? poolRemarkWriter,
 }) async {
   tester.view.physicalSize = const Size(1200, 1800);
   tester.view.devicePixelRatio = 1;
@@ -282,6 +322,7 @@ Future<void> _pumpLive(
         snapshotLoader: snapshotLoader,
         milOverviewLoader: milOverviewLoader,
         observationsLoader: observationsLoader,
+        poolRemarkWriter: poolRemarkWriter,
       ),
     ),
   );

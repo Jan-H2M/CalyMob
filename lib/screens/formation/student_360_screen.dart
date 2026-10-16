@@ -44,6 +44,7 @@ class Student360Screen extends StatefulWidget {
   final Future<FormationSnapshotDoc?> Function()? snapshotLoader;
   final Future<MilExperienceOverview?> Function()? milOverviewLoader;
   final Future<List<Map<String, dynamic>>> Function()? observationsLoader;
+  final Future<void> Function(String note)? poolRemarkWriter;
 
   const Student360Screen({
     super.key,
@@ -59,6 +60,7 @@ class Student360Screen extends StatefulWidget {
     this.snapshotLoader,
     this.milOverviewLoader,
     this.observationsLoader,
+    this.poolRemarkWriter,
   });
 
   @override
@@ -781,32 +783,54 @@ class _Student360ScreenState extends State<Student360Screen> {
     noteController.dispose();
     if (note == null || note.isEmpty || !mounted) return;
 
-    final auth = context.read<AuthProvider>();
-    final observerId = auth.currentUser?.uid ?? '';
-    if (observerId.isEmpty) return;
     try {
-      await MemberObservationService().addPoolFormationRemark(
-        clubId: widget.clubId,
-        memberId: widget.member.id,
-        memberName: _fullName,
-        memberNiveau: widget.scope == FormationTrackingScope.full
-            ? _snapshot?.targetLevel ?? ''
-            : '',
-        note: note,
-        observerId: observerId,
-      );
-      final observations = await _readObservations();
-      if (!mounted) return;
-      setState(() => _observations = observations);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Remarque piscine enregistrée')),
-      );
+      if (widget.poolRemarkWriter != null) {
+        await widget.poolRemarkWriter!(note);
+      } else {
+        final auth = context.read<AuthProvider>();
+        final observerId = auth.currentUser?.uid ?? '';
+        if (observerId.isEmpty) return;
+        await MemberObservationService().addPoolFormationRemark(
+          clubId: widget.clubId,
+          memberId: widget.member.id,
+          memberName: _fullName,
+          memberNiveau: widget.scope == FormationTrackingScope.full
+              ? _snapshot?.targetLevel ?? ''
+              : '',
+          note: note,
+          observerId: observerId,
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('La remarque n’a pas pu être enregistrée.'),
           backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final observations = await _readObservations();
+      if (!mounted) return;
+      setState(() => _observations = observations);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Remarque piscine enregistrée')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[student_360] remarque enregistrée, actualisation impossible: '
+        '$error\n$stackTrace',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Remarque enregistrée, mais la liste n’a pas pu être actualisée.',
+          ),
+          backgroundColor: Colors.orangeAccent,
         ),
       );
     }
