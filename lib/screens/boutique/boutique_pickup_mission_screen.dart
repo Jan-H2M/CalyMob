@@ -290,7 +290,7 @@ class _BoutiquePickupMissionScreenState
                                   onPressed: p['ready'] != true || _busy
                                       ? null
                                       : () async {
-                                          await Navigator.push(
+                                          final result = await Navigator.push(
                                               context,
                                               boutiqueAccessGuardedRoute(
                                                   sourceContext: context,
@@ -307,7 +307,15 @@ class _BoutiquePickupMissionScreenState
                                                               widget.manager,
                                                           service:
                                                               widget.service)));
-                                          if (mounted) _load();
+                                          if (!mounted || !context.mounted) {
+                                            return;
+                                          }
+                                          if (result is Map &&
+                                              result['missionClosed'] == true) {
+                                            Navigator.pop(context, true);
+                                          } else {
+                                            _load();
+                                          }
                                         },
                                   child: const Text('Vérifier et remettre')),
                             ])))),

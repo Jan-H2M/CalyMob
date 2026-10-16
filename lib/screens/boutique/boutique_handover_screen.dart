@@ -108,7 +108,7 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               'Remise confirmée : ${result['count']} pièce(s) à ${result['recipientName']}.')));
-      Navigator.pop(context, true);
+      Navigator.pop(context, result);
     } catch (e) {
       if (BoutiqueOperationsService.definitiveFailure(e)) {
         _pending = null;
@@ -126,6 +126,9 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
   @override
   Widget build(BuildContext context) {
     final locked = _busy || _pending != null;
+    final remaining = (widget.packet['units'] as List).length - _scanned.length;
+    final enoughArticles = _scanned.isNotEmpty &&
+        (widget.packet['allowPartial'] == true || remaining == 0);
     return Scaffold(
         appBar: AppBar(title: const Text('Remettre au membre')),
         body: ListView(padding: const EdgeInsets.all(16), children: [
@@ -168,6 +171,8 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
               icon: const Icon(Icons.qr_code_scanner),
               label:
                   Text('Scanner les articles · ${_scanned.length} vérifié(s)')),
+          if (remaining > 0 && widget.packet['allowPartial'] != true)
+            Text('Encore $remaining fiche(s) à scanner pour ce colis.'),
           const SizedBox(height: 24),
           const Text('2. Identifier l’acheteur'),
           OutlinedButton.icon(
@@ -197,7 +202,7 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
               subtitle: const Text(
                   'Le QR identifie le membre ; il ne remplace pas votre vérification de la personne présente.'),
               value: _confirmed,
-              onChanged: locked || _recipient == null || _scanned.isEmpty
+              onChanged: locked || _recipient == null || !enoughArticles
                   ? null
                   : (v) => setState(() => _confirmed = v == true)),
           if (_error != null)
@@ -211,7 +216,7 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
                       (_pending == null &&
                           (!_confirmed ||
                               _recipient == null ||
-                              _scanned.isEmpty))
+                              !enoughArticles))
                   ? null
                   : _submit,
               child: Text(_busy
