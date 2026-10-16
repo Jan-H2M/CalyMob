@@ -40,6 +40,14 @@ in checksum entries now match this fixed cloud toolchain. Parsed lock comparison
 confirms every resolved dependency version, source and Podfile checksum is
 unchanged. Keep the strict deployment and lock-drift checks enabled.
 
+Gitleaks 8.30.1 classified the generated firebase_auth and local_auth_darwin
+podspec SHA-1 entries as generic API keys. The two exact commit/file/rule/line
+fingerprints are recorded in .gitleaksignore; no path, rule or future checksum
+change is broadly excluded. The same official scanner, with its release archive
+SHA-256 verified, scanned all 10 release commits (178,321 bytes) with no remaining
+findings. This CI-only follow-up does not change the app being built as 518 from
+fd68bb52ba7371c86426bf7f4c9f1d42910c1030.
+
 Marketing version stays 1.26.1. The generated configuration uses CI_BUILD_NUMBER
 from Apple's existing product-wide counter (last observed 514), which must exceed
 226; report the actual run number rather than the pubspec fallback number.
