@@ -36,6 +36,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final MemberService _memberService = MemberService();
   final SessionMessageService _messageService = SessionMessageService();
   late Stream<PiscineSession?> _sessionStream;
+  late Stream<List<PoolApneeLesson>> _apneeLessonsStream;
   List<SessionChatGroup> _chatGroups = [];
 
   @override
@@ -49,6 +50,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       clubId,
       widget.session.id,
     );
+    _apneeLessonsStream = FirebaseFirestore.instance
+        .collection(
+          'clubs/$clubId/piscine_sessions/${widget.session.id}/apnee_lessons',
+        )
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => PoolApneeLesson.fromMap(doc.data()))
+              .toList(),
+        );
 
     // Get available chat groups for this user
     if (userId != null) {
@@ -198,28 +209,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     if (session.type != 'theorie') ...[
                       const SizedBox(height: 16),
                       PoolApneeOverview(
-                        lessons: FirebaseFirestore.instance
-                            .collection(
-                              'clubs/$clubId/piscine_sessions/${session.id}/apnee_lessons',
-                            )
-                            .snapshots()
-                            .map(
-                              (snapshot) => snapshot.docs
-                                  .map(
-                                    (doc) =>
-                                        PoolApneeLesson.fromMap(doc.data()),
-                                  )
-                                  .toList(),
-                            ),
+                        lessons: _apneeLessonsStream,
                         resolveNames: (ids) async {
                           final names = <String, String>{};
                           await Future.wait(
                             ids.map((id) async {
-                              final data = await _memberService.getMemberData(
-                                clubId,
-                                id,
-                              );
-                              if (data != null) {
+                              final directory = await FirebaseFirestore.instance
+                                  .doc('clubs/$clubId/member_directory/$id')
+                                  .get();
+                              final data = directory.data();
+                              if (directory.exists && data != null) {
                                 names[id] = memberDisplayName(data);
                               }
                             }),
@@ -675,8 +674,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   ) {
     final hasLevel =
         attendee.assignedLevel != null && attendee.assignedLevel!.isNotEmpty;
-    final hasCourse =
-        attendee.assignedCourseId != null &&
+    final hasCourse = attendee.assignedCourseId != null &&
         attendee.assignedCourseId!.isNotEmpty;
     if (!hasLevel && !hasCourse) return null;
 
@@ -819,8 +817,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 final sheetNavigator = Navigator.of(sheetContext);
                 final sameLevel =
                     (attendee.assignedLevel ?? '') == (assignedLevel ?? '');
-                final sameCourse =
-                    (attendee.assignedCourseId ?? '') ==
+                final sameCourse = (attendee.assignedCourseId ?? '') ==
                     (assignedCourseId ?? '');
                 if (sameLevel && sameCourse) {
                   sheetNavigator.pop();
@@ -1002,8 +999,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                 ? 'Utiliser le niveau détecté: ${_levelLabel(naturalLevel)}'
                                 : 'Supprimer toute affectation forcée pour ce participant.',
                           ),
-                          trailing:
-                              attendee.assignedLevel == null &&
+                          trailing: attendee.assignedLevel == null &&
                                   attendee.assignedCourseId == null
                               ? const Icon(
                                   Icons.check_circle,
@@ -1015,8 +1011,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         const SizedBox(height: 16),
                         ...availableLevels.map((level) {
                           final assignment = session.niveaux[level];
-                          final courses =
-                              assignment?.getCoursesForHeure(
+                          final courses = assignment?.getCoursesForHeure(
                                 _slotHeureForLevel(level),
                               ) ??
                               const <LevelCourse>[];
@@ -1028,8 +1023,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                 );
                           final levelSelected =
                               attendee.assignedLevel == level &&
-                              (attendee.assignedCourseId == null ||
-                                  attendee.assignedCourseId!.isEmpty);
+                                  (attendee.assignedCourseId == null ||
+                                      attendee.assignedCourseId!.isEmpty);
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 12),
@@ -1097,9 +1092,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                     hasParallelCourses
                                         ? 'Sans groupe précis, à répartir ensuite'
                                         : (singleTheme != null &&
-                                              singleTheme.isNotEmpty)
-                                        ? singleTheme
-                                        : 'Aucun thème défini',
+                                                singleTheme.isNotEmpty)
+                                            ? singleTheme
+                                            : 'Aucun thème défini',
                                   ),
                                   trailing: levelSelected
                                       ? const Icon(
@@ -1118,15 +1113,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                     final course = entry.value;
                                     final courseSelected =
                                         attendee.assignedLevel == level &&
-                                        attendee.assignedCourseId == course.id;
+                                            attendee.assignedCourseId ==
+                                                course.id;
 
                                     return ListTile(
                                       dense: true,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                            horizontal: 20,
-                                            vertical: 2,
-                                          ),
+                                        horizontal: 20,
+                                        vertical: 2,
+                                      ),
                                       leading: Container(
                                         width: 30,
                                         height: 30,
@@ -1437,13 +1433,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           child: ListTile(
                             onTap: canManageAssignments
                                 ? () => _showAttendeeAssignmentSheet(
-                                    clubId: clubId,
-                                    session: session,
-                                    attendee: attendee,
-                                  )
+                                      clubId: clubId,
+                                      session: session,
+                                      attendee: attendee,
+                                    )
                                 : null,
-                            isThreeLine:
-                                summary?.theme != null &&
+                            isThreeLine: summary?.theme != null &&
                                 summary!.theme!.isNotEmpty,
                             leading: CircleAvatar(
                               backgroundColor: attendee.isGuest
@@ -1587,8 +1582,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (levelAssignment == null) return const SizedBox.shrink();
 
           // Cacher les niveaux vides (pas d'encadrants et pas de thème)
-          final hasNoContent =
-              levelAssignment.encadrants.isEmpty &&
+          final hasNoContent = levelAssignment.encadrants.isEmpty &&
               (levelAssignment.theme == null ||
                   levelAssignment.theme!.isEmpty) &&
               (levelAssignment.theme1ereHeure == null ||
@@ -1609,11 +1603,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             currentUserId: userId,
             onEditTheme: canEditTheme
                 ? () => _showThemeEditDialog(
-                    clubId: clubId,
-                    sessionId: session.id,
-                    level: level,
-                    currentTheme: levelAssignment.theme ?? '',
-                  )
+                      clubId: clubId,
+                      sessionId: session.id,
+                      level: level,
+                      currentTheme: levelAssignment.theme ?? '',
+                    )
                 : null,
           );
         }),
@@ -1934,9 +1928,8 @@ class _MemberTile extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: isCurrentUser
-                ? AppColors.middenblauw
-                : Colors.grey.shade300,
+            backgroundColor:
+                isCurrentUser ? AppColors.middenblauw : Colors.grey.shade300,
             child: Text(
               name.isNotEmpty ? name[0].toUpperCase() : '?',
               style: TextStyle(
@@ -2183,12 +2176,11 @@ class _LevelCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       color:
                           _effectiveTheme != null && _effectiveTheme!.isNotEmpty
-                          ? AppColors.lichtblauw.withOpacity(0.1)
-                          : Colors.grey.shade100,
+                              ? AppColors.lichtblauw.withOpacity(0.1)
+                              : Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color:
-                            _effectiveTheme != null &&
+                        color: _effectiveTheme != null &&
                                 _effectiveTheme!.isNotEmpty
                             ? AppColors.lichtblauw.withOpacity(0.3)
                             : Colors.grey.shade200,

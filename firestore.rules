@@ -1748,6 +1748,14 @@ service cloud.firestore {
       //         gonflage (map: {19h45, 20h15, 21h30} → array), type ('piscine'|'theorie'),
       //         theorie (optional map: {19h30, 21h45} → {encadrants, theme})
       match /piscine_sessions/{sessionId} {
+        // MOB-036: the pool organization screen may show the planned apnée
+        // roster to club members. It is server-managed and never writable by
+        // mobile clients; presence and official validation remain separate.
+        match /apnee_lessons/{lessonId} {
+          allow read: if isMember(clubId);
+          allow write: if false;
+        }
+
         // Read: All authenticated club members (mobile app - no session required)
         allow read: if isAuthenticated() &&
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
