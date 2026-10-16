@@ -41,6 +41,9 @@ class Student360Screen extends StatefulWidget {
   final MilExperienceOverview? previewMilOverview;
   final PoolFormationSnapshotDoc? previewPoolSnapshot;
   final List<Map<String, dynamic>> previewObservations;
+  final Future<FormationSnapshotDoc?> Function()? snapshotLoader;
+  final Future<MilExperienceOverview?> Function()? milOverviewLoader;
+  final Future<List<Map<String, dynamic>>> Function()? observationsLoader;
 
   const Student360Screen({
     super.key,
@@ -53,6 +56,9 @@ class Student360Screen extends StatefulWidget {
     this.previewMilOverview,
     this.previewPoolSnapshot,
     this.previewObservations = const [],
+    this.snapshotLoader,
+    this.milOverviewLoader,
+    this.observationsLoader,
   });
 
   @override
@@ -67,6 +73,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   MilExperienceOverview? _milOverview;
   PoolFormationSnapshotDoc? _poolSnapshot;
   List<Map<String, dynamic>> _observations = const [];
+  Object? _loadError;
 
   @override
   void initState() {
@@ -94,99 +101,132 @@ class _Student360ScreenState extends State<Student360Screen> {
       _poolSnapshot = widget.poolSnapshot;
       _loadPoolObservations();
     } else {
-      _reader = FormationSnapshotReader();
+      if (widget.snapshotLoader == null) {
+        _reader = FormationSnapshotReader();
+      }
       _loadFull();
     }
   }
 
   Future<void> _loadFull() async {
-    final snapshot =
-        await _reader!.getSnapshot(widget.clubId, widget.member.id);
-    MilExperienceOverview? milOverview;
     try {
-      milOverview = await MilExperienceService().load(
-        clubId: widget.clubId,
-        memberId: widget.member.id,
-        preferredBrevet: resolvePreferredMilBrevet(
-          targetFormationLevel: widget.member.targetFormationLevel,
-          currentCode: widget.member.plongeurCode,
-          snapshotTargetLevel: snapshot?.targetLevel,
-        ),
-      );
+      final snapshot = widget.snapshotLoader != null
+          ? await widget.snapshotLoader!()
+          : await _reader!.getSnapshot(
+              widget.clubId,
+              widget.member.id,
+              throwOnError: true,
+            );
+      MilExperienceOverview? milOverview;
+      try {
+        milOverview = widget.milOverviewLoader != null
+            ? await widget.milOverviewLoader!()
+            : await MilExperienceService().load(
+                clubId: widget.clubId,
+                memberId: widget.member.id,
+                preferredBrevet: resolvePreferredMilBrevet(
+                  targetFormationLevel: widget.member.targetFormationLevel,
+                  currentCode: widget.member.plongeurCode,
+                  snapshotTargetLevel: snapshot?.targetLevel,
+                ),
+              );
+      } catch (error, stackTrace) {
+        debugPrint('[student_360] lecture MIL impossible: $error\n$stackTrace');
+      }
+      final observations = await _readObservations();
+      if (!mounted) return;
+      setState(() {
+        _snapshot = snapshot;
+        _milOverview = milOverview ??
+            (snapshot == null
+                ? null
+                : MilExperienceOverview.fromSnapshot(snapshot));
+        _observations = observations;
+        _loadError = null;
+        _loading = false;
+      });
     } catch (error, stackTrace) {
-      debugPrint('[student_360] lecture MIL impossible: $error\n$stackTrace');
+      debugPrint(
+        '[student_360] lecture fiche impossible: $error\n$stackTrace',
+      );
+      if (!mounted) return;
+      setState(() {
+        _loadError = error;
+        _loading = false;
+      });
     }
-    final observations = await _loadObservations();
-    if (!mounted) return;
-    setState(() {
-      _snapshot = snapshot;
-      _milOverview = milOverview ??
-          (snapshot == null
-              ? null
-              : MilExperienceOverview.fromSnapshot(snapshot));
-      _observations = observations;
-      _loading = false;
-    });
   }
 
   Future<void> _loadPoolObservations() async {
-    final observations = await _loadObservations();
-    if (!mounted) return;
-    setState(() {
-      _observations = observations;
-      _loading = false;
-    });
+    try {
+      final observations = await _readObservations();
+      if (!mounted) return;
+      setState(() {
+        _observations = observations;
+        _loadError = null;
+        _loading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[student_360] lecture observations piscine impossible: '
+        '$error\n$stackTrace',
+      );
+      if (!mounted) return;
+      setState(() {
+        _loadError = error;
+        _loading = false;
+      });
+    }
   }
 
+  Future<List<Map<String, dynamic>>> _readObservations() =>
+      widget.observationsLoader?.call() ?? _loadObservations();
+
   Future<List<Map<String, dynamic>>> _loadObservations() async {
-    try {
-      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(widget.clubId)
-          .collection('member_observations')
-          .where('memberId', isEqualTo: widget.member.id);
-      if (widget.scope == FormationTrackingScope.piscineOnly) {
-        query = query.where('contextType', isEqualTo: 'piscine');
-      }
-      final snap = await query.get();
-      final list = snap.docs
-          .map((d) => {'id': d.id, ...d.data()})
-          .where(
-            (observation) =>
-                formationObservationVisible(widget.scope, observation),
-          )
-          .toList();
-      final observerIds = list
-          .map((o) => o['observerId']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
-      final members = FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(widget.clubId)
-          .collection('member_directory');
-      final names = <String, String>{};
-      await Future.wait(
-        observerIds.map((observerId) async {
-          final member = await members.doc(observerId).get();
-          final data = member.data();
-          if (data != null) {
-            names[observerId] = memberDisplayName(data, fallback: 'Encadrant');
-          }
-        }),
-      );
-      for (final observation in list) {
-        observation['canonicalObserverName'] =
-            names[observation['observerId']?.toString() ?? ''] ?? '';
-      }
-      list.sort((a, b) {
-        final da = _obsDate(a)?.millisecondsSinceEpoch ?? 0;
-        final db = _obsDate(b)?.millisecondsSinceEpoch ?? 0;
-        return db.compareTo(da);
-      });
-      return list;
-    } catch (_) {
-      return const [];
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(widget.clubId)
+        .collection('member_observations')
+        .where('memberId', isEqualTo: widget.member.id);
+    if (widget.scope == FormationTrackingScope.piscineOnly) {
+      query = query.where('contextType', isEqualTo: 'piscine');
     }
+    final snap = await query.get();
+    final list = snap.docs
+        .map((d) => {'id': d.id, ...d.data()})
+        .where(
+          (observation) =>
+              formationObservationVisible(widget.scope, observation),
+        )
+        .toList();
+    final observerIds = list
+        .map((o) => o['observerId']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final members = FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(widget.clubId)
+        .collection('member_directory');
+    final names = <String, String>{};
+    await Future.wait(
+      observerIds.map((observerId) async {
+        final member = await members.doc(observerId).get();
+        final data = member.data();
+        if (data != null) {
+          names[observerId] = memberDisplayName(data, fallback: 'Encadrant');
+        }
+      }),
+    );
+    for (final observation in list) {
+      observation['canonicalObserverName'] =
+          names[observation['observerId']?.toString() ?? ''] ?? '';
+    }
+    list.sort((a, b) {
+      final da = _obsDate(a)?.millisecondsSinceEpoch ?? 0;
+      final db = _obsDate(b)?.millisecondsSinceEpoch ?? 0;
+      return db.compareTo(da);
+    });
+    return list;
   }
 
   DateTime? _obsDate(Map<String, dynamic> o) {
@@ -223,17 +263,71 @@ class _Student360ScreenState extends State<Student360Screen> {
                 ? const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   )
-                : widget.scope == FormationTrackingScope.piscineOnly
-                    ? _poolSnapshot == null
-                        ? _buildEmpty()
-                        : _buildPiscineContent(_poolSnapshot!)
-                    : _snapshot == null
-                        ? _buildEmpty()
-                        : _buildContent(_snapshot!),
+                : _loadError != null
+                    ? _buildLoadError()
+                    : widget.scope == FormationTrackingScope.piscineOnly
+                        ? _poolSnapshot == null
+                            ? _buildEmpty()
+                            : _buildPiscineContent(_poolSnapshot!)
+                        : _snapshot == null
+                            ? _buildEmpty()
+                            : _buildContent(_snapshot!),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildLoadError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.cloud_off_outlined,
+              color: Colors.white,
+              size: 40,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Données de formation indisponibles.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Vérifiez votre connexion ou vos droits, puis réessayez.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _retryLoad,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _retryLoad() async {
+    if (!mounted) return;
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    if (widget.scope == FormationTrackingScope.piscineOnly) {
+      await _loadPoolObservations();
+    } else {
+      await _loadFull();
+    }
   }
 
   Widget _buildEmpty() {
@@ -701,7 +795,7 @@ class _Student360ScreenState extends State<Student360Screen> {
         note: note,
         observerId: observerId,
       );
-      final observations = await _loadObservations();
+      final observations = await _readObservations();
       if (!mounted) return;
       setState(() => _observations = observations);
       ScaffoldMessenger.of(context).showSnackBar(

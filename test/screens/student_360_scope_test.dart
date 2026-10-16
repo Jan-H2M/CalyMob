@@ -73,6 +73,65 @@ void main() {
     );
   });
 
+  testWidgets('full scope shows a retryable error when the snapshot read fails',
+      (
+    tester,
+  ) async {
+    var attempts = 0;
+    await _pumpLive(
+      tester,
+      scope: FormationTrackingScope.full,
+      snapshotLoader: () async {
+        attempts += 1;
+        if (attempts == 1) throw StateError('denied');
+        return _snapshot();
+      },
+      milOverviewLoader: () async => _milOverview(),
+      observationsLoader: () async => const [],
+    );
+
+    expect(find.text('Données de formation indisponibles.'), findsOneWidget);
+    expect(find.text('Réessayer'), findsOneWidget);
+    expect(
+      find.textContaining('Aucune donnée de formation'),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Réessayer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(attempts, 2);
+    expect(find.text('Données de formation indisponibles.'), findsNothing);
+    expect(find.text('Expériences brevet'), findsOneWidget);
+  });
+
+  testWidgets('pool observation errors are not rendered as an empty list', (
+    tester,
+  ) async {
+    var attempts = 0;
+    await _pumpLive(
+      tester,
+      scope: FormationTrackingScope.piscineOnly,
+      observationsLoader: () async {
+        attempts += 1;
+        if (attempts == 1) throw StateError('offline');
+        return const [];
+      },
+    );
+
+    expect(find.text('Données de formation indisponibles.'), findsOneWidget);
+    expect(find.text('Aucune observation enregistrée.'), findsNothing);
+
+    await tester.tap(find.text('Réessayer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(attempts, 2);
+    expect(find.text('Données de formation indisponibles.'), findsNothing);
+    expect(find.text('Suivi piscine'), findsOneWidget);
+  });
+
   test('pool observation boundary rejects non-pool records', () {
     expect(
       formationObservationVisible(FormationTrackingScope.piscineOnly, const {
@@ -186,6 +245,48 @@ Future<void> _pump(
     ),
   );
   await tester.pump();
+}
+
+Future<void> _pumpLive(
+  WidgetTester tester, {
+  required FormationTrackingScope scope,
+  Future<FormationSnapshotDoc?> Function()? snapshotLoader,
+  Future<MilExperienceOverview?> Function()? milOverviewLoader,
+  required Future<List<Map<String, dynamic>>> Function() observationsLoader,
+}) async {
+  tester.view.physicalSize = const Size(1200, 1800);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Student360Screen(
+        clubId: 'calypso',
+        member: MemberProfile(
+          id: 'student-1',
+          nom: 'Martin',
+          prenom: 'Alice',
+          email: 'alice@example.invalid',
+        ),
+        scope: scope,
+        poolSnapshot: scope == FormationTrackingScope.piscineOnly
+            ? const PoolFormationSnapshotDoc(
+                memberId: 'student-1',
+                validated: 1,
+                pending: 1,
+                remaining: 1,
+                pct: 33,
+              )
+            : null,
+        snapshotLoader: snapshotLoader,
+        milOverviewLoader: milOverviewLoader,
+        observationsLoader: observationsLoader,
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
 }
 
 MilExperienceOverview _milOverview() {

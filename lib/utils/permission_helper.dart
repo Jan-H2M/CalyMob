@@ -160,9 +160,7 @@ class PermissionHelper {
     List<String> clubStatuten, {
     String? appRole,
   }) =>
-      isAppAdmin(appRole) ||
-      isAdmin(clubStatuten) ||
-      isEncadrantPiscine(clubStatuten);
+      isAppAdmin(appRole) || isEncadrantPiscine(clubStatuten);
 
   /// Returns the narrowest formation view the member may use.
   ///
@@ -192,9 +190,7 @@ class PermissionHelper {
     List<String> clubStatuten, {
     String? appRole,
   }) =>
-      isAppAdmin(appRole) ||
-      isAdmin(clubStatuten) ||
-      isEncadrantPiscine(clubStatuten);
+      isAppAdmin(appRole) || isEncadrantPiscine(clubStatuten);
 
   /// Access gate for emergency contacts shared through Who's Who.
   /// Mirrors isEncadrantForClub() + hasCARole() in firestore.rules.
@@ -218,7 +214,10 @@ class PermissionHelper {
     required String? plongeurCode,
     String? appRole,
   }) {
-    if (isAppAdmin(appRole) || isAdmin(clubStatuten)) return true;
+    // Formation data follows the backend's canonical app_role gate. A legacy
+    // club statute label such as "Administrateur" must not expose an entry
+    // point that Firestore will subsequently reject.
+    if (isAppAdmin(appRole)) return true;
     final hasEncadrant = isEncadrant(clubStatuten);
     return hasEncadrant && isMoniteur(plongeurCode);
   }

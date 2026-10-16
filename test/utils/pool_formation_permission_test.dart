@@ -40,17 +40,24 @@ void main() {
     );
   });
 
-  test('admins retain formation visibility and remark access', () {
+  test('statute-only administrators do not bypass the canonical app gate', () {
     const roles = ['Administrateur'];
 
-    expect(PermissionHelper.canViewFormationTracking(roles), isTrue);
-    expect(PermissionHelper.canAddPoolFormationRemark(roles), isTrue);
+    expect(PermissionHelper.canViewFormationTracking(roles), isFalse);
+    expect(PermissionHelper.canAddPoolFormationRemark(roles), isFalse);
     expect(
       PermissionHelper.formationTrackingScope(
         clubStatuten: roles,
         plongeurCode: null,
       ),
-      FormationTrackingScope.full,
+      isNull,
+    );
+    expect(
+      PermissionHelper.canValidateLifras(
+        clubStatuten: roles,
+        plongeurCode: null,
+      ),
+      isFalse,
     );
   });
 
