@@ -16,6 +16,15 @@ import '../services/bug_report_service.dart';
 /// Doit envelopper le widget racine de l'app (dans MyApp.builder).
 final GlobalKey repaintBoundaryKey = GlobalKey();
 
+/// Stable label for the route currently tracked by the app's NavigatorObserver.
+/// Named routes keep their exact name; unnamed MaterialPageRoutes still record
+/// a non-empty route type instead of silently writing an empty page.
+String? bugReportRouteLabel(Route<dynamic>? route) {
+  if (route == null) return null;
+  final name = route.settings.name?.trim();
+  return name == null || name.isEmpty ? route.runtimeType.toString() : name;
+}
+
 /// Contrôleur global du mode bug report.
 /// Permet d'activer/désactiver le mode depuis n'importe quel écran.
 class BugReportController extends ChangeNotifier {
@@ -56,8 +65,14 @@ class BugReportController extends ChangeNotifier {
 class BugReportOverlay extends StatefulWidget {
   final Widget child;
   final GlobalKey<NavigatorState>? navigatorKey;
+  final String? Function()? currentRouteLabel;
 
-  const BugReportOverlay({super.key, required this.child, this.navigatorKey});
+  const BugReportOverlay({
+    super.key,
+    required this.child,
+    this.navigatorKey,
+    this.currentRouteLabel,
+  });
 
   @override
   State<BugReportOverlay> createState() => _BugReportOverlayState();
@@ -132,7 +147,7 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
     if (_isOpeningForm) return;
     _isOpeningForm = true;
     Uint8List? screenshotBytes;
-    final currentRoute = ModalRoute.of(context)?.settings.name;
+    final currentRoute = widget.currentRouteLabel?.call();
 
     // Retirer l'icône flottante avant la capture et empêcher plusieurs
     // formulaires de s'ouvrir lors de taps successifs.
@@ -148,13 +163,17 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
 
         if (boundary != null) {
           final image = await boundary.toImage(pixelRatio: 2.0);
-          final byteData = await image.toByteData(
-            format: ui.ImageByteFormat.png,
-          );
-          screenshotBytes = byteData?.buffer.asUint8List();
-          debugPrint(
-            '📸 Screenshot capturé: ${screenshotBytes?.length ?? 0} bytes',
-          );
+          try {
+            final byteData = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            screenshotBytes = byteData?.buffer.asUint8List();
+            debugPrint(
+              '📸 Screenshot capturé: ${screenshotBytes?.length ?? 0} bytes',
+            );
+          } finally {
+            image.dispose();
+          }
         }
       } catch (e) {
         debugPrint('⚠️ Impossible de capturer le screenshot: $e');
@@ -180,20 +199,24 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
 
     // Ouvrir le formulaire dans un bottom sheet
     // Le context doit avoir un Navigator ancestor (via navigatorKey)
-    final result = await showModalBottomSheet<_BugReportFormResult>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _BugReportForm(
-        draft: _draft,
-        screenshots: List.unmodifiable(_screenshots),
-        currentRoute: currentRoute,
-      ),
-    );
-    _isOpeningForm = false;
+    BugReportFormResult? result;
+    try {
+      result = await showModalBottomSheet<BugReportFormResult>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => BugReportForm(
+          draft: _draft,
+          screenshots: List.unmodifiable(_screenshots),
+          currentRoute: currentRoute,
+        ),
+      );
+    } finally {
+      _isOpeningForm = false;
+    }
     if (!mounted) return;
 
-    if (result?.action == _BugReportFormAction.captureMore) {
+    if (result?.action == BugReportFormAction.captureMore) {
       _draft = result!.draft;
       _screenshots
         ..clear()
@@ -316,40 +339,41 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
 }
 
 /// Le formulaire de signalement dans un bottom sheet.
-enum _BugReportFormAction { captureMore, submitted, cancelled }
+enum BugReportFormAction { captureMore, submitted, cancelled }
 
-class _BugReportFormResult {
-  const _BugReportFormResult({
+class BugReportFormResult {
+  const BugReportFormResult({
     required this.action,
     required this.draft,
     required this.screenshots,
   });
 
-  final _BugReportFormAction action;
+  final BugReportFormAction action;
   final BugReportDraft draft;
   final List<BugReportScreenshot> screenshots;
 }
 
-class _BugReportForm extends StatefulWidget {
+class BugReportForm extends StatefulWidget {
   final BugReportDraft draft;
   final List<BugReportScreenshot> screenshots;
   final String? currentRoute;
 
-  const _BugReportForm({
+  const BugReportForm({
+    super.key,
     required this.draft,
     required this.screenshots,
     this.currentRoute,
   });
 
   @override
-  State<_BugReportForm> createState() => _BugReportFormState();
+  State<BugReportForm> createState() => _BugReportFormState();
 }
 
-class _BugReportFormState extends State<_BugReportForm> {
+class _BugReportFormState extends State<BugReportForm> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _bugReportService = BugReportService();
+  BugReportService? _bugReportService;
   late final List<BugReportScreenshot> _screenshots;
 
   late String _priority;
@@ -441,7 +465,7 @@ class _BugReportFormState extends State<_BugReportForm> {
                         ),
                       ),
                     )
-                  else
+                  else if (!kIsWeb)
                     const Padding(
                       padding: EdgeInsets.only(bottom: 16),
                       child: Text(
@@ -542,7 +566,7 @@ class _BugReportFormState extends State<_BugReportForm> {
                           : () {
                               Navigator.maybeOf(
                                 context,
-                              )?.pop(_result(_BugReportFormAction.cancelled));
+                              )?.pop(_result(BugReportFormAction.cancelled));
                             },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey[700],
@@ -629,7 +653,7 @@ class _BugReportFormState extends State<_BugReportForm> {
 
   Widget _buildScreenshotTile(int index) {
     return SizedBox(
-      width: 112,
+      width: 128,
       child: Column(
         children: [
           Expanded(
@@ -637,7 +661,8 @@ class _BugReportFormState extends State<_BugReportForm> {
               borderRadius: BorderRadius.circular(8),
               child: Image.memory(
                 _screenshots[index].bytes,
-                width: 112,
+                width: 128,
+                cacheWidth: 256,
                 fit: BoxFit.cover,
               ),
             ),
@@ -648,12 +673,22 @@ class _BugReportFormState extends State<_BugReportForm> {
               IconButton(
                 tooltip: 'Déplacer vers la gauche',
                 visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
                 onPressed: index == 0 ? null : () => _moveScreenshot(index, -1),
                 icon: const Icon(Icons.arrow_back, size: 17),
               ),
               IconButton(
                 tooltip: 'Retirer la capture',
                 visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
                 onPressed: () => setState(() => _screenshots.removeAt(index)),
                 icon: Icon(
                   Icons.delete_outline,
@@ -664,6 +699,11 @@ class _BugReportFormState extends State<_BugReportForm> {
               IconButton(
                 tooltip: 'Déplacer vers la droite',
                 visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
                 onPressed: index == _screenshots.length - 1
                     ? null
                     : () => _moveScreenshot(index, 1),
@@ -689,15 +729,15 @@ class _BugReportFormState extends State<_BugReportForm> {
         priority: _priority,
       );
 
-  _BugReportFormResult _result(_BugReportFormAction action) =>
-      _BugReportFormResult(
+  BugReportFormResult _result(BugReportFormAction action) =>
+      BugReportFormResult(
         action: action,
         draft: _currentDraft(),
         screenshots: List.unmodifiable(_screenshots),
       );
 
   void _captureAnother() {
-    Navigator.maybeOf(context)?.pop(_result(_BugReportFormAction.captureMore));
+    Navigator.maybeOf(context)?.pop(_result(BugReportFormAction.captureMore));
   }
 
   Widget _buildPriorityChip(String value, String emoji, String label) {
@@ -753,7 +793,7 @@ class _BugReportFormState extends State<_BugReportForm> {
       final userName = memberProvider.displayName;
       final userEmail = authProvider.currentUser?.email ?? '';
 
-      await _bugReportService.submitBugReport(
+      await (_bugReportService ??= BugReportService()).submitBugReport(
         clubId: clubId,
         userId: userId,
         userName: userName,
@@ -774,7 +814,7 @@ class _BugReportFormState extends State<_BugReportForm> {
 
       final messenger = ScaffoldMessenger.maybeOf(context);
       // Fermer le bottom sheet (maybeOf to handle missing Navigator on web — fixes CALYMOB-E)
-      Navigator.maybeOf(context)?.pop(_result(_BugReportFormAction.submitted));
+      Navigator.maybeOf(context)?.pop(_result(BugReportFormAction.submitted));
 
       // Afficher confirmation
       messenger?.showSnackBar(

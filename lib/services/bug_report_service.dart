@@ -113,39 +113,10 @@ class BugReportService {
         );
       }
 
-      // 3. Réserver l'identifiant sans encore écrire le document. Les règles
-      // autorisent tout membre à créer un signalement, mais seuls les admins
-      // peuvent ensuite le modifier. Toutes les métadonnées des captures sont
-      // donc incluses dans l'unique création Firestore.
+      // 3. Créer d'abord le signalement vide. Les règles Storage vérifient ce
+      // document pour prouver que l'appelant est bien le reporter avant tout
+      // upload. Une mise à jour strictement limitée finalise ensuite la liste.
       final docRef = _firestore.collection('clubs/$clubId/bug_reports').doc();
-      final uploadedRefs = <int, Reference>{};
-      final screenshotMetadata = await uploadBugReportScreenshots(
-        screenshots: screenshots,
-        upload: (index, screenshot) async {
-          final storagePath =
-              'clubs/$clubId/bug_reports/${docRef.id}/screenshot_$index.png';
-          final storageRef = _storage.ref().child(storagePath);
-          await storageRef.putData(
-            screenshot.bytes,
-            SettableMetadata(contentType: 'image/png'),
-          );
-          uploadedRefs[index] = storageRef;
-          final downloadUrl = await storageRef.getDownloadURL();
-          return {
-            'url': downloadUrl,
-            'page': screenshot.page,
-            'capturedAt': screenshot.capturedAt.toIso8601String(),
-            'storagePath': storagePath,
-          };
-        },
-        remove: (index) async {
-          final storageRef = uploadedRefs[index];
-          if (storageRef != null) await storageRef.delete();
-        },
-      );
-
-      // 4. Préparer le document Firestore
-      // Compatible avec CalyCompta bugReportManagementService (format screenshots[])
       final reportData = {
         'app': 'CalyMob',
         'title': title,
@@ -165,31 +136,62 @@ class BugReportService {
         'sentryEventUrl': sentryReplayId != null
             ? 'https://h2m-ai.sentry.io/replays/?query=$sentryReplayId'
             : null,
-        // Backward compatibility: legacy consumers still read the first URL.
-        'screenshotUrl':
-            screenshotMetadata.isEmpty ? null : screenshotMetadata.first['url'],
-        'screenshots': screenshotMetadata,
+        'screenshotUrl': null,
+        'screenshots': <Map<String, dynamic>>[],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
+      await docRef.set(reportData);
+      debugPrint('🐛 Bug report créé: ${docRef.id}');
 
-      // 5. Créer le signalement une seule fois, avec toutes les captures.
+      if (screenshots.isEmpty) return docRef.id;
+
+      // 4. Upload et finalisation atomique du point de vue des lecteurs. Si
+      // une étape échoue, les règles permettent au reporter de supprimer ses
+      // objets et le document encore vide, sans toucher aux rapports finalisés.
+      final uploadedRefs = <int, Reference>{};
       try {
-        await docRef.set(reportData);
+        final screenshotMetadata = await uploadBugReportScreenshots(
+          screenshots: screenshots,
+          upload: (index, screenshot) async {
+            final storagePath =
+                'clubs/$clubId/bug_reports/${docRef.id}/screenshot_$index.png';
+            final storageRef = _storage.ref().child(storagePath);
+            await storageRef.putData(
+              screenshot.bytes,
+              SettableMetadata(contentType: 'image/png'),
+            );
+            uploadedRefs[index] = storageRef;
+            final downloadUrl = await storageRef.getDownloadURL();
+            return {
+              'url': downloadUrl,
+              'page': screenshot.page,
+              'capturedAt': Timestamp.fromDate(screenshot.capturedAt),
+              'storagePath': storagePath,
+              'storageIndex': index,
+            };
+          },
+          remove: (index) async {
+            final storageRef = uploadedRefs[index];
+            if (storageRef != null) await storageRef.delete();
+          },
+        );
+
+        await docRef.update({
+          'screenshotUrl': screenshotMetadata.first['url'],
+          'screenshots': screenshotMetadata,
+        });
+        debugPrint('${screenshotMetadata.length} capture(s) jointe(s)');
       } catch (_) {
-        // Best effort: an admin reporter can delete these objects. For normal
-        // members Storage rules may deny cleanup, but no partial report exists.
         for (final storageRef in uploadedRefs.values.toList().reversed) {
           try {
             await storageRef.delete();
           } catch (_) {}
         }
+        try {
+          await docRef.delete();
+        } catch (_) {}
         rethrow;
-      }
-
-      debugPrint('🐛 Bug report créé: ${docRef.id}');
-      if (screenshotMetadata.isNotEmpty) {
-        debugPrint('${screenshotMetadata.length} capture(s) jointe(s)');
       }
 
       return docRef.id;

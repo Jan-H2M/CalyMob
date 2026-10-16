@@ -187,6 +187,9 @@ Settings scherm
 > screenshot and one preview describe the original flow. The current CalyMob
 > flow retains the draft while the reporter captures up to five screens, and
 > allows removal and reordering before submission.
+> Storage rules bind every object to the authenticated owner of its existing
+> report document. The owner can clean up a failed, still-unfinalized report,
+> without gaining access to another member's evidence or finalized reports.
 
 Technisch:
 - In Settings scherm: knop "Signaler un bug" → activeert bug report modus
@@ -213,8 +216,8 @@ Technisch:
   - Route/écran actuel
 - Après envoi:
   1. Upload des captures d'écran vers Firebase Storage
-  2. Création unique du document Firestore `bug_reports` avec toutes les
-     métadonnées (l'ancien create-then-update est superseded par MOB-041)
+  2. Finalisation limitée aux champs `screenshots` et `screenshotUrl` sur le
+     document vide créé avant l'upload (les mises à jour libres sont superseded)
   3. Confirmation: "Merci ! Nous allons examiner votre signalement."
   4. Icône disparaît → mode désactivé
 

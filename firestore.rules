@@ -1915,6 +1915,68 @@ service cloud.firestore {
 
       // Bug reports — signalements de bugs par les utilisateurs
       match /bug_reports/{reportId} {
+        function reporterCanFinalizeScreenshots() {
+          let changed = request.resource.data.diff(resource.data).affectedKeys();
+          let screenshots = request.resource.data.screenshots;
+          let firstScreenshot = screenshots.size() > 0 ? screenshots[0] : {};
+          return isMember(clubId)
+            && reportId.matches('[A-Za-z0-9]{20}')
+            && resource.data.reporter.uid == request.auth.uid
+            && request.resource.data.reporter.uid == request.auth.uid
+            && changed.hasOnly(['screenshots', 'screenshotUrl'])
+            && resource.data.screenshots is list
+            && resource.data.screenshots.size() == 0
+            && screenshots is list
+            && screenshots.size() > 0
+            && screenshots.size() <= 5
+            && request.resource.data.screenshotUrl is string
+            && firstScreenshot.get('url', '') == request.resource.data.screenshotUrl
+            && validReporterScreenshot(firstScreenshot)
+            && (screenshots.size() < 2 || validReporterScreenshot(screenshots[1]))
+            && (screenshots.size() < 3 || validReporterScreenshot(screenshots[2]))
+            && (screenshots.size() < 4 || validReporterScreenshot(screenshots[3]))
+            && (screenshots.size() < 5 || validReporterScreenshot(screenshots[4]));
+        }
+        function validReporterScreenshot(screenshot) {
+          let index = screenshot.get('storageIndex', -1);
+          return screenshot is map
+            && screenshot.keys().hasOnly(['url', 'page', 'capturedAt', 'storagePath', 'storageIndex'])
+            && screenshot.get('url', '') is string
+            && screenshot.get('page', null) is string
+            && screenshot.get('capturedAt', null) is timestamp
+            && index is int
+            && index >= 0
+            && index <= 4
+            && (
+              (index == 0 && reporterScreenshotMatchesIndex(screenshot, '0'))
+              || (index == 1 && reporterScreenshotMatchesIndex(screenshot, '1'))
+              || (index == 2 && reporterScreenshotMatchesIndex(screenshot, '2'))
+              || (index == 3 && reporterScreenshotMatchesIndex(screenshot, '3'))
+              || (index == 4 && reporterScreenshotMatchesIndex(screenshot, '4'))
+            );
+        }
+        function reporterScreenshotMatchesIndex(screenshot, index) {
+          let canonicalBasePath = 'clubs/' + clubId + '/bug_reports/' + reportId + '/screenshot_' + index;
+          let canonicalJpgUrl = 'https://firebasestorage[.]googleapis[.]com/v0/b/calycompta[.]firebasestorage[.]app/o/clubs%2F' + clubId
+            + '%2Fbug_reports%2F' + reportId + '%2Fscreenshot_' + index + '[.]jpg([?].*)?';
+          let canonicalPngUrl = 'https://firebasestorage[.]googleapis[.]com/v0/b/calycompta[.]firebasestorage[.]app/o/clubs%2F' + clubId
+            + '%2Fbug_reports%2F' + reportId + '%2Fscreenshot_' + index + '[.]png([?].*)?';
+          return (
+              screenshot.get('storagePath', '') == canonicalBasePath + '.jpg'
+              && screenshot.get('url', '').matches(canonicalJpgUrl)
+            ) || (
+              screenshot.get('storagePath', '') == canonicalBasePath + '.png'
+              && screenshot.get('url', '').matches(canonicalPngUrl)
+            );
+        }
+        function reporterCanDeleteUnfinalizedReport() {
+          return isMember(clubId)
+            && resource.data.reporter.uid == request.auth.uid
+            && resource.data.status == 'nouveau'
+            && resource.data.screenshots is list
+            && resource.data.screenshots.size() == 0
+            && resource.data.screenshotUrl == null;
+        }
         // Lecture: admin uniquement (pour voir tous les signalements)
         allow read: if isAdmin(clubId) && hasValidSession(clubId);
         // Création: tout membre authentifié peut signaler un bug
@@ -1922,11 +1984,24 @@ service cloud.firestore {
         // `reporter` map would throw and deny the write otherwise.
         allow create: if isMember(clubId)
           && 'reporter' in request.resource.data
-          && request.resource.data.reporter.uid == request.auth.uid;
-        // Modification: admin uniquement (pour le suivi interne du statut)
-        allow update: if isAdmin(clubId) && hasValidSession(clubId);
-        // Suppression: admin uniquement
-        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+          && request.resource.data.reporter.uid == request.auth.uid
+          && (
+            isAdmin(clubId)
+            || (
+              reportId.matches('[A-Za-z0-9]{20}')
+              && request.resource.data.screenshots is list
+              && request.resource.data.screenshots.size() == 0
+              && request.resource.data.screenshotUrl == null
+            )
+          );
+        // Modification: admin, plus finalisation strictement bornée des
+        // captures par le reporter propriétaire.
+        allow update: if reporterCanFinalizeScreenshots()
+          || (isAdmin(clubId) && hasValidSession(clubId));
+        // Suppression: admin, ou reporter tant que le rapport est vide et
+        // non finalisé (nettoyage d'un upload échoué).
+        allow delete: if reporterCanDeleteUnfinalizedReport()
+          || (isAdmin(clubId) && hasValidSession(clubId));
 
         // Commentaires sur les bug reports
         match /comments/{commentId} {
