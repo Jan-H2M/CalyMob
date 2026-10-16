@@ -237,8 +237,13 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       updateUnit(unit, { workshopReadyAt: now, workshopReadyBy: actor.uid }, [event('workshop_ready', { to: unit.location })]);
     }
     if (input.action === 'reviewPlain') for (const unit of selected) {
-      if (unit.finish !== 'unembroidered' || needsProduction(unit) || unit.transportMissionId) fail('failed-precondition', 'Cette pièce nécessite une autre étape de préparation.');
-      updateUnit(unit, { finish: 'not_required_reviewed', saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready' }, [event('finish_changed', { from: unit.finish, to: 'not_required_reviewed' })]);
+      const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
+      const confirmsPlainStock = unit.requiresEmbroidery === undefined && Boolean(unit.stockPurchaseOrderId) && !lineNeedsProduction(line);
+      if (unit.finish !== 'unembroidered' || (needsProduction(unit) && !confirmsPlainStock) || unit.transportMissionId) fail('failed-precondition', 'Cette pièce nécessite une autre étape de préparation.');
+      updateUnit(unit, { finish: 'not_required_reviewed', saleStatus: unit.destination === 'demo' ? 'not_ready' : 'sale_ready', ...(confirmsPlainStock ? { requiresEmbroidery: false } : {}) }, [
+        ...(confirmsPlainStock ? [event('finish_requirement_confirmed', { to: 'Aucune broderie requise', note })] : []),
+        event('finish_changed', { from: unit.finish, to: 'not_required_reviewed' }),
+      ]);
     }
     if (input.action === 'dispatch') {
       if (!Array.isArray(input.assigneeIds) || input.assigneeIds.length < 1 || input.assigneeIds.length > 10 || input.assigneeIds.some(v => !id(v)) || unique(input.assigneeIds).length !== input.assigneeIds.length) fail('invalid-argument', 'Choisissez de 1 à 10 personnes différentes pour ce lot.');

@@ -195,3 +195,20 @@ test('a preprinted QR does not fabricate stock and explains receipt before movem
   await assert.rejects(call('outsider', 'lookup', { unitId: 'qr1_' + 'a'.repeat(64) }), e => e.code === 'permission-denied');
   assert.equal(await count('boutique_physical_stock_units'), before);
 });
+
+
+test('undecided received stock is confirmed plain only during explicit later control; required/customer embroidery stays protected', async () => {
+  const base = { productName: 'Stock réceptionné QA', variantLabel: 'M', stockPurchaseOrderId: 'stock-qa', location: 'Jan', finish: 'unembroidered', saleStatus: 'not_ready', destination: 'free', history: [] };
+  await club.collection('boutique_physical_stock_units').doc('u70').set(base);
+  await mutate('rb', 'reviewPlain', [70], { sourceLocation: 'Jan', note: 'Aucune broderie nécessaire, contrôle effectué' });
+  const plain = (await club.collection('boutique_physical_stock_units').doc('u70').get()).data();
+  assert.equal(plain.requiresEmbroidery, false); assert.equal(plain.location, 'Jan'); assert.equal(plain.saleStatus, 'sale_ready');
+  assert.ok(plain.history.some(event => event.kind === 'finish_requirement_confirmed'));
+  assert.ok(!plain.history.some(event => event.kind === 'moved'));
+  await club.collection('boutique_physical_stock_units').doc('u71').set({ ...base, requiresEmbroidery: true });
+  await assert.rejects(mutate('rb', 'reviewPlain', [71], { sourceLocation: 'Jan', note: 'Contrôlé' }), { code: 'failed-precondition' });
+  await club.collection('orders').doc('o-plain-guard').set({ status: 'preparing', buyer: { userId: 'buyer0' }, payment: { status: 'paid' }, items: [{ lineId: 'line', qty: 1, physicalStockUnitIds: ['u72'], customizations: { name: { text: 'Required name' } }, fulfillmentStatus: 'preparing' }] });
+  await club.collection('boutique_physical_stock_units').doc('u72').set({ ...base, destination: 'customer_reserved', customerOrderId: 'o-plain-guard', customerLineId: 'line' });
+  await assert.rejects(mutate('rb', 'reviewPlain', [72], { sourceLocation: 'Jan', note: 'Contrôlé' }), { code: 'failed-precondition' });
+  assert.equal((await piece(72)).saleStatus, 'not_ready');
+});
