@@ -188,3 +188,10 @@ test('qty2 with only one received piece reports one missing article and records 
   await mutate('helper1','deliver',[42],{missionId:rest.missionId,recipientMemberId:'buyer12',confirmed:true});
   const complete=(await club.collection('orders').doc('o12').get()).data();assert.equal(complete.status,'delivered');assert.equal(complete.items[0].deliveredQty,2);
 });
+
+test('a preprinted QR does not fabricate stock and explains receipt before movements', async () => {
+  const before = await count('boutique_physical_stock_units');
+  await assert.rejects(call('rb', 'lookup', { unitId: 'qr1_' + 'a'.repeat(64) }), e => e.code === 'failed-precondition' && e.message.includes('confirmez la réception'));
+  await assert.rejects(call('outsider', 'lookup', { unitId: 'qr1_' + 'a'.repeat(64) }), e => e.code === 'permission-denied');
+  assert.equal(await count('boutique_physical_stock_units'), before);
+});

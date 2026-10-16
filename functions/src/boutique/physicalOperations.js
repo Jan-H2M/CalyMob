@@ -118,7 +118,10 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (input.action === 'lookup') {
       if (!manager && (!mission || !await missionAuthorized(mission) || !mission.unitIds.includes(input.unitId))) fail('permission-denied', 'Cette pièce ne fait pas partie de votre mission.');
       const snap = await tx.get(club.collection('boutique_physical_stock_units').doc(input.unitId));
-      if (!snap.exists) fail('not-found', 'Pièce introuvable dans ce club.');
+      if (!snap.exists) {
+        if (/^qr1_[a-f0-9]{64}$/.test(input.unitId)) fail('failed-precondition', 'Fiche prête : confirmez la réception de cet article dans Calypso avant de le déplacer. Gardez cette fiche, son QR reste valable.');
+        fail('not-found', 'Pièce introuvable dans ce club.');
+      }
       const unit = asUnit(snap);
       if (!manager && unit.transportMissionId !== mission.id && unit.pickupMissionId !== mission.id && unit.handover?.missionId !== mission.id) fail('permission-denied', 'Cette pièce a quitté votre mission.');
       return { unit: publicUnit(unit) };
