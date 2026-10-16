@@ -39,6 +39,7 @@ enum NotificationRouteKind {
   medicalCertificate,
   logbookConfirmation,
   birthday,
+  boutiquePickup,
   unsupported,
 }
 
@@ -77,6 +78,7 @@ class NotificationNavigationRequest {
     );
   }
 
+  String? get orderId => _firstValue(const ['order_id', 'orderId']);
   String? get type => _value('type');
   String? get clubId => _firstValue(const ['club_id', 'clubId']);
   String? get recipientId => _firstValue(const ['recipient_id', 'recipientId']);
@@ -170,6 +172,8 @@ class NotificationNavigationRequest {
       case 'logbook_dive_confirmation':
       case 'logbook_dive_confirmation_result':
         return NotificationRouteKind.logbookConfirmation;
+      case 'boutique_pickup_ready':
+        return NotificationRouteKind.boutiquePickup;
       case 'birthday':
         return NotificationRouteKind.birthday;
       default:
@@ -187,6 +191,8 @@ class NotificationNavigationRequest {
   /// destinations testable without mounting the application navigator.
   bool get hasValidDestination {
     switch (routeKind) {
+      case NotificationRouteKind.boutiquePickup:
+        return orderId != null;
       case NotificationRouteKind.operation:
         return operationId != null;
       case NotificationRouteKind.announcement:
@@ -216,7 +222,8 @@ class NotificationNavigationRequest {
 
   /// Stable key used to ignore double taps and duplicate OS callbacks.
   String get deduplicationKey {
-    final objectId = formationTaskId ??
+    final objectId = orderId ??
+        formationTaskId ??
         confirmationId ??
         operationId ??
         announcementId ??

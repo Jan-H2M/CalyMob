@@ -35,6 +35,29 @@ void main() {
         messageId: messageId,
       );
 
+  test(
+      'Boutique pickup routes to own orders with bound recipient and distinct order identity',
+      () {
+    final first = request({
+      'type': 'boutique_pickup_ready',
+      'clubId': 'calypso',
+      'recipientId': 'buyer',
+      'orderId': 'order-1'
+    });
+    final second = request({
+      'type': 'boutique_pickup_ready',
+      'clubId': 'calypso',
+      'recipientId': 'buyer',
+      'orderId': 'order-2'
+    });
+    expect(first.routeKind, NotificationRouteKind.boutiquePickup);
+    expect(first.hasValidDestination, isTrue);
+    expect(first.recipientId, 'buyer');
+    expect(first.deduplicationKey, isNot(second.deduplicationKey));
+    expect(request({'type': 'boutique_pickup_ready'}).hasValidDestination,
+        isFalse);
+  });
+
   group('formation notification routing', () {
     test('single reminder opens its exact formation task', () {
       final value = request({
