@@ -14,6 +14,7 @@ typedef BoutiqueAccessGuardBuilder = Widget Function(
 class BoutiqueAccessGuard extends StatefulWidget {
   final BoutiqueAccessGuardBuilder builder;
   final String? requiredSection;
+  final bool allowPickupEntry;
   final BoutiqueAccessService? accessService;
   final String clubId;
   final String? _authBoundUserId;
@@ -28,6 +29,7 @@ class BoutiqueAccessGuard extends StatefulWidget {
     super.key,
     required this.builder,
     this.requiredSection,
+    this.allowPickupEntry = false,
     this.accessService,
     this.clubId = FirebaseConfig.defaultClubId,
     this.testUserIdOverride,
@@ -40,7 +42,8 @@ class BoutiqueAccessGuard extends StatefulWidget {
     this.accessService,
     this.clubId = FirebaseConfig.defaultClubId,
     this.testUserIdOverride,
-  }) : _authBoundUserId = authBoundUserId;
+  })  : _authBoundUserId = authBoundUserId,
+        allowPickupEntry = false;
 
   @override
   State<BoutiqueAccessGuard> createState() => _BoutiqueAccessGuardState();
@@ -126,7 +129,7 @@ class _BoutiqueAccessGuardState extends State<BoutiqueAccessGuard> {
 
         final access = snapshot.requireData;
         final allowed = widget.requiredSection == null
-            ? access.canAccess
+            ? (widget.allowPickupEntry ? access.canOpenEntry : access.canAccess)
             : access.canAccessSection(widget.requiredSection!);
         if (!allowed) return const BoutiqueAccessUnavailable();
 

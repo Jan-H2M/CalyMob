@@ -477,3 +477,7 @@ const {
   analyzeLogbookDictation,
 } = require('./src/logbookDictation/analyzeLogbookDictation');
 exports.analyzeLogbookDictation = analyzeLogbookDictation;
+
+// MOB-BTQ-QR-20261016 — feature remains off until its explicit rollout.
+exports.boutiquePhysicalOperations = require('./src/boutique/physicalOperations').boutiquePhysicalOperations;
+exports.sendBoutiquePickupNotification = require('./src/boutique/pickupNotifications').sendBoutiquePickupNotification;
