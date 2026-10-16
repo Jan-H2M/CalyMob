@@ -43,3 +43,43 @@ version, signing, native dependencies or Firebase identity change.
   build number above 520. French notes require Jan's approval before starting the
   workflow because its archive automatically uploads to internal TestFlight.
 - This document does not claim TestFlight availability or a physical camera test.
+
+## Verified release — 2026-10-16
+
+- Exact independently reviewed source: 7894cf34e394f0265af6bd07efe389361d5cd0b9.
+  Final focused Flutter run: six tests passed; static analysis: no issues.
+- Jan explicitly approved the committed French WhatToTest text and upload to the
+  existing internal CalyMob Testing team in this chat before the cloud run.
+- Reused manual workflow CalyMob iOS — TestFlight,
+  D11B66EC-6E95-43A4-B345-727D1992D72A; run
+  2688cb4c-0ff0-4b77-9c96-c14f2ddf24db, build 521, marketing version 1.26.1.
+  Both required TEST and ARCHIVE actions completed SUCCEEDED; full run completed
+  SUCCEEDED at 2026-10-16T15:39:48.13Z. No local native build/archive was used.
+- Both Apple workers passed all 75 Flutter tests. Native
+  RunnerTests.testProductionBundleConfiguration passed on iPhone 15/iOS 17.5.
+  Native archive log records ARCHIVE SUCCEEDED at 15:18:21.340879462Z.
+- Real internal upload: ASC build 42c7daaf-380e-4f09-8358-1bf3efc8ef08,
+  uploaded at 15:22:30Z, processed VALID, INTERNAL_ONLY, non-expired. The final
+  cloud archive action closed after the binary itself had already processed;
+  the uploader guard remained intact and group assignment waited for full success.
+- The actual Apple app-store IPA export identifies be.calypsodc.calymob,
+  1.26.1/521, profile team 53455KKD9G and get-task-allow=false. Its IPA SHA-256 is
+  a5432ab926d304bcb066d568bf8aef79ccc9eecdd95c9462a1ac3e9143160bd5.
+  Profile metadata was read without altering keychains, certificates or signing.
+  Apple processing VALID is separate from that metadata inspection.
+- Exact approved fr-FR notes were saved and read back; the existing internal
+  CalyMob Testing team membership was explicitly assigned and verified.
+- Only boutiquePhysicalOperations was redeployed in calycompta/europe-west1;
+  ACTIVE updateTime 2026-10-16T15:02:41.635658299Z, source generation
+  1792162863598057. All 260 tracked function files match the reviewed source ZIP.
+  The exact production list and cursor queries passed read-only. No index, rule,
+  feature flag, minimum version or notification function changed. No business
+  stock/receipt/finishing/notification operation was performed during validation.
+- Web individual/all/none selection is live separately at caly.club from
+  fe8dda10dac4e6bff72e7e8d136d4e609b24876e,
+  deployment dpl_4BAHgdTUm1tkYQgWQsda51wLsmTg. The live Jan account confirmed
+  16 pieces at Jan and one elsewhere; all-minus-one and clearing were verified
+  without submitting a move. Unrelated concurrent invoice CI work was preserved.
+- Functional Flutter-web screenshots use fictitious data and remain outside Git.
+  Physical phone installation/selection feedback remains a separate user check;
+  cloud simulator success does not prove a physical device test.
