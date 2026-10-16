@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
+import '../models/bug_report_screenshot.dart';
 import '../providers/auth_provider.dart';
 import '../providers/member_provider.dart';
 import '../services/bug_report_service.dart';
@@ -14,6 +15,64 @@ import '../services/bug_report_service.dart';
 /// Clé globale pour la RepaintBoundary (screenshot capture).
 /// Doit envelopper le widget racine de l'app (dans MyApp.builder).
 final GlobalKey repaintBoundaryKey = GlobalKey();
+
+/// Stable label for the route currently tracked by the app's NavigatorObserver.
+/// Named routes keep their exact name. For the many unnamed MaterialPageRoutes
+/// in CalyMob, inspect the active route subtree for its visible AppBar title
+/// and screen widget so different screens (and HomeScreen tabs) remain
+/// distinguishable in a report.
+String? bugReportRouteLabel(Route<dynamic>? route) {
+  if (route == null) return null;
+  final name = route.settings.name?.trim();
+  // MaterialApp assigns '/' to its unnamed home route. That value identifies
+  // neither the current HomeScreen tab nor its visible content, so derive a
+  // label from the route subtree in that case as well.
+  if (name != null && name.isNotEmpty && name != '/') return name;
+
+  if (route is ModalRoute<dynamic>) {
+    final subtreeContext = route.subtreeContext;
+    if (subtreeContext != null) {
+      final visibleLabel = _visiblePageLabel(subtreeContext);
+      if (visibleLabel != null) return visibleLabel;
+    }
+  }
+  return route.runtimeType.toString();
+}
+
+String? _visiblePageLabel(BuildContext rootContext) {
+  String? screenType;
+  String? appBarTitle;
+
+  void visit(Element element) {
+    final widget = element.widget;
+    if (widget is Offstage && widget.offstage) return;
+
+    final type = widget.runtimeType.toString();
+    if (screenType == null &&
+        (type.endsWith('Screen') ||
+            type.endsWith('Page') ||
+            type.endsWith('Dialog') ||
+            type.endsWith('Sheet'))) {
+      screenType = type;
+    }
+    if (appBarTitle == null && widget is AppBar) {
+      final title = widget.title;
+      if (title is Text) {
+        appBarTitle = title.data?.trim();
+      } else if (title is RichText) {
+        appBarTitle = title.text.toPlainText().trim();
+      }
+      if (appBarTitle?.isEmpty ?? false) appBarTitle = null;
+    }
+    element.visitChildElements(visit);
+  }
+
+  (rootContext as Element).visitChildElements(visit);
+  if (screenType != null && appBarTitle != null) {
+    return '$screenType — $appBarTitle';
+  }
+  return appBarTitle ?? screenType;
+}
 
 /// Contrôleur global du mode bug report.
 /// Permet d'activer/désactiver le mode depuis n'importe quel écran.
@@ -55,8 +114,14 @@ class BugReportController extends ChangeNotifier {
 class BugReportOverlay extends StatefulWidget {
   final Widget child;
   final GlobalKey<NavigatorState>? navigatorKey;
+  final String? Function()? currentRouteLabel;
 
-  const BugReportOverlay({super.key, required this.child, this.navigatorKey});
+  const BugReportOverlay({
+    super.key,
+    required this.child,
+    this.navigatorKey,
+    this.currentRouteLabel,
+  });
 
   @override
   State<BugReportOverlay> createState() => _BugReportOverlayState();
@@ -66,6 +131,28 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
   // Position de l'icône (persistée entre activations)
   double _xPos = -1; // -1 = pas encore initialisé
   double _yPos = -1;
+  BugReportDraft _draft = const BugReportDraft();
+  final List<BugReportScreenshot> _screenshots = [];
+  bool _isOpeningForm = false;
+
+  @override
+  void initState() {
+    super.initState();
+    bugReportController.addListener(_handleControllerChange);
+  }
+
+  @override
+  void dispose() {
+    bugReportController.removeListener(_handleControllerChange);
+    super.dispose();
+  }
+
+  void _handleControllerChange() {
+    if (!bugReportController.isActive && !_isOpeningForm) {
+      _draft = const BugReportDraft();
+      _screenshots.clear();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,8 +193,10 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
 
   /// Capture l'écran concerné et ouvre le formulaire.
   Future<void> _captureAndShowForm(BuildContext context) async {
+    if (_isOpeningForm) return;
+    _isOpeningForm = true;
     Uint8List? screenshotBytes;
-    final currentRoute = ModalRoute.of(context)?.settings.name;
+    final currentRoute = widget.currentRouteLabel?.call();
 
     // Retirer l'icône flottante avant la capture et empêcher plusieurs
     // formulaires de s'ouvrir lors de taps successifs.
@@ -123,30 +212,71 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
 
         if (boundary != null) {
           final image = await boundary.toImage(pixelRatio: 2.0);
-          final byteData =
-              await image.toByteData(format: ui.ImageByteFormat.png);
-          screenshotBytes = byteData?.buffer.asUint8List();
-          debugPrint(
-              '📸 Screenshot capturé: ${screenshotBytes?.length ?? 0} bytes');
+          try {
+            final byteData = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            screenshotBytes = byteData?.buffer.asUint8List();
+            debugPrint(
+              '📸 Screenshot capturé: ${screenshotBytes?.length ?? 0} bytes',
+            );
+          } finally {
+            image.dispose();
+          }
         }
       } catch (e) {
         debugPrint('⚠️ Impossible de capturer le screenshot: $e');
       }
     }
 
-    if (!context.mounted) return;
+    if (screenshotBytes != null &&
+        screenshotBytes.isNotEmpty &&
+        _screenshots.length < maxBugReportScreenshots) {
+      _screenshots.add(
+        BugReportScreenshot(
+          bytes: screenshotBytes,
+          page: currentRoute ?? '',
+          capturedAt: DateTime.now(),
+        ),
+      );
+    }
+
+    if (!context.mounted) {
+      _isOpeningForm = false;
+      return;
+    }
 
     // Ouvrir le formulaire dans un bottom sheet
     // Le context doit avoir un Navigator ancestor (via navigatorKey)
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _BugReportForm(
-        screenshotBytes: screenshotBytes,
-        currentRoute: currentRoute,
-      ),
-    );
+    BugReportFormResult? result;
+    try {
+      result = await showModalBottomSheet<BugReportFormResult>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => BugReportForm(
+          draft: _draft,
+          screenshots: List.unmodifiable(_screenshots),
+          currentRoute: currentRoute,
+        ),
+      );
+    } finally {
+      _isOpeningForm = false;
+    }
+    if (!mounted) return;
+
+    if (result?.action == BugReportFormAction.captureMore) {
+      _draft = result!.draft;
+      _screenshots
+        ..clear()
+        ..addAll(result.screenshots);
+      bugReportController.activate(timeoutSeconds: 300);
+      return;
+    }
+
+    _draft = const BugReportDraft();
+    _screenshots.clear();
+    bugReportController.deactivate();
   }
 }
 
@@ -231,10 +361,7 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
           animation: _pulseController,
           builder: (context, child) {
             final scale = 1.0 + (_pulseController.value * 0.08);
-            return Transform.scale(
-              scale: scale,
-              child: child,
-            );
+            return Transform.scale(scale: scale, child: child);
           },
           child: Container(
             width: 48,
@@ -261,25 +388,54 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
 }
 
 /// Le formulaire de signalement dans un bottom sheet.
-class _BugReportForm extends StatefulWidget {
-  final Uint8List? screenshotBytes;
-  final String? currentRoute;
+enum BugReportFormAction { captureMore, submitted, cancelled }
 
-  const _BugReportForm({this.screenshotBytes, this.currentRoute});
+class BugReportFormResult {
+  const BugReportFormResult({
+    required this.action,
+    required this.draft,
+    required this.screenshots,
+  });
 
-  @override
-  State<_BugReportForm> createState() => _BugReportFormState();
+  final BugReportFormAction action;
+  final BugReportDraft draft;
+  final List<BugReportScreenshot> screenshots;
 }
 
-class _BugReportFormState extends State<_BugReportForm> {
+class BugReportForm extends StatefulWidget {
+  final BugReportDraft draft;
+  final List<BugReportScreenshot> screenshots;
+  final String? currentRoute;
+
+  const BugReportForm({
+    super.key,
+    required this.draft,
+    required this.screenshots,
+    this.currentRoute,
+  });
+
+  @override
+  State<BugReportForm> createState() => _BugReportFormState();
+}
+
+class _BugReportFormState extends State<BugReportForm> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _bugReportService = BugReportService();
+  BugReportService? _bugReportService;
+  late final List<BugReportScreenshot> _screenshots;
 
-  String _priority = 'annoying'; // Par défaut: gênant
-  bool _includeScreenshot = true;
+  late String _priority;
   bool _isSending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController.text = widget.draft.title;
+    _descriptionController.text = widget.draft.description;
+    _priority = widget.draft.priority;
+    _screenshots = List.of(widget.screenshots);
+  }
 
   @override
   void dispose() {
@@ -342,9 +498,30 @@ class _BugReportFormState extends State<_BugReportForm> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Screenshot preview
-                  if (widget.screenshotBytes != null && _includeScreenshot)
-                    _buildScreenshotPreview(),
+                  if (_screenshots.isNotEmpty) _buildScreenshotsPreview(),
+
+                  if (!kIsWeb && _screenshots.length < maxBugReportScreenshots)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: OutlinedButton.icon(
+                        onPressed: _isSending ? null : _captureAnother,
+                        icon: const Icon(Icons.add_a_photo_outlined),
+                        label: Text(
+                          _screenshots.isEmpty
+                              ? 'Ajouter une capture'
+                              : 'Ajouter une autre capture '
+                                  '(${_screenshots.length}/$maxBugReportScreenshots)',
+                        ),
+                      ),
+                    )
+                  else if (!kIsWeb)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        'Maximum de 5 captures atteint.',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
 
                   // Objet de la remarque
                   TextFormField(
@@ -436,9 +613,9 @@ class _BugReportFormState extends State<_BugReportForm> {
                       onPressed: _isSending
                           ? null
                           : () {
-                              bugReportController.deactivate();
-                              Navigator.maybeOf(context)
-                                  ?.pop(); // fixes CALYMOB-E
+                              Navigator.maybeOf(
+                                context,
+                              )?.pop(_result(BugReportFormAction.cancelled));
                             },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey[700],
@@ -447,8 +624,10 @@ class _BugReportFormState extends State<_BugReportForm> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child:
-                          const Text('Annuler', style: TextStyle(fontSize: 15)),
+                      child: const Text(
+                        'Annuler',
+                        style: TextStyle(fontSize: 15),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -462,8 +641,11 @@ class _BugReportFormState extends State<_BugReportForm> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline,
-                            size: 16, color: Colors.grey[500]),
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Colors.grey[500],
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -489,44 +671,122 @@ class _BugReportFormState extends State<_BugReportForm> {
     );
   }
 
-  Widget _buildScreenshotPreview() {
+  Widget _buildScreenshotsPreview() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Capture d\'écran',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
-              ),
-            ),
-            TextButton.icon(
-              onPressed: () => setState(() => _includeScreenshot = false),
-              icon: const Icon(Icons.close, size: 16),
-              label: const Text('Retirer'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red[400],
-                textStyle: const TextStyle(fontSize: 12),
-              ),
-            ),
-          ],
+        Text(
+          _screenshots.length == 1
+              ? 'Capture d\'écran'
+              : 'Captures d\'écran (${_screenshots.length})',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
         ),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.memory(
-            widget.screenshotBytes!,
-            height: 160,
-            width: double.infinity,
-            fit: BoxFit.cover,
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 156,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _screenshots.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) => _buildScreenshotTile(index),
           ),
         ),
         const SizedBox(height: 16),
       ],
     );
+  }
+
+  Widget _buildScreenshotTile(int index) {
+    return SizedBox(
+      width: 128,
+      child: Column(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                _screenshots[index].bytes,
+                width: 128,
+                cacheWidth: 256,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                tooltip: 'Déplacer vers la gauche',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
+                onPressed: index == 0 ? null : () => _moveScreenshot(index, -1),
+                icon: const Icon(Icons.arrow_back, size: 17),
+              ),
+              IconButton(
+                tooltip: 'Retirer la capture',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
+                onPressed: () => setState(() => _screenshots.removeAt(index)),
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  color: Colors.red[400],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Déplacer vers la droite',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
+                onPressed: index == _screenshots.length - 1
+                    ? null
+                    : () => _moveScreenshot(index, 1),
+                icon: const Icon(Icons.arrow_forward, size: 17),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _moveScreenshot(int index, int delta) {
+    setState(() {
+      final screenshot = _screenshots.removeAt(index);
+      _screenshots.insert(index + delta, screenshot);
+    });
+  }
+
+  BugReportDraft _currentDraft() => BugReportDraft(
+        title: _titleController.text,
+        description: _descriptionController.text,
+        priority: _priority,
+      );
+
+  BugReportFormResult _result(BugReportFormAction action) =>
+      BugReportFormResult(
+        action: action,
+        draft: _currentDraft(),
+        screenshots: List.unmodifiable(_screenshots),
+      );
+
+  void _captureAnother() {
+    Navigator.maybeOf(context)?.pop(_result(BugReportFormAction.captureMore));
   }
 
   Widget _buildPriorityChip(String value, String emoji, String label) {
@@ -573,14 +833,16 @@ class _BugReportFormState extends State<_BugReportForm> {
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final memberProvider =
-          Provider.of<MemberProvider>(context, listen: false);
+      final memberProvider = Provider.of<MemberProvider>(
+        context,
+        listen: false,
+      );
       const clubId = FirebaseConfig.defaultClubId;
       final userId = authProvider.currentUser?.uid ?? '';
       final userName = memberProvider.displayName;
       final userEmail = authProvider.currentUser?.email ?? '';
 
-      await _bugReportService.submitBugReport(
+      await (_bugReportService ??= BugReportService()).submitBugReport(
         clubId: clubId,
         userId: userId,
         userName: userName,
@@ -590,7 +852,7 @@ class _BugReportFormState extends State<_BugReportForm> {
             ? null
             : _descriptionController.text.trim(),
         priority: _priority,
-        screenshotBytes: _includeScreenshot ? widget.screenshotBytes : null,
+        screenshots: List.unmodifiable(_screenshots),
         currentRoute: widget.currentRoute,
       );
 
@@ -599,20 +861,19 @@ class _BugReportFormState extends State<_BugReportForm> {
 
       if (!mounted) return;
 
+      final messenger = ScaffoldMessenger.maybeOf(context);
       // Fermer le bottom sheet (maybeOf to handle missing Navigator on web — fixes CALYMOB-E)
-      Navigator.maybeOf(context)?.pop();
+      Navigator.maybeOf(context)?.pop(_result(BugReportFormAction.submitted));
 
       // Afficher confirmation
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      messenger?.showSnackBar(
         const SnackBar(
           content: Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  'Merci ! Votre remarque a bien été envoyée.',
-                ),
+                child: Text('Merci ! Votre remarque a bien été envoyée.'),
               ),
             ],
           ),
@@ -624,12 +885,14 @@ class _BugReportFormState extends State<_BugReportForm> {
       debugPrint('❌ Erreur envoi bug report: $e');
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-          'La remarque n\'a pas pu être envoyée. Veuillez réessayer.',
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La remarque n\'a pas pu être envoyée. Veuillez réessayer.',
+          ),
+          backgroundColor: Colors.red,
         ),
-        backgroundColor: Colors.red,
-      ));
+      );
     } finally {
       if (mounted) setState(() => _isSending = false);
     }

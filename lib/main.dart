@@ -1079,6 +1079,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               key: repaintBoundaryKey,
               child: BugReportOverlay(
                 navigatorKey: _navigatorKey,
+                currentRouteLabel: () => bugReportRouteLabel(
+                  _notificationNavigatorObserver.currentRoute,
+                ),
                 child: child ?? const SizedBox(),
               ),
             );

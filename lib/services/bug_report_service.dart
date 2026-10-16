@@ -4,6 +4,62 @@ import 'package:flutter/foundation.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import '../models/bug_report_screenshot.dart';
+
+typedef BugReportScreenshotUploader = Future<Map<String, dynamic>> Function(
+  int index,
+  BugReportScreenshot screenshot,
+);
+typedef BugReportScreenshotRemover = Future<void> Function(int index);
+
+/// Uploads a bounded screenshot set and removes completed uploads if a later
+/// upload fails. The returned metadata preserves capture order.
+@visibleForTesting
+Future<List<Map<String, dynamic>>> uploadBugReportScreenshots({
+  required List<BugReportScreenshot> screenshots,
+  required BugReportScreenshotUploader upload,
+  required BugReportScreenshotRemover remove,
+}) async {
+  if (screenshots.length > maxBugReportScreenshots) {
+    throw ArgumentError.value(
+      screenshots.length,
+      'screenshots',
+      'A bug report accepts at most $maxBugReportScreenshots screenshots.',
+    );
+  }
+
+  final uploadedIndexes = <int>[];
+  final metadata = <Map<String, dynamic>>[];
+  int? attemptedIndex;
+  try {
+    for (var index = 0; index < screenshots.length; index++) {
+      final screenshot = screenshots[index];
+      if (screenshot.bytes.isEmpty) continue;
+      attemptedIndex = index;
+      metadata.add(await upload(index, screenshot));
+      uploadedIndexes.add(index);
+      attemptedIndex = null;
+    }
+    return metadata;
+  } catch (_) {
+    // The failing upload may already have created its object (for example if
+    // fetching its download URL failed), so include that index in cleanup.
+    if (attemptedIndex != null) {
+      try {
+        await remove(attemptedIndex);
+      } catch (_) {}
+    }
+    for (final index in uploadedIndexes.reversed) {
+      try {
+        await remove(index);
+      } catch (_) {
+        // Preserve the original upload error. Storage rules may prevent a
+        // reporter from deleting an already uploaded object.
+      }
+    }
+    rethrow;
+  }
+}
 
 /// Service pour envoyer des signalements de bugs vers Firestore + Firebase Storage.
 class BugReportService {
@@ -17,7 +73,7 @@ class BugReportService {
   /// - [title]: titre du problème (obligatoire)
   /// - [description]: détails (optionnel)
   /// - [priority]: 'blocking', 'annoying', ou 'minor'
-  /// - [screenshotBytes]: capture d'écran en PNG (optionnel)
+  /// - [screenshots]: captures d'écran PNG (0 à 5)
   /// - [currentRoute]: route/écran actuel
   Future<String> submitBugReport({
     required String clubId,
@@ -27,7 +83,7 @@ class BugReportService {
     required String title,
     String? description,
     required String priority,
-    Uint8List? screenshotBytes,
+    List<BugReportScreenshot> screenshots = const [],
     String? currentRoute,
   }) async {
     try {
@@ -39,26 +95,35 @@ class BugReportService {
       String? sentryReplayId;
       try {
         final lastEventId = Sentry.lastEventId.toString();
-        if (lastEventId.isNotEmpty && lastEventId != '00000000000000000000000000000000') {
+        if (lastEventId.isNotEmpty &&
+            lastEventId != '00000000000000000000000000000000') {
           sentryReplayId = lastEventId;
         }
       } catch (e) {
-        debugPrint('⚠️ BugReport: Impossible de récupérer le Sentry replay ID: $e');
+        debugPrint(
+          '⚠️ BugReport: Impossible de récupérer le Sentry replay ID: $e',
+        );
       }
 
-      // 3. Préparer le document Firestore
-      // Compatible avec CalyCompta bugReportManagementService (format screenshots[])
+      if (screenshots.length > maxBugReportScreenshots) {
+        throw ArgumentError.value(
+          screenshots.length,
+          'screenshots',
+          'Maximum $maxBugReportScreenshots screenshots.',
+        );
+      }
+
+      // 3. Créer d'abord le signalement vide. Les règles Storage vérifient ce
+      // document pour prouver que l'appelant est bien le reporter avant tout
+      // upload. Une mise à jour strictement limitée finalise ensuite la liste.
+      final docRef = _firestore.collection('clubs/$clubId/bug_reports').doc();
       final reportData = {
         'app': 'CalyMob',
         'title': title,
         'description': description ?? '',
         'priority': priority,
         'status': 'nouveau', // Même valeur que CalyCompta (pas 'open')
-        'reporter': {
-          'uid': userId,
-          'name': userName,
-          'email': userEmail,
-        },
+        'reporter': {'uid': userId, 'name': userName, 'email': userEmail},
         'device': {
           'model': deviceInfo['model'] ?? 'Inconnu',
           'os': deviceInfo['os'] ?? 'Inconnu',
@@ -71,52 +136,65 @@ class BugReportService {
         'sentryEventUrl': sentryReplayId != null
             ? 'https://h2m-ai.sentry.io/replays/?query=$sentryReplayId'
             : null,
-        'screenshotUrl': null, // Backward compat — rempli ci-dessous
-        'screenshots': <Map<String, dynamic>>[], // Format CalyCompta
+        'screenshotUrl': null,
+        'screenshots': <Map<String, dynamic>>[],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
-
-      // 4. Écrire dans Firestore
-      final docRef = await _firestore
-          .collection('clubs/$clubId/bug_reports')
-          .add(reportData);
-
+      await docRef.set(reportData);
       debugPrint('🐛 Bug report créé: ${docRef.id}');
 
-      // 5. Uploader la capture d'écran (si fournie)
-      // Format compatible CalyCompta: screenshots[] array avec storagePath
-      if (screenshotBytes != null && screenshotBytes.isNotEmpty) {
-        try {
-          final storagePath =
-              'clubs/$clubId/bug_reports/${docRef.id}/screenshot_0.png';
-          final storageRef = _storage.ref().child(storagePath);
+      if (screenshots.isEmpty) return docRef.id;
 
-          await storageRef.putData(
-            screenshotBytes,
-            SettableMetadata(contentType: 'image/png'),
-          );
+      // 4. Upload et finalisation atomique du point de vue des lecteurs. Si
+      // une étape échoue, les règles permettent au reporter de supprimer ses
+      // objets et le document encore vide, sans toucher aux rapports finalisés.
+      final uploadedRefs = <int, Reference>{};
+      try {
+        final screenshotMetadata = await uploadBugReportScreenshots(
+          screenshots: screenshots,
+          upload: (index, screenshot) async {
+            final storagePath =
+                'clubs/$clubId/bug_reports/${docRef.id}/screenshot_$index.png';
+            final storageRef = _storage.ref().child(storagePath);
+            // Record the attempted object before awaiting the network write.
+            // If Storage committed the bytes but the client lost the response,
+            // cleanup must still know which canonical object to remove.
+            uploadedRefs[index] = storageRef;
+            await storageRef.putData(
+              screenshot.bytes,
+              SettableMetadata(contentType: 'image/png'),
+            );
+            final downloadUrl = await storageRef.getDownloadURL();
+            return {
+              'url': downloadUrl,
+              'page': screenshot.page,
+              'capturedAt': Timestamp.fromDate(screenshot.capturedAt),
+              'storagePath': storagePath,
+              'storageIndex': index,
+            };
+          },
+          remove: (index) async {
+            final storageRef = uploadedRefs[index];
+            if (storageRef != null) await storageRef.delete();
+          },
+        );
 
-          final downloadUrl = await storageRef.getDownloadURL();
-
-          // Mettre à jour avec les deux formats (nouveau + backward compat)
-          await docRef.update({
-            'screenshotUrl': downloadUrl,
-            'screenshots': [
-              {
-                'url': downloadUrl,
-                'page': currentRoute ?? '',
-                'capturedAt': DateTime.now().toIso8601String(),
-                'storagePath': storagePath,
-              }
-            ],
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-          debugPrint('📸 Screenshot uploadé: $downloadUrl');
-        } catch (e) {
-          debugPrint('❌ Erreur upload screenshot: $e');
-          // On continue — le bug report est déjà enregistré sans screenshot
+        await docRef.update({
+          'screenshotUrl': screenshotMetadata.first['url'],
+          'screenshots': screenshotMetadata,
+        });
+        debugPrint('${screenshotMetadata.length} capture(s) jointe(s)');
+      } catch (_) {
+        for (final storageRef in uploadedRefs.values.toList().reversed) {
+          try {
+            await storageRef.delete();
+          } catch (_) {}
         }
+        try {
+          await docRef.delete();
+        } catch (_) {}
+        rethrow;
       }
 
       return docRef.id;
@@ -137,7 +215,8 @@ class BugReportService {
         final android = await deviceInfoPlugin.androidInfo;
         info['model'] = '${android.manufacturer} ${android.model}';
         info['os'] = 'Android';
-        info['osVersion'] = 'Android ${android.version.release} (SDK ${android.version.sdkInt})';
+        info['osVersion'] =
+            'Android ${android.version.release} (SDK ${android.version.sdkInt})';
       } else if (defaultTargetPlatform == TargetPlatform.iOS) {
         final ios = await deviceInfoPlugin.iosInfo;
         info['model'] = ios.utsname.machine;

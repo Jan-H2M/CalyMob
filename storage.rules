@@ -41,6 +41,21 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isBugReportOwner(clubId, reportId) {
+      return isClubMember(clubId) &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)).data.reporter.uid == request.auth.uid;
+    }
+
+    function isUnfinalizedBugReportOwner(clubId, reportId) {
+      let report = firestore.get(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)).data;
+      return isBugReportOwner(clubId, reportId) &&
+        report.status == 'nouveau' &&
+        report.screenshots is list &&
+        report.screenshots.size() == 0 &&
+        report.screenshotUrl == null;
+    }
+
     function canManageMaterialLoans(clubId) {
       return hasRole(clubId, ['admin', 'superadmin']) || (
         isAuthenticated() &&
@@ -360,11 +375,16 @@ service firebase.storage {
     // Path: clubs/{clubId}/bug_reports/{reportId}/screenshot.jpg
     // ============================================
     match /clubs/{clubId}/bug_reports/{reportId}/{fileName} {
-      allow read: if hasRole(clubId, ['admin', 'superadmin']);
-      allow create: if isClubMember(clubId) &&
+      allow read: if hasRole(clubId, ['admin', 'superadmin']) ||
+                    isBugReportOwner(clubId, reportId);
+      allow create: if (hasRole(clubId, ['admin', 'superadmin']) ||
+                        isBugReportOwner(clubId, reportId)) &&
                       request.resource.size < 10 * 1024 * 1024 && // 10MB for screenshots
-                      isValidFileType('image/.*');
-      allow delete: if hasRole(clubId, ['admin', 'superadmin']);
+                      isValidFileType('image/.*') &&
+                      (hasRole(clubId, ['admin', 'superadmin']) ||
+                        fileName.matches('screenshot_[0-4][.](jpg|png)'));
+      allow delete: if hasRole(clubId, ['admin', 'superadmin']) ||
+                      isUnfinalizedBugReportOwner(clubId, reportId);
     }
 
     // Bank statement imports
