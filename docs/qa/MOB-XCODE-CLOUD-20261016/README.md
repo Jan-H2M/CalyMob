@@ -95,9 +95,10 @@ assignment. This follow-up does not change the app compiled by build 519 from
 74702e070203afe32836485a46eeef68e5a2b4e6.
 
 The production print inspection found a separate UX omission: the supplier detail
-dialog offers preparation sheets, while received-piece QR sheets are available
-via Purchases / Receptions / Print / After reception. No web code, receipt, stock
-location or production setting was changed during this iOS release work.
+dialog originally offered preparation sheets while received-piece QR sheets were
+elsewhere. Jan separately authorized publishing the supplier print fix. It is
+tracked and deployed from the dedicated web worktree, not this iOS source; see the
+final result below. No receipt or stock data was changed during verification.
 
 ## Verification and limits
 
@@ -118,3 +119,45 @@ main.dart. Check the exact iOS Firebase project/app/bundle identity in the Flutt
 suite instead of requiring a file the app does not use. Keep the native bundle
 checks and all existing 68 Flutter tests; the required cloud suite now has 69.
 No app initialization, Firebase configuration or backend behavior is changed.
+
+
+## Final release result — 2026-10-16
+
+- Version 1.26.1 (520), source 2b1c377fe80d98cb041b911a76dca66ef06f2ecb,
+  on codex/mob-xcode-cloud-20261016. Marketing version remains unchanged.
+- Reused workflow CalyMob iOS — TestFlight; run
+  0ea75e78-b971-4817-9781-3c389d40f72a completed SUCCEEDED at
+  2026-10-16T11:30:11.658Z. Required TEST and ARCHIVE both COMPLETE/SUCCEEDED.
+- Both Apple workers passed all 69 Flutter tests and strict dependency checks.
+  Native RunnerTests.testProductionBundleConfiguration passed on iPhone 15 /
+  iOS 17.5. The archive log records ARCHIVE SUCCEEDED.
+- Actual internal TestFlight upload, build
+  5154ad42-5a42-428a-a70f-fbfff61a4586, processed VALID, INTERNAL_ONLY,
+  non-expired. No local native build/archive was used.
+- Approved French notes were explicitly saved and read back because automatic
+  note discovery still returned empty notes. The exact approved existing group
+  CalyMob Testing team now contains build 520; a separate read verifies
+  IN_BETA_TESTING and the approved fr-FR text. No external group was added.
+- Verify membership through GET /v1/betaGroups/{groupId}/builds. Apple's inverse
+  GET /v1/builds/{buildId}/betaGroups rejects GET_RELATED (403); the first release
+  attempt stopped before group mutation. The narrowly repaired verifier received
+  independent review before retrying. The approved group's full list had 198
+  builds before assignment, below the checked page limit of 200.
+- Earlier builds 518 and 519 remain expired after native test failures. A separate
+  read confirms build 519 expired=true and internal state EXPIRED. Neither was
+  assigned to the approved group.
+- Production backend/functions, Firestore rules, feature flags and published
+  minimum version were not changed. New Boutique QR grouped actions remain off.
+  Existing certificates were not revoked and keys were not replaced.
+- Physical phone installation/login/navigation feedback was requested after
+  TestFlight availability. Do not equate cloud simulator success with a physical
+  camera test. The printed QR's reported iPhone landing issue remains unconfirmed;
+  the actual piece resolves in the authenticated desktop web account.
+
+Separate authorized web publication: supplier-dossier QR printing is live on
+caly.club from CalyCompta source 0486044b3094aabd38eef78fbfebeef326df0666,
+production deployment dpl_FVMh1goTk96WAuXNqyhS3ibNvP7A. Live Articles & receipts
+shows the received-piece QR button; its actual A4 preview includes the correct
+physical-piece QR. Printing does not register receipt or change stock. See the
+web worktree's BTQ-SUPPLIER-QR-PRINT-20261016 QA note. Customer screenshots stay
+outside Git.
