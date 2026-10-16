@@ -37,10 +37,22 @@ esac
 }
 
 # Flutter's config-only path also prepares Pods: pin pod before invoking it.
-if ! command -v pod >/dev/null 2>&1 || [ "$(pod --version)" != "$COCOAPODS_VERSION" ]; then
-  gem install cocoapods --version "$COCOAPODS_VERSION" --no-document --user-install
-  export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+# Apple's system Ruby 2.6 cannot resolve current native gem dependencies.
+# Install the reviewed runtime on the cloud worker, never on the local Mac.
+export HOMEBREW_NO_AUTO_UPDATE=1
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+if [ ! -x "$(brew --prefix)/opt/ruby@3.3/bin/ruby" ]; then
+  brew install ruby@3.3
 fi
+export PATH="$(brew --prefix ruby@3.3)/bin:$PATH"
+[ "$(ruby -e 'print RUBY_VERSION')" = "$RUBY_VERSION" ] || {
+  echo 'Unexpected Ruby patch version; review the toolchain pin before release.' >&2
+  exit 1
+}
+export GEM_HOME="$HOME/.calymob-gems/ruby-$RUBY_VERSION"
+export GEM_PATH="$GEM_HOME"
+export PATH="$GEM_HOME/bin:$PATH"
+gem install cocoapods --version "$COCOAPODS_VERSION" --no-document
 [ "$(pod --version)" = "$COCOAPODS_VERSION" ] || exit 1
 
 # Generates configuration only. Xcode Cloud compiles, archives, signs and uploads.
