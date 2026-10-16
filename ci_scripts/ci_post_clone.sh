@@ -64,6 +64,7 @@ git diff --exit-code -- pubspec.lock ios/Podfile.lock
 
 # Real widgets, access control, confirmations and QR parsing; no live Firebase.
 flutter test --no-pub \
+  test/config/firebase_options_test.dart \
   test/models/boutique \
   test/models/boutique_product_personalization_test.dart \
   test/screens/boutique_qr_access_test.dart \

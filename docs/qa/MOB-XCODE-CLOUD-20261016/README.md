@@ -102,9 +102,19 @@ location or production setting was changed during this iOS release work.
 ## Verification and limits
 
 Local shell syntax, diff hygiene and the release-source widget suite are checked
-before push. Native bundle/Firebase/camera-permission configuration is checked by
-RunnerTests on Apple's simulator. Camera hardware and physical handover are
+before push. Native bundle/camera-permission configuration is checked by
+RunnerTests on Apple's simulator. The actual Flutter FirebaseOptions identity is
+checked in the required post-clone Flutter suite. Camera hardware and physical handover are
 separate from simulator success. A reachable Jan’s iPhone 16 Pro was observed;
 do not claim physical camera proof without an actual run and observed scan.
 The feature guard remains off unless the production flag and required functions
 already exist. No backend activation is authorized in this release.
+
+Build 519 passed native build-for-testing and ran RunnerTests on iPhone 15/iOS
+17.5. The bundle ID, camera and encryption checks passed, but the added test's
+assumption of a bundled GoogleService-Info.plist was incorrect. CalyMob explicitly
+lets firebase_core initialize from DefaultFirebaseOptions.currentPlatform in
+main.dart. Check the exact iOS Firebase project/app/bundle identity in the Flutter
+suite instead of requiring a file the app does not use. Keep the native bundle
+checks and all existing 68 Flutter tests; the required cloud suite now has 69.
+No app initialization, Firebase configuration or backend behavior is changed.

@@ -10,12 +10,9 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse((bundle.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? "").isEmpty)
     XCTAssertEqual(bundle.object(forInfoDictionaryKey: "ITSAppUsesNonExemptEncryption") as? Bool, false)
 
-    let url = try XCTUnwrap(bundle.url(forResource: "GoogleService-Info", withExtension: "plist"))
-    let data = try Data(contentsOf: url)
-    let config = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-    XCTAssertEqual(config["PROJECT_ID"] as? String, "calycompta")
-    XCTAssertEqual(config["BUNDLE_ID"] as? String, "be.calypsodc.calymob")
-    XCTAssertEqual(config["GOOGLE_APP_ID"] as? String, "1:328464166969:ios:59423f69116580ea8f5de8")
+    // main.dart initializes Firebase with DefaultFirebaseOptions.ios. Its exact
+    // project/app/bundle identity is checked by firebase_options_test.dart;
+    // this app deliberately does not bundle a GoogleService-Info.plist.
   }
 
 }
