@@ -29,7 +29,7 @@ None and describe that as a TestFlight release.
 
 Both supported post-clone locations run the same script. Flutter 3.38.9 is pinned
 by tag and exact revision; CocoaPods 1.16.2 and committed Dart/Pod lockfiles are
-enforced. Ruby 3.3.12 is installed and checked on the cloud worker because Apple's
+enforced. Ruby 3.3.11 is installed and checked on the cloud worker because Apple's
 system Ruby 2.6 cannot install the current native gem dependencies. Configuration
 generation does not compile an iOS app. Apple performs
 native compilation/signing/distribution. No credentials belong in these scripts.
