@@ -31,10 +31,10 @@
             "kind": "USE_SCHEME_SETTINGS",
             "testDestinations": [{
               "kind": "SIMULATOR",
-              "deviceTypeName": "iPhone 17",
-              "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
-              "runtimeName": "iOS 26.5",
-              "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+              "deviceTypeName": "iPhone 15",
+              "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
+              "runtimeName": "iOS 17.5",
+              "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-5"
             }]
           }
         },

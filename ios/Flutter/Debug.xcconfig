@@ -1,2 +1,6 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// mobile_scanner 6 / ML Kit supports only x86_64 simulators. Keep the Debug
+// host aligned with that dependency; physical iPhone builds still use arm64.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = $(inherited) i386 arm64

@@ -22,7 +22,7 @@ changes remain forbidden; Jan explicitly reconfirmed that boundary.
 
 The API payload is versioned at ci_scripts/xcode-cloud-workflow.json. It selects
 Xcode 26.6 (17F113), macOS Tahoe 26.5.1 (25F80), Runner.xcworkspace and shared
-Runner scheme; Release archive; a required iPhone 17 / iOS 26.5 native test action;
+Runner scheme; Release archive; a required iPhone 15 / iOS 17.5 native test action;
 INTERNAL_ONLY distribution. All automatic triggers are removed. Start manually
 only after Jan approves the French TestFlight notes. Do not change to Distribution
 None and describe that as a TestFlight release.
@@ -47,6 +47,15 @@ change is broadly excluded. The same official scanner, with its release archive
 SHA-256 verified, scanned all 10 release commits (178,321 bytes) with no remaining
 findings. This CI-only follow-up does not change the app being built as 518 from
 fd68bb52ba7371c86426bf7f4c9f1d42910c1030.
+
+Build 518 completed dependency setup, lock-drift checks and all 68 Flutter tests
+on Apple's test worker. Its native build-for-testing failed because the existing
+mobile_scanner 6.0.11 pod excludes arm64 simulator slices while Runner attempted
+to import its generated x86_64 Swift header into an arm64 simulator build.
+Debug Runner and RunnerTests now exclude arm64 only for iphonesimulator. The
+required cloud test destination uses the available iOS 17.5 / iPhone 15 runtime,
+which supports the dependency's x86_64 simulator slice. Release/device arm64,
+dependency versions, signing, entitlements and required tests remain unchanged.
 
 Marketing version stays 1.26.1. The generated configuration uses CI_BUILD_NUMBER
 from Apple's existing product-wide counter (last observed 514), which must exceed
