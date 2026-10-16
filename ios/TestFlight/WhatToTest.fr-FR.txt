@@ -1,0 +1,1 @@
+Préparation du scan QR de la Boutique : sélection de plusieurs articles, déplacements groupés et remise des colis. Ces nouvelles actions restent désactivées dans cette version de test, dans l’attente de l’activation du service Boutique. Merci de vérifier la connexion, la navigation Boutique et l’ouverture des QR imprimés avec l’appareil photo.

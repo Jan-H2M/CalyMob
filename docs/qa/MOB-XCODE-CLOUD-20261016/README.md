@@ -40,13 +40,18 @@ Use existing internal group CalyMob Testing team (e55ae21d-1ae0-4467-8bf4-7d1b4f
 which already has access to all builds. Do not add the external CA Testers group
 or submit to beta review/App Store without separate authorization.
 
-## French test notes — proposed, not yet approved
+## French test notes — approved by Jan in this chat
 
 Préparation du scan QR de la Boutique : sélection de plusieurs articles,
 déplacements groupés et remise des colis. Ces nouvelles actions restent
 désactivées dans cette version de test, dans l’attente de l’activation du service
 Boutique. Merci de vérifier la connexion, la navigation Boutique et l’ouverture
 des QR imprimés avec l’appareil photo.
+
+Jan approved these exact notes and upload to the existing internal group. The
+same text is committed in ios/TestFlight/WhatToTest.fr-FR.txt, beside the selected
+workspace, so Xcode Cloud attaches it to the beta build. This approval does not
+authorize backend activation, external testing or App Store publication.
 
 ## Verification and limits
 
