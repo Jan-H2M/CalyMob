@@ -1,6 +1,6 @@
 # MOB-BTQ-QR-20261016 — CalyMob physical Boutique sessions
 
-Local implementation; no store version, Cloud Function, feature flag or delegation has been published. The separately released Calypso received-piece QR printouts already use this exact permanent v1 article URL contract.
+Released rollout: CalyMob 1.26.1 (520) is available in the approved internal TestFlight group. Jan subsequently explicitly authorized the necessary production QR backend and Gestion Boutique activation. Both server functions and their two indexes are live; boutiqueQrEnabled was enabled for Calypso on 2026-10-16 at 12:13:13 UTC (14:13 Brussels). The received-piece QR printouts use this permanent v1 article URL contract. No live pickup mission was created during verification.
 
 ## Operational behavior
 
@@ -47,3 +47,48 @@ Start Firebase Firestore emulator with firebase.boutique-qr.json and demo projec
     FIRESTORE_EMULATOR_HOST=127.0.0.1:8087 GCLOUD_PROJECT=demo-boutique-qr node --test functions/test/boutique/physicalOperations.emulator.cjs
 
 The test refuses any other host/project, creates only synthetic data and removes that test club afterwards. Dependency symlinks, emulator logs and local build output are excluded from the candidate.
+
+
+## Authorized production activation — 2026-10-16
+
+Jan explicitly authorized the necessary QR backend and activation after the
+initial TestFlight-only release. This supersedes the earlier no-backend boundary
+for these exact QR functions, required indexes, web compatibility and one flag.
+
+Backend source 349ff91758cacb4445d8d9f346189122e479632c was independently reviewed;
+QR functional files remain identical to reviewed feature source 989a77e. Only
+boutiquePhysicalOperations and sendBoutiquePickupNotification were deployed to
+calycompta / europe-west1 / Node.js 22. Both are ACTIVE. The actual immutable
+uploaded ZIP generations were downloaded and all 214 runtime/package source files
+in each matched the reviewed commit byte-for-byte. The notification trigger is a
+created-document pattern on the default database in eur3, with idempotent retries.
+
+Only the two exact mission indexes from functions/config/boutique-qr-indexes.json
+were added; both are READY. Read-back comparison confirms all 76 pre-existing
+indexes are unchanged (78 total). Function metadata comparison confirms all 121
+pre-existing functions are unchanged (123 total). No Firestore rules, published
+minimum app version, certificates or member roles were changed.
+
+Paired live web source 3b6dbb5169b4c9041f7e42d110cf2f4f46568957 is the exact
+independently verified combination of reviewed compatibility 5218507 and the
+supplier print fix 0486044. Production deployment dpl_8ZSqA8Hn3NjTFJskgqsUQCpgxBLd
+is READY and serves caly.club. The received-piece QR print panel is preserved.
+
+After all readiness checks, a compare-and-set PATCH changed only
+clubs/calypso/settings/feature_flags.boutiqueQrEnabled to true. The field was
+previously absent. A read-back verified all other settings unchanged. The final
+activation helper also received independent review. The public callable rejects
+an unauthenticated request with HTTP 401 / UNAUTHENTICATED.
+
+Fresh verification: 13 emulator scenarios passed using only demo-boutique-qr;
+170 focused web tests / 5 suites passed, with 175 / 6 independently passing;
+TypeScript and Vite production build passed. A broader default Jest run had
+16 failed suites / 119 failed tests; its old assistant mock failure was reproduced
+on the previous live print source. Do not report the broad run as green.
+
+Read-only production domain checks confirm the real RB account can manage,
+the actual printed physical unit resolves, the initial stock list loads and the
+mission query succeeds. These checks did not move stock, create a mission or send
+a buyer message. Physical iPhone camera and scan feedback was requested after
+activation; do not claim device-camera proof before that result arrives. The
+existing TestFlight build 520 is sufficient; no extra native build was performed.

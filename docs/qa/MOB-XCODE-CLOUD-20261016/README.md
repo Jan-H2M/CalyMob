@@ -3,8 +3,10 @@
 ## Confirmed scope
 
 Jan requested Apple-hosted iOS builds on 2026-10-16. Local Fastlane compilation
-is superseded for this release. Backend deployment, rules and minimum-version
-changes remain forbidden; Jan explicitly reconfirmed that boundary.
+is superseded for this release. The initial release excluded backend deployment, rules and minimum-version
+changes; Jan explicitly reconfirmed that boundary at that stage. After the
+TestFlight release, Jan separately authorized the necessary QR backend and
+Gestion Boutique activation. See the subsequent activation result below.
 
 ## Verified identity and source
 
@@ -161,3 +163,15 @@ shows the received-piece QR button; its actual A4 preview includes the correct
 physical-piece QR. Printing does not register receipt or change stock. See the
 web worktree's BTQ-SUPPLIER-QR-PRINT-20261016 QA note. Customer screenshots stay
 outside Git.
+
+
+## Subsequent authorized QR activation
+
+After the successful TestFlight release, Jan explicitly requested the necessary
+QR backend online and Gestion Boutique active. The two reviewed server functions,
+two READY indexes and compatible web release were published, then only
+boutiqueQrEnabled was enabled for Calypso at 2026-10-16T12:13:13.639401Z. All other
+feature settings, rules and published minimum version were preserved. This is a
+later authorization and does not change the exact binary/source of build 520.
+See docs/qa/MOB-BTQ-QR-20261016/implementation.md for the production evidence and
+limits. Physical phone scan feedback remains a separate requested check.
