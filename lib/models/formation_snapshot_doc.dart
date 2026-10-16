@@ -60,6 +60,77 @@ class FormationSnapshotDoc {
   int get milPct => milModulePct ?? 0;
   bool get hasMil => milModulePct != null;
 
+  /// Progression regroupée selon les trois volets demandés par les
+  /// instructeurs. Les examens piscine/théorie ont des codes LIFRAS explicites
+  /// (`*.EXP`, `*.EXT`, `*.T`) dans le référentiel ; les autres épreuves sont
+  /// les épreuves pratiques en milieu naturel (carrière).
+  Map<FormationModality, FormationModalityProgress> get modalityProgress =>
+      _progressByModality();
+
+  /// Examens seulement : une séance ou un exercice piscine n'est pas un examen.
+  Map<FormationModality, FormationModalityProgress> get examProgress =>
+      _progressByModality(examsOnly: true);
+
+  /// Keep detail rows in sync with the target-filtered progression totals.
+  bool includesCurrentTargetExercise(SnapshotExercise exercise) =>
+      _exerciseMatchesTarget(exercise, _targetNiveauCode(targetLevel));
+
+  bool includesCurrentTargetCode(String code) =>
+      _codeMatchesTarget(code, _targetNiveauCode(targetLevel));
+
+  Map<FormationModality, FormationModalityProgress> _progressByModality({
+    bool examsOnly = false,
+  }) {
+    final entries = <String, _ModalityExerciseState>{};
+
+    void add(String code, String description, _FormationExerciseState state) {
+      final key = code.trim().toUpperCase();
+      if (key.isEmpty) return;
+      if (examsOnly && !formationExerciseIsExam(code, description)) return;
+      final existing = entries[key];
+      if (existing != null && existing.state.index <= state.index) return;
+      entries[key] = _ModalityExerciseState(
+        modality: formationModalityForExercise(code, description),
+        state: state,
+      );
+    }
+
+    for (final exercise in validated) {
+      if (!includesCurrentTargetExercise(exercise)) continue;
+      add(
+        exercise.code,
+        exercise.description,
+        _FormationExerciseState.validated,
+      );
+    }
+    for (final exercise in pending) {
+      if (!includesCurrentTargetExercise(exercise)) continue;
+      add(exercise.code, exercise.description, _FormationExerciseState.pending);
+    }
+    for (final claim in pendingClaims) {
+      if (!includesCurrentTargetCode(claim.code)) continue;
+      add(claim.code, claim.label, _FormationExerciseState.pending);
+    }
+    for (final exercise in remaining) {
+      add(
+        exercise.code,
+        exercise.description,
+        exercise.status == 'refused'
+            ? _FormationExerciseState.refused
+            : _FormationExerciseState.remaining,
+      );
+    }
+
+    return {
+      for (final modality in FormationModality.values)
+        modality: FormationModalityProgress._fromStates(
+          entries.values
+              .where((entry) => entry.modality == modality)
+              .map((entry) => entry.state),
+        ),
+    };
+  }
+
   DateTime? get lastActivityDate => diveStats.lastDiveDate;
 
   int get daysSinceLastActivity {
@@ -113,13 +184,17 @@ class FormationSnapshotDoc {
     return null;
   }
 
-  factory FormationSnapshotDoc.fromMap(String memberId, Map<String, dynamic> data) {
+  factory FormationSnapshotDoc.fromMap(
+    String memberId,
+    Map<String, dynamic> data,
+  ) {
     final exercises = _asMap(data['exercises']);
     final diveStats = _asMap(data['dive_stats']);
     final mil = _asMap(data['mil_experience']);
     final goals = _asMap(data['goals']);
 
-    List<Map<String, dynamic>> listOf(dynamic v) => (v as List?)
+    List<Map<String, dynamic>> listOf(dynamic v) =>
+        (v as List?)
             ?.whereType<Map>()
             .map((e) => e.cast<String, dynamic>())
             .toList() ??
@@ -152,61 +227,229 @@ class FormationSnapshotDoc {
       memberId: memberId,
       targetLevel: data['target_level']?.toString(),
       currentCode: data['current_code']?.toString() ?? '',
-      validated: listOf(exercises['validated']).map(SnapshotExercise.fromMap).toList(),
-      pending: listOf(exercises['pending']).map(SnapshotExercise.fromMap).toList(),
-      pendingClaims: listOf(exercises['pending_claims']).map(SnapshotClaim.fromMap).toList(),
-      remaining: listOf(exercises['remaining']).map(SnapshotExercise.fromMap).toList(),
+      validated: listOf(
+        exercises['validated'],
+      ).map(SnapshotExercise.fromMap).toList(),
+      pending: listOf(
+        exercises['pending'],
+      ).map(SnapshotExercise.fromMap).toList(),
+      pendingClaims: listOf(
+        exercises['pending_claims'],
+      ).map(SnapshotClaim.fromMap).toList(),
+      remaining: listOf(
+        exercises['remaining'],
+      ).map(SnapshotExercise.fromMap).toList(),
       perCode: perCode,
       attentionPoints:
-          (data['attention_points'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+          (data['attention_points'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       diveStats: SnapshotDiveStats.fromMap(diveStats),
       milPerRequirement: milReqs,
       milModulePct: mil.isEmpty ? null : _intOrNull(mil['module_pct']),
       brevetPct: brevet,
       formationPct: _int(data['formation_pct']),
-      goalCodes: (goals['codes'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      goalCodes:
+          (goals['codes'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
       goalNote: goals['note']?.toString() ?? '',
-      recentDives: listOf(data['recent_dives']).map(SnapshotRecentDive.fromMap).toList(),
+      recentDives: listOf(
+        data['recent_dives'],
+      ).map(SnapshotRecentDive.fromMap).toList(),
     );
   }
+}
+
+enum FormationModality { career, pool, theory }
+
+bool formationExerciseIsExam(String code, String description) {
+  final normalized = code.trim().toUpperCase();
+  if (normalized.endsWith('.EXP') ||
+      normalized.endsWith('.EXT') ||
+      normalized.endsWith('.T')) {
+    return true;
+  }
+  final label = description.trim().toLowerCase();
+  return label.contains('examen') &&
+      formationModalityForExercise(code, description) !=
+          FormationModality.career;
+}
+
+extension FormationModalityLabel on FormationModality {
+  String get label => switch (this) {
+    FormationModality.career => 'Carrière',
+    FormationModality.pool => 'Piscine',
+    FormationModality.theory => 'Théorie',
+  };
+}
+
+class FormationModalityProgress {
+  final int validated;
+  final int pending;
+  final int remaining;
+  final int refused;
+
+  const FormationModalityProgress({
+    required this.validated,
+    required this.pending,
+    required this.remaining,
+    this.refused = 0,
+  });
+
+  factory FormationModalityProgress._fromStates(
+    Iterable<_FormationExerciseState> states,
+  ) {
+    var validated = 0;
+    var pending = 0;
+    var remaining = 0;
+    var refused = 0;
+    for (final state in states) {
+      switch (state) {
+        case _FormationExerciseState.validated:
+          validated++;
+        case _FormationExerciseState.pending:
+          pending++;
+        case _FormationExerciseState.remaining:
+          remaining++;
+        case _FormationExerciseState.refused:
+          remaining++;
+          refused++;
+      }
+    }
+    return FormationModalityProgress(
+      validated: validated,
+      pending: pending,
+      remaining: remaining,
+      refused: refused,
+    );
+  }
+
+  int get total => validated + pending + remaining;
+  int get pct => total == 0 ? 0 : ((validated / total) * 100).round();
+}
+
+FormationModality formationModalityForExercise(
+  String code,
+  String description,
+) {
+  final normalizedCode = code.trim().toUpperCase();
+  final normalizedDescription = description.trim().toLowerCase();
+  final isTheory =
+      normalizedCode.endsWith('.EXT') ||
+      normalizedCode.endsWith('.T') ||
+      normalizedDescription.contains('théori') ||
+      normalizedDescription.contains('theori');
+  if (isTheory) return FormationModality.theory;
+
+  final isPool =
+      normalizedCode.endsWith('.EXP') ||
+      normalizedDescription.contains('piscine') ||
+      normalizedDescription.contains('pool');
+  if (isPool) return FormationModality.pool;
+
+  return FormationModality.career;
+}
+
+enum _FormationExerciseState { validated, pending, refused, remaining }
+
+class _ModalityExerciseState {
+  final FormationModality modality;
+  final _FormationExerciseState state;
+
+  const _ModalityExerciseState({required this.modality, required this.state});
+}
+
+String? _targetNiveauCode(String? targetLevel) {
+  return switch (targetLevel?.trim().toUpperCase()) {
+    '1' || '1*' || 'P1' || 'NB' => 'NB',
+    '2' || '2*' || 'P2' => 'P2',
+    '3' || '3*' || 'P3' => 'P3',
+    '4' || '4*' || 'P4' => 'P4',
+    'AM' => 'AM',
+    'MC' => 'MC',
+    'MF' => 'MF',
+    'MN' => 'MN',
+    _ => null,
+  };
+}
+
+bool _exerciseMatchesTarget(SnapshotExercise exercise, String? targetNiveau) {
+  if (targetNiveau == null) return true;
+  final niveau = exercise.niveau.trim().toUpperCase();
+  if (niveau.isNotEmpty) return niveau == targetNiveau;
+  return _codeMatchesTarget(exercise.code, targetNiveau);
+}
+
+bool _codeMatchesTarget(String code, String? targetNiveau) {
+  if (targetNiveau == null) return true;
+  final normalized = code.trim().toUpperCase();
+  if (targetNiveau == 'NB') return normalized.startsWith('P1.');
+  if (targetNiveau == 'P2' && normalized == 'P1.EXP') return true;
+  return normalized.startsWith('$targetNiveau.');
 }
 
 class SnapshotExercise {
   final String code;
   final String description;
+  final String niveau;
   final DateTime? date;
-  const SnapshotExercise({required this.code, required this.description, this.date});
+  final bool personal;
+  final String? status;
+  const SnapshotExercise({
+    required this.code,
+    required this.description,
+    this.niveau = '',
+    this.date,
+    this.personal = false,
+    this.status,
+  });
   factory SnapshotExercise.fromMap(Map<String, dynamic> m) => SnapshotExercise(
-        code: m['code']?.toString() ?? '',
-        description: m['description']?.toString() ?? '',
-        date: _date(m['date']),
-      );
+    code: m['code']?.toString() ?? '',
+    description: m['description']?.toString() ?? '',
+    niveau: m['niveau']?.toString() ?? '',
+    date: _date(m['date']),
+    personal: m['personal'] == true,
+    status: m['status']?.toString(),
+  );
 }
 
 class SnapshotClaim {
   final String code;
   final String label;
   final String status;
-  const SnapshotClaim({required this.code, required this.label, required this.status});
+  const SnapshotClaim({
+    required this.code,
+    required this.label,
+    required this.status,
+  });
   factory SnapshotClaim.fromMap(Map<String, dynamic> m) => SnapshotClaim(
-        code: m['code']?.toString() ?? '',
-        label: m['label']?.toString() ?? '',
-        status: m['status']?.toString() ?? '',
-      );
+    code: m['code']?.toString() ?? '',
+    label: m['label']?.toString() ?? '',
+    status: m['status']?.toString() ?? '',
+  );
 }
 
 class SnapshotPerCode {
   final int attempts;
   final String? lastResult;
   final DateTime? lastDate;
-  const SnapshotPerCode({required this.attempts, this.lastResult, this.lastDate});
+  const SnapshotPerCode({
+    required this.attempts,
+    this.lastResult,
+    this.lastDate,
+  });
 }
 
 class SnapshotMilRequirement {
   final int have;
   final int need;
   final bool dataMissing;
-  const SnapshotMilRequirement({required this.have, required this.need, required this.dataMissing});
+  const SnapshotMilRequirement({
+    required this.have,
+    required this.need,
+    required this.dataMissing,
+  });
   double get ratio => need > 0 ? (have / need).clamp(0.0, 1.0) : 0.0;
 }
 
@@ -221,7 +464,8 @@ class SnapshotRecentDive {
     this.depthMaxMeters,
     this.durationMinutes,
   });
-  factory SnapshotRecentDive.fromMap(Map<String, dynamic> m) => SnapshotRecentDive(
+  factory SnapshotRecentDive.fromMap(Map<String, dynamic> m) =>
+      SnapshotRecentDive(
         date: _date(m['date']),
         locationName: m['location_name']?.toString() ?? 'Lieu inconnu',
         depthMaxMeters: _double(m['depth_max_meters']),
