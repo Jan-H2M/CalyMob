@@ -17,12 +17,61 @@ import '../services/bug_report_service.dart';
 final GlobalKey repaintBoundaryKey = GlobalKey();
 
 /// Stable label for the route currently tracked by the app's NavigatorObserver.
-/// Named routes keep their exact name; unnamed MaterialPageRoutes still record
-/// a non-empty route type instead of silently writing an empty page.
+/// Named routes keep their exact name. For the many unnamed MaterialPageRoutes
+/// in CalyMob, inspect the active route subtree for its visible AppBar title
+/// and screen widget so different screens (and HomeScreen tabs) remain
+/// distinguishable in a report.
 String? bugReportRouteLabel(Route<dynamic>? route) {
   if (route == null) return null;
   final name = route.settings.name?.trim();
-  return name == null || name.isEmpty ? route.runtimeType.toString() : name;
+  // MaterialApp assigns '/' to its unnamed home route. That value identifies
+  // neither the current HomeScreen tab nor its visible content, so derive a
+  // label from the route subtree in that case as well.
+  if (name != null && name.isNotEmpty && name != '/') return name;
+
+  if (route is ModalRoute<dynamic>) {
+    final subtreeContext = route.subtreeContext;
+    if (subtreeContext != null) {
+      final visibleLabel = _visiblePageLabel(subtreeContext);
+      if (visibleLabel != null) return visibleLabel;
+    }
+  }
+  return route.runtimeType.toString();
+}
+
+String? _visiblePageLabel(BuildContext rootContext) {
+  String? screenType;
+  String? appBarTitle;
+
+  void visit(Element element) {
+    final widget = element.widget;
+    if (widget is Offstage && widget.offstage) return;
+
+    final type = widget.runtimeType.toString();
+    if (screenType == null &&
+        (type.endsWith('Screen') ||
+            type.endsWith('Page') ||
+            type.endsWith('Dialog') ||
+            type.endsWith('Sheet'))) {
+      screenType = type;
+    }
+    if (appBarTitle == null && widget is AppBar) {
+      final title = widget.title;
+      if (title is Text) {
+        appBarTitle = title.data?.trim();
+      } else if (title is RichText) {
+        appBarTitle = title.text.toPlainText().trim();
+      }
+      if (appBarTitle?.isEmpty ?? false) appBarTitle = null;
+    }
+    element.visitChildElements(visit);
+  }
+
+  (rootContext as Element).visitChildElements(visit);
+  if (screenType != null && appBarTitle != null) {
+    return '$screenType — $appBarTitle';
+  }
+  return appBarTitle ?? screenType;
 }
 
 /// Contrôleur global du mode bug report.

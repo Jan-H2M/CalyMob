@@ -16,19 +16,57 @@ BugReportScreenshot capture(String page, int minute) => BugReportScreenshot(
       capturedAt: DateTime.utc(2026, 10, 16, 12, minute),
     );
 
+class _RouteProbe extends NavigatorObserver {
+  Route<dynamic>? current;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    current = route;
+  }
+}
+
 void main() {
-  test('route label uses observer route name and a non-empty fallback', () {
+  test('route label preserves an explicit observer route name', () {
     final named = MaterialPageRoute<void>(
       settings: const RouteSettings(name: '/details'),
       builder: (_) => const SizedBox(),
     );
-    final unnamed = MaterialPageRoute<void>(
-      builder: (_) => const SizedBox(),
-    );
 
     expect(bugReportRouteLabel(named), '/details');
-    expect(bugReportRouteLabel(unnamed), contains('MaterialPageRoute'));
     expect(bugReportRouteLabel(null), isNull);
+  });
+
+  testWidgets('unnamed routes use distinct visible screen titles',
+      (tester) async {
+    final probe = _RouteProbe();
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [probe],
+        home: Scaffold(
+          appBar: AppBar(title: const Text('Événements')),
+          body: const SizedBox(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final homeLabel = bugReportRouteLabel(probe.current);
+
+    navigatorKey.currentState!.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Profil')),
+          body: const SizedBox(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final profileLabel = bugReportRouteLabel(probe.current);
+
+    expect(homeLabel, contains('Événements'));
+    expect(profileLabel, contains('Profil'));
+    expect(profileLabel, isNot(homeLabel));
   });
 
   testWidgets('capture another retains the edited draft and screenshots',

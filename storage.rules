@@ -47,6 +47,15 @@ service firebase.storage {
         firestore.get(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)).data.reporter.uid == request.auth.uid;
     }
 
+    function isUnfinalizedBugReportOwner(clubId, reportId) {
+      let report = firestore.get(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)).data;
+      return isBugReportOwner(clubId, reportId) &&
+        report.status == 'nouveau' &&
+        report.screenshots is list &&
+        report.screenshots.size() == 0 &&
+        report.screenshotUrl == null;
+    }
+
     function canManageMaterialLoans(clubId) {
       return hasRole(clubId, ['admin', 'superadmin']) || (
         isAuthenticated() &&
@@ -375,7 +384,7 @@ service firebase.storage {
                       (hasRole(clubId, ['admin', 'superadmin']) ||
                         fileName.matches('screenshot_[0-4][.](jpg|png)'));
       allow delete: if hasRole(clubId, ['admin', 'superadmin']) ||
-                      isBugReportOwner(clubId, reportId);
+                      isUnfinalizedBugReportOwner(clubId, reportId);
     }
 
     // Bank statement imports

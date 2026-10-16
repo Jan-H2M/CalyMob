@@ -157,11 +157,14 @@ class BugReportService {
             final storagePath =
                 'clubs/$clubId/bug_reports/${docRef.id}/screenshot_$index.png';
             final storageRef = _storage.ref().child(storagePath);
+            // Record the attempted object before awaiting the network write.
+            // If Storage committed the bytes but the client lost the response,
+            // cleanup must still know which canonical object to remove.
+            uploadedRefs[index] = storageRef;
             await storageRef.putData(
               screenshot.bytes,
               SettableMetadata(contentType: 'image/png'),
             );
-            uploadedRefs[index] = storageRef;
             final downloadUrl = await storageRef.getDownloadURL();
             return {
               'url': downloadUrl,

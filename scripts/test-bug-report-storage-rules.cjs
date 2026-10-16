@@ -82,6 +82,7 @@ async function main() {
       }],
       screenshotUrl: url,
     }));
+    await assertFails(deleteObject(ownObject));
     await assertFails(deleteDoc(reportRef));
 
     console.log('Bug-report attachment ownership rules passed.');
