@@ -75,8 +75,29 @@ des QR imprimés avec l’appareil photo.
 
 Jan approved these exact notes and upload to the existing internal group. The
 same text is committed in ios/TestFlight/WhatToTest.fr-FR.txt, beside the selected
-workspace, so Xcode Cloud attaches it to the beta build. This approval does not
+workspace, for automatic discovery. Verify its import before testing. This approval does not
 authorize backend activation, external testing or App Store publication.
+
+Build 518's Release archive uploaded successfully as 1.26.1 (518), processed VALID
+with INTERNAL_ONLY audience, despite its failed native test action. It was not
+assigned to the internal group and was explicitly expired (then re-read as
+EXPIRED). A successful archive alone is insufficient. Require all required cloud
+actions to pass, verify the exact approved French notes and then explicitly
+assign the successful build to the approved group. The group's all-builds setting
+did not automatically include this Xcode Cloud build.
+
+Apple did not import the notes for build 518. The existing TestFlight text file
+is now also referenced by a TestFlight group in the Xcode project, following
+Apple's documented project layout. This is a metadata reference only, without
+target or resource membership. For the current release, also read the localized
+TestFlight notes through the API and set the approved text if absent before group
+assignment. This follow-up does not change the app compiled by build 519 from
+74702e070203afe32836485a46eeef68e5a2b4e6.
+
+The production print inspection found a separate UX omission: the supplier detail
+dialog offers preparation sheets, while received-piece QR sheets are available
+via Purchases / Receptions / Print / After reception. No web code, receipt, stock
+location or production setting was changed during this iOS release work.
 
 ## Verification and limits
 
