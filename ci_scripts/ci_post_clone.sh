@@ -67,6 +67,8 @@ flutter test --no-pub \
   test/config/firebase_options_test.dart \
   test/models/boutique \
   test/models/boutique_product_personalization_test.dart \
+  test/screens/boutique_receipt_selection_test.dart \
+  test/services/boutique_operations_service_test.dart \
   test/screens/boutique_qr_access_test.dart \
   test/screens/boutique_qr_confirmation_lifecycle_test.dart \
   test/screens/boutique_screen_access_test.dart \

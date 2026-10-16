@@ -9,11 +9,15 @@ class BoutiqueStockSessionScreen extends StatefulWidget {
   final String location;
   final List<Map<String, dynamic>> assignees;
   final BoutiqueOperationsService service;
+  final List<BoutiquePhysicalUnit> initialUnits;
+  final bool moveOnly;
   const BoutiqueStockSessionScreen(
       {super.key,
       required this.clubId,
       required this.location,
       required this.assignees,
+      this.initialUnits = const [],
+      this.moveOnly = false,
       this.service = const BoutiqueOperationsService()});
   @override
   State<BoutiqueStockSessionScreen> createState() =>
@@ -56,8 +60,13 @@ class _BoutiqueStockSessionScreenState
   @override
   void initState() {
     super.initState();
-    _selection =
-        BoutiqueScanSelection(clubId: widget.clubId, location: widget.location);
+    _selection = BoutiqueScanSelection(
+        clubId: widget.clubId,
+        location: widget.location,
+        maximum: widget.moveOnly ? 100 : 50);
+    for (final unit in widget.initialUnits) {
+      _selection.add(unit);
+    }
   }
 
   @override
@@ -141,7 +150,9 @@ class _BoutiqueStockSessionScreenState
     setState(() => _busy = true);
     try {
       final next = BoutiqueScanSelection(
-          clubId: widget.clubId, location: widget.location);
+          clubId: widget.clubId,
+          location: widget.location,
+          maximum: widget.moveOnly ? 100 : 50);
       for (final unit in _selection.units) {
         next.add(await widget.service.lookup(widget.clubId, unit.id));
       }
@@ -178,7 +189,7 @@ class _BoutiqueStockSessionScreenState
         },
       };
   Future<void> _confirm() async {
-    if (_selection.units.isEmpty) return;
+    if (_busy || _selection.units.isEmpty) return;
     if (_action == 'dispatch' &&
         _destination.text.trim() == widget.location &&
         !_presence) {
@@ -219,8 +230,9 @@ class _BoutiqueStockSessionScreenState
                             Text(
                                 'Tâche partagée avec ${_helpers.length} personne(s), valable 7 jours. Le départ seul n’envoie aucun message.'),
                           const SizedBox(height: 12),
-                          const Text(
-                              'Confirmez uniquement les pièces physiquement présentes dans ce lot.'),
+                          Text(_action == 'move'
+                              ? 'Confirmez uniquement lorsque ces pièces sont physiquement au lieu de destination. La finition et les réservations sont conservées.'
+                              : 'Confirmez uniquement les pièces physiquement présentes dans ce lot.'),
                         ])),
                     actions: [
                       TextButton(
@@ -258,7 +270,9 @@ class _BoutiqueStockSessionScreenState
   Widget build(BuildContext context) {
     final locked = _busy || _pending != null;
     return Scaffold(
-        appBar: AppBar(title: const Text('Scanner un lot')),
+        appBar: AppBar(
+            title: Text(
+                widget.moveOnly ? 'Déplacer la sélection' : 'Scanner un lot')),
         body: SafeArea(
             child: ListView(padding: const EdgeInsets.all(16), children: [
           Text('Lieu de cette session : ${widget.location}',
@@ -266,18 +280,22 @@ class _BoutiqueStockSessionScreenState
           const Text(
               'Un seul lieu et une seule action pour toutes les pièces du lot.'),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-              initialValue: _action,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Action pour tout le lot',
-                  border: OutlineInputBorder()),
-              items: _actions.entries
-                  .map((e) => DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value, overflow: TextOverflow.ellipsis)))
-                  .toList(),
-              onChanged: locked ? null : (v) => setState(() => _action = v!)),
+          if (widget.moveOnly)
+            const Text('Changer de lieu',
+                style: TextStyle(fontWeight: FontWeight.bold))
+          else
+            DropdownButtonFormField<String>(
+                initialValue: _action,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Action pour tout le lot',
+                    border: OutlineInputBorder()),
+                items: _actions.entries
+                    .map((e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value, overflow: TextOverflow.ellipsis)))
+                    .toList(),
+                onChanged: locked ? null : (v) => setState(() => _action = v!)),
           Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(_help[_action]!)),
@@ -357,21 +375,23 @@ class _BoutiqueStockSessionScreenState
                       : 'Note pour ce lot · facultatif',
                   border: const OutlineInputBorder())),
           const SizedBox(height: 20),
-          FilledButton.icon(
-              onPressed: locked
-                  ? null
-                  : () => Navigator.push(
-                      context,
-                      boutiqueAccessGuardedRoute(
-                          sourceContext: context,
-                          requiredSection: 'gestion',
-                          builder: (_) => BoutiqueQrScanScreen(
-                              title: 'Scanner les fiches articles',
-                              instruction:
-                                  'Scannez les pièces présentes à ${widget.location}. Une pièce déjà scannée ne sera pas ajoutée deux fois.',
-                              onScan: _scan))),
-              icon: const Icon(Icons.qr_code_scanner),
-              label: Text('Scanner · ${_selection.units.length}/50 pièce(s)')),
+          if (!widget.moveOnly)
+            FilledButton.icon(
+                onPressed: locked
+                    ? null
+                    : () => Navigator.push(
+                        context,
+                        boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'gestion',
+                            builder: (_) => BoutiqueQrScanScreen(
+                                title: 'Scanner les fiches articles',
+                                instruction:
+                                    'Scannez les pièces présentes à ${widget.location}. Une pièce déjà scannée ne sera pas ajoutée deux fois.',
+                                onScan: _scan))),
+                icon: const Icon(Icons.qr_code_scanner),
+                label:
+                    Text('Scanner · ${_selection.units.length}/50 pièce(s)')),
           ..._selection.units.map((u) => ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(u.name),

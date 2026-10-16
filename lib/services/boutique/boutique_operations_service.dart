@@ -27,6 +27,31 @@ class BoutiqueOperationsService {
         Map<String, dynamic>.from(result['unit'] as Map));
   }
 
+  /// Read every page before offering a full receipt; never silently use a preview.
+  Future<List<BoutiquePhysicalUnit>> listReceivedUnits(String clubId) async {
+    final units = <String, BoutiquePhysicalUnit>{};
+    final cursors = <String>{};
+    String? cursor;
+    do {
+      final page =
+          await call(clubId, 'list', {if (cursor != null) 'cursor': cursor});
+      for (final value in page['units'] as List) {
+        final unit =
+            BoutiquePhysicalUnit(Map<String, dynamic>.from(value as Map));
+        units[unit.id] = unit;
+      }
+      if (page['hasMore'] != true) return units.values.toList();
+      cursor = page['nextCursor'] as String?;
+      if (cursor == null ||
+          cursor.isEmpty ||
+          !cursors.add(cursor) ||
+          cursors.length > 100) {
+        throw const FormatException(
+            'La réception complète ne peut pas être chargée. Actualisez avant de sélectionner.');
+      }
+    } while (true);
+  }
+
   // Poll only while a subscriber exists. Rx switchMap cancels on role/flag change.
   Stream<bool> watchHasAssignment(String clubId) {
     late StreamController<bool> controller;

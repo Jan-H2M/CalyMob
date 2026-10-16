@@ -32,20 +32,20 @@ function lineNeedsProduction(line) {
 }
 const revision = (snap) => snap.updateTime ? `${snap.updateTime.seconds}:${snap.updateTime.nanoseconds}` : hash(snap.data());
 const asUnit = (snap) => ({ ...snap.data(), id: snap.id, revision: revision(snap) });
-const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','requiresEmbroidery','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)]]));
+const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','supplierBatchId','supplierOrderReference','requiresEmbroidery','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)]]));
 
 function validate(input, actor) {
   if (!input || Array.isArray(input) || typeof input !== 'object' || Object.keys(input).some(k => !ALLOWED.has(k)) || !id(input.clubId) || (!READS.has(input.action) && !MUTATIONS.has(input.action))) fail('invalid-argument', 'Demande Boutique invalide.');
   if (!id(actor?.uid)) fail('unauthenticated', 'Connectez-vous à CalyMob.');
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
-  if (input.cursor !== undefined && (!id(input.cursor) || input.action !== 'missions')) fail('invalid-argument', 'Page de missions invalide.');
+  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
   if (!MUTATIONS.has(input.action)) return;
   if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
   if (!id(input.idempotencyKey) || input.idempotencyKey.length < 16) fail('invalid-argument', 'Identifiant de confirmation obligatoire.');
   if (input.action !== 'revoke') {
-    if (!Array.isArray(input.units) || !input.units.length || input.units.length > MAX_UNITS || input.units.some(u => !u || Object.keys(u).some(k => !['id', 'revision'].includes(k)) || !id(u.id) || typeof u.revision !== 'string' || !u.revision || u.revision.length > 150) || unique(input.units.map(u => u.id)).length !== input.units.length) fail('invalid-argument', 'Sélectionnez de 1 à 50 pièces différentes.');
+    if (!Array.isArray(input.units) || !input.units.length || input.units.length > (input.action === 'move' ? 100 : MAX_UNITS) || input.units.some(u => !u || Object.keys(u).some(k => !['id', 'revision'].includes(k)) || !id(u.id) || typeof u.revision !== 'string' || !u.revision || u.revision.length > 150) || unique(input.units.map(u => u.id)).length !== input.units.length) fail('invalid-argument', `Sélectionnez de 1 à ${input.action === 'move' ? 100 : MAX_UNITS} pièces différentes.`);
   }
   for (const key of ['sourceLocation', 'destination', 'pickupWindow', 'note']) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > (key === 'note' ? 500 : 160) || !text(input[key], key === 'note' ? 500 : 160))) fail('invalid-argument', 'Lieu ou note invalide.');
   for (const key of ['confirmed', 'allowPartial', 'pickupPoint', 'preview']) if (input[key] !== undefined && typeof input[key] !== 'boolean') fail('invalid-argument', 'Confirmation invalide.');
@@ -128,8 +128,11 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     }
     if (input.action === 'list') {
       if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
-      const [units, members] = await Promise.all([tx.get(club.collection('boutique_physical_stock_units').where('saleStatus', 'in', ['not_ready', 'sale_ready']).limit(200)), tx.get(club.collection('members').where('member_status', '==', 'active').limit(500))]);
-      return { units: units.docs.map(s => publicUnit(asUnit(s))), hasMore: units.size === 200, assignees: members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) };
+      const base = club.collection('boutique_physical_stock_units').where('saleStatus', 'in', ['not_ready', 'sale_ready']).orderBy(admin.firestore.FieldPath.documentId());
+      const page = input.cursor ? base.startAfter(input.cursor) : base;
+      const [units, members] = await Promise.all([tx.get(page.limit(201)), input.cursor ? Promise.resolve(null) : tx.get(club.collection('members').where('member_status', '==', 'active').limit(500))]);
+      const docs = units.docs.slice(0, 200), hasMore = units.size > 200;
+      return { units: docs.map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
     }
     if (input.action === 'mission' && !await missionAuthorized(mission, false, manager)) fail('permission-denied', 'Mission expirée ou retirée.');
     const requestId = MUTATIONS.has(input.action) ? hash([actor.uid, input.idempotencyKey]) : null;
@@ -155,7 +158,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       return result;
     }
     const wanted = input.action === 'mission' ? mission.unitIds : input.units.map(u => u.id);
-    if (wanted.length > MAX_UNITS) fail('failed-precondition', 'Le lot dépasse la limite de 50 pièces.');
+    if (wanted.length > (input.action === 'move' ? 100 : MAX_UNITS)) fail('failed-precondition', 'Le lot dépasse la limite autorisée.');
     const unitMap = new Map();
     for (const unitId of wanted) {
       const snap = await tx.get(club.collection('boutique_physical_stock_units').doc(unitId));

@@ -11,6 +11,10 @@ class BoutiquePhysicalUnit {
   String get location => data['location'] as String? ?? 'Lieu inconnu';
   String get finish => data['finish'] as String? ?? '';
   String get saleStatus => data['saleStatus'] as String? ?? '';
+  String? get supplierBatchId => data['supplierBatchId'] as String?;
+  String get supplierReference =>
+      data['supplierOrderReference'] as String? ?? supplierBatchId ?? '';
+  bool get inTransport => data['transportMissionId'] != null;
   String get customerName => data['customerName'] as String? ?? 'Stock club';
   bool get sold => saleStatus == 'sold';
   Map<String, dynamic> get selection => {'id': id, 'revision': revision};
@@ -30,8 +34,10 @@ class BoutiquePhysicalUnit {
 class BoutiqueScanSelection {
   final String clubId;
   final String location;
+  final int maximum;
   final _units = <String, BoutiquePhysicalUnit>{};
-  BoutiqueScanSelection({required this.clubId, required this.location});
+  BoutiqueScanSelection(
+      {required this.clubId, required this.location, this.maximum = 50});
   List<BoutiquePhysicalUnit> get units => List.unmodifiable(_units.values);
   bool contains(String id) => _units.containsKey(id);
   void remove(String id) => _units.remove(id);
@@ -46,8 +52,8 @@ class BoutiqueScanSelection {
       throw FormatException(
           'Cette pièce est à ${unit.location}. Choisissez un lot à ce lieu.');
     }
-    if (_units.length >= 50) {
-      throw const FormatException('50 pièces maximum par lot.');
+    if (_units.length >= maximum) {
+      throw FormatException('$maximum pièces maximum par lot.');
     }
     _units[unit.id] = unit;
   }
