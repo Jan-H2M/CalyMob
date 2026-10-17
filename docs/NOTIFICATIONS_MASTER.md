@@ -1123,9 +1123,21 @@ drive UI/badge while cursor values are logged as a structured comparison. In
 `on`, `ReadStateService` creates missing server-timestamp root cursors and
 `CursorUnreadCountService` drives the UI/app icon without writing
 `unread_counts`. Queries are capped at eight concurrent operations with an
-eight-second timeout and retain the last successful category count on a partial
-failure. The temporary announcement fallback counts only non-deleted documents
-without normalized `visibility`/`last_activity_at`; the migration removes it.
+eight-second timeout.
+
+> **SUPERSEDED (2026-10-17) — per-category partial publication.** The previous
+> rule retained the last successful count for each failed category while other
+> categories could publish newer values. That could make a home badge describe
+> a different data generation than its destination list.
+
+The current rule is atomic at the visible snapshot boundary: home tiles,
+destination-row badges and the app-icon badge use the same last complete cursor
+snapshot. A failed or stalled refresh keeps that complete snapshot and the last
+loaded destination list, shows an explicit retry, and never publishes partial
+zeros. Subscription generations also prevent a late callback from an older
+list subscription from replacing the newer list. The temporary announcement
+fallback counts only non-deleted documents without normalized
+`visibility`/`last_activity_at`; the migration removes it.
 
 The definitive replacement is a server-owned cursor document per member under
 `clubs/{clubId}/members/{uid}/read_state`. `announcements` stores one
