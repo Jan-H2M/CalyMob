@@ -3,8 +3,8 @@
     "type": "ciWorkflows",
     "id": "D11B66EC-6E95-43A4-B345-727D1992D72A",
     "attributes": {
-      "name": "CalyMob iOS — TestFlight",
-      "description": "Manual reviewed CalyMob release: Flutter checks, native iOS tests, Release archive and internal TestFlight distribution. No backend deployment.",
+      "name": "CalyMob iOS — App Store & TestFlight",
+      "description": "Manual reviewed CalyMob release: Flutter checks, native iOS tests, Release archive and App Store eligible distribution. Public submission is a separately approved Fastlane action. No backend deployment.",
       "isEnabled": true,
       "isLockedForEditing": true,
       "clean": true,
@@ -39,13 +39,13 @@
           }
         },
         {
-          "name": "Archive - iOS TestFlight",
+          "name": "Archive - iOS App Store",
           "actionType": "ARCHIVE",
           "platform": "IOS",
           "destination": "ANY_IOS_DEVICE",
           "scheme": "Runner",
           "isRequiredToPass": true,
-          "buildDistributionAudience": "INTERNAL_ONLY"
+          "buildDistributionAudience": "APP_STORE_ELIGIBLE"
         }
       ]
     },

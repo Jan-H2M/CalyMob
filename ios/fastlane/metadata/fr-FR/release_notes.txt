@@ -1,1 +1,1 @@
-Amélioration de la connexion après correction de l’adresse e-mail par un administrateur.
+Boutique : suivi des articles par QR code et déplacement de plusieurs articles en une seule opération. Les responsables peuvent sélectionner une réception complète, sans scanner chaque article.
