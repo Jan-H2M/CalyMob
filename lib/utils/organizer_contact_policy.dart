@@ -30,6 +30,21 @@ bool canDisplayOrganizerPhone({
 }) =>
     sharePhone && (phoneNumber?.trim().isNotEmpty ?? false);
 
+/// An event staff member may use only the phone deliberately shared in the
+/// club directory for the exact registered member. Never use a private member
+/// record or a name-based match to supply a missing number.
+bool canDisplayParticipantPhone({
+  required bool isEventStaff,
+  required String memberId,
+  required String? directoryMemberId,
+  required bool sharePhone,
+  required String? phoneNumber,
+}) =>
+    isEventStaff &&
+    memberId.isNotEmpty &&
+    memberId == directoryMemberId &&
+    canDisplayOrganizerPhone(sharePhone: sharePhone, phoneNumber: phoneNumber);
+
 bool _isSubset(Set<String> candidate, Set<String> source) =>
     candidate.isNotEmpty && candidate.every(source.contains);
 

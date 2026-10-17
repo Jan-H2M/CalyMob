@@ -16,6 +16,18 @@ the current private source transactionally, so delayed or retried events cannot
 restore an older public projection. It does not log source fields or member
 identifiers.
 
+## Event participant phone display (MOB-039, 2026-10-16)
+
+> **SUPERSEDED UI ASSUMPTION:** directory readability alone is not sufficient
+> authority for CalyMob to render a participant phone action in an event.
+
+The event participant list exposes the phone action only to event staff: the
+original creator, the current organiser, or a member with the exact club status
+`encadrant`/`encadrants`. The lookup uses the participant's exact member ID in
+`member_directory`; it never falls back to the private `members` document or a
+name match. The display boundary checks `share_phone` again and fails closed
+for guests, missing/mismatched IDs, absent numbers, or revoked consent.
+
 Birthday sharing is changed through the authenticated
 `updateBirthdaySharing` callable. The callable validates that the requested
 member is the caller and atomically writes both the private preference and the

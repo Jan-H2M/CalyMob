@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:calymob/models/operation.dart';
 import 'package:calymob/models/participant_operation.dart';
+import 'package:calymob/models/member_profile.dart';
 import 'package:calymob/models/event_message.dart';
 import 'package:calymob/providers/auth_provider.dart';
 import 'package:calymob/providers/event_message_provider.dart';
@@ -37,12 +40,28 @@ class _MockEventMessageProvider extends Mock implements EventMessageProvider {
       const Stream.empty();
 }
 
-class _MockMemberProvider extends Mock implements MemberProvider {
+class _MockMemberProvider extends Mock
+    with ChangeNotifier
+    implements MemberProvider {
+  _MockMemberProvider({
+    this.statuten = const [],
+    this.loadedClubId = 'calypso',
+    this.loadedMemberId = 'member-1',
+  });
+
+  final List<String> statuten;
+  final String loadedClubId;
+  String loadedMemberId;
+
+  @override
+  bool isLoadedFor(String clubId, String userId) =>
+      clubId == loadedClubId && userId == loadedMemberId;
+
   @override
   String? get appRole => 'membre';
 
   @override
-  List<String> get clubStatuten => const [];
+  List<String> get clubStatuten => statuten;
 
   @override
   String? get plongeurCode => null;
@@ -53,11 +72,13 @@ class _MockOperationProvider extends Mock implements OperationProvider {
     this._operation, {
     this.remainingInscriptionAfterUnregister,
     this.unregisterError,
+    this.participants = const [],
   });
 
   final Operation _operation;
   final ParticipantOperation? remainingInscriptionAfterUnregister;
   final Object? unregisterError;
+  final List<ParticipantOperation> participants;
   final unregisterCalls = <Map<String, dynamic>>[];
   var reloadCalls = 0;
   var _isRegistered = true;
@@ -67,7 +88,7 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   Operation? get selectedOperation => _operation;
 
   @override
-  List<ParticipantOperation> get selectedOperationParticipants => const [];
+  List<ParticipantOperation> get selectedOperationParticipants => participants;
 
   @override
   bool get isLoading => false;
@@ -131,7 +152,23 @@ class _MockOperationService extends Mock implements OperationService {
       loadedInscription;
 }
 
-class _MockProfileService extends Mock implements ProfileService {}
+class _MockProfileService extends Mock implements ProfileService {
+  _MockProfileService({this.directoryProfile});
+
+  MemberProfile? directoryProfile;
+  Future<MemberProfile?>? pendingDirectoryProfile;
+  var directoryLookups = 0;
+
+  @override
+  Future<MemberProfile?> getDirectoryProfile(
+    String clubId,
+    String userId,
+  ) async {
+    directoryLookups++;
+    if (pendingDirectoryProfile != null) return pendingDirectoryProfile!;
+    return directoryProfile;
+  }
+}
 
 class _MockUser extends Mock implements User {
   @override
@@ -152,6 +189,215 @@ void main() {
     await Firebase.initializeApp();
     await initializeDateFormatting('fr_FR');
   });
+
+  testWidgets('encadrant contact respects consent and current identity',
+      (tester) async {
+    final now = DateTime(2026, 10, 15);
+    final operation = Operation(
+      id: 'synthetic-event',
+      type: 'evenement',
+      titre: 'Sortie synthétique',
+      montantPrevu: 0,
+      statut: 'ouvert',
+      dateDebut: DateTime(2027, 10, 15),
+      createdAt: now,
+      updatedAt: now,
+    );
+    final participant = ParticipantOperation(
+      id: 'registration-2',
+      operationId: operation.id,
+      membreId: 'member-2',
+      membrePrenom: 'Alice',
+      membreNom: 'Exemple',
+      prix: 0,
+      dateInscription: now,
+    );
+    final operationProvider = _MockOperationProvider(
+      operation,
+      participants: [participant],
+    );
+    final profile = MemberProfile(
+      id: 'member-2',
+      prenom: 'Alice',
+      nom: 'Exemple',
+      email: '',
+      sharePhone: true,
+      phoneNumber: '+32000000000',
+    );
+
+    final profileService = _MockProfileService(directoryProfile: profile);
+    final memberProvider = _MockMemberProvider(statuten: const ['encadrant']);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: _MockAuthProvider(_MockUser()),
+          ),
+          ChangeNotifierProvider<EventMessageProvider>.value(
+            value: _MockEventMessageProvider(),
+          ),
+          ChangeNotifierProvider<MemberProvider>.value(
+            value: memberProvider,
+          ),
+          ChangeNotifierProvider<OperationProvider>.value(
+            value: operationProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: OperationDetailScreen(
+            clubId: 'calypso',
+            operationId: operation.id,
+            operationService: _MockOperationService(participant),
+            profileService: profileService,
+            loadAuxiliaryProfileData: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('Membres inscrits'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.ensureVisible(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('+32000000000'), findsOneWidget);
+
+    await tester.tap(find.text('Fermer'));
+    await tester.pump(const Duration(milliseconds: 350));
+    profileService.directoryProfile = MemberProfile(
+      id: 'member-2',
+      prenom: 'Alice',
+      nom: 'Exemple',
+      email: '',
+      sharePhone: false,
+      phoneNumber: '+32000000000',
+    );
+    await tester.tap(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('+32000000000'), findsNothing);
+    expect(find.text('Numéro indisponible ou non partagé'), findsOneWidget);
+
+    // Authority can disappear while the directory response is in flight.
+    final pendingProfile = Completer<MemberProfile?>();
+    profileService.pendingDirectoryProfile = pendingProfile.future;
+    await tester.tap(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump();
+    expect(profileService.directoryLookups, 3);
+
+    memberProvider.loadedMemberId = 'previous-member';
+    pendingProfile.complete(profile);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('+32000000000'), findsNothing);
+
+    // An already-rendered callback must also recheck before another lookup.
+    await tester.tap(find.byTooltip('Téléphone de Alice Exemple'));
+    await tester.pump();
+    expect(profileService.directoryLookups, 3);
+
+    memberProvider.notifyListeners();
+    await tester.pump();
+    expect(find.byTooltip('Téléphone de Alice Exemple'), findsNothing);
+  });
+
+  for (final scenario in [
+    (
+      name: 'ordinary member',
+      roles: <String>[],
+      clubId: 'calypso',
+      memberId: 'member-1',
+    ),
+    (
+      name: 'cached encadrant from another account',
+      roles: ['encadrant'],
+      clubId: 'calypso',
+      memberId: 'previous-member',
+    ),
+    (
+      name: 'cached encadrant from another club',
+      roles: ['encadrant'],
+      clubId: 'another-club',
+      memberId: 'member-1',
+    ),
+  ]) {
+    testWidgets('${scenario.name} cannot open a participant phone',
+        (tester) async {
+      final now = DateTime(2026, 10, 15);
+      final operation = Operation(
+        id: 'synthetic-event-member-view',
+        type: 'evenement',
+        titre: 'Sortie synthétique',
+        montantPrevu: 0,
+        statut: 'ouvert',
+        dateDebut: DateTime(2027, 10, 15),
+        createdAt: now,
+        updatedAt: now,
+      );
+      final participant = ParticipantOperation(
+        id: 'registration-2',
+        operationId: operation.id,
+        membreId: 'member-2',
+        membrePrenom: 'Alice',
+        membreNom: 'Exemple',
+        prix: 0,
+        dateInscription: now,
+      );
+      final profileService = _MockProfileService(
+        directoryProfile: MemberProfile(
+          id: 'member-2',
+          prenom: 'Alice',
+          nom: 'Exemple',
+          email: '',
+          sharePhone: true,
+          phoneNumber: '+32000000000',
+        ),
+      );
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>.value(
+              value: _MockAuthProvider(_MockUser()),
+            ),
+            ChangeNotifierProvider<EventMessageProvider>.value(
+              value: _MockEventMessageProvider(),
+            ),
+            ChangeNotifierProvider<MemberProvider>.value(
+              value: _MockMemberProvider(
+                statuten: scenario.roles,
+                loadedClubId: scenario.clubId,
+                loadedMemberId: scenario.memberId,
+              ),
+            ),
+            ChangeNotifierProvider<OperationProvider>.value(
+              value: _MockOperationProvider(
+                operation,
+                participants: [participant],
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: OperationDetailScreen(
+              clubId: 'calypso',
+              operationId: operation.id,
+              operationService: _MockOperationService(participant),
+              profileService: profileService,
+              loadAuxiliaryProfileData: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.text('Membres inscrits'));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('Alice Exemple'), findsOneWidget);
+      expect(find.byTooltip('Téléphone de Alice Exemple'), findsNothing);
+      expect(profileService.directoryLookups, 0);
+    });
+  }
 
   testWidgets(
       'exact cancellation reloads and renders a remaining own inscription',

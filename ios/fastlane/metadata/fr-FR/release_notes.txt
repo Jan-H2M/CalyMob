@@ -1,1 +1,1 @@
-Boutique : suivi des articles par QR code et déplacement de plusieurs articles en une seule opération. Les responsables peuvent sélectionner une réception complète, sans scanner chaque article.
+Préparation des sorties améliorée avec progression des exercices et reprise après une erreur de chargement. Accès sécurisé aux numéros partagés des participants pour les encadrants autorisés.

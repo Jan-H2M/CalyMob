@@ -73,11 +73,17 @@ class FormationSnapshotDoc {
   Map<FormationModality, FormationModalityProgress> get examProgress =>
       _progressByModality(examsOnly: true);
 
+  /// Keep detail rows in sync with the target-filtered progression totals.
+  bool includesCurrentTargetExercise(SnapshotExercise exercise) =>
+      _exerciseMatchesTarget(exercise, _targetNiveauCode(targetLevel));
+
+  bool includesCurrentTargetCode(String code) =>
+      _codeMatchesTarget(code, _targetNiveauCode(targetLevel));
+
   Map<FormationModality, FormationModalityProgress> _progressByModality({
     bool examsOnly = false,
   }) {
     final entries = <String, _ModalityExerciseState>{};
-    final targetNiveau = _targetNiveauCode(targetLevel);
 
     void add(
       String code,
@@ -96,16 +102,16 @@ class FormationSnapshotDoc {
     }
 
     for (final exercise in validated) {
-      if (!_exerciseMatchesTarget(exercise, targetNiveau)) continue;
+      if (!includesCurrentTargetExercise(exercise)) continue;
       add(exercise.code, exercise.description,
           _FormationExerciseState.validated);
     }
     for (final exercise in pending) {
-      if (!_exerciseMatchesTarget(exercise, targetNiveau)) continue;
+      if (!includesCurrentTargetExercise(exercise)) continue;
       add(exercise.code, exercise.description, _FormationExerciseState.pending);
     }
     for (final claim in pendingClaims) {
-      if (!_codeMatchesTarget(claim.code, targetNiveau)) continue;
+      if (!includesCurrentTargetCode(claim.code)) continue;
       add(claim.code, claim.label, _FormationExerciseState.pending);
     }
     for (final exercise in remaining) {

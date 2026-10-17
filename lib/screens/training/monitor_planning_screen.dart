@@ -19,19 +19,29 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../models/formation_snapshot_doc.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/formation_snapshot_service.dart';
+import '../../services/lifras_service.dart';
+import '../../utils/requested_exercise_codes.dart';
+import '../../widgets/formation/formation_exercise_progress.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../utils/member_name.dart';
 
 class MonitorPlanningScreen extends StatefulWidget {
   final String operationId;
   final String? palanqueeId; // if editing an existing palanquée
+  final FirebaseFirestore? firestore;
+  final LifrasService? lifrasService;
+  final FormationSnapshotService? formationService;
 
   const MonitorPlanningScreen({
     super.key,
     required this.operationId,
     this.palanqueeId,
+    this.firestore,
+    this.lifrasService,
+    this.formationService,
   });
 
   @override
@@ -40,11 +50,14 @@ class MonitorPlanningScreen extends StatefulWidget {
 
 class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
   bool _loading = true;
+  bool _loadFailed = false;
+  bool _loadInFlight = false;
   bool _saving = false;
   bool _showAllParticipants = false;
   Map<String, dynamic>? _operation;
   List<Map<String, dynamic>> _participants = [];
   Map<String, FormationSnapshot> _snapshots = {};
+  Map<String, FormationSnapshotDoc> _progressDocs = {};
   // memberId -> { role: 'dp' | 'sf' | ..., exercises: ['P2.DP', ...], note: '...' }
   final Map<String, Map<String, dynamic>> _assignments = {};
 
@@ -55,8 +68,29 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
   }
 
   Future<void> _load() async {
+    if (_loadInFlight) return;
+    _loadInFlight = true;
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
+    try {
+      await _loadData();
+    } catch (error) {
+      debugPrint('⚠️ Préparation sortie indisponible: $error');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadFailed = true;
+      });
+    } finally {
+      _loadInFlight = false;
+    }
+  }
+
+  Future<void> _loadData() async {
     const clubId = FirebaseConfig.defaultClubId;
-    final fs = FirebaseFirestore.instance;
+    final fs = widget.firestore ?? FirebaseFirestore.instance;
     final userId = context.read<AuthProvider>().currentUser?.uid;
 
     final op = await fs
@@ -65,6 +99,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         .collection('operations')
         .doc(widget.operationId)
         .get();
+    if (!op.exists) throw StateError('Operation not found');
 
     final participants = <Map<String, dynamic>>[];
     final rawParticipants = <Map<String, dynamic>>[];
@@ -113,28 +148,75 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
                   (p['exercices'] as List?)?.cast<String>() ??
                   const <String>[],
         });
-      } catch (_) {/* skip */}
+      } catch (_) {
+        /* skip */
+      }
+    }
+
+    // Older registrations store exercise document IDs, whereas the formation
+    // snapshot and planning selections use LIFRAS codes. Resolve once for all
+    // participants so the UI never exposes opaque Firestore IDs.
+    final requested = participants
+        .expand((p) => (p['requested_exercises'] as List<String>))
+        .toSet()
+        .toList();
+    final catalog = await (widget.lifrasService ?? LifrasService())
+        .getExercicesByIds(clubId, requested);
+    final codesById = {
+      for (final exercise in catalog) exercise.id: exercise.code,
+    };
+    for (final participant in participants) {
+      final resolution = resolveRequestedExercises(
+        participant['requested_exercises'] as List<String>,
+        codesById,
+      );
+      participant['requested_exercises'] = resolution.codes;
+      participant['unresolved_requested_exercises'] =
+          resolution.unresolvedCount;
     }
 
     final snapshots = <String, FormationSnapshot>{};
     try {
-      final service = FormationSnapshotService();
-      snapshots.addAll(await service.getFormationSnapshots(
-        clubId,
-        participants
-            .map((p) => FormationMemberInput(
+      final service = widget.formationService ?? FormationSnapshotService();
+      snapshots.addAll(
+        await service.getFormationSnapshots(
+          clubId,
+          participants
+              .map(
+                (p) => FormationMemberInput(
                   memberId: p['member_id']?.toString() ?? '',
                   currentCode: p['plongeur_code']?.toString(),
                   targetFormationLevel: p['target_formation_level']?.toString(),
-                ))
-            .toList(),
-      ));
+                ),
+              )
+              .toList(),
+        ),
+      );
     } catch (e) {
       debugPrint('⚠️ Snapshots formation indisponibles: $e');
     }
 
+    // The student's 360° card uses this exact typed materialized snapshot,
+    // including its per-modality LIFRAS classification and deduplication.
+    final progressDocs = <String, FormationSnapshotDoc>{};
+    await Future.wait(participants.map((participant) async {
+      final memberId = participant['member_id'] as String;
+      try {
+        final doc = await fs
+            .doc('clubs/$clubId/members/$memberId/formation_snapshot/current')
+            .get();
+        final data = doc.data();
+        if (data != null) {
+          progressDocs[memberId] = FormationSnapshotDoc.fromMap(memberId, data);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Progression indisponible pour $memberId: $e');
+      }
+    }));
+
     final existingPalanqueeId = widget.palanqueeId ??
         (userId == null ? null : 'monitor_planning_$userId');
+    final assignments = <String, Map<String, dynamic>>{};
     if (existingPalanqueeId != null) {
       final pSnap = await fs
           .collection('clubs')
@@ -153,7 +235,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
             (data['planned_exercises'] as Map?)?.cast<String, dynamic>() ?? {};
         for (final p in participants) {
           final mid = p['member_id'] as String;
-          _assignments[mid] = {
+          assignments[mid] = {
             'role': plannedRole[mid] ?? '',
             'exercises':
                 (plannedExercises[mid] as List?)?.cast<String>() ?? <String>[],
@@ -171,6 +253,10 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
       _operation = op.data();
       _participants = participants;
       _snapshots = snapshots;
+      _progressDocs = progressDocs;
+      _assignments
+        ..clear()
+        ..addAll(assignments);
       _loading = false;
     });
   }
@@ -189,47 +275,74 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
                     ? const Center(
                         child: CircularProgressIndicator(color: Colors.white),
                       )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                        children: [
-                          _operationCard(),
-                          const SizedBox(height: 10),
-                          _filterCard(),
-                          const SizedBox(height: 14),
-                          if (_visibleParticipants.isEmpty)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.96),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Text(
-                                'Aucun participant avec statut formation. Affiche tous les participants pour les voir.',
-                                style: TextStyle(
-                                  color: AppColors.donkerblauw,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                    : _loadFailed
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'Impossible de charger la préparation de la sortie.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  TextButton(
+                                    onPressed: _load,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Réessayer'),
+                                  ),
+                                ],
                               ),
                             ),
-                          ..._visibleParticipants.map((p) => Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: _ParticipantTile(
-                                  participant: p,
-                                  snapshot: _snapshots[p['member_id']],
-                                  assignment: _assignments[p['member_id']] ??
-                                      {
-                                        'role': '',
-                                        'exercises': <String>[],
-                                        'note': ''
-                                      },
-                                  onChange: (a) => setState(
-                                      () => _assignments[p['member_id']] = a),
+                          )
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                            children: [
+                              _operationCard(),
+                              const SizedBox(height: 10),
+                              _filterCard(),
+                              const SizedBox(height: 14),
+                              if (_visibleParticipants.isEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.96),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Text(
+                                    'Aucun participant avec statut formation. Affiche tous les participants pour les voir.',
+                                    style: TextStyle(
+                                      color: AppColors.donkerblauw,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
-                              )),
-                        ],
-                      ),
+                              ..._visibleParticipants.map(
+                                (p) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _ParticipantTile(
+                                    participant: p,
+                                    snapshot: _snapshots[p['member_id']],
+                                    progressDoc: _progressDocs[p['member_id']],
+                                    assignment: _assignments[p['member_id']] ??
+                                        {
+                                          'role': '',
+                                          'exercises': <String>[],
+                                          'note': '',
+                                        },
+                                    onChange: (a) => setState(
+                                      () => _assignments[p['member_id']] = a,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
               ),
             ],
           ),
@@ -239,7 +352,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: ElevatedButton(
-            onPressed: _saving || _loading ? null : _save,
+            onPressed: _saving || _loading || _loadFailed ? null : _save,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.middenblauw,
               foregroundColor: Colors.white,
@@ -254,7 +367,9 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
                     width: 22,
                     height: 22,
                     child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2.4),
+                      color: Colors.white,
+                      strokeWidth: 2.4,
+                    ),
                   )
                 : const Text('Sauvegarder le plan'),
           ),
@@ -426,7 +541,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         }
       }
 
-      final fs = FirebaseFirestore.instance;
+      final fs = widget.firestore ?? FirebaseFirestore.instance;
       final palCol = fs
           .collection('clubs')
           .doc(clubId)
@@ -447,16 +562,16 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
       }, SetOptions(merge: true));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Plan sauvegardé ✓')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Plan sauvegardé ✓')));
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -471,12 +586,14 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
 class _ParticipantTile extends StatelessWidget {
   final Map<String, dynamic> participant;
   final FormationSnapshot? snapshot;
+  final FormationSnapshotDoc? progressDoc;
   final Map<String, dynamic> assignment;
   final ValueChanged<Map<String, dynamic>> onChange;
 
   const _ParticipantTile({
     required this.participant,
     required this.snapshot,
+    required this.progressDoc,
     required this.assignment,
     required this.onChange,
   });
@@ -543,6 +660,7 @@ class _ParticipantTile extends StatelessWidget {
                                 ? participant['member_id'].toString()
                                 : name,
                             snapshot!,
+                            progressDoc,
                           ),
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
@@ -577,7 +695,9 @@ class _ParticipantTile extends StatelessWidget {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 1.5),
+                                  horizontal: 6,
+                                  vertical: 1.5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.blue.shade50,
                                   borderRadius: BorderRadius.circular(10),
@@ -599,7 +719,9 @@ class _ParticipantTile extends StatelessWidget {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 1.5),
+                                  horizontal: 6,
+                                  vertical: 1.5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.orange.shade50,
                                   borderRadius: BorderRadius.circular(10),
@@ -627,8 +749,9 @@ class _ParticipantTile extends StatelessWidget {
                                   'objectif ${snapshot!.targetLabel}',
                               ].join(' · '),
                               style: TextStyle(
-                                color: AppColors.donkerblauw
-                                    .withValues(alpha: 0.65),
+                                color: AppColors.donkerblauw.withValues(
+                                  alpha: 0.65,
+                                ),
                                 fontSize: 12,
                               ),
                             ),
@@ -640,8 +763,10 @@ class _ParticipantTile extends StatelessWidget {
               ),
               if (formationActive)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.oranje.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(20),
@@ -661,9 +786,14 @@ class _ParticipantTile extends StatelessWidget {
             const SizedBox(height: 10),
             _SnapshotStrip(
               snapshot: snapshot!,
+              progressDoc: progressDoc,
               experienceOnly: !formationActive,
               level: level,
             ),
+          ],
+          if (formationActive && progressDoc != null) ...[
+            const SizedBox(height: 8),
+            FormationExerciseProgress(snapshot: progressDoc!),
           ],
           if (formationActive) ...[
             // Wishlist from inscription
@@ -673,23 +803,35 @@ class _ParticipantTile extends StatelessWidget {
                 spacing: 6,
                 runSpacing: 4,
                 children: wishlist
-                    .map((c) => Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEEF4F9),
-                            borderRadius: BorderRadius.circular(10),
+                    .map(
+                      (c) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF4F9),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'souhait $c',
+                          style: const TextStyle(
+                            color: Color(0xFF006DB6),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
                           ),
-                          child: Text(
-                            'souhait $c',
-                            style: const TextStyle(
-                              color: Color(0xFF006DB6),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ))
+                        ),
+                      ),
+                    )
                     .toList(),
+              ),
+            ],
+            if ((participant['unresolved_requested_exercises'] as int? ?? 0) >
+                0) ...[
+              const SizedBox(height: 6),
+              UnresolvedExerciseWarning(
+                count:
+                    participant['unresolved_requested_exercises'] as int? ?? 0,
               ),
             ],
 
@@ -820,9 +962,11 @@ class _ParticipantTile extends StatelessWidget {
       add(ex.code, label: ex.description, badge: withMarks(ex.code, 'à faire'));
     }
     for (final claim in snapshot?.pendingClaims ?? const []) {
-      add(claim.exerciseCode,
-          label: claim.exerciseLabel ?? '',
-          badge: withMarks(claim.exerciseCode, 'en attente'));
+      add(
+        claim.exerciseCode,
+        label: claim.exerciseLabel ?? '',
+        badge: withMarks(claim.exerciseCode, 'en attente'),
+      );
     }
     for (final code in requested) {
       add(code, badge: 'souhait');
@@ -842,6 +986,7 @@ class _ParticipantTile extends StatelessWidget {
     BuildContext context,
     String name,
     FormationSnapshot snapshot,
+    FormationSnapshotDoc? progressDoc,
   ) {
     showModalBottomSheet(
       context: context,
@@ -892,47 +1037,52 @@ class _ParticipantTile extends StatelessWidget {
                     ),
                   ),
                 const SizedBox(height: 14),
-                _SnapshotStrip(snapshot: snapshot),
+                _SnapshotStrip(snapshot: snapshot, progressDoc: progressDoc),
                 const SizedBox(height: 16),
                 _SheetSection(
                   title: 'Exercices restants',
                   emptyText: 'Aucun exercice restant connu pour cet objectif.',
                   children: snapshot.remainingExercises
-                      .map((ex) => _SheetRow(
-                            title: ex.code,
-                            subtitle: ex.description,
-                          ))
+                      .map(
+                        (ex) =>
+                            _SheetRow(title: ex.code, subtitle: ex.description),
+                      )
                       .toList(),
                 ),
                 _SheetSection(
                   title: 'En attente de validation',
                   emptyText: 'Rien en attente.',
                   children: [
-                    ...snapshot.pendingExercises.map((ex) => _SheetRow(
-                          title: ex.exerciceCode,
-                          subtitle: ex.exerciceDescription,
-                        )),
-                    ...snapshot.pendingClaims.map((claim) => _SheetRow(
-                          title: claim.exerciseCode,
-                          subtitle: claim.exerciseLabel ?? claim.status,
-                        )),
+                    ...snapshot.pendingExercises.map(
+                      (ex) => _SheetRow(
+                        title: ex.exerciceCode,
+                        subtitle: ex.exerciceDescription,
+                      ),
+                    ),
+                    ...snapshot.pendingClaims.map(
+                      (claim) => _SheetRow(
+                        title: claim.exerciseCode,
+                        subtitle: claim.exerciseLabel ?? claim.status,
+                      ),
+                    ),
                   ],
                 ),
                 _SheetSection(
                   title: 'Dernières plongées',
                   emptyText: 'Aucune plongée hors piscine connue.',
                   children: snapshot.recentDives
-                      .map((dive) => _SheetRow(
-                            title: dive.locationName,
-                            subtitle: [
-                              if (dive.date != null)
-                                _formatShortDate(dive.date!),
-                              if (dive.depthMaxMeters != null)
-                                '${dive.depthMaxMeters!.toStringAsFixed(0)} m',
-                              if (dive.durationMinutes != null)
-                                '${dive.durationMinutes} min',
-                            ].join(' · '),
-                          ))
+                      .map(
+                        (dive) => _SheetRow(
+                          title: dive.locationName,
+                          subtitle: [
+                            if (dive.date != null) _formatShortDate(dive.date!),
+                            if (dive.depthMaxMeters != null)
+                              '${dive.depthMaxMeters!.toStringAsFixed(0)} m',
+                            if (dive.durationMinutes != null)
+                              '${dive.durationMinutes} min',
+                          ].join(' · '),
+                        ),
+                      )
                       .toList(),
                 ),
                 _SheetSection(
@@ -940,10 +1090,12 @@ class _ParticipantTile extends StatelessWidget {
                   emptyText: 'Aucun exercice validé connu.',
                   children: snapshot.validatedExercises
                       .take(8)
-                      .map((ex) => _SheetRow(
-                            title: ex.exerciceCode,
-                            subtitle: ex.exerciceDescription,
-                          ))
+                      .map(
+                        (ex) => _SheetRow(
+                          title: ex.exerciceCode,
+                          subtitle: ex.exerciceDescription,
+                        ),
+                      )
                       .toList(),
                 ),
               ],
@@ -960,30 +1112,30 @@ class _ExerciseChoice {
   final String label;
   final String badge;
 
-  const _ExerciseChoice({
-    required this.code,
-    this.label = '',
-    this.badge = '',
-  });
+  const _ExerciseChoice({required this.code, this.label = '', this.badge = ''});
 }
 
 class _SnapshotStrip extends StatelessWidget {
   final FormationSnapshot snapshot;
+  final FormationSnapshotDoc? progressDoc;
   final bool experienceOnly;
   final String level;
 
   const _SnapshotStrip({
     required this.snapshot,
+    this.progressDoc,
     this.experienceOnly = false,
     this.level = '',
   });
 
   @override
   Widget build(BuildContext context) {
-    final total = snapshot.counts.totalRequired;
+    final natural = progressDoc?.modalityProgress[FormationModality.career];
+    final total = natural?.total ?? snapshot.counts.totalRequired;
+    final validated = natural?.validated ?? snapshot.counts.validated;
     final progress = total == 0
         ? '—'
-        : '${snapshot.counts.validated}/$total · ${((snapshot.counts.validated / total) * 100).round()}%';
+        : '$validated/$total · ${((validated / total) * 100).round()}%';
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -998,19 +1150,25 @@ class _SnapshotStrip extends StatelessWidget {
         children: [
           _MetricPill(
             icon: Icons.check_circle_outline,
-            label: experienceOnly ? 'Niveau' : 'Progression',
+            label: experienceOnly
+                ? 'Niveau'
+                : natural == null
+                    ? 'Progression'
+                    : 'Milieu naturel',
             value: experienceOnly
                 ? (level.isNotEmpty ? level : snapshot.currentCode)
                 : progress,
           ),
           _MetricPill(
-              icon: Icons.waves,
-              label: 'Plongées',
-              value: '${snapshot.diveStats.totalDives}'),
+            icon: Icons.waves,
+            label: 'Plongées',
+            value: '${snapshot.diveStats.totalDives}',
+          ),
           _MetricPill(
-              icon: Icons.water,
-              label: 'Mer',
-              value: '${snapshot.diveStats.seaDives}'),
+            icon: Icons.water,
+            label: 'Mer',
+            value: '${snapshot.diveStats.seaDives}',
+          ),
           _MetricPill(
             icon: Icons.schedule,
             label: experienceOnly ? 'Prof. max' : 'En attente',
@@ -1018,7 +1176,7 @@ class _SnapshotStrip extends StatelessWidget {
                 ? (snapshot.diveStats.maxDepthMeters == null
                     ? '—'
                     : '${snapshot.diveStats.maxDepthMeters} m')
-                : '${snapshot.counts.pending + snapshot.counts.pendingClaims}',
+                : '${natural?.pending ?? (snapshot.counts.pending + snapshot.counts.pendingClaims)}',
           ),
         ],
       ),
@@ -1125,10 +1283,7 @@ class _SheetRow extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const _SheetRow({
-    required this.title,
-    required this.subtitle,
-  });
+  const _SheetRow({required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
