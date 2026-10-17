@@ -5,7 +5,10 @@ import '../services/activity_service.dart';
 
 /// Provider voor gecombineerde activiteiten (operations + piscine sessions)
 class ActivityProvider with ChangeNotifier {
-  final ActivityService _activityService = ActivityService();
+  final ActivityService _activityService;
+
+  ActivityProvider({ActivityService? activityService})
+    : _activityService = activityService ?? ActivityService();
 
   // Stream subscription for memory management
   StreamSubscription<List<ActivityItem>>? _activitiesSubscription;
@@ -13,6 +16,8 @@ class ActivityProvider with ChangeNotifier {
   StreamSubscription<List<ActivityItem>>? _closedActivitiesSubscription;
   Timer? _activitiesLoadTimer;
   Timer? _closedActivitiesLoadTimer;
+  int _activitiesGeneration = 0;
+  int _closedActivitiesGeneration = 0;
   static const Duration loadTimeout = Duration(seconds: 8);
 
   List<ActivityItem> _activities = [];
@@ -30,6 +35,7 @@ class ActivityProvider with ChangeNotifier {
   String? _currentClubId;
   String? _closedClubId;
   bool _isClosedLoadStalled = false;
+  String? _closedErrorMessage;
 
   // Getters
   List<ActivityItem> get activities => _activities;
@@ -42,6 +48,7 @@ class ActivityProvider with ChangeNotifier {
   List<ActivityItem> get closedActivities => _closedActivities;
   bool get isLoadingClosed => _isLoadingClosed;
   bool get isClosedLoadStalled => _isClosedLoadStalled;
+  String? get closedErrorMessage => _closedErrorMessage;
 
   /// Aantal activiteiten per categorie
   int get totalCount => _activities.length;
@@ -53,6 +60,8 @@ class ActivityProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _activitiesGeneration++;
+    _closedActivitiesGeneration++;
     _activitiesSubscription?.cancel();
     _closedActivitiesSubscription?.cancel();
     _activitiesLoadTimer?.cancel();
@@ -64,44 +73,55 @@ class ActivityProvider with ChangeNotifier {
   /// Enkel oproepen voor organisatoren/admins die voorbije events en hun
   /// discussies willen openen. Subscribet maar één keer.
   void listenToClosedActivities(String clubId) {
-    if (_closedSubscribed) return;
+    if (_closedSubscribed && _closedClubId == clubId) return;
+    final generation = ++_closedActivitiesGeneration;
     _closedSubscribed = true;
+    _closedActivitiesSubscription?.cancel();
     _isLoadingClosed = true;
     _isClosedLoadStalled = false;
+    _closedErrorMessage = null;
     _closedClubId = clubId;
     notifyListeners();
     _closedActivitiesLoadTimer?.cancel();
     _closedActivitiesLoadTimer = Timer(loadTimeout, () {
-      if (!_isLoadingClosed) return;
+      if (generation != _closedActivitiesGeneration || !_isLoadingClosed) {
+        return;
+      }
       _isLoadingClosed = false;
       _isClosedLoadStalled = true;
       notifyListeners();
     });
 
-    _closedActivitiesSubscription =
-        _activityService.getClosedOperationsStream(clubId).listen(
-      (activities) {
-        _closedActivitiesLoadTimer?.cancel();
-        _closedActivities = activities;
-        _isLoadingClosed = false;
-        _isClosedLoadStalled = false;
-        notifyListeners();
-        debugPrint(
-          '📦 ActivityProvider: ${activities.length} closed events loaded',
+    _closedActivitiesSubscription = _activityService
+        .getClosedOperationsStream(clubId)
+        .listen(
+          (activities) {
+            if (generation != _closedActivitiesGeneration) return;
+            _closedActivitiesLoadTimer?.cancel();
+            _closedActivities = activities;
+            _isLoadingClosed = false;
+            _isClosedLoadStalled = false;
+            _closedErrorMessage = null;
+            notifyListeners();
+            debugPrint(
+              '📦 ActivityProvider: ${activities.length} closed events loaded',
+            );
+          },
+          onError: (error) {
+            if (generation != _closedActivitiesGeneration) return;
+            _closedActivitiesLoadTimer?.cancel();
+            _isLoadingClosed = false;
+            _isClosedLoadStalled = false;
+            _closedErrorMessage = error.toString();
+            notifyListeners();
+            debugPrint('❌ ActivityProvider closed error: $error');
+          },
         );
-      },
-      onError: (error) {
-        _closedActivitiesLoadTimer?.cancel();
-        _isLoadingClosed = false;
-        _isClosedLoadStalled = false;
-        notifyListeners();
-        debugPrint('❌ ActivityProvider closed error: $error');
-      },
-    );
   }
 
   /// Start luisteren naar activiteiten (operations + piscine)
   void listenToActivities(String clubId, {String? currentUserId}) {
+    final generation = ++_activitiesGeneration;
     _currentClubId = clubId;
     if (currentUserId != null) _currentUserId = currentUserId;
     // Cancel any existing subscription to prevent memory leaks
@@ -113,7 +133,7 @@ class ActivityProvider with ChangeNotifier {
     notifyListeners();
     _activitiesLoadTimer?.cancel();
     _activitiesLoadTimer = Timer(loadTimeout, () {
-      if (!_isLoading) return;
+      if (generation != _activitiesGeneration || !_isLoading) return;
       _isLoading = false;
       _isLoadStalled = true;
       notifyListeners();
@@ -121,33 +141,35 @@ class ActivityProvider with ChangeNotifier {
 
     _activitiesSubscription = _activityService
         .getAllActivitiesStream(
-      clubId,
-      includeClosed: _includePast,
-      currentUserId: _currentUserId,
-    )
+          clubId,
+          includeClosed: _includePast,
+          currentUserId: _currentUserId,
+        )
         .listen(
-      (activities) {
-        _activitiesLoadTimer?.cancel();
-        _activities = activities;
-        _isLoading = false;
-        _isLoadStalled = false;
-        _errorMessage = null;
-        notifyListeners();
+          (activities) {
+            if (generation != _activitiesGeneration) return;
+            _activitiesLoadTimer?.cancel();
+            _activities = activities;
+            _isLoading = false;
+            _isLoadStalled = false;
+            _errorMessage = null;
+            notifyListeners();
 
-        debugPrint(
-          '📋 ActivityProvider: ${activities.length} activities loaded',
+            debugPrint(
+              '📋 ActivityProvider: ${activities.length} activities loaded',
+            );
+          },
+          onError: (error) {
+            if (generation != _activitiesGeneration) return;
+            _activitiesLoadTimer?.cancel();
+            _errorMessage = error.toString();
+            _isLoading = false;
+            _isLoadStalled = false;
+            notifyListeners();
+
+            debugPrint('❌ ActivityProvider error: $error');
+          },
         );
-      },
-      onError: (error) {
-        _activitiesLoadTimer?.cancel();
-        _errorMessage = error.toString();
-        _isLoading = false;
-        _isLoadStalled = false;
-        notifyListeners();
-
-        debugPrint('❌ ActivityProvider error: $error');
-      },
-    );
   }
 
   /// Filter activiteiten op categorie
@@ -181,7 +203,6 @@ class ActivityProvider with ChangeNotifier {
     final clubId = _closedClubId;
     if (clubId == null) return;
     _closedSubscribed = false;
-    _closedActivitiesSubscription?.cancel();
     listenToClosedActivities(clubId);
   }
 

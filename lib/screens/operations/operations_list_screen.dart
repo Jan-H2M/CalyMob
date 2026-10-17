@@ -30,6 +30,53 @@ class OperationsListScreen extends StatefulWidget {
   State<OperationsListScreen> createState() => _OperationsListScreenState();
 }
 
+@visibleForTesting
+class OperationsLoadFailureNotice extends StatelessWidget {
+  const OperationsLoadFailureNotice({
+    super.key,
+    required this.hasRetainedRows,
+    required this.onRetry,
+  });
+
+  final bool hasRetainedRows;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hasRetainedRows) {
+      return Card(
+        color: Colors.orange.shade50,
+        child: ListTile(
+          leading: Icon(
+            Icons.sync_problem_rounded,
+            color: Colors.orange.shade800,
+          ),
+          title: const Text(
+            'Mise à jour indisponible. La dernière liste reste affichée.',
+          ),
+          trailing: TextButton(
+            onPressed: onRetry,
+            child: const Text('Réessayer'),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.sync_problem_rounded, size: 42, color: Colors.white),
+        const SizedBox(height: 8),
+        const Text(
+          'Chargement indisponible.',
+          style: TextStyle(color: Colors.white),
+        ),
+        TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+      ],
+    );
+  }
+}
+
 class _OperationsListScreenState extends State<OperationsListScreen> {
   final String _clubId = FirebaseConfig.defaultClubId;
   String _selectedFilter = 'all'; // 'all', 'plongee', 'piscine', 'sortie'
@@ -257,7 +304,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     final stalled = isClosedMode
         ? activityProvider.isClosedLoadStalled
         : activityProvider.isLoadStalled;
-    final hasLoadError = !isClosedMode && activityProvider.errorMessage != null;
+    final hasLoadError = isClosedMode
+        ? activityProvider.closedErrorMessage != null
+        : activityProvider.errorMessage != null;
     void retry() {
       if (isClosedMode) {
         activityProvider.retryClosedActivities();
@@ -265,6 +314,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         activityProvider.retryActivities();
       }
     }
+
     if (loading && source.isEmpty) {
       return const LoadingWidget(message: 'Chargement des événements...');
     }
@@ -285,16 +335,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (stalled || hasLoadError) ...[
-              const Icon(Icons.sync_problem_rounded,
-                  size: 42, color: Colors.white),
-              const SizedBox(height: 8),
-              const Text(
-                'Le chargement prend trop de temps.',
-                style: TextStyle(color: Colors.white),
-              ),
-              TextButton(
-                onPressed: retry,
-                child: const Text('Réessayer'),
+              OperationsLoadFailureNotice(
+                hasRetainedRows: false,
+                onRetry: retry,
               ),
               const SizedBox(height: 16),
             ],
@@ -330,19 +373,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       itemCount: grouped.length + ((stalled || hasLoadError) ? 1 : 0),
       itemBuilder: (context, index) {
         if ((stalled || hasLoadError) && index == 0) {
-          return Card(
-            color: Colors.orange.shade50,
-            child: ListTile(
-              leading: Icon(Icons.sync_problem_rounded,
-                  color: Colors.orange.shade800),
-              title: const Text(
-                'Mise à jour indisponible. La dernière liste reste affichée.',
-              ),
-              trailing: TextButton(
-                onPressed: retry,
-                child: const Text('Réessayer'),
-              ),
-            ),
+          return OperationsLoadFailureNotice(
+            hasRetainedRows: true,
+            onRetry: retry,
           );
         }
         final groupIndex = index - ((stalled || hasLoadError) ? 1 : 0);
