@@ -183,12 +183,26 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         normalised.contains('encadrants');
   }
 
+  bool _canAccessParticipantContact(Operation operation) {
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null) return false;
+    if (_isCurrentUserCreator(operation) ||
+        _isCurrentUserResponsable(operation)) {
+      return true;
+    }
+    // Cached roles belong to a specific account and club. Do not reuse a
+    // previous encadrant's authority while the current profile is loading.
+    final memberProvider = context.read<MemberProvider>();
+    return memberProvider.isLoadedFor(widget.clubId, currentUserId) &&
+        _canManagePalanquees(operation);
+  }
+
   Future<void> _showParticipantContact({
     required String memberId,
     required String memberName,
   }) async {
     final operation = context.read<OperationProvider>().selectedOperation;
-    if (operation == null || !_canManagePalanquees(operation)) return;
+    if (operation == null || !_canAccessParticipantContact(operation)) return;
 
     // Only the consent-filtered directory may supply contact details. The
     // private members collection used for avatars must never be a fallback.
@@ -200,7 +214,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final currentOperation =
         context.read<OperationProvider>().selectedOperation;
     if (currentOperation?.id != operation.id ||
-        !_canManagePalanquees(currentOperation!)) {
+        !_canAccessParticipantContact(currentOperation!)) {
       return;
     }
 
@@ -2222,6 +2236,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Refresh authority-dependent actions when the account or profile changes.
+    context.watch<AuthProvider>();
+    context.watch<MemberProvider>();
     final operationProvider = context.watch<OperationProvider>();
     final operation = operationProvider.selectedOperation;
 
@@ -3363,7 +3380,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         final isGuest = participant.isGuest;
                         final canContact = !isGuest &&
                             participant.membreId.isNotEmpty &&
-                            _canManagePalanquees(
+                            _canAccessParticipantContact(
                               operationProvider.selectedOperation!,
                             );
 
