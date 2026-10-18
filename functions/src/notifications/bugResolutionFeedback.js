@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const { onCall } = require('firebase-functions/v2/https');
 const { REGION } = require('../utils/constants');
 const { buildBugResolutionHistoryRecord } = require('../utils/notificationHistory');
+const { isActiveMember } = require('../utils/memberStatus');
 
 const MAX_SCREENSHOTS = 5;
 const RESOLUTION_TYPE = 'bug_report_resolution';
@@ -11,10 +12,6 @@ function fail(code, message) {
   // eslint-disable-next-line global-require
   const { HttpsError } = require('firebase-functions/v2/https');
   throw new HttpsError(code, message);
-}
-
-function activeMember(data = {}) {
-  return data.isActive === true || data.actif === true || data.member_status === 'active';
 }
 
 function administrator(data = {}) {
@@ -49,7 +46,10 @@ function validFeedbackScreenshots({ clubId, reportId, feedbackId, screenshots })
       fail('invalid-argument', 'Chemin de capture invalide.');
     }
     const url = String(raw.url || '');
-    if (!url.startsWith('https://')) fail('invalid-argument', 'URL de capture invalide.');
+    if (!url.startsWith('https://firebasestorage.googleapis.com/')
+      || !url.includes(encodeURIComponent(storagePath))) {
+      fail('invalid-argument', 'URL de capture invalide.');
+    }
     return { storagePath, url, storageIndex: index };
   });
 }
@@ -69,7 +69,7 @@ async function queueBugResolutionFeedback({ db, messaging, clubId, adminUid, rep
   const [operator, report] = await Promise.all([
     club.collection('members').doc(adminUid).get(), club.collection('bug_reports').doc(reportId).get(),
   ]);
-  if (!operator.exists || !activeMember(operator.data()) || !administrator(operator.data())) {
+  if (!operator.exists || !isActiveMember(operator.data()) || !administrator(operator.data())) {
     fail('permission-denied', 'Administrateur actif requis.');
   }
   if (!report.exists) fail('not-found', 'Signalement introuvable.');
@@ -87,7 +87,7 @@ async function queueBugResolutionFeedback({ db, messaging, clubId, adminUid, rep
   const notificationRef = club.collection('members').doc(reporterId)
     .collection('notifications').doc(`bug_resolution_${reportId}`);
   const reporter = await club.collection('members').doc(reporterId).get();
-  if (!reporter.exists || !activeMember(reporter.data() || {})) {
+  if (!reporter.exists || !isActiveMember(reporter.data() || {})) {
     fail('failed-precondition', 'Rapporteur actif requis.');
   }
   const reporterData = reporter.data() || {};
@@ -140,7 +140,7 @@ async function respondToBugResolutionFeedback({ db, clubId, reporterId, reportId
   const [member, report, feedback] = await Promise.all([
     club.collection('members').doc(reporterId).get(), reportRef.get(), feedbackRef.get(),
   ]);
-  if (!member.exists || !activeMember(member.data() || {})) fail('permission-denied', 'Membre actif requis.');
+  if (!member.exists || !isActiveMember(member.data() || {})) fail('permission-denied', 'Membre actif requis.');
   if (!report.exists || report.data()?.reporter?.uid !== reporterId) fail('permission-denied', 'Ce signalement ne vous appartient pas.');
   if (!feedback.exists || feedback.data()?.status !== 'pending' || feedback.data()?.reporter_id !== reporterId) {
     fail('failed-precondition', 'Cette demande n’est plus disponible.');
