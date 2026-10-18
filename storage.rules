@@ -387,6 +387,18 @@ service firebase.storage {
                       isUnfinalizedBugReportOwner(clubId, reportId);
     }
 
+    // Feedback after a resolution request is isolated below the report. The
+    // callable validates the exact returned paths before recording them.
+    match /clubs/{clubId}/bug_reports/{reportId}/resolution_feedback/{feedbackId}/{fileName} {
+      allow read: if hasRole(clubId, ['admin', 'superadmin']) ||
+                    isBugReportOwner(clubId, reportId);
+      allow create: if isBugReportOwner(clubId, reportId) &&
+                      request.resource.size < 10 * 1024 * 1024 &&
+                      isValidFileType('image/.*') &&
+                      fileName.matches('screenshot_[0-4][.]png');
+      allow delete: if isBugReportOwner(clubId, reportId);
+    }
+
     // Bank statement imports
     match /clubs/{clubId}/imports/bank/{fileName} {
       allow read: if hasRole(clubId, ['admin', 'validateur']);

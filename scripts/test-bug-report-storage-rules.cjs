@@ -85,6 +85,14 @@ async function main() {
     await assertFails(deleteObject(ownObject));
     await assertFails(deleteDoc(reportRef));
 
+    // A resolved-report feedback image is deliberately in a separate prefix:
+    // the reporter may upload it, another member cannot, and an arbitrary
+    // nested filename remains denied.
+    const feedbackPath = `clubs/${clubId}/bug_reports/${reportId}/resolution_feedback/resolution_${reportId}/screenshot_0.png`;
+    await assertSucceeds(uploadBytes(ref(memberA.storage(), feedbackPath), png, {contentType: 'image/png'}));
+    await assertFails(uploadBytes(ref(memberB.storage(), feedbackPath), png, {contentType: 'image/png'}));
+    await assertFails(uploadBytes(ref(memberA.storage(), feedbackPath.replace('screenshot_0.png', 'other.png')), png, {contentType: 'image/png'}));
+
     console.log('Bug-report attachment ownership rules passed.');
   } finally {
     await env.cleanup();

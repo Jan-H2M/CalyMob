@@ -20,20 +20,19 @@ class CursorUnreadCountService {
     DateTime Function()? clock,
     Future<int> Function(Query<Map<String, dynamic>> query)? countQuery,
     Future<bool> Function(String clubId, String userId)? timestampV2Resolver,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _readState = readStateService ?? ReadStateService(firestore: firestore),
-       _clock = clock ?? DateTime.now,
-       _countQuery = countQuery ?? _aggregateCount,
-       _timestampV2Resolver =
-           timestampV2Resolver ??
-           UnreadTimestampAuthorityService(firestore: firestore).shouldUseV2;
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _readState = readStateService ?? ReadStateService(firestore: firestore),
+        _clock = clock ?? DateTime.now,
+        _countQuery = countQuery ?? _aggregateCount,
+        _timestampV2Resolver = timestampV2Resolver ??
+            UnreadTimestampAuthorityService(firestore: firestore).shouldUseV2;
 
   final FirebaseFirestore _firestore;
   final ReadStateService _readState;
   final DateTime Function() _clock;
   final Future<int> Function(Query<Map<String, dynamic>> query) _countQuery;
   final Future<bool> Function(String clubId, String userId)
-  _timestampV2Resolver;
+      _timestampV2Resolver;
 
   static const Duration queryTimeout = Duration(seconds: 8);
   static const int maxConcurrentQueries = 8;
@@ -79,20 +78,40 @@ class CursorUnreadCountService {
       roles,
       timestampV2: timestampV2,
     );
+    final reportResolutionsFuture = countReportResolutionNotifications(
+      clubId,
+      userId,
+    );
     final announcements = await announcementsFuture;
     final eventScopes = await eventScopesFuture;
     final teamScopes = await teamScopesFuture;
     final sessionScopes = await sessionScopesFuture;
+    final reportResolutions = await reportResolutionsFuture;
     return CursorUnreadBreakdown(
       announcements: announcements,
       events: _sum(eventScopes),
       teams: _sum(teamScopes),
       sessions: _sum(sessionScopes),
+      reportResolutions: reportResolutions,
       eventScopes: eventScopes,
       teamScopes: teamScopes,
       sessionScopes: sessionScopes,
     );
   }
+
+  /// Resolution-feedback cards have per-card `read` state, not a section
+  /// cursor. They still belong in the canonical Communication/app-icon total.
+  Future<int> countReportResolutionNotifications(
+    String clubId,
+    String userId,
+  ) =>
+      _countQuery(
+        _firestore
+            .collection('clubs/$clubId/members/$userId/notifications')
+            .where('type', isEqualTo: 'bug_report_resolution')
+            .where('counts_toward_unread_badge', isEqualTo: true)
+            .where('read', isEqualTo: false),
+      );
 
   Future<Timestamp> _requiredCursor(
     String clubId,
@@ -131,8 +150,7 @@ class CursorUnreadCountService {
                 data['visibility'] != 'deleted';
           })
           .map(
-            (document) =>
-                () => countAnnouncementThread(
+            (document) => () => countAnnouncementThread(
                   clubId,
                   userId,
                   document.id,
@@ -161,8 +179,8 @@ class CursorUnreadCountService {
       useTimestampV2
           ? announcement['unread_activity_at']
           : announcement['last_activity_at'] ??
-                announcement['last_reply_at'] ??
-                announcement['created_at'],
+              announcement['last_reply_at'] ??
+              announcement['created_at'],
     );
     if (activity == null) {
       throw StateError('Announcement $announcementId has no valid activity.');
@@ -346,8 +364,7 @@ class CursorUnreadCountService {
     final values = await _runBounded(
       channels
           .map(
-            (channelId) =>
-                () => countTeamChannel(
+            (channelId) => () => countTeamChannel(
                   clubId,
                   userId,
                   channelId,
@@ -558,8 +575,8 @@ List<SessionUnreadScope> sessionUnreadScopesForMember(
   bool assigned(Object? raw) {
     if (raw is! List) return false;
     return raw.whereType<Map>().any(
-      (member) => member['membre_id']?.toString() == userId,
-    );
+          (member) => member['membre_id']?.toString() == userId,
+        );
   }
 
   final scopes = <SessionUnreadScope>[];
@@ -608,6 +625,7 @@ class CursorUnreadBreakdown {
     required this.announcements,
     required this.teams,
     required this.sessions,
+    this.reportResolutions = 0,
     this.eventScopes = const <String, int>{},
     this.teamScopes = const <String, int>{},
     this.sessionScopes = const <String, int>{},
@@ -617,19 +635,20 @@ class CursorUnreadBreakdown {
   final int announcements;
   final int teams;
   final int sessions;
+  final int reportResolutions;
   final Map<String, int> eventScopes;
   final Map<String, int> teamScopes;
   final Map<String, int> sessionScopes;
 
-  int get communication => announcements + teams + sessions;
+  int get communication => announcements + teams + sessions + reportResolutions;
   int get total => events + communication;
 
   Map<String, int> toLegacyMap() => <String, int>{
-    'announcements': announcements,
-    'event_messages': events,
-    'team_messages': teams,
-    'session_messages': sessions,
-  };
+        'announcements': announcements,
+        'event_messages': events,
+        'team_messages': teams,
+        'session_messages': sessions,
+      };
 }
 
 int _sum(Map<String, int> values) =>

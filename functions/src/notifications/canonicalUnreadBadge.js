@@ -179,7 +179,7 @@ async function countMessages(ref, cursor, timestampV2) {
 async function getCanonicalUnreadBreakdown({ db, clubId, memberId, now = new Date() }) {
   const club = db.collection('clubs').doc(clubId);
   const memberSnapshot = await club.collection('members').doc(memberId).get();
-  if (!memberSnapshot.exists) return { events: 0, announcements: 0, teams: 0, sessions: 0, communication: 0, total: 0 };
+  if (!memberSnapshot.exists) return { events: 0, announcements: 0, teams: 0, sessions: 0, reportResolutions: 0, communication: 0, total: 0 };
   const member = memberSnapshot.data() || {};
   const timestampV2 = await usesUnreadTimestampV2(db, clubId, memberId);
   const state = memberSnapshot.ref.collection('read_state');
@@ -247,8 +247,20 @@ async function getCanonicalUnreadBreakdown({ db, clubId, memberId, now = new Dat
     return countMessages(query, newest(rootCursor(sessionsRoot), scoped.data()?.last_seen_at), timestampV2);
   });
   const sessions = sessionItems.reduce((sum, count) => sum + count, 0);
-  const communication = announcements + teams + sessions;
-  return { events, announcements, teams, sessions, communication, total: events + communication };
+  // Resolution cards carry their own durable per-card read state. They are
+  // deliberately not inferred from the report lifecycle: a member must see
+  // (or explicitly mark) the card before it stops contributing to the badge.
+  const reportResolutions = (await memberSnapshot.ref.collection('notifications')
+    .where('type', '==', 'bug_report_resolution')
+    .where('counts_toward_unread_badge', '==', true)
+    .where('read', '==', false)
+    .count().get()).data().count || 0;
+  const communication = announcements + teams + sessions + reportResolutions;
+  // Preserve the established breakdown shape while the optional feature has
+  // no cards; consumers that understand ENG-311 receive the extra field as
+  // soon as it is meaningful.
+  const base = { events, announcements, teams, sessions, communication, total: events + communication };
+  return reportResolutions > 0 ? { ...base, reportResolutions } : base;
 }
 
 module.exports = { getCanonicalUnreadBreakdown, eventUnreadUntil, isUnreadEligibleEvent, isCountableRegistration, readStateSessionScopeId, newest, hasTeamAccess, teamChannelTypeForId, formationTargetForMember, visibleTeamChannelDefaults, sessionScopesForMember, assignmentContains };
