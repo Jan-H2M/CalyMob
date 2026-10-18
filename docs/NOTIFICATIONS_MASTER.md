@@ -1285,3 +1285,19 @@ push delivery leaves the in-app card available. The reporter can confirm or
 reopen; reopening requires text, accepts at most five scoped PNG screenshots,
 writes a `reporter_reopened` comment, and returns the Kanban status to
 `en_cours`. This branch is DEV-only until a separately approved rollout.
+
+#### ENG-311 test Firebase project boundary (2026-10-18)
+
+This paragraph supersedes the generic “DEV-only” deployment wording above for
+ENG-311 server validation. The target must be a **separate Firebase project**,
+provisionally named `calycompta-test`, owned by `jan@h2m.ai`; it must never be
+the production `calycompta` project. The project needs the same three deployed
+surfaces only for this feature’s test validation: Cloud Functions, Firestore
+rules/indexes, and Storage rules. Emulator suites remain the first gate.
+
+Before any test-project deployment, Jan performs `firebase login --reauth` as
+`jan@h2m.ai` and explicitly confirms the final project ID. The deploy command
+must name that project explicitly (`--project <confirmed-test-project-id>`),
+and the preflight must reject `calycompta`. No feature-flag write, report
+backfill, notification, push, email, TestFlight/store action, or production
+deployment is part of this setup.
