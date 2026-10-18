@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -93,6 +94,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Map<String, ExerciceLIFRAS> _allExercicesMap = {};
   Map<String, Map<String, MemberObservation>> _exerciceObservations =
       {}; // memberId -> exerciceCode -> observation
+  StreamSubscription<List<MemberObservation>>?
+      _exerciceObservationsSubscription;
+  int _exerciceObservationsGeneration = 0;
+  bool _observationErrorShown = false;
   List<String> _selectedExercices = [];
   List<String> _initialSelectedExercices = [];
   int _exerciceSelectionVersion = 0;
@@ -181,6 +186,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final normalised = statuten.map((s) => s.toLowerCase().trim()).toList();
     return normalised.contains('encadrant') ||
         normalised.contains('encadrants');
+  }
+
+  /// Mirrors `canReadFullFormation(clubId)` in Firestore rules.
+  bool get _canReadAllMemberObservations {
+    final memberProvider = context.read<MemberProvider>();
+    return PermissionHelper.canValidateLifras(
+      clubStatuten: memberProvider.clubStatuten,
+      plongeurCode: memberProvider.plongeurCode,
+      appRole: memberProvider.appRole,
+    );
   }
 
   Future<void> _showParticipantContact({
@@ -321,6 +336,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   @override
   void dispose() {
+    _exerciceObservationsGeneration++;
+    unawaited(_exerciceObservationsSubscription?.cancel());
     super.dispose();
   }
 
@@ -3706,8 +3723,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // Firestore whereIn limit = 30. Chunken indien nodig.
       for (int i = 0; i < ids.length; i += 30) {
         final chunk = ids.sublist(i, math.min(i + 30, ids.length));
+        // `members` is private to the member and app administrators. The
+        // privacy-safe directory is the canonical club-wide source for avatar
+        // and level decorations shown in an activity participant list.
         final snap = await fs
-            .collection('clubs/${widget.clubId}/members')
+            .collection('clubs/${widget.clubId}/member_directory')
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
         for (final doc in snap.docs) {
@@ -5051,6 +5071,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               clubId: widget.clubId,
               userId: userId,
               canEdit: canEdit,
+              canReadAllObservations: _canReadAllMemberObservations,
             ),
           ),
         );
@@ -5337,14 +5358,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return;
 
-    final service = MemberObservationService();
-    final stream = service.getObservationsForSession(
-      widget.clubId,
-      operation.id,
-    );
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
+    if (currentUserId.isEmpty) return;
 
-    stream.listen((observations) {
-      if (!mounted) return;
+    final generation = ++_exerciceObservationsGeneration;
+    await _exerciceObservationsSubscription?.cancel();
+    if (!mounted || generation != _exerciceObservationsGeneration) return;
+
+    final service = MemberObservationService();
+    final stream = _canReadAllMemberObservations
+        ? service.watchFullSessionObservations(widget.clubId, operation.id)
+        : service.watchOwnSessionObservations(
+            widget.clubId,
+            currentUserId,
+            operation.id,
+          );
+
+    _exerciceObservationsSubscription = stream.listen((observations) {
+      if (!mounted || generation != _exerciceObservationsGeneration) return;
       final map = <String, Map<String, MemberObservation>>{};
       for (final obs in observations) {
         if (obs.category == 'exercice_lifras' && obs.exerciceCode != null) {
@@ -5354,7 +5386,27 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       }
       setState(() {
         _exerciceObservations = map;
+        _observationErrorShown = false;
       });
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (!mounted || generation != _exerciceObservationsGeneration) return;
+      debugPrint('❌ Erreur chargement observations activité: $error');
+      if (_observationErrorShown) return;
+      _observationErrorShown = true;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Les observations sont indisponibles pour le moment.',
+          ),
+          action: SnackBarAction(
+            label: 'Réessayer',
+            onPressed: () {
+              _observationErrorShown = false;
+              unawaited(_loadExerciceObservations());
+            },
+          ),
+        ),
+      );
     });
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../config/app_colors.dart';
@@ -20,6 +22,7 @@ class PalanqueeScreen extends StatefulWidget {
   final String clubId;
   final String userId;
   final bool canEdit;
+  final bool canReadAllObservations;
   const PalanqueeScreen({
     Key? key,
     required this.operation,
@@ -27,6 +30,7 @@ class PalanqueeScreen extends StatefulWidget {
     required this.clubId,
     required this.userId,
     this.canEdit = false,
+    required this.canReadAllObservations,
   }) : super(key: key);
 
   @override
@@ -46,12 +50,23 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   bool _hasChanges = false;
   bool _unassignedExpanded = true;
   Map<String, Map<String, MemberObservation>> _exerciceObservations = {};
+  StreamSubscription<List<MemberObservation>>?
+      _exerciceObservationsSubscription;
+  int _exerciceObservationsGeneration = 0;
+  bool _observationErrorShown = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    _loadExerciceObservations();
+    unawaited(_loadExerciceObservations());
+  }
+
+  @override
+  void dispose() {
+    _exerciceObservationsGeneration++;
+    unawaited(_exerciceObservationsSubscription?.cancel());
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -536,27 +551,53 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
 
   Future<void> _loadExerciceObservations() async {
-    try {
-      final stream = MemberObservationService().getObservationsForSession(
-        widget.clubId,
-        widget.operation.id,
-      );
-      
-      stream.listen((observations) {
-        if (mounted) {
-          setState(() {
-            _exerciceObservations.clear();
-            for (final obs in observations) {
-              final key = obs.memberId;
-              _exerciceObservations.putIfAbsent(key, () => {});
-              _exerciceObservations[key]![obs.exerciceCode ?? 'unknown'] = obs;
-            }
-          });
+    final generation = ++_exerciceObservationsGeneration;
+    await _exerciceObservationsSubscription?.cancel();
+    if (!mounted || generation != _exerciceObservationsGeneration) return;
+
+    final service = MemberObservationService();
+    final stream = widget.canReadAllObservations
+        ? service.watchFullSessionObservations(
+            widget.clubId,
+            widget.operation.id,
+          )
+        : service.watchOwnSessionObservations(
+            widget.clubId,
+            widget.userId,
+            widget.operation.id,
+          );
+
+    _exerciceObservationsSubscription = stream.listen((observations) {
+      if (!mounted || generation != _exerciceObservationsGeneration) return;
+      setState(() {
+        _exerciceObservations.clear();
+        for (final obs in observations) {
+          final key = obs.memberId;
+          _exerciceObservations.putIfAbsent(key, () => {});
+          _exerciceObservations[key]![obs.exerciceCode ?? 'unknown'] = obs;
         }
+        _observationErrorShown = false;
       });
-    } catch (e) {
-      debugPrint('❌ Erreur chargement observations: $e');
-    }
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (!mounted || generation != _exerciceObservationsGeneration) return;
+      debugPrint('❌ Erreur chargement observations palanquée: $error');
+      if (_observationErrorShown) return;
+      _observationErrorShown = true;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Les observations sont indisponibles pour le moment.',
+          ),
+          action: SnackBarAction(
+            label: 'Réessayer',
+            onPressed: () {
+              _observationErrorShown = false;
+              unawaited(_loadExerciceObservations());
+            },
+          ),
+        ),
+      );
+    });
   }
 
   void _showExerciseEvaluationSheet(

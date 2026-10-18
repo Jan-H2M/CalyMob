@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_colors.dart';
 import '../../models/piscine_attendee.dart';
 import '../../models/piscine_session.dart';
+import '../../models/member_observation.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/piscine_session_service.dart';
 import '../../services/member_observation_service.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/observation_bottom_sheet.dart';
 
 /// Scherm voor encadrants om observaties te noteren per aanwezige.
@@ -37,40 +41,93 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
   List<PiscineAttendee> _attendees = [];
   Map<String, int> _observationCounts = {};
   bool _loading = true;
+  String? _loadErrorMessage;
+  StreamSubscription<List<PiscineAttendee>>? _attendeesSubscription;
+  StreamSubscription<List<MemberObservation>>? _observationsSubscription;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    unawaited(_loadData());
   }
 
   Future<void> _loadData() async {
+    final generation = ++_loadGeneration;
+    await _attendeesSubscription?.cancel();
+    await _observationsSubscription?.cancel();
+    if (!mounted || generation != _loadGeneration) return;
+
+    final memberProvider = context.read<MemberProvider>();
+    final canReadAllObservations = PermissionHelper.canValidateLifras(
+      clubStatuten: memberProvider.clubStatuten,
+      plongeurCode: memberProvider.plongeurCode,
+      appRole: memberProvider.appRole,
+    );
+    if (!canReadAllObservations) {
+      setState(() {
+        _loading = false;
+        _loadErrorMessage =
+            'Vous n’avez pas accès aux observations de cette session.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _loadErrorMessage = null;
+    });
+
     final attendeesStream = _sessionService.getAttendeesStream(
       _clubId, widget.session.id,
     );
-    attendeesStream.listen((attendees) {
-      if (mounted) setState(() => _attendees = attendees);
+    _attendeesSubscription = attendeesStream.listen((attendees) {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() => _attendees = attendees);
+    }, onError: (Object error, StackTrace stackTrace) {
+      _handleLoadError(error, generation);
     });
 
     // Luister naar observaties om count per lid bij te houden
-    _observationService
-        .getObservationsForSession(_clubId, widget.session.id)
+    _observationsSubscription = _observationService
+        .watchFullSessionObservations(_clubId, widget.session.id)
         .listen((observations) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       final counts = <String, int>{};
-      for (final obs in observations) {        counts[obs.memberId] = (counts[obs.memberId] ?? 0) + 1;
+      for (final obs in observations) {
+        counts[obs.memberId] = (counts[obs.memberId] ?? 0) + 1;
       }
       setState(() {
         _observationCounts = counts;
         _loading = false;
       });
+    }, onError: (Object error, StackTrace stackTrace) {
+      _handleLoadError(error, generation);
     });
+  }
+
+  void _handleLoadError(Object error, int generation) {
+    if (!mounted || generation != _loadGeneration) return;
+    debugPrint('❌ Erreur écoute évaluation piscine: $error');
+    setState(() {
+      _loading = false;
+      _loadErrorMessage =
+          'Les données d’évaluation sont indisponibles pour le moment.';
+    });
+  }
+
+  @override
+  void dispose() {
+    _loadGeneration++;
+    unawaited(_attendeesSubscription?.cancel());
+    unawaited(_observationsSubscription?.cancel());
+    super.dispose();
   }
 
   void _openObservationSheet(PiscineAttendee attendee) {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberProvider = Provider.of<MemberProvider>(context, listen: false);
-    final observerName = memberProvider.displayName ?? 'Inconnu';
+    final observerName = memberProvider.displayName;
     final observerId = authProvider.currentUser?.uid ?? '';
 
     showModalBottomSheet(
@@ -104,32 +161,53 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _attendees.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'Aucun participant enregistré pour cette session.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  ),                )
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: _attendees.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final attendee = _attendees[index];
-                    final count = _observationCounts[attendee.memberId] ?? 0;
-                    return _AttendeeRow(
-                      attendee: attendee,
-                      observationCount: count,
-                      onTap: () => _openObservationSheet(attendee),
-                    );
-                  },
+      body: Column(
+        children: [
+          if (_loadErrorMessage != null)
+            Material(
+              color: Colors.amber.shade50,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.info_outline, color: Colors.amber.shade900),
+                title: Text(_loadErrorMessage!),
+                trailing: TextButton(
+                  onPressed: () => unawaited(_loadData()),
+                  child: const Text('Réessayer'),
                 ),
+              ),
+            ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _attendees.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Aucun participant enregistré pour cette session.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: _attendees.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final attendee = _attendees[index];
+                          final count =
+                              _observationCounts[attendee.memberId] ?? 0;
+                          return _AttendeeRow(
+                            attendee: attendee,
+                            observationCount: count,
+                            onTap: () => _openObservationSheet(attendee),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }
