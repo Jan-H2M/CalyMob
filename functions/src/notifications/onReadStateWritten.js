@@ -59,6 +59,17 @@ async function reconcileReadStateBadge({ db, clubId, memberId, before, after, no
   return sendCanonicalReadStateBadge({ db, clubId, memberId, now });
 }
 
+async function reconcileNotificationHistoryBadge({ db, clubId, memberId, before = {}, after = {}, now = Date.now() }) {
+  const affectsResolutionBadge = before.type === 'bug_report_resolution'
+    || after.type === 'bug_report_resolution';
+  if (!affectsResolutionBadge) return { skipped: 'other_notification' };
+  const readChanged = before.read !== after.read || timestampMs(before.read_at) !== timestampMs(after.read_at);
+  const createdUnread = before.type == null && after.read === false;
+  if (!readChanged && !createdUnread) return { skipped: 'unchanged' };
+  if (await getUnreadCursorV1ModeForMember(db, clubId, memberId, now) !== 'on') return { skipped: 'flag_off' };
+  return sendCanonicalReadStateBadge({ db, clubId, memberId, now });
+}
+
 function makeTrigger(document) {
   return onDocumentWritten({ document, region: 'europe-west1' }, async (event) => reconcileReadStateBadge({
     db: admin.firestore(), clubId: event.params.clubId, memberId: event.params.memberId,
@@ -68,13 +79,22 @@ function makeTrigger(document) {
 
 const onReadStateWritten = makeTrigger('clubs/{clubId}/members/{memberId}/read_state/{sectionId}');
 const onReadStateScopeWritten = makeTrigger('clubs/{clubId}/members/{memberId}/read_state/{sectionId}/{scopeCollection}/{scopeId}');
+const onNotificationHistoryWritten = onDocumentWritten(
+  { document: 'clubs/{clubId}/members/{memberId}/notifications/{notificationId}', region: 'europe-west1' },
+  async event => reconcileNotificationHistoryBadge({
+    db: admin.firestore(), clubId: event.params.clubId, memberId: event.params.memberId,
+    before: event.data.before.data() || {}, after: event.data.after.data() || {},
+  }),
+);
 
 module.exports = {
   onReadStateWritten,
   onReadStateScopeWritten,
+  onNotificationHistoryWritten,
   reconcileReadStateBadge,
   sendCanonicalReadStateBadge,
   isBootstrapManagedWrite,
   cursorAdvanced,
+  reconcileNotificationHistoryBadge,
   recentlySynced,
 };

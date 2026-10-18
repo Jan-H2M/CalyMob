@@ -156,6 +156,7 @@ void main() {
       'logbook_dive_confirmation': NotificationRouteKind.logbookConfirmation,
       'logbook_dive_confirmation_result':
           NotificationRouteKind.logbookConfirmation,
+      'bug_report_resolution': NotificationRouteKind.bugResolutionFeedback,
     };
 
     for (final entry in cases.entries) {
@@ -165,6 +166,19 @@ void main() {
         reason: entry.key,
       );
     }
+  });
+
+  test('resolution feedback requires its report and feedback identifiers', () {
+    final complete = request({
+      'type': 'bug_report_resolution',
+      'report_id': 'report-1',
+      'resolution_feedback_id': 'resolution_report-1',
+    });
+    expect(complete.hasValidDestination, isTrue);
+    expect(complete.reportId, 'report-1');
+    expect(complete.resolutionFeedbackId, 'resolution_report-1');
+    expect(request({'type': 'bug_report_resolution'}).hasValidDestination,
+        isFalse);
   });
 
   test('accepts canonical payload aliases from callable and FCM senders', () {

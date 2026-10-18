@@ -71,14 +71,30 @@ class CursorUnreadCountService {
         roles,
         timestampV2: timestampV2,
       ),
+      countReportResolutionNotifications(clubId, userId),
     ]);
     return CursorUnreadBreakdown(
       announcements: values[0],
       events: values[1],
       teams: values[2],
       sessions: values[3],
+      reportResolutions: values[4],
     );
   }
+
+  /// Resolution-feedback cards have per-card `read` state, not a section
+  /// cursor. They still belong in the canonical Communication/app-icon total.
+  Future<int> countReportResolutionNotifications(
+    String clubId,
+    String userId,
+  ) =>
+      _countQuery(
+        _firestore
+            .collection('clubs/$clubId/members/$userId/notifications')
+            .where('type', isEqualTo: 'bug_report_resolution')
+            .where('counts_toward_unread_badge', isEqualTo: true)
+            .where('read', isEqualTo: false),
+      );
 
   Future<Timestamp> _requiredCursor(
     String clubId,
@@ -526,14 +542,16 @@ class CursorUnreadBreakdown {
     required this.announcements,
     required this.teams,
     required this.sessions,
+    this.reportResolutions = 0,
   });
 
   final int events;
   final int announcements;
   final int teams;
   final int sessions;
+  final int reportResolutions;
 
-  int get communication => announcements + teams + sessions;
+  int get communication => announcements + teams + sessions + reportResolutions;
   int get total => events + communication;
 
   Map<String, int> toLegacyMap() => <String, int>{
