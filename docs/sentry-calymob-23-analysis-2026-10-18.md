@@ -1,6 +1,6 @@
 # CALYMOB-23 — Firestore `permission-denied`
 
-Date: 2026-10-18  
+Date: 2026-10-18
 Target: CalyMob DEV only
 
 ## Confirmed production evidence
