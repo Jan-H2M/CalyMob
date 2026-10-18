@@ -82,11 +82,22 @@ class CursorUnreadCountService {
       clubId,
       userId,
     );
-    final announcements = await announcementsFuture;
-    final eventScopes = await eventScopesFuture;
-    final teamScopes = await teamScopesFuture;
-    final sessionScopes = await sessionScopesFuture;
-    final reportResolutions = await reportResolutionsFuture;
+    // Await concurrently. Besides being faster, Future.wait observes every
+    // branch immediately: awaiting these one-by-one leaves a later failed
+    // branch temporarily unobserved and can surface as an uncaught async
+    // error instead of making this all-or-nothing refresh fail normally.
+    final results = await Future.wait<dynamic>([
+      announcementsFuture,
+      eventScopesFuture,
+      teamScopesFuture,
+      sessionScopesFuture,
+      reportResolutionsFuture,
+    ]);
+    final announcements = results[0] as int;
+    final eventScopes = results[1] as Map<String, int>;
+    final teamScopes = results[2] as Map<String, int>;
+    final sessionScopes = results[3] as Map<String, int>;
+    final reportResolutions = results[4] as int;
     return CursorUnreadBreakdown(
       announcements: announcements,
       events: _sum(eventScopes),
