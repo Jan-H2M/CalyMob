@@ -4,7 +4,10 @@ import '../models/member_observation.dart';
 /// Service voor het beheren van member observations in CalyMob.
 /// Collection: clubs/{clubId}/member_observations
 class MemberObservationService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  MemberObservationService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
 
   CollectionReference<Map<String, dynamic>> _collection(String clubId) {
     return _firestore
@@ -26,8 +29,11 @@ class MemberObservationService {
             snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList());
   }
 
-  /// Observations voor een sessie (gesorteerd op naam).
-  Stream<List<MemberObservation>> getObservationsForSession(
+  /// All observations for a session, for full formation readers only.
+  ///
+  /// Callers must mirror `canReadFullFormation` from Firestore rules before
+  /// starting this operation-wide listener.
+  Stream<List<MemberObservation>> watchFullSessionObservations(
     String clubId,
     String sessionId,
   ) {
@@ -37,6 +43,23 @@ class MemberObservationService {
         .snapshots()
         .map((snap) =>
             snap.docs.map((d) => MemberObservation.fromFirestore(d)).toList());
+  }
+
+  /// The signed-in member's own observations for one session.
+  ///
+  /// Reading the already-authorized personal stream and filtering locally
+  /// avoids a new compound index while keeping the Firestore query constrained
+  /// to `memberId == request.auth.uid`, as required by the rules.
+  Stream<List<MemberObservation>> watchOwnSessionObservations(
+    String clubId,
+    String memberId,
+    String sessionId,
+  ) {
+    return getObservationsForMember(clubId, memberId).map(
+      (observations) => observations
+          .where((observation) => observation.contextId == sessionId)
+          .toList(),
+    );
   }
 
   /// Nieuwe observation aanmaken.
