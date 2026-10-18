@@ -39,6 +39,7 @@ enum NotificationRouteKind {
   medicalCertificate,
   logbookConfirmation,
   birthday,
+  bugResolutionFeedback,
   unsupported,
 }
 
@@ -95,6 +96,9 @@ class NotificationNavigationRequest {
       _firstValue(const ['exercice_code', 'exercise_code', 'exerciseCode']);
   String? get groupType => _firstValue(const ['group_type', 'groupType']);
   String? get groupLevel => _firstValue(const ['group_level', 'groupLevel']);
+  String? get reportId => _firstValue(const ['report_id', 'reportId']);
+  String? get resolutionFeedbackId =>
+      _firstValue(const ['resolution_feedback_id', 'resolutionFeedbackId']);
 
   int? get taskCount =>
       int.tryParse(_firstValue(const ['task_count', 'taskCount']) ?? '');
@@ -172,6 +176,8 @@ class NotificationNavigationRequest {
         return NotificationRouteKind.logbookConfirmation;
       case 'birthday':
         return NotificationRouteKind.birthday;
+      case 'bug_report_resolution':
+        return NotificationRouteKind.bugResolutionFeedback;
       default:
         // Forward-compatible payloads can opt into the generic task route.
         if (formationTaskId != null) {
@@ -209,6 +215,8 @@ class NotificationNavigationRequest {
       case NotificationRouteKind.actionsEvaluations:
       case NotificationRouteKind.medicalCertificate:
         return true;
+      case NotificationRouteKind.bugResolutionFeedback:
+        return reportId != null && resolutionFeedbackId != null;
       case NotificationRouteKind.unsupported:
         return false;
     }

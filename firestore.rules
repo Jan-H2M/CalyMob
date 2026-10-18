@@ -2035,6 +2035,15 @@ service cloud.firestore {
           allow create: if isAdmin(clubId) && hasValidSession(clubId);
           allow delete: if isAdmin(clubId) && hasValidSession(clubId);
         }
+
+        // Reporter feedback is submitted through the callable, never through
+        // a client-side status/comment write. The reporter may read only the
+        // feedback request that belongs to their own report.
+        match /resolution_feedback/{feedbackId} {
+          allow read: if (isAdmin(clubId) && hasValidSession(clubId))
+            || (isMember(clubId) && resource.data.reporter_id == request.auth.uid);
+          allow write: if false;
+        }
       }
     }
 

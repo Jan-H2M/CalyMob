@@ -95,15 +95,22 @@ const { onNewAnnouncementReply } = require('./src/notifications/onNewAnnouncemen
 exports.onNewAnnouncementReply = onNewAnnouncementReply;
 const { onAnnouncementReplyDeleted } = require('./src/notifications/onAnnouncementReplyDeleted');
 exports.onAnnouncementReplyDeleted = onAnnouncementReplyDeleted;
-const { onReadStateWritten, onReadStateScopeWritten } = require('./src/notifications/onReadStateWritten');
+const { onReadStateWritten, onReadStateScopeWritten, onNotificationHistoryWritten } = require('./src/notifications/onReadStateWritten');
 exports.onReadStateWritten = onReadStateWritten;
 exports.onReadStateScopeWritten = onReadStateScopeWritten;
+exports.onNotificationHistoryWritten = onNotificationHistoryWritten;
 const { bootstrapUnreadCursorV1 } = require('./src/notifications/bootstrapUnreadCursor');
 exports.bootstrapUnreadCursorV1 = bootstrapUnreadCursorV1;
 const { acknowledgeVisibleUnreadCursorV1 } = require('./src/notifications/acknowledgeVisibleUnreadCursor');
 exports.acknowledgeVisibleUnreadCursorV1 = acknowledgeVisibleUnreadCursorV1;
 const { onAnnouncementWritten } = require('./src/notifications/announcementFieldMaintenance');
 exports.onAnnouncementWritten = onAnnouncementWritten;
+const {
+  queueBugResolutionFeedbackV1,
+  respondToBugResolutionFeedbackV1,
+} = require('./src/notifications/bugResolutionFeedback');
+exports.queueBugResolutionFeedbackV1 = queueBugResolutionFeedbackV1;
+exports.respondToBugResolutionFeedbackV1 = respondToBugResolutionFeedbackV1;
 
 // =============================================================================
 // EXPENSE EMAIL NOTIFICATIONS (Gen2)

@@ -1266,3 +1266,38 @@ read-state reconciliation 7; cursor-mode badge helper 7. Final checks: Jest
 46 suites passed/1 skipped (422 passed/5 skipped); Flutter 686 passed/1
 skipped; analyzer 942 known-baseline issues, none new in touched files; all
 three isolated Firestore Emulator suites passed.
+
+### ENG-311: reporter resolution feedback (DEV implementation, disabled by default)
+
+This addendum supersedes the earlier **four-category** cursor-v1 Communication
+formula only when `bugResolutionFeedbackEnabled` is explicitly enabled by an
+operator. `bug_report_resolution` cards are durable documents at
+`clubs/{clubId}/members/{reporterId}/notifications/bug_resolution_{reportId}`.
+They have `counts_toward_unread_badge: true`; their unread state is their own
+`read/read_at` fields, so the canonical Communication and app-icon total adds
+`report_resolutions` without writing legacy `unread_counts`.
+
+There is deliberately no trigger from `status: resolu`, no migration, and no
+backfill. A separate administrator callable requires the feature flag, an
+active administrator, a resolved report, and `public_release_available: true`
+before it creates the card. The card is committed before FCM; failed/no-token
+push delivery leaves the in-app card available. The reporter can confirm or
+reopen; reopening requires text, accepts at most five scoped PNG screenshots,
+writes a `reporter_reopened` comment, and returns the Kanban status to
+`en_cours`. This branch is DEV-only until a separately approved rollout.
+
+#### ENG-311 test Firebase project boundary (2026-10-18)
+
+This paragraph supersedes the generic “DEV-only” deployment wording above for
+ENG-311 server validation. The target must be a **separate Firebase project**,
+provisionally named `calycompta-test`, owned by `jan@h2m.ai`; it must never be
+the production `calycompta` project. The project needs the same three deployed
+surfaces only for this feature’s test validation: Cloud Functions, Firestore
+rules/indexes, and Storage rules. Emulator suites remain the first gate.
+
+Before any test-project deployment, Jan performs `firebase login --reauth` as
+`jan@h2m.ai` and explicitly confirms the final project ID. The deploy command
+must name that project explicitly (`--project <confirmed-test-project-id>`),
+and the preflight must reject `calycompta`. No feature-flag write, report
+backfill, notification, push, email, TestFlight/store action, or production
+deployment is part of this setup.

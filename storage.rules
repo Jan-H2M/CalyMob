@@ -56,6 +56,13 @@ service firebase.storage {
         report.screenshotUrl == null;
     }
 
+    function isPendingBugResolutionFeedbackOwner(clubId, reportId, feedbackId) {
+      return isBugReportOwner(clubId, reportId) &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)/resolution_feedback/$(feedbackId)) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)/resolution_feedback/$(feedbackId)).data.reporter_id == request.auth.uid &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/bug_reports/$(reportId)/resolution_feedback/$(feedbackId)).data.status == 'pending';
+    }
+
     function canManageMaterialLoans(clubId) {
       return hasRole(clubId, ['admin', 'superadmin']) || (
         isAuthenticated() &&
@@ -385,6 +392,18 @@ service firebase.storage {
                         fileName.matches('screenshot_[0-4][.](jpg|png)'));
       allow delete: if hasRole(clubId, ['admin', 'superadmin']) ||
                       isUnfinalizedBugReportOwner(clubId, reportId);
+    }
+
+    // Feedback after a resolution request is isolated below the report. The
+    // callable validates the exact returned paths before recording them.
+    match /clubs/{clubId}/bug_reports/{reportId}/resolution_feedback/{feedbackId}/{fileName} {
+      allow read: if hasRole(clubId, ['admin', 'superadmin']) ||
+                    isBugReportOwner(clubId, reportId);
+      allow create: if isPendingBugResolutionFeedbackOwner(clubId, reportId, feedbackId) &&
+                      request.resource.size < 10 * 1024 * 1024 &&
+                      isValidFileType('image/.*') &&
+                      fileName.matches('screenshot_[0-4][.]png');
+      allow delete: if isBugReportOwner(clubId, reportId);
     }
 
     // Bank statement imports

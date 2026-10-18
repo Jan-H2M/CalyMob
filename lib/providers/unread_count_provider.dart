@@ -77,6 +77,7 @@ class UnreadCountProvider extends ChangeNotifier {
   int _eventMessages = 0;
   int _teamMessages = 0;
   int _sessionMessages = 0;
+  int _reportResolutions = 0;
   Map<String, int> _eventScopes = const <String, int>{};
   Map<String, int> _teamScopes = const <String, int>{};
   Map<String, int> _sessionScopes = const <String, int>{};
@@ -119,13 +120,19 @@ class UnreadCountProvider extends ChangeNotifier {
   // === Getters (zelfde API als voorheen) ===
 
   int get total =>
-      _announcements + _eventMessages + _teamMessages + _sessionMessages;
+      _announcements +
+      _eventMessages +
+      _teamMessages +
+      _sessionMessages +
+      _reportResolutions;
   int get announcements => _announcements;
   int get eventMessages => _eventMessages;
   int get teamMessages => _teamMessages;
   int get sessionMessages => _sessionMessages;
+  int get reportResolutions => _reportResolutions;
   int get medicalCertificates => 0;
-  int get communication => _announcements + _teamMessages + _sessionMessages;
+  int get communication =>
+      _announcements + _teamMessages + _sessionMessages + _reportResolutions;
   UnreadCursorV1Mode get cursorMode => _cursorMode;
   bool get isCursorReady => _cursorReady;
   bool get isListening => _isListening;
@@ -727,6 +734,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _eventMessages = 0;
     _teamMessages = 0;
     _sessionMessages = 0;
+    _reportResolutions = 0;
     _eventScopes = const <String, int>{};
     _teamScopes = const <String, int>{};
     _sessionScopes = const <String, int>{};
@@ -855,6 +863,7 @@ class UnreadCountProvider extends ChangeNotifier {
       cursor.events,
       cursor.teams,
       cursor.sessions,
+      reportResolutions: cursor.reportResolutions,
       source: 'cursor',
       notifyEvenIfUnchanged: becameReady || scopesChanged,
     );
@@ -929,6 +938,7 @@ class UnreadCountProvider extends ChangeNotifier {
     int eventMessages,
     int teamMessages,
     int sessionMessages, {
+    int reportResolutions = 0,
     required String source,
     bool notifyEvenIfUnchanged = false,
   }) {
@@ -937,7 +947,8 @@ class UnreadCountProvider extends ChangeNotifier {
     if (announcements == _announcements &&
         eventMessages == _eventMessages &&
         teamMessages == _teamMessages &&
-        sessionMessages == _sessionMessages) {
+        sessionMessages == _sessionMessages &&
+        reportResolutions == _reportResolutions) {
       // Cursor mode owns the OS icon, including an unchanged zero after a
       // cold start or foreground push.
       _updateBadge(total);
@@ -948,9 +959,10 @@ class UnreadCountProvider extends ChangeNotifier {
     _eventMessages = eventMessages;
     _teamMessages = teamMessages;
     _sessionMessages = sessionMessages;
+    _reportResolutions = reportResolutions;
     debugPrint(
       '📊 $source unread counts: ann=$_announcements '
-      'evt=$_eventMessages team=$_teamMessages sess=$_sessionMessages '
+      'evt=$_eventMessages team=$_teamMessages sess=$_sessionMessages resolution=$_reportResolutions '
       '(communication=$communication total=$total)',
     );
     notifyListeners();
@@ -1069,6 +1081,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _eventMessages = 0;
     _teamMessages = 0;
     _sessionMessages = 0;
+    _reportResolutions = 0;
     _updateBadgeImmediate(0);
     notifyListeners();
     await Future.wait<void>([
