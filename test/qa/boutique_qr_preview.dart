@@ -71,6 +71,21 @@ final service = BoutiqueOperationsService(transport: (request) async {
       };
     case 'lookup':
       return {'unit': pieces.firstWhere((u) => u['id'] == request['unitId'])};
+    case 'orders':
+      return {
+        'orders': [
+          {
+            'id': 'qa-order',
+            'orderNumber': 'BTQ-EXEMPLE',
+            'customerName': 'Membre Exemple',
+            'physicalCount': pieces.length
+          }
+        ],
+        'hasMore': false,
+        'nextCursor': null
+      };
+    case 'orderSelection':
+      return {'units': pieces};
     default:
       final count = (request['units'] as List? ?? []).length;
       return {

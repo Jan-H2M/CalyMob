@@ -35,6 +35,29 @@ class BoutiqueScanSelection {
   List<BoutiquePhysicalUnit> get units => List.unmodifiable(_units.values);
   bool contains(String id) => _units.containsKey(id);
   void remove(String id) => _units.remove(id);
+
+  /// An order is added atomically. Existing scans are kept, not duplicated or
+  /// silently refreshed; their revisions still have to pass the server preview.
+  void addOrder(List<BoutiquePhysicalUnit> units) {
+    if (units.isEmpty ||
+        units.map((u) => u.id).toSet().length != units.length) {
+      throw const FormatException('Sélection de commande invalide.');
+    }
+    final next = BoutiqueScanSelection(clubId: clubId, location: location);
+    for (final unit in _units.values) {
+      next.add(unit);
+    }
+    for (final unit in units) {
+      if (unit.sold || unit.location != location) {
+        throw const FormatException(
+            'La commande a changé. Actualisez la sélection.');
+      }
+      if (!next.contains(unit.id)) next.add(unit);
+    }
+    _units.clear();
+    _units.addAll(next._units);
+  }
+
   void add(BoutiquePhysicalUnit unit) {
     if (contains(unit.id)) {
       throw const FormatException('Cette pièce est déjà scannée.');

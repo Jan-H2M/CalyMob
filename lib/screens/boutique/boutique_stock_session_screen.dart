@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/boutique/boutique_physical_unit.dart';
 import '../../services/boutique/boutique_operations_service.dart';
 import 'boutique_qr_scan_screen.dart';
+import 'boutique_order_selection_screen.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
 
 class BoutiqueStockSessionScreen extends StatefulWidget {
@@ -26,7 +27,7 @@ class _BoutiqueStockSessionScreenState
   final _destination = TextEditingController(),
       _note = TextEditingController(),
       _window = TextEditingController();
-  String _action = 'move';
+  String? _action;
   final _helpers = <String>{};
   bool _pickup = true, _partial = false, _presence = false, _busy = false;
   String? _error;
@@ -75,8 +76,34 @@ class _BoutiqueStockSessionScreenState
     }
     final unit = await widget.service.lookup(widget.clubId, id);
     if (!mounted) throw const FormatException('Session fermée.');
-    setState(() => _selection.add(unit));
+    setState(() {
+      _selection.add(unit);
+      _action = null;
+      _error = null;
+    });
     return '${_selection.units.length} pièce(s) · ${unit.name} ajoutée';
+  }
+
+  Future<void> _chooseOrder() async {
+    final units = await Navigator.push<List<BoutiquePhysicalUnit>>(
+        context,
+        boutiqueAccessGuardedRoute<List<BoutiquePhysicalUnit>>(
+            sourceContext: context,
+            requiredSection: 'gestion',
+            builder: (_) => BoutiqueOrderSelectionScreen(
+                clubId: widget.clubId,
+                location: widget.location,
+                service: widget.service)));
+    if (!mounted || units == null) return;
+    try {
+      setState(() {
+        _selection.addOrder(units);
+        _action = null;
+        _error = null;
+      });
+    } catch (e) {
+      setState(() => _error = BoutiqueOperationsService.message(e));
+    }
   }
 
   Future<void> _chooseHelpers() async {
@@ -178,7 +205,7 @@ class _BoutiqueStockSessionScreenState
         },
       };
   Future<void> _confirm() async {
-    if (_selection.units.isEmpty) return;
+    if (_selection.units.isEmpty || _action == null) return;
     if (_action == 'dispatch' &&
         _destination.text.trim() == widget.location &&
         !_presence) {
@@ -195,7 +222,7 @@ class _BoutiqueStockSessionScreenState
       if (_pending == null) {
         final request = _request();
         final preview = await widget.service
-            .call(widget.clubId, _action, {...request, 'preview': true});
+            .call(widget.clubId, _action!, {...request, 'preview': true});
         if (!mounted) return;
         final approved = await showDialog<bool>(
             context: context,
@@ -235,7 +262,7 @@ class _BoutiqueStockSessionScreenState
         applying = true;
       }
       final result =
-          await widget.service.call(widget.clubId, _action, _pending!);
+          await widget.service.call(widget.clubId, _action!, _pending!);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
@@ -264,99 +291,10 @@ class _BoutiqueStockSessionScreenState
           Text('Lieu de cette session : ${widget.location}',
               style: Theme.of(context).textTheme.titleMedium),
           const Text(
-              'Un seul lieu et une seule action pour toutes les pièces du lot.'),
+              'Sélectionnez d’abord les pièces, puis choisissez une action commune. Rien ne change avant votre confirmation.'),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-              initialValue: _action,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Action pour tout le lot',
-                  border: OutlineInputBorder()),
-              items: _actions.entries
-                  .map((e) => DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value, overflow: TextOverflow.ellipsis)))
-                  .toList(),
-              onChanged: locked ? null : (v) => setState(() => _action = v!)),
-          Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(_help[_action]!)),
-          if (['move', 'confirmJim', 'dispatch'].contains(_action)) ...[
-            TextField(
-                controller: _destination,
-                enabled: !locked,
-                decoration: const InputDecoration(
-                    labelText: 'Lieu de destination',
-                    hintText: 'Piscine, Jim, réserve…',
-                    border: OutlineInputBorder()),
-                onChanged: (_) => setState(() {})),
-            const SizedBox(height: 12),
-          ],
-          if (_action == 'dispatch') ...[
-            const Text('Personnes autorisées pour ce lot',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const Text(
-                'L’accueil est proposé en premier. Plusieurs personnes partagent la même liste de remises.'),
-            Wrap(
-                spacing: 8,
-                children: widget.assignees
-                    .where((m) => _helpers.contains(m['id']))
-                    .map((m) => Chip(
-                        label: Text(m['name'] as String),
-                        onDeleted: locked
-                            ? null
-                            : () => setState(() => _helpers.remove(m['id']))))
-                    .toList()),
-            OutlinedButton.icon(
-                onPressed: locked ? null : _chooseHelpers,
-                icon: const Icon(Icons.group_add_outlined),
-                label: Text('Choisir les personnes · ${_helpers.length}/10')),
-            SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Point d’enlèvement client'),
-                subtitle: const Text(
-                    'Après réception réelle : informer les acheteurs éligibles.'),
-                value: _pickup,
-                onChanged: locked ? null : (v) => setState(() => _pickup = v)),
-            if (_pickup)
-              TextField(
-                  controller: _window,
-                  enabled: !locked,
-                  decoration: const InputDecoration(
-                      labelText: 'Quand peut-on retirer les articles ?',
-                      hintText: 'Vendredi de 19h à 21h à l’accueil',
-                      border: OutlineInputBorder())),
-            CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Autoriser les remises partielles'),
-                subtitle: const Text(
-                    'Par défaut, attendre la commande complète et payée.'),
-                value: _partial,
-                onChanged: locked
-                    ? null
-                    : (v) => setState(() => _partial = v == true)),
-            if (_destination.text.trim() == widget.location)
-              CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                      'Ces pièces sont déjà physiquement au point choisi'),
-                  value: _presence,
-                  onChanged: locked
-                      ? null
-                      : (v) => setState(() => _presence = v == true)),
-          ],
-          TextField(
-              controller: _note,
-              enabled: !locked,
-              minLines: 1,
-              maxLines: 3,
-              decoration: InputDecoration(
-                  labelText: ['confirmJim', 'finishJim', 'reviewPlain']
-                          .contains(_action)
-                      ? 'Contrôle effectué · obligatoire'
-                      : 'Note pour ce lot · facultatif',
-                  border: const OutlineInputBorder())),
-          const SizedBox(height: 20),
+          Text('1 · Sélection · ${_selection.units.length}/50 pièce(s)',
+              style: Theme.of(context).textTheme.titleMedium),
           FilledButton.icon(
               onPressed: locked
                   ? null
@@ -371,7 +309,11 @@ class _BoutiqueStockSessionScreenState
                                   'Scannez les pièces présentes à ${widget.location}. Une pièce déjà scannée ne sera pas ajoutée deux fois.',
                               onScan: _scan))),
               icon: const Icon(Icons.qr_code_scanner),
-              label: Text('Scanner · ${_selection.units.length}/50 pièce(s)')),
+              label: const Text('Scanner une ou plusieurs pièces')),
+          OutlinedButton.icon(
+              onPressed: locked ? null : _chooseOrder,
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text('Sélectionner une commande complète')),
           ..._selection.units.map((u) => ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(u.name),
@@ -380,8 +322,115 @@ class _BoutiqueStockSessionScreenState
                   tooltip: 'Retirer du lot',
                   onPressed: locked
                       ? null
-                      : () => setState(() => _selection.remove(u.id)),
+                      : () => setState(() {
+                            _selection.remove(u.id);
+                            _action = null;
+                          }),
                   icon: const Icon(Icons.close)))),
+          if (_pending == null)
+            TextButton(
+                onPressed: _busy || _selection.units.isEmpty ? null : _refresh,
+                child: const Text('Actualiser les pièces sélectionnées')),
+          if (_selection.units.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('2 · Action commune',
+                style: Theme.of(context).textTheme.titleMedium),
+            DropdownButtonFormField<String>(
+                key: ValueKey(_action),
+                initialValue: _action,
+                hint: const Text('Choisir une action'),
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Action pour tout le lot',
+                    border: OutlineInputBorder()),
+                items: _actions.entries
+                    .map((e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value, overflow: TextOverflow.ellipsis)))
+                    .toList(),
+                onChanged: locked ? null : (v) => setState(() => _action = v!)),
+            if (_action != null)
+              Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(_help[_action]!)),
+            if (['move', 'confirmJim', 'dispatch'].contains(_action)) ...[
+              TextField(
+                  controller: _destination,
+                  enabled: !locked,
+                  decoration: const InputDecoration(
+                      labelText: 'Lieu de destination',
+                      hintText: 'Piscine, Jim, réserve…',
+                      border: OutlineInputBorder()),
+                  onChanged: (_) => setState(() {})),
+              const SizedBox(height: 12),
+            ],
+            if (_action == 'dispatch') ...[
+              const Text('Personnes autorisées pour ce lot',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                  'L’accueil est proposé en premier. Plusieurs personnes partagent la même liste de remises.'),
+              Wrap(
+                  spacing: 8,
+                  children: widget.assignees
+                      .where((m) => _helpers.contains(m['id']))
+                      .map((m) => Chip(
+                          label: Text(m['name'] as String),
+                          onDeleted: locked
+                              ? null
+                              : () => setState(() => _helpers.remove(m['id']))))
+                      .toList()),
+              OutlinedButton.icon(
+                  onPressed: locked ? null : _chooseHelpers,
+                  icon: const Icon(Icons.group_add_outlined),
+                  label: Text('Choisir les personnes · ${_helpers.length}/10')),
+              SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Point d’enlèvement client'),
+                  subtitle: const Text(
+                      'Après réception réelle : informer les acheteurs éligibles.'),
+                  value: _pickup,
+                  onChanged:
+                      locked ? null : (v) => setState(() => _pickup = v)),
+              if (_pickup)
+                TextField(
+                    controller: _window,
+                    enabled: !locked,
+                    decoration: const InputDecoration(
+                        labelText: 'Quand peut-on retirer les articles ?',
+                        hintText: 'Vendredi de 19h à 21h à l’accueil',
+                        border: OutlineInputBorder())),
+              CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Autoriser les remises partielles'),
+                  subtitle: const Text(
+                      'Par défaut, attendre la commande complète et payée.'),
+                  value: _partial,
+                  onChanged: locked
+                      ? null
+                      : (v) => setState(() => _partial = v == true)),
+              if (_destination.text.trim() == widget.location)
+                CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                        'Ces pièces sont déjà physiquement au point choisi'),
+                    value: _presence,
+                    onChanged: locked
+                        ? null
+                        : (v) => setState(() => _presence = v == true)),
+            ],
+            if (_action != null)
+              TextField(
+                  controller: _note,
+                  enabled: !locked,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                      labelText: ['confirmJim', 'finishJim', 'reviewPlain']
+                              .contains(_action)
+                          ? 'Contrôle effectué · obligatoire'
+                          : 'Note pour ce lot · facultatif',
+                      border: const OutlineInputBorder())),
+          ],
           if (_error != null)
             Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -392,16 +441,14 @@ class _BoutiqueStockSessionScreenState
             const Text(
                 'Une confirmation est en attente de réponse. Réessayez pour connaître son résultat avant toute nouvelle action.'),
           FilledButton(
-              onPressed: _busy || _selection.units.isEmpty ? null : _confirm,
+              onPressed: _busy || _selection.units.isEmpty || _action == null
+                  ? null
+                  : _confirm,
               child: Text(_busy
                   ? 'Vérification…'
                   : _pending != null
                       ? 'Vérifier la confirmation en attente'
                       : 'Vérifier et confirmer le lot')),
-          if (_pending == null)
-            TextButton(
-                onPressed: _busy || _selection.units.isEmpty ? null : _refresh,
-                child: const Text('Actualiser les pièces sélectionnées')),
         ])));
   }
 }

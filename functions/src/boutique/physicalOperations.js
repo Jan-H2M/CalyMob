@@ -7,8 +7,8 @@ const { memberDisplayName } = require('../utils/memberName');
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
-const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission']);
-const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor']);
+const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection']);
+const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
 const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -39,7 +39,9 @@ function validate(input, actor) {
   if (!id(actor?.uid)) fail('unauthenticated', 'Connectez-vous à CalyMob.');
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
-  if (input.cursor !== undefined && (!id(input.cursor) || input.action !== 'missions')) fail('invalid-argument', 'Page de missions invalide.');
+  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'orders'].includes(input.action))) fail('invalid-argument', 'Page invalide.');
+  if (input.orderId !== undefined && (!id(input.orderId) || input.action !== 'orderSelection')) fail('invalid-argument', 'Commande invalide.');
+  if (input.action === 'orderSelection' && (!id(input.orderId) || typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))) fail('invalid-argument', 'Commande ou lieu invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
   if (!MUTATIONS.has(input.action)) return;
   if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
@@ -127,6 +129,45 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
       const [units, members] = await Promise.all([tx.get(club.collection('boutique_physical_stock_units').where('saleStatus', 'in', ['not_ready', 'sale_ready']).limit(200)), tx.get(club.collection('members').where('member_status', '==', 'active').limit(500))]);
       return { units: units.docs.map(s => publicUnit(asUnit(s))), hasMore: units.size === 200, assignees: members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) };
+    }
+    // Selection only: RB-scoped reads, never an inventory/order mutation. Do not
+    // derive a whole order from the management screen's truncated 200-unit list.
+    if (['orders', 'orderSelection'].includes(input.action)) {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const orders = club.collection('orders');
+      const selectableStatuses = ['awaiting_payment', 'paid', 'preparing', 'ready'];
+      if (input.action === 'orders') {
+        let query = orders.where('status', 'in', selectableStatuses).orderBy(admin.firestore.FieldPath.documentId());
+        if (input.cursor) query = query.startAfter(input.cursor);
+        const page = await tx.get(query.limit(30));
+        return {
+          orders: page.docs.map(s => ({ id: s.id, orderNumber: s.data().orderNumber || s.id, customerName: s.data().buyer?.displayName || 'Membre', physicalCount: (Array.isArray(s.data().items) ? s.data().items : []).filter(i => i.deliveryMode !== 'digital' && i.fulfillmentStatus !== 'delivered').reduce((n, i) => n + (Number.isInteger(i.qty) && i.qty > 0 ? i.qty : 0), 0) })),
+          hasMore: page.size === 30, nextCursor: page.size === 30 ? page.docs.at(-1).id : null
+        };
+      }
+      const snap = await tx.get(orders.doc(input.orderId));
+      if (!snap.exists) fail('not-found', 'Commande introuvable dans ce club.');
+      const order = snap.data();
+      if (!selectableStatuses.includes(order.status) || !Array.isArray(order.items)) fail('failed-precondition', 'Cette commande n’est plus à préparer.');
+      const lines = order.items.filter(i => i.deliveryMode !== 'digital' && i.fulfillmentStatus !== 'delivered');
+      if (!lines.length || lines.some(i => !id(i.lineId) || !Number.isInteger(i.qty) || i.qty <= 0 || !Array.isArray(i.physicalStockUnitIds) || i.physicalStockUnitIds.length !== i.qty || unique(i.physicalStockUnitIds).length !== i.qty || i.physicalStockUnitIds.some(k => !id(k))) || unique(lines.map(i => i.lineId)).length !== lines.length) fail('failed-precondition', 'Commande incomplète : certaines pièces physiques ne sont pas encore attribuées. Scannez les pièces présentes individuellement.');
+      const ids = lines.flatMap(i => i.physicalStockUnitIds);
+      if (ids.length > MAX_PEERS || unique(ids).length !== ids.length) fail('failed-precondition', 'Pièces de commande incohérentes ou trop nombreuses.');
+      const units = [];
+      for (const line of lines) for (const unitId of line.physicalStockUnitIds) {
+        const unitSnap = await tx.get(club.collection('boutique_physical_stock_units').doc(unitId));
+        if (!unitSnap.exists) fail('failed-precondition', 'Une pièce de la commande est introuvable.');
+        const unit = asUnit(unitSnap);
+        if (unit.customerOrderId !== input.orderId || unit.customerLineId !== line.lineId || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation d’une pièce a changé. Actualisez la commande.');
+        if (unit.saleStatus === 'sold') {
+          if (unit.handover?.type !== 'member_qr' || !id(order.buyer?.userId) || unit.handover?.recipientMemberId !== order.buyer.userId || !id(unit.handover?.operationId) || !ms(unit.handover?.confirmedAt)) fail('failed-precondition', 'Une remise de cette commande est à vérifier.');
+          continue;
+        }
+        if (!['not_ready', 'sale_ready'].includes(unit.saleStatus) || unit.location !== input.sourceLocation || unit.transportMissionId) fail('failed-precondition', 'Toutes les pièces restantes ne sont pas présentes au lieu de cette session. Scannez uniquement les pièces présentes individuellement.');
+        units.push(publicUnit(unit));
+      }
+      if (!units.length || units.length > MAX_UNITS) fail('failed-precondition', 'Sélectionnez de 1 à 50 pièces restantes. Une commande plus grande doit être scannée par lots.');
+      return { units };
     }
     if (input.action === 'mission' && !await missionAuthorized(mission, false, manager)) fail('permission-denied', 'Mission expirée ou retirée.');
     const requestId = MUTATIONS.has(input.action) ? hash([actor.uid, input.idempotencyKey]) : null;

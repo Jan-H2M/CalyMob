@@ -63,4 +63,20 @@ void main() {
     expect(
         (requests[0]['units'] as List).single, {'id': 'p', 'revision': '1:2'});
   });
+  test('whole orders deduplicate existing scans and fail atomically', () {
+    final selection = BoutiqueScanSelection(clubId: 'fixture', location: 'Jim');
+    selection.add(unit('existing'));
+    selection.addOrder([unit('existing'), unit('new')]);
+    expect(selection.units.map((u) => u.id), ['existing', 'new']);
+    for (final invalid in [
+      <BoutiquePhysicalUnit>[],
+      [unit('one'), unit('one')],
+      [unit('good'), unit('wrong', location: 'Piscine')],
+      [unit('good'), unit('sold', status: 'sold')],
+      List.generate(49, (i) => unit('overflow-$i')),
+    ]) {
+      expect(() => selection.addOrder(invalid), throwsFormatException);
+      expect(selection.units.map((u) => u.id), ['existing', 'new']);
+    }
+  });
 }
