@@ -18,7 +18,6 @@ void main() {
     'Ma cotisation',
     'Mon matériel emprunté',
     'Mon panier',
-    'Mes commandes',
   ];
 
   Future<void> pumpAccessEvent(WidgetTester tester) async {
@@ -52,6 +51,13 @@ void main() {
         'boutiqueEnabled': true,
         'boutiqueMobileEnabled': true,
         'boutiqueAccess': 'testeurs',
+        'boutiqueSections': {
+          'produits': 'testeurs',
+          'panier': 'testeurs',
+          'commandes': 'testeurs',
+          'cotisation': 'testeurs',
+          'pretsMateriel': 'testeurs',
+        },
       });
       await memberRef.set({
         'member_status': 'active',
@@ -92,7 +98,17 @@ void main() {
         find.byKey(const Key('boutique-access-unavailable')),
         findsNothing,
       );
+      await tester.scrollUntilVisible(find.text('Produits'), 120);
       expectSections(visible: true);
+      expect(find.text('Beheer via CalyCompta'), findsOneWidget);
+      expect(
+        find.text(
+          'Als Responsable boutique kun je hier alleen testen. Beheer catalogus, bestellingen en voorraad in CalyCompta.',
+        ),
+        findsOneWidget,
+      );
+      await tester.scrollUntilVisible(find.text('Mes commandes'), 120);
+      expect(find.text('Mes commandes'), findsOneWidget);
 
       // Becoming inactive immediately invalidates the already open screen.
       await memberRef.update({'member_status': 'inactive'});
@@ -102,10 +118,12 @@ void main() {
         findsOneWidget,
       );
       expectSections(visible: false);
+      expect(find.text('Beheer via CalyCompta'), findsNothing);
 
       await memberRef.update({'member_status': 'active'});
       await pumpAccessEvent(tester);
       expectSections(visible: true);
+      expect(find.text('Beheer via CalyCompta'), findsOneWidget);
 
       // Removing the responsibility immediately hides every card.
       await memberRef.update({'clubStatuten': <String>[]});
@@ -115,13 +133,23 @@ void main() {
         findsOneWidget,
       );
       expectSections(visible: false);
+      expect(find.text('Beheer via CalyCompta'), findsNothing);
 
       // Going online grants every active member all five fallback sections.
       await memberRef.update({
         'member_status': 'active',
         'clubStatuten': <String>[],
       });
-      await flagsRef.update({'boutiqueAccess': 'tous'});
+      await flagsRef.update({
+        'boutiqueAccess': 'tous',
+        'boutiqueSections': {
+          'produits': 'tous',
+          'panier': 'tous',
+          'commandes': 'tous',
+          'cotisation': 'tous',
+          'pretsMateriel': 'tous',
+        },
+      });
       await pumpAccessEvent(tester);
       expect(
         find.byKey(const Key('boutique-access-unavailable')),
