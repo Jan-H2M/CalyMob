@@ -3,6 +3,14 @@
 Datum: 2026-05-29  
 Scope: CalyMob leden-app, nog niet algemeen zichtbaar maken.
 
+> **Superseded (2026-10-20).** This preparation document describes the
+> pre-launch MVP and its former `feature_access.boutique` rollout model. The
+> member Boutique, checkout, orders, personalization, and server-side access
+> checks now exist. Current visibility is controlled by `boutiqueAccess` and
+> the active `Responsable boutique`/`RB` responsibility in preparation mode;
+> the canonical admin workflow remains CalyCompta. The historical plan below
+> is retained for context only.
+
 ## Huidige stand
 
 - In CalyMob is nog geen echte boutique-module aanwezig.
