@@ -12,6 +12,7 @@ import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../services/sensitive_info_service.dart';
+import '../../utils/directory_contact_visibility.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/profile/emergency_contacts_card.dart';
 import '../../models/formation_snapshot_doc.dart';
@@ -692,6 +693,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   }
 
   void _showMemberDetails(MemberProfile member, bool isCurrentUser) {
+    final showDirectoryEmail = canShowDirectoryEmail(member);
+    final showDirectoryPhone = canShowDirectoryPhone(member);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -883,11 +886,11 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                     ),
 
                   if ((isCurrentUser || _canManageExercises) &&
-                      member.shareEmail)
+                      showDirectoryEmail)
                     const SizedBox(height: 8),
 
                   // Email
-                  if (member.shareEmail)
+                  if (showDirectoryEmail)
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -900,13 +903,11 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                       ),
                     ),
 
-                  if (member.shareEmail &&
-                      member.sharePhone &&
-                      member.phoneNumber != null)
+                  if (showDirectoryEmail && showDirectoryPhone)
                     const SizedBox(height: 8),
 
                   // Phone call
-                  if (member.sharePhone && member.phoneNumber != null)
+                  if (showDirectoryPhone)
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(

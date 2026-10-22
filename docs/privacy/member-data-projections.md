@@ -16,6 +16,20 @@ the current private source transactionally, so delayed or retried events cannot
 restore an older public projection. It does not log source fields or member
 identifiers.
 
+## COM-146 compatibility clarification (22 October 2026)
+
+> **SUPERSEDED INTERPRETATION:** the earlier wording “only explicitly shared”
+> must not be read as treating a missing `share_email` or `share_phone` field
+> as an opt-out. That interpretation conflicts with the established
+> `ProfilePage` contract for legacy member documents.
+
+For contact fields, an explicit `false` is the only opt-out. Missing preference
+fields retain the legacy sharing default, while the projection still publishes
+only the minimal `email` and canonical `phone_number` values. The phone builder
+accepts, in order, `phone_number`, `phoneNumber`, then legacy `telephone`.
+No backfill is part of this compatibility change: pre-existing directory cards
+are refreshed only by a separately authorised projection rebuild.
+
 ## Event participant phone display (MOB-039, 2026-10-16)
 
 > **SUPERSEDED UI ASSUMPTION:** directory readability alone is not sufficient

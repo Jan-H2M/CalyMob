@@ -66,8 +66,10 @@ function buildMemberDirectoryProjection(data) {
   const lastName = nonEmptyString(data.last_name) ||
     nonEmptyString(data.nom) || nonEmptyString(data.lastName) || '';
   const displayName = memberDisplayName(data, `${firstName} ${lastName}`.trim());
-  const shareEmail = data.share_email === true;
-  const sharePhone = data.share_phone === true;
+  // Match the long-standing ProfilePage contract: legacy documents without a
+  // field keep contact sharing enabled; only an explicit false is an opt-out.
+  const shareEmail = data.share_email !== false;
+  const sharePhone = data.share_phone !== false;
   const consentInternalPhoto = data.consent_internal_photo === true;
 
   return {
@@ -92,7 +94,8 @@ function buildMemberDirectoryProjection(data) {
     share_birthday: data.share_birthday !== false,
     consent_internal_photo: consentInternalPhoto,
     email: shareEmail ? nonEmptyString(data.email) : null,
-    phone_number: sharePhone ? nonEmptyString(data.phone_number) : null,
+    phone_number: sharePhone ? (nonEmptyString(data.phone_number) ||
+      nonEmptyString(data.phoneNumber) || nonEmptyString(data.telephone)) : null,
     photo_url: consentInternalPhoto ? nonEmptyString(data.photo_url) : null,
     ...birthdayParts(data),
     updated_at: FieldValue.serverTimestamp(),
