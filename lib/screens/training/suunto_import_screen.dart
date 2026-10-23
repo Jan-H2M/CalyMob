@@ -6,7 +6,6 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../models/dive_computer_import.dart';
-import '../../services/suunto_dive_log_adapter.dart';
 import '../../services/suunto_share_inbox.dart';
 import '../../services/dive_site_source.dart';
 import '../../services/dive_computer_import_service.dart';
@@ -28,7 +27,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
   String? _error;
   String? _name;
   List<int>? _sourceBytes;
-  String _retention = 'keep_until_deleted';
+  SuuntoShareInboxItem? _pendingShare;
   List<DiveSite> _nearbySites = const [];
   DiveSite? _chosenSite;
   final _freeTextSite = TextEditingController();
@@ -42,11 +41,14 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
 
   Future<void> _consumeShareInbox() async {
     try {
-      final bytes = await SuuntoShareInbox().consume();
-      if (bytes == null || !mounted) return;
-      _parse(bytes, 'Suunto partagé.json');
-    } catch (_) {
-      // The regular Files picker remains available when no iOS handoff exists.
+      final item = await SuuntoShareInbox().consume();
+      if (item == null || !mounted) return;
+      _pendingShare = item;
+      await _parse(item.bytes, _filenameForShare(item));
+      await SuuntoShareInbox().acknowledge(item.id);
+      if (mounted) setState(() => _pendingShare = null);
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Fichier partagé non pris en charge : $error');
     }
   }
 
@@ -97,6 +99,22 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     });
   }
 
+  String _filenameForShare(SuuntoShareInboxItem item) {
+    if (item.filename.contains('.')) return item.filename;
+    switch (item.uti) {
+      case 'public.json':
+        return '${item.filename}.json';
+      case 'public.xml':
+        return '${item.filename}.xml';
+      case 'com.pkware.zip-archive':
+        return '${item.filename}.zip';
+      default:
+        // FIT, UDDF and SSRF commonly arrive as public.data. Their bounded
+        // signatures remain the registry fallback when a provider loses type.
+        return item.filename;
+    }
+  }
+
   @override
   void dispose() {
     _freeTextSite.dispose();
@@ -145,8 +163,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
                 ),
                 if (_error != null)
                   _card(
-                    Text(_error!,
-                        style: const TextStyle(color: Colors.redAccent)),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_error!, style: const TextStyle(color: Colors.redAccent)), if (_pendingShare != null) TextButton(onPressed: () async { final item = _pendingShare!; await SuuntoShareInbox().discard(item.id); if (mounted) setState(() { _pendingShare = null; _error = null; }); }, child: const Text('Ignorer ce fichier partagé'))]),
                   ),
                 if (_preview case final p?) ...[
                   _previewCard(p),
@@ -246,21 +263,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
       );
   Widget _saveCard(DiveComputerImportPreview preview) =>
       _card(Column(children: [
-        DropdownButtonFormField<String>(
-          value: _retention,
-          decoration: const InputDecoration(labelText: 'Conservation'),
-          items: const [
-            DropdownMenuItem(
-                value: 'keep_until_deleted',
-                child: Text('Conserver jusqu’à suppression')),
-            DropdownMenuItem(
-                value: 'delete_after_30_days',
-                child: Text('Supprimer après 30 jours')),
-          ],
-          onChanged: _working
-              ? null
-              : (value) => setState(() => _retention = value ?? _retention),
-        ),
+        const Text('Conservation : jusqu’à suppression de la plongée.'),
         const SizedBox(height: 12),
         ElevatedButton.icon(
             onPressed: _working ? null : () => _save(preview),
@@ -281,7 +284,6 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         memberName: '${member.prenom ?? ''} ${member.nom ?? ''}'.trim(),
         preview: preview,
         originalBytes: Uint8List.fromList(bytes),
-        retention: _retention,
         locationId: _chosenSite?.id,
         locationName: _chosenSite?.name ?? _freeTextSite.text.trim(),
       );

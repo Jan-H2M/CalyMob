@@ -20,16 +20,24 @@ class DiveLogImportRegistry {
   DiveComputerImportPreview parse(
       {required String filename, required Uint8List bytes}) {
     final lower = filename.toLowerCase();
-    if (lower.endsWith('.json') && _utf8Contains(bytes, '"DeviceLog"'))
+    // Share sheets do not always preserve a useful extension. A recognised
+    // signature is therefore an intentional fallback; each adapter still
+    // validates the full vendor format before returning a preview.
+    if ((lower.endsWith('.json') || _utf8Contains(bytes, '"DeviceLog"')) &&
+        _utf8Contains(bytes, '"DeviceLog"'))
       return const SuuntoDiveLogAdapter().parse(bytes);
-    if (lower.endsWith('.fit') && _isFit(bytes))
+    if ((lower.endsWith('.fit') || _isFit(bytes)) && _isFit(bytes))
       return const GarminFitDiveLogAdapter().parse(bytes);
-    if (lower.endsWith('.zip') && _isZip(bytes))
+    if ((lower.endsWith('.zip') || _isZip(bytes)) && _isZip(bytes))
       return const GarminFitDiveLogAdapter().parse(bytes, zip: true);
-    if (lower.endsWith('.uddf') ||
-        (lower.endsWith('.xml') && _utf8Contains(bytes, '<uddf')))
+    if ((lower.endsWith('.uddf') ||
+            lower.endsWith('.xml') ||
+            _utf8Contains(bytes, '<uddf')) &&
+        _utf8Contains(bytes, '<uddf'))
       return const UddfDiveLogAdapter().parse(bytes);
-    if ((lower.endsWith('.xml') || lower.endsWith('.ssrf')) &&
+    if ((lower.endsWith('.xml') ||
+            lower.endsWith('.ssrf') ||
+            _utf8Contains(bytes, '<dive')) &&
         _utf8Contains(bytes, '<dive'))
       return const SubsurfaceDiveLogAdapter().parse(bytes);
     throw const FormatException(

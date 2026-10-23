@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 final class ShareViewController: SLComposeServiceViewController {
   private let appGroup = "group.com.calypso.calymob"
   private let manifestName = "suunto-import-manifest.json"
+  private struct InboxItem: Codable { let id: String; let storedName: String; let originalName: String; let uti: String }
 
   override func isContentValid() -> Bool { true }
   override func didSelectPost() {
@@ -22,8 +23,10 @@ final class ShareViewController: SLComposeServiceViewController {
         self?.extensionContext?.cancelRequest(withError: NSError(domain: "CalyMobSuuntoShare", code: 2, userInfo: [NSLocalizedDescriptionKey: "The secure CalyMob inbox is unavailable."]))
         return
       }
-      let suffix = type == .json ? "json" : type == .xml ? "xml" : type == .zip ? "zip" : "ssrf"
-      let fileName = "dive-log-\(UUID().uuidString).\(suffix)"
+      let sourceName = (item as? URL)?.lastPathComponent ?? provider.suggestedName ?? "dive-log"
+      let suffix = (sourceName as NSString).pathExtension.isEmpty ? (type == .json ? "json" : type == .xml ? "xml" : type == .zip ? "zip" : "bin") : (sourceName as NSString).pathExtension
+      let id = UUID().uuidString
+      let fileName = "dive-log-\(id).\(suffix)"
       let destination = container.appendingPathComponent(fileName)
       do {
         if let url = item as? URL {
@@ -41,13 +44,13 @@ final class ShareViewController: SLComposeServiceViewController {
         var manifestError: Error?
         NSFileCoordinator().coordinate(writingItemAt: manifestURL, options: .forMerging, error: &coordinationError) { url in
           do {
-            let existing: [String]
+            let existing: [InboxItem]
             if FileManager.default.fileExists(atPath: url.path) {
-              existing = try JSONDecoder().decode([String].self, from: Data(contentsOf: url))
+              existing = try JSONDecoder().decode([InboxItem].self, from: Data(contentsOf: url))
             } else {
               existing = []
             }
-            try JSONEncoder().encode(existing + [fileName]).write(to: url, options: .atomic)
+            try JSONEncoder().encode(existing + [InboxItem(id: id, storedName: fileName, originalName: sourceName, uti: type.identifier)]).write(to: url, options: .atomic)
           } catch {
             manifestError = error
           }

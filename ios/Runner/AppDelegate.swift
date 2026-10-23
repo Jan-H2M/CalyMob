@@ -13,27 +13,40 @@ import UserNotifications
     let controller = window?.rootViewController as! FlutterViewController
     let inbox = FlutterMethodChannel(name: "calymob/suunto_share_inbox", binaryMessenger: controller.binaryMessenger)
     inbox.setMethodCallHandler { call, result in
-      guard call.method == "consume" else { result(FlutterMethodNotImplemented); return }
+      guard ["consume", "ack", "discard"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
       let group = "group.com.calypso.calymob"
       guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else {
         result(FlutterError(code: "share_inbox_unavailable", message: "The CalyMob share inbox is unavailable.", details: nil))
         return
       }
       let manifest = container.appendingPathComponent("suunto-import-manifest.json")
-      var resultBytes: Data?
+      struct InboxItem: Codable { let id: String; let storedName: String; let originalName: String; let uti: String }
+      var resultValue: [String: Any]?
       var coordinationError: NSError?
       var manifestError: Error?
       NSFileCoordinator().coordinate(writingItemAt: manifest, options: .forMerging, error: &coordinationError) { url in
         do {
+          guard FileManager.default.fileExists(atPath: url.path) else { return }
           let manifestData = try Data(contentsOf: url)
-          var names = try JSONDecoder().decode([String].self, from: manifestData)
-          guard !names.isEmpty else { return }
-          let name = names.removeFirst()
-          let file = container.appendingPathComponent(name)
-          let bytes = try Data(contentsOf: file)
-          try JSONEncoder().encode(names).write(to: url, options: .atomic)
-          try FileManager.default.removeItem(at: file)
-          resultBytes = bytes
+          var items: [InboxItem]
+          do {
+            items = try JSONDecoder().decode([InboxItem].self, from: manifestData)
+          } catch {
+            // Upgrade an inbox written by the original name-only bridge.
+            let names = try JSONDecoder().decode([String].self, from: manifestData)
+            items = names.map { InboxItem(id: $0, storedName: $0, originalName: $0, uti: "") }
+          }
+          guard !items.isEmpty else { return }
+          if call.method == "consume" {
+            let item = items[0]
+            let bytes = try Data(contentsOf: container.appendingPathComponent(item.storedName))
+            resultValue = ["id": item.id, "filename": item.originalName, "uti": item.uti, "bytes": FlutterStandardTypedData(bytes: bytes)]
+          } else {
+            guard let id = call.arguments as? String, let index = items.firstIndex(where: { $0.id == id }) else { return }
+            let item = items.remove(at: index)
+            try JSONEncoder().encode(items).write(to: url, options: .atomic)
+            try FileManager.default.removeItem(at: container.appendingPathComponent(item.storedName))
+          }
         } catch {
           manifestError = error
         }
@@ -46,8 +59,7 @@ import UserNotifications
         result(FlutterError(code: "share_inbox_read_failed", message: manifestError.localizedDescription, details: nil))
         return
       }
-      guard let resultBytes else { result(nil); return }
-      result(FlutterStandardTypedData(bytes: resultBytes))
+      result(resultValue)
     }
 
     // Set up push notifications after Flutter plugins are registered
