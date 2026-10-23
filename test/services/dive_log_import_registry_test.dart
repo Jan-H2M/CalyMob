@@ -36,7 +36,8 @@ void main() {
   });
 
   test('routes a shared file by content when its original extension is absent', () {
-    const json = '{"DeviceLog":{"Header":{"DateTime":"2026-10-22T10:00:00+02:00","DiveTime":60},"Samples":[]}}';
+    const json =
+        '{"DeviceLog":{"Header":{"DateTime":"2026-10-22T10:00:00+02:00","DiveTime":60},"Samples":[{"TimeISO8601":"2026-10-22T10:00:00+02:00","Depth":0}]}}';
     final result = const DiveLogImportRegistry().parse(
       filename: 'shared-file', bytes: Uint8List.fromList(utf8.encode(json)));
     expect(result.vendor, 'suunto');
@@ -142,10 +143,13 @@ void main() {
 
   test('rejects overlapping local payloads referenced by central records', () {
     final archive = Archive()
-      ..addFile(ArchiveFile('same.fit', _fit.length, _fit))
-      ..addFile(ArchiveFile('same.fit', _fit.length, _fit));
+      ..addFile(ArchiveFile('one.fit', _fit.length, _fit))
+      ..addFile(ArchiveFile('two.fit', _fit.length, _fit));
     final zip = ZipEncoder().encode(archive)!;
     final centrals = _centralDirectories(zip);
+    // Make the second central entry agree with the first local header's name,
+    // then point it at that header: local binding passes and overlap must fail.
+    _writeAscii(zip, centrals[1] + 46, 'one.fit');
     _writeU32(zip, centrals[1] + 42, _localOffset(zip, centrals[0]));
     expect(() => _parseZip(zip), throwsFormatException);
   });
@@ -204,4 +208,10 @@ void _writeU32(List<int> bytes, int index, int value) {
   bytes[index + 1] = (value >> 8) & 0xff;
   bytes[index + 2] = (value >> 16) & 0xff;
   bytes[index + 3] = (value >> 24) & 0xff;
+}
+
+void _writeAscii(List<int> bytes, int index, String value) {
+  for (var offset = 0; offset < value.length; offset++) {
+    bytes[index + offset] = value.codeUnitAt(offset);
+  }
 }
