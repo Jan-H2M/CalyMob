@@ -6,11 +6,13 @@ class DiveSite {
   final String name;
   final double latitude;
   final double longitude;
+  final double? distanceKm;
   const DiveSite({
     required this.id,
     required this.name,
     required this.latitude,
     required this.longitude,
+    this.distanceKm,
   });
 }
 
@@ -26,8 +28,19 @@ class CoordinateDiveSiteSource implements DiveSiteSource {
   @override
   Future<List<DiveSite>> nearby(DiveLocationHint hint) async {
     final sites = await loadSites();
-    sites.sort((a, b) => _distance(hint, a).compareTo(_distance(hint, b)));
-    return sites;
+    final nearby = sites
+        .map(
+          (site) => DiveSite(
+            id: site.id,
+            name: site.name,
+            latitude: site.latitude,
+            longitude: site.longitude,
+            distanceKm: _distance(hint, site),
+          ),
+        )
+        .toList();
+    nearby.sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
+    return nearby;
   }
 
   double distanceKm(DiveLocationHint hint, DiveSite site) =>

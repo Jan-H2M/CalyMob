@@ -2,12 +2,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../models/dive_computer_import.dart';
 import '../../services/suunto_dive_log_adapter.dart';
+import '../../services/suunto_share_inbox.dart';
+import '../../services/dive_site_source.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Files-based intake. The native iOS extension hands off into the same route
 /// via an App Group inbox when the host app starts (see ios/ShareExtension).
 class SuuntoImportScreen extends StatefulWidget {
-  const SuuntoImportScreen({super.key});
+  final DiveSiteSource? diveSiteSource;
+  const SuuntoImportScreen({super.key, this.diveSiteSource});
   @override
   State<SuuntoImportScreen> createState() => _SuuntoImportScreenState();
 }
@@ -17,7 +20,26 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
   DiveComputerImportPreview? _preview;
   String? _error;
   String? _name;
+  List<DiveSite> _nearbySites = const [];
+  DiveSite? _chosenSite;
+  final _freeTextSite = TextEditingController();
   bool _working = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _consumeShareInbox();
+  }
+
+  Future<void> _consumeShareInbox() async {
+    try {
+      final bytes = await SuuntoShareInbox().consume();
+      if (bytes == null || !mounted) return;
+      _parse(bytes, 'Suunto partagé.json');
+    } catch (_) {
+      // The regular Files picker remains available when no iOS handoff exists.
+    }
+  }
 
   Future<void> _pick() async {
     setState(() {
@@ -41,17 +63,34 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         );
       if (bytes.length > 20 * 1024 * 1024)
         throw const FormatException('Le fichier dépasse la limite de 20 Mo.');
-      final preview = _adapter.parse(bytes);
-      if (!mounted) return;
-      setState(() {
-        _preview = preview;
-        _name = file.name;
-      });
+      await _parse(bytes, file.name);
     } catch (error) {
       if (mounted) setState(() => _error = 'Import Suunto impossible : $error');
     } finally {
       if (mounted) setState(() => _working = false);
     }
+  }
+
+  Future<void> _parse(List<int> bytes, String name) async {
+    final preview = _adapter.parse(bytes);
+    if (!mounted) return;
+    final source = widget.diveSiteSource;
+    final sites = source != null && preview.locationHint != null
+        ? await source.nearby(preview.locationHint!)
+        : const <DiveSite>[];
+    if (!mounted) return;
+    setState(() {
+      _preview = preview;
+      _name = name;
+      _nearbySites = sites;
+      _chosenSite = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _freeTextSite.dispose();
+    super.dispose();
   }
 
   @override
@@ -98,7 +137,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
               _card(
                 Text(_error!, style: const TextStyle(color: Colors.redAccent)),
               ),
-            if (_preview case final p?) _previewCard(p),
+            if (_preview case final p?) ...[_previewCard(p), _locationCard(p)],
           ],
         ),
       ),
@@ -117,10 +156,10 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         Text('Début : ${p.startedAt.toIso8601String()}'),
         Text('Durée : ${p.durationSeconds}s'),
         Text(
-          'Profondeur max : ${p.maxDepthMeters?.toStringAsFixed(1) ?? '—'} m (${p.depthUnit.name})',
+          'Profondeur max (valeur source) : ${p.maxDepthMeters?.toStringAsFixed(1) ?? '—'} (${p.depthUnit.name})',
         ),
         Text(
-          'Température : ${p.minTemperatureCelsius?.toStringAsFixed(1) ?? '—'} – ${p.maxTemperatureCelsius?.toStringAsFixed(1) ?? '—'} °C (${p.temperatureUnit.name})',
+          'Température (valeurs source) : ${p.minTemperatureCelsius?.toStringAsFixed(1) ?? '—'} – ${p.maxTemperatureCelsius?.toStringAsFixed(1) ?? '—'} (${p.temperatureUnit.name})',
         ),
         Text('Gaz : ${p.gasNumbers.isEmpty ? '—' : p.gasNumbers.join(', ')}'),
         Text(
@@ -130,7 +169,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
           const SizedBox(height: 8),
           ...p.tanks.map(
             (tank) => Text(
-              'Gaz ${tank.gasNumber}: ${tank.startPressureBar?.toStringAsFixed(0) ?? '—'} → ${tank.endPressureBar?.toStringAsFixed(0) ?? '—'} bar (${tank.pressureUnit.name})',
+              'Gaz ${tank.gasNumber}: ${tank.startPressureBar?.toStringAsFixed(0) ?? '—'} → ${tank.endPressureBar?.toStringAsFixed(0) ?? '—'} (pression source, ${tank.pressureUnit.name})',
             ),
           ),
         ],
@@ -145,6 +184,47 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
           const SizedBox(height: 8),
           ...p.warnings.map(Text.new),
         ],
+      ],
+    ),
+  );
+  Widget _locationCard(DiveComputerImportPreview p) => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Site de plongée',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        if (p.locationHint != null && _nearbySites.isNotEmpty)
+          DropdownButtonFormField<DiveSite>(
+            value: _chosenSite,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Sites proches (position non enregistrée)',
+            ),
+            items: _nearbySites
+                .map(
+                  (site) => DropdownMenuItem(
+                    value: site,
+                    child: Text(
+                      '${site.name}${site.distanceKm == null ? '' : ' · ${site.distanceKm!.toStringAsFixed(1)} km'}',
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (site) => setState(() => _chosenSite = site),
+          )
+        else if (p.locationHint != null)
+          const Text(
+            'Aucune source de sites géolocalisés n’est configurée; vous pouvez saisir le site librement.',
+          ),
+        TextField(
+          controller: _freeTextSite,
+          decoration: const InputDecoration(
+            labelText: 'Ou saisir un site librement',
+          ),
+        ),
       ],
     ),
   );

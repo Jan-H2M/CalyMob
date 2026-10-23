@@ -12,7 +12,7 @@ void main() {
       expect(preview.startedAt.toIso8601String(), contains('+02:00'));
       expect(preview.durationSeconds, 4016);
       expect(preview.maxDepthMeters, 61.3);
-      expect(preview.minTemperatureCelsius, closeTo(17.0, .01));
+      expect(preview.minTemperatureCelsius, 290.15);
       expect(preview.tanks.single.startPressureBar, 210);
       expect(preview.tanks.single.endPressureBar, 150);
       expect(preview.gasNumbers, [1]);

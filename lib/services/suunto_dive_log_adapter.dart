@@ -30,7 +30,9 @@ class SuuntoDiveLogAdapter {
       throw const FormatException('Date ou durée de plongée Suunto invalide.');
     }
     final depth = _points(samples, 'Depth', (v) => v);
-    final temperature = _points(samples, 'Temperature', _celsius);
+    // Do not convert temperature: the DeviceLog fixture has no declared unit.
+    // `value` is the original recorded number and the provenance is inferred.
+    final temperature = _points(samples, 'Temperature', (value) => value);
     final pressure = <int, List<DiveProfilePoint>>{};
     final firstPressure = <int, double>{};
     final lastPressure = <int, double>{};
@@ -134,7 +136,6 @@ class SuuntoDiveLogAdapter {
             unit: UnitProvenance.inferred,
           ),
   ];
-  double _celsius(double value) => value >= 200 ? value - 273.15 : value;
   Map<String, dynamic> _map(dynamic value) =>
       value is Map ? Map<String, dynamic>.from(value) : const {};
   double? _number(dynamic value) => value is num ? value.toDouble() : null;

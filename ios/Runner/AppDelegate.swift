@@ -10,6 +10,18 @@ import UserNotifications
   ) -> Bool {
     // Let Flutter's firebase_core handle Firebase initialization
     GeneratedPluginRegistrant.register(with: self)
+    let controller = window?.rootViewController as! FlutterViewController
+    let inbox = FlutterMethodChannel(name: "calymob/suunto_share_inbox", binaryMessenger: controller.binaryMessenger)
+    inbox.setMethodCallHandler { call, result in
+      guard call.method == "consume" else { result(FlutterMethodNotImplemented); return }
+      let group = "group.com.calypso.calymob"
+      guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { result(nil); return }
+      let file = container.appendingPathComponent("suunto-import-inbox.json")
+      guard let bytes = try? Data(contentsOf: file) else { result(nil); return }
+      // Consume first, then delete: the extension cannot leave a persistent copy.
+      try? FileManager.default.removeItem(at: file)
+      result(FlutterStandardTypedData(bytes: bytes))
+    }
 
     // Set up push notifications after Flutter plugins are registered
     if #available(iOS 10.0, *) {
