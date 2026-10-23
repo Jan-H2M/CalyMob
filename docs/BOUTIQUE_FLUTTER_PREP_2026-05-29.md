@@ -20,6 +20,9 @@ Scope: CalyMob leden-app, nog niet algemeen zichtbaar maken.
   additional CalyCompta permissions; the web application's existing role and
   Firestore-rule checks remain authoritative.
 
+> Future mobile operational work is limited first to the pool-handover slice in
+> `BOUTIQUE_POOL_HANDOVER_SCOPE_2026-10-20.md`; management remains in CalyCompta.
+
 ## Huidige stand
 
 - In CalyMob is nog geen echte boutique-module aanwezig.
