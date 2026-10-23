@@ -62,8 +62,8 @@ class CoordinateDiveSiteSource implements DiveSiteSource {
 }
 
 /// Read-only production source. `dive_locations` is the primary club-managed
-/// collection; SSI reference sites are a fallback only when primary results
-/// are unavailable. Coordinates never leave this service as persisted data.
+/// collection; SSI reference sites supplement it. Coordinates never leave this
+/// service as persisted data.
 class FirestoreDiveSiteSource implements DiveSiteSource {
   final FirebaseFirestore _firestore;
   final String clubId;
@@ -74,8 +74,11 @@ class FirestoreDiveSiteSource implements DiveSiteSource {
   @override
   Future<List<DiveSite>> nearby(DiveLocationHint hint) async {
     final primary = await _load('dive_locations', skipMerged: true);
-    final sites =
-        primary.isNotEmpty ? primary : await _load('reference_dive_sites');
+    final fallback = await _load('reference_dive_sites');
+    final sites = <String, DiveSite>{
+      for (final site in fallback) site.id: site,
+      for (final site in primary) site.id: site,
+    }.values.toList();
     return CoordinateDiveSiteSource(() async => sites).nearby(hint);
   }
 

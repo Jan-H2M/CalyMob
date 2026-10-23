@@ -2446,7 +2446,12 @@ service cloud.firestore {
         resource.data.owner_id == request.auth.uid || isAdmin(clubId) || isEncadrantForClub(clubId)
       );
       allow create: if isMember(clubId) && request.resource.data.owner_id == request.auth.uid;
-      allow update: if false;
+      allow update: if isMember(clubId)
+        && resource.data.owner_id == request.auth.uid
+        && request.resource.data.owner_id == resource.data.owner_id
+        && request.resource.data.source_hash == resource.data.source_hash
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['entry_id', 'started_at', 'duration_seconds', 'retention', 'route_opt_in', 'source_path', 'profile_path', 'status', 'updated_at']);
       allow delete: if isMember(clubId) && resource.data.owner_id == request.auth.uid;
     }
 

@@ -23,3 +23,14 @@ nearest-first (km). The chosen site id/name may be saved; coordinates, route
 geometry, device serials, names and the `Personal` payload are never stored by
 default. No global dive-site coordinate collection was confirmed during this
 work, so the production site source remains an explicit integration item.
+
+## Storage boundary
+
+Storage Rules can limit owner, path, size and JSON content type, but cannot
+inspect JSON to prove that GPS, serials or personal data were stripped. The
+current client sanitiser is therefore a privacy best-effort, not a trust
+boundary. Before a production rollout, move sanitisation/finalisation to a
+trusted server pipeline or prohibit direct raw-source uploads entirely. The
+import service uses a deterministic hash-key reservation and best-effort
+rollback for failed multi-service saves; emulator tests must be run before any
+rules deployment.

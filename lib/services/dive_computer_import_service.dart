@@ -43,67 +43,98 @@ class DiveComputerImportService {
     String? locationName,
     bool routeOptIn = false,
   }) async {
-    final duplicate = await _findDuplicate(clubId, memberId, preview);
+    final duplicate = await _findNearDuplicate(clubId, memberId, preview);
     if (duplicate != null) throw DuplicateDiveComputerImport(duplicate);
-    final importRef = _imports(clubId).doc();
+    final importRef = _imports(clubId).doc('${memberId}_${preview.sourceHash}');
+    await _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(importRef);
+      if (existing.exists) {
+        throw DuplicateDiveComputerImport(
+            (existing.data()?['entry_id'] as String?) ?? '');
+      }
+      transaction.set(importRef, {
+        'owner_id': memberId,
+        'source_hash': preview.sourceHash,
+        'vendor': preview.vendor,
+        'status': 'pending',
+        'created_at': FieldValue.serverTimestamp(),
+      });
+    });
     final safeSource =
         privacyFilteredSource(originalBytes, allowRoute: routeOptIn);
     final base =
         'clubs/$clubId/dive_computer_imports/$memberId/${importRef.id}';
-    await _storage
-        .ref('$base/source.json')
-        .putData(safeSource, SettableMetadata(contentType: 'application/json'));
-    await _storage.ref('$base/profile-v1.json').putString(
-        jsonEncode(preview.profile.toStorageJson()),
-        SettableMetadata(contentType: 'application/json'));
-    final entry = StudentLogbookEntry(
-      id: '', memberId: memberId, memberName: memberName,
-      source: 'dive_computer',
-      date: preview.startedAt, locationId: locationId,
-      locationName: locationName ?? '(à compléter)',
-      // The shared Carnet field is explicitly metres: only populate it when
-      // the adapter has a declared unit. Inferred/raw values remain metadata.
-      depthMaxMeters: preview.depthUnit == UnitProvenance.declared
-          ? preview.maxDepthValue
-          : null,
-      durationMinutes: preview.durationMinutes,
-    );
-    final entryId =
-        await _logbook.create(clubId: clubId, entry: entry, extras: {
-      'computer_import': preview.computerImportMetadata(
-          importId: importRef.id, retention: retention, routeOptIn: routeOptIn),
-      if (preview.maxDepthValue != null)
-        'computer_source_depth_max_value': preview.maxDepthValue,
-      'entry_time': Timestamp.fromDate(preview.startedAt),
-      'entry_time_str': _formatTime(preview.startedAt),
-      'tank_summaries': preview.tanks.map((tank) => tank.toMap()).toList(),
-      'computer_events': preview.events.map((event) => event.toMap()).toList(),
-    });
-    await importRef.set({
-      'owner_id': memberId,
-      'entry_id': entryId,
-      'source_hash': preview.sourceHash,
-      'vendor': preview.vendor,
-      'started_at': Timestamp.fromDate(preview.startedAt),
-      'duration_seconds': preview.durationSeconds,
-      'retention': retention,
-      'route_opt_in': routeOptIn,
-      'source_path': '$base/source.json',
-      'profile_path': '$base/profile-v1.json',
-      'created_at': FieldValue.serverTimestamp(),
-    });
-    return entryId;
+    String? createdEntryId;
+    try {
+      await _storage.ref('$base/source.json').putData(
+          safeSource, SettableMetadata(contentType: 'application/json'));
+      await _storage.ref('$base/profile-v1.json').putString(
+          jsonEncode(preview.profile.toStorageJson()),
+          SettableMetadata(contentType: 'application/json'));
+      final entry = StudentLogbookEntry(
+        id: '', memberId: memberId, memberName: memberName,
+        source: 'dive_computer',
+        date: preview.startedAt, locationId: locationId,
+        locationName: locationName ?? '(à compléter)',
+        // The shared Carnet field is explicitly metres: only populate it when
+        // the adapter has a declared unit. Inferred/raw values remain metadata.
+        depthMaxMeters: preview.depthUnit == UnitProvenance.declared
+            ? preview.maxDepthValue
+            : null,
+        durationMinutes: preview.durationMinutes,
+      );
+      final entryId =
+          await _logbook.create(clubId: clubId, entry: entry, extras: {
+        'computer_import': preview.computerImportMetadata(
+            importId: importRef.id,
+            retention: retention,
+            routeOptIn: routeOptIn),
+        if (preview.maxDepthValue != null)
+          'computer_source_depth_max_value': preview.maxDepthValue,
+        'entry_time': Timestamp.fromDate(preview.startedAt),
+        'entry_time_str': _formatTime(preview.startedAt),
+        'tank_summaries': preview.tanks.map((tank) => tank.toMap()).toList(),
+        'computer_events':
+            preview.events.map((event) => event.toMap()).toList(),
+      });
+      createdEntryId = entryId;
+      await importRef.update({
+        'owner_id': memberId,
+        'entry_id': entryId,
+        'source_hash': preview.sourceHash,
+        'vendor': preview.vendor,
+        'started_at': Timestamp.fromDate(preview.startedAt),
+        'duration_seconds': preview.durationSeconds,
+        'retention': retention,
+        'route_opt_in': routeOptIn,
+        'source_path': '$base/source.json',
+        'profile_path': '$base/profile-v1.json',
+        'status': 'complete',
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      return entryId;
+    } catch (_) {
+      // Roll back pending metadata and uploaded objects after a partial save.
+      try {
+        await _storage.ref('$base/source.json').delete();
+      } catch (_) {}
+      try {
+        await _storage.ref('$base/profile-v1.json').delete();
+      } catch (_) {}
+      if (createdEntryId != null) {
+        try {
+          await _logbook.delete(clubId: clubId, entryId: createdEntryId);
+        } catch (_) {}
+      }
+      try {
+        await importRef.delete();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
-  Future<String?> _findDuplicate(
+  Future<String?> _findNearDuplicate(
       String clubId, String memberId, DiveComputerImportPreview preview) async {
-    final exact = await _imports(clubId)
-        .where('owner_id', isEqualTo: memberId)
-        .where('source_hash', isEqualTo: preview.sourceHash)
-        .limit(1)
-        .get();
-    if (exact.docs.isNotEmpty)
-      return exact.docs.first.data()['entry_id'] as String?;
     final from = Timestamp.fromDate(
         preview.startedAt.subtract(const Duration(minutes: 2)));
     final until =
