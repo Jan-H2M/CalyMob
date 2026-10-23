@@ -1,1 +1,1 @@
-Amélioration du rangement piscine, stabilité des conversations d’équipe, fiabilité du compteur de messages et contrôle renforcé de la confidentialité des anniversaires.
+Variantes plus claires, gestion boutique via CalyCompta, coordonnées Who is Who restaurées et import de plongées Suunto, UDDF, Garmin FIT et Subsurface dans le carnet.
