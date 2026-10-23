@@ -2439,6 +2439,17 @@ service cloud.firestore {
         && resource.data.member_id == request.auth.uid;
     }
 
+    // Private metadata for a dive-computer import. Raw/source/profile objects
+    // live in owner-scoped Storage; clients never receive another member's log.
+    match /clubs/{clubId}/dive_computer_imports/{importId} {
+      allow read: if isMember(clubId) && (
+        resource.data.owner_id == request.auth.uid || isAdmin(clubId) || isEncadrantForClub(clubId)
+      );
+      allow create: if isMember(clubId) && request.resource.data.owner_id == request.auth.uid;
+      allow update: if false;
+      allow delete: if isMember(clubId) && resource.data.owner_id == request.auth.uid;
+    }
+
     // --- logbook_dive_confirmations ------------------------------------------
     // Demandes de confirmation de plongée entre binômes. Tous les writes
     // passent exclusivement par les Cloud Functions (Admin SDK):

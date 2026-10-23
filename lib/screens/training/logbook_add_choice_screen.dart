@@ -5,6 +5,7 @@ import 'logbook_entry_screen.dart';
 import 'logbook_ocr_capture_screen.dart';
 import 'logbook_xlsx_import_screen.dart';
 import 'suunto_import_screen.dart';
+import '../../services/dive_site_source.dart';
 
 class LogbookAddChoiceScreen extends StatelessWidget {
   const LogbookAddChoiceScreen({super.key});
@@ -63,8 +64,13 @@ class LogbookAddChoiceScreen extends StatelessWidget {
               _ChoiceButton(
                 icon: Icons.scuba_diving_outlined,
                 title: 'Importer depuis Suunto',
-                subtitle: 'Choisir et vérifier un export .json depuis Fichiers.',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SuuntoImportScreen())),
+                subtitle:
+                    'Choisir et vérifier un export .json depuis Fichiers.',
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => SuuntoImportScreen(
+                            diveSiteSource: FirestoreDiveSiteSource()))),
               ),
               const SizedBox(height: 12),
               _ChoiceButton(
