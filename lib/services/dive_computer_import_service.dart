@@ -41,7 +41,6 @@ class DiveComputerImportService {
     required String retention,
     String? locationId,
     String? locationName,
-    bool routeOptIn = false,
   }) async {
     // Start/duration similarity is deliberately advisory: a client-side query
     // cannot safely be the authority that refuses a new dive. Exact source
@@ -91,8 +90,7 @@ class DiveComputerImportService {
           await _logbook.create(clubId: clubId, entry: entry, extras: {
         'computer_import': preview.computerImportMetadata(
             importId: importRef.id,
-            retention: retention,
-            routeOptIn: routeOptIn),
+            retention: retention),
         if (preview.maxDepthValue != null)
           'computer_source_depth_max_value': preview.maxDepthValue,
         'entry_time': Timestamp.fromDate(preview.startedAt),
@@ -110,7 +108,6 @@ class DiveComputerImportService {
         'started_at': Timestamp.fromDate(preview.startedAt),
         'duration_seconds': preview.durationSeconds,
         'retention': retention,
-        'route_opt_in': routeOptIn,
         if (safeSource != null) 'source_path': '$base/source.json',
         'profile_path': '$base/profile-v1.json',
         'status': 'complete',
@@ -188,8 +185,7 @@ class DiveComputerImportService {
 
   /// Public pure helper for emulator/unit tests. It is the only source object
   /// allowed to reach Storage; original device bytes are never uploaded.
-  static Uint8List privacyFilteredSource(Uint8List original,
-      {required bool allowRoute}) {
+  static Uint8List privacyFilteredSource(Uint8List original) {
     final decoded = jsonDecode(utf8.decode(original));
     dynamic strip(dynamic value, [String key = '']) {
       if (value is List) return value.map((item) => strip(item, key)).toList();
@@ -210,7 +206,7 @@ class DiveComputerImportService {
             name == 'DiveRouteOrigin' ||
             name == 'DiveRouteDistance' ||
             name == 'DiveRouteQuality';
-        if (sensitive.contains(name) || (!allowRoute && route)) continue;
+        if (sensitive.contains(name) || route) continue;
         out[name] = strip(raw.value, name);
       }
       return out;
