@@ -1,3 +1,6 @@
+// NOT DEPLOYED. Firestore/Storage rules and indexes for Firebase project calycompta
+// live in Jan-H2M/CalyCompta (single source of truth). This copy is kept only as a
+// fixture for the local rules tests in scripts/ and may lag behind CalyCompta.
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
