@@ -17,6 +17,8 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		AD848329F89AB853275432F6 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EF68495F5DF9FD4EFA85997D /* Pods_Runner.framework */; };
 		PRIVACY001CF9000F007C117D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PRIVACY002CF9000F007C117D /* PrivacyInfo.xcprivacy */; };
+		136000000000000000000011 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136000000000000000000001 /* ShareViewController.swift */; };
+		136000000000000000000012 /* CalyMobSuuntoShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 136000000000000000000004 /* CalyMobSuuntoShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +40,15 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		136000000000000000000021 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (136000000000000000000012 /* CalyMobSuuntoShare.appex in Embed App Extensions */, );
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -68,6 +79,10 @@
 		D4B9C84CAEEA2DC7986BFA82 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		EF68495F5DF9FD4EFA85997D /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		PRIVACY002CF9000F007C117D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		136000000000000000000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		136000000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		136000000000000000000003 /* CalyMobSuuntoShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CalyMobSuuntoShare.entitlements; sourceTree = "<group>"; };
+		136000000000000000000004 /* CalyMobSuuntoShare.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = CalyMobSuuntoShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -118,6 +133,7 @@
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				F646D0757CE9A056B92A4DC8 /* Pods */,
 				AA19A54F5F89BD2ABB24F86B /* Frameworks */,
+				136000000000000000000005 /* ShareExtension */,
 			);
 			sourceTree = "<group>";
 		};
@@ -126,8 +142,15 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				136000000000000000000004 /* CalyMobSuuntoShare.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		136000000000000000000005 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (136000000000000000000001 /* ShareViewController.swift */, 136000000000000000000002 /* Info.plist */, 136000000000000000000003 /* CalyMobSuuntoShare.entitlements */, );
+			path = ShareExtension;
 			sourceTree = "<group>";
 		};
 		97C146F01CF9000F007C117D /* Runner */ = {
@@ -204,6 +227,7 @@
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				43771E1ED7166A2AAE026DD4 /* [CP] Embed Pods Frameworks */,
 				EDBA84EF6E2A487F0231C1CB /* [CP] Copy Pods Resources */,
+				136000000000000000000021 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
@@ -213,6 +237,17 @@
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		136000000000000000000010 /* CalyMobSuuntoShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 136000000000000000000041 /* Build configuration list for PBXNativeTarget "CalyMobSuuntoShare" */;
+			buildPhases = (136000000000000000000031 /* Sources */, );
+			buildRules = ();
+			dependencies = ();
+			name = CalyMobSuuntoShare;
+			productName = CalyMobSuuntoShare;
+			productReference = 136000000000000000000004 /* CalyMobSuuntoShare.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -249,6 +284,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				136000000000000000000010 /* CalyMobSuuntoShare */,
 			);
 		};
 /* End PBXProject section */
@@ -388,6 +424,7 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		136000000000000000000031 /* Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (136000000000000000000011 /* ShareViewController.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		331C807D294A63A400263BE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -435,6 +472,9 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		136000000000000000000051 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Debug; };
+		136000000000000000000052 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Release; };
+		136000000000000000000053 /* Profile */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Profile; };
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -727,6 +767,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		136000000000000000000041 /* Build configuration list for PBXNativeTarget "CalyMobSuuntoShare" */ = { isa = XCConfigurationList; buildConfigurations = (136000000000000000000051 /* Debug */, 136000000000000000000052 /* Release */, 136000000000000000000053 /* Profile */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

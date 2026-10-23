@@ -1077,6 +1077,22 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "dive_computer_imports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_id", "order": "ASCENDING" },
+        { "fieldPath": "source_hash", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dive_computer_imports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_id", "order": "ASCENDING" },
+        { "fieldPath": "started_at", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

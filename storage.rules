@@ -363,6 +363,15 @@ service firebase.storage {
                       isValidFileType('image/.*');
     }
 
+    // Sanitised Suunto source/profile exports. The app removes GPS, route,
+    // serial and personal fields before upload unless route opt-in is explicit.
+    match /clubs/{clubId}/dive_computer_imports/{userId}/{importId}/{fileName} {
+      allow read, delete: if isOwner(userId) && isClubMember(clubId);
+      allow create: if isOwner(userId) && isClubMember(clubId)
+        && request.resource.size < 25 * 1024 * 1024
+        && isValidFileType('application/json');
+    }
+
     // Signed card/logbook photos for external formation proof. The member
     // uploads their own file; only that member and Formation reviewers may
     // read it.

@@ -90,5 +90,16 @@
 	<array>
 		<string>waze</string>
 	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Suunto dive log JSON</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSItemContentTypes</key>
+			<array><string>public.json</string><string>public.data</string><string>public.xml</string><string>com.pkware.zip-archive</string></array>
+		</dict>
+	</array>
 </dict>
 </plist>
