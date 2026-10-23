@@ -17,14 +17,20 @@ import UserNotifications
       let group = "group.com.calypso.calymob"
       guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { result(nil); return }
       let manifest = container.appendingPathComponent("suunto-import-manifest.json")
-      guard let manifestData = try? Data(contentsOf: manifest), var names = try? JSONDecoder().decode([String].self, from: manifestData), !names.isEmpty else { result(nil); return }
-      let name = names.removeFirst()
-      let file = container.appendingPathComponent(name)
-      guard let bytes = try? Data(contentsOf: file) else { result(nil); return }
-      // Atomically advance the queue, then delete the one-time handoff.
-      try? JSONEncoder().encode(names).write(to: manifest, options: .atomic)
-      try? FileManager.default.removeItem(at: file)
-      result(FlutterStandardTypedData(bytes: bytes))
+      var resultBytes: Data?
+      var coordinationError: NSError?
+      NSFileCoordinator().coordinate(writingItemAt: manifest, options: .forMerging, error: &coordinationError) { url in
+        guard let manifestData = try? Data(contentsOf: url), var names = try? JSONDecoder().decode([String].self, from: manifestData), !names.isEmpty else { return }
+        let name = names.removeFirst()
+        let file = container.appendingPathComponent(name)
+        guard let bytes = try? Data(contentsOf: file) else { return }
+        try? JSONEncoder().encode(names).write(to: url, options: .atomic)
+        try? FileManager.default.removeItem(at: file)
+        resultBytes = bytes
+      }
+      if coordinationError != nil { result(nil); return }
+      guard let resultBytes else { result(nil); return }
+      result(FlutterStandardTypedData(bytes: resultBytes))
     }
 
     // Set up push notifications after Flutter plugins are registered

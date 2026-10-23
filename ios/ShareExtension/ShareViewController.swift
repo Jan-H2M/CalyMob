@@ -32,8 +32,14 @@ final class ShareViewController: SLComposeServiceViewController {
           try data.write(to: destination, options: .atomic)
         } else { throw NSError(domain: "CalyMobSuuntoShare", code: 4, userInfo: [NSLocalizedDescriptionKey: "Unsupported JSON item."]) }
         let manifestURL = container.appendingPathComponent(self.manifestName)
-        let existing = (try? Data(contentsOf: manifestURL)).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
-        try JSONEncoder().encode(existing + [fileName]).write(to: manifestURL, options: .atomic)
+        // Coordinate with a running host app or another share extension before
+        // read-modify-write, preventing lost handoff names.
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: manifestURL, options: .forMerging, error: &coordinationError) { url in
+          let existing = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+          try? JSONEncoder().encode(existing + [fileName]).write(to: url, options: .atomic)
+        }
+        if let coordinationError { throw coordinationError }
         self.extensionContext?.completeRequest(returningItems: nil)
       } catch { self.extensionContext?.cancelRequest(withError: error) }
     }

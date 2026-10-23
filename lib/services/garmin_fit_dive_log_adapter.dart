@@ -12,13 +12,12 @@ class GarminFitDiveLogAdapter {
   DiveComputerImportPreview parse(List<int> bytes, {bool zip = false}) {
     final fit = zip ? _fitFromZip(bytes) : Uint8List.fromList(bytes);
     // Decode first: do not accept a file merely because it has a .fit suffix.
-    final decoded = FitDecoder(fit).decode();
-    final dynamic file = decoded;
-    final messages = _messages(file);
-    final session = messages.cast<dynamic?>().firstWhere(
-        (m) => '${m?.name ?? m?.type ?? ''}'.toLowerCase().contains('session'),
-        orElse: () => null);
-    final started = _readDate(session, ['startTime', 'start_time']) ??
+    final file = FitDecoder(fit).decode();
+    final session = file.getSessionMessages().isEmpty
+        ? null
+        : file.getSessionMessages().first;
+    final started = session?.timestamp ??
+        _readDate(session, ['start_time']) ??
         DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     final seconds = _readNum(session, [
           'totalElapsedTime',
@@ -62,15 +61,6 @@ class GarminFitDiveLogAdapter {
     if (content is! List<int>)
       throw const FormatException('Fichier FIT illisible dans l’archive.');
     return Uint8List.fromList(content);
-  }
-
-  List _messages(dynamic decoded) {
-    try {
-      final value = decoded.messages;
-      return value is List ? value : const [];
-    } catch (_) {
-      return const [];
-    }
   }
 
   num? _readNum(dynamic object, List<String> names) {
