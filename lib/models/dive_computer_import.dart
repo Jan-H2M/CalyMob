@@ -2,6 +2,9 @@ class DiveComputerImportPreview {
   final String vendor;
   final String sourceHash;
   final DateTime startedAt;
+
+  /// Original ISO-8601 timestamp, including source UTC offset when supplied.
+  final String startedAtSource;
   final int durationSeconds;
   final double? maxDepthValue;
   final UnitProvenance depthUnit;
@@ -20,6 +23,7 @@ class DiveComputerImportPreview {
     required this.sourceHash,
     required this.startedAt,
     required this.durationSeconds,
+    required this.startedAtSource,
     required this.maxDepthValue,
     required this.depthUnit,
     required this.minTemperatureValue,
@@ -39,18 +43,19 @@ class DiveComputerImportPreview {
     required String importId,
     required String retention,
     bool routeOptIn = false,
-  }) => {
-    'id': importId,
-    'vendor': vendor,
-    'adapter_version': 1,
-    'source_hash': sourceHash,
-    'started_at': startedAt.toIso8601String(),
-    'duration_seconds': durationSeconds,
-    'depth_unit': depthUnit.name,
-    'temperature_unit': temperatureUnit.name,
-    'retention': retention,
-    'route_opt_in': routeOptIn,
-  };
+  }) =>
+      {
+        'id': importId,
+        'vendor': vendor,
+        'adapter_version': 1,
+        'source_hash': sourceHash,
+        'started_at': startedAtSource,
+        'duration_seconds': durationSeconds,
+        'depth_unit': depthUnit.name,
+        'temperature_unit': temperatureUnit.name,
+        'retention': retention,
+        'route_opt_in': routeOptIn,
+      };
 }
 
 enum UnitProvenance { declared, inferred, unknown }
@@ -67,11 +72,12 @@ class DiveTankSummary {
     required this.pressureUnit,
   });
   Map<String, dynamic> toMap() => {
-    'gas_number': gasNumber,
-      if (startPressureValue != null) 'start_pressure_value': startPressureValue,
-      if (endPressureValue != null) 'end_pressure_value': endPressureValue,
-    'pressure_unit': pressureUnit.name,
-  };
+        'gas_number': gasNumber,
+        if (startPressureValue != null)
+          'start_pressure_value': startPressureValue,
+        if (endPressureValue != null) 'end_pressure_value': endPressureValue,
+        'pressure_unit': pressureUnit.name,
+      };
 }
 
 class DiveDeviceEvent {
@@ -86,11 +92,11 @@ class DiveDeviceEvent {
     this.gasNumber,
   });
   Map<String, dynamic> toMap() => {
-    'at': at.toIso8601String(),
-    'category': category,
-    if (type != null) 'type': type,
-    if (gasNumber != null) 'gas_number': gasNumber,
-  };
+        'at': at.toIso8601String(),
+        'category': category,
+        if (type != null) 'type': type,
+        if (gasNumber != null) 'gas_number': gasNumber,
+      };
 }
 
 /// Kept in memory for a nearby-site lookup only. It is never serialised.
@@ -113,17 +119,17 @@ class DiveComputerProfile {
     required this.events,
   });
   Map<String, dynamic> toStorageJson() => {
-    'schema_version': 1,
-    'recorded': {
-      'depth': depth.map((p) => p.toMap()).toList(),
-      'temperature': temperature.map((p) => p.toMap()).toList(),
-      'pressure_by_gas': {
-        for (final e in pressureByGas.entries)
-          '${e.key}': e.value.map((p) => p.toMap()).toList(),
-      },
-      'events': events.map((event) => event.toMap()).toList(),
-    },
-  };
+        'schema_version': 1,
+        'recorded': {
+          'depth': depth.map((p) => p.toMap()).toList(),
+          'temperature': temperature.map((p) => p.toMap()).toList(),
+          'pressure_by_gas': {
+            for (final e in pressureByGas.entries)
+              '${e.key}': e.value.map((p) => p.toMap()).toList(),
+          },
+          'events': events.map((event) => event.toMap()).toList(),
+        },
+      };
 }
 
 class DiveProfilePoint {
@@ -136,8 +142,8 @@ class DiveProfilePoint {
     required this.unit,
   });
   Map<String, dynamic> toMap() => {
-    'at': at.toIso8601String(),
-    'value': value,
-    'unit': unit.name,
-  };
+        'at': at.toIso8601String(),
+        'value': value,
+        'unit': unit.name,
+      };
 }

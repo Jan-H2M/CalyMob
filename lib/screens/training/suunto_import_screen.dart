@@ -167,7 +167,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
             ),
             const SizedBox(height: 10),
-            Text('Début : ${p.startedAt.toIso8601String()}'),
+            Text('Début : ${p.startedAtSource}'),
             Text('Durée : ${p.durationSeconds}s'),
             Text(
               'Profondeur max (valeur source) : ${p.maxDepthValue?.toStringAsFixed(1) ?? '—'} (${p.depthUnit.name})',

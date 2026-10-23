@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:calymob/services/uddf_dive_log_adapter.dart';
+import 'package:calymob/models/dive_computer_import.dart';
 
 void main() {
   test('parses a minimal synthetic UDDF dialect', () {

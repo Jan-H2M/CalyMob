@@ -24,7 +24,9 @@ class SuuntoDiveLogAdapter {
       throw const FormatException(
         'L’export Suunto ne contient aucun échantillon.',
       );
-    final start = _date(header['DateTime']) ?? _firstTime(samples);
+    final startSource =
+        _string(header['DateTime']) ?? _firstTimeSource(samples);
+    final start = _date(startSource);
     final duration = _number(header['DiveTime'])?.round();
     if (start == null || duration == null || duration < 1) {
       throw const FormatException('Date ou durée de plongée Suunto invalide.');
@@ -82,23 +84,23 @@ class SuuntoDiveLogAdapter {
     _sort(temperature);
     for (final points in pressure.values) _sort(points);
     events.sort((a, b) => a.at.compareTo(b.at));
-    final tanks =
-        gases
-            .map(
-              (gas) => DiveTankSummary(
-                gasNumber: gas,
-                startPressureValue: firstPressure[gas],
-                endPressureValue: lastPressure[gas],
-                pressureUnit: UnitProvenance.inferred,
-              ),
-            )
-            .toList()
-          ..sort((a, b) => a.gasNumber.compareTo(b.gasNumber));
+    final tanks = gases
+        .map(
+          (gas) => DiveTankSummary(
+            gasNumber: gas,
+            startPressureValue: firstPressure[gas],
+            endPressureValue: lastPressure[gas],
+            pressureUnit: UnitProvenance.inferred,
+          ),
+        )
+        .toList()
+      ..sort((a, b) => a.gasNumber.compareTo(b.gasNumber));
     final headerDepth = _number(_map(header['Depth'])['Max']);
     return DiveComputerImportPreview(
       vendor: 'suunto',
       sourceHash: sha256.convert(bytes).toString(),
       startedAt: start,
+      startedAtSource: startSource,
       durationSeconds: duration,
       maxDepthValue: headerDepth ?? _max(depth),
       depthUnit: UnitProvenance.inferred,
@@ -126,21 +128,31 @@ class SuuntoDiveLogAdapter {
     List<Map<String, dynamic>> rows,
     String field,
     double Function(double) convert,
-  ) => [
-    for (final row in rows)
-      if (_date(row['TimeISO8601']) case final at?)
-        if (_number(row[field]) case final value?)
-          DiveProfilePoint(
-            at: at,
-            value: convert(value),
-            unit: UnitProvenance.inferred,
-          ),
-  ];
+  ) =>
+      [
+        for (final row in rows)
+          if (_date(row['TimeISO8601']) case final at?)
+            if (_number(row[field]) case final value?)
+              DiveProfilePoint(
+                at: at,
+                value: convert(value),
+                unit: UnitProvenance.inferred,
+              ),
+      ];
   Map<String, dynamic> _map(dynamic value) =>
       value is Map ? Map<String, dynamic>.from(value) : const {};
   double? _number(dynamic value) => value is num ? value.toDouble() : null;
   DateTime? _date(dynamic value) =>
       value is String ? DateTime.tryParse(value) : null;
+  String? _string(dynamic value) => value is String ? value : null;
+  String? _firstTimeSource(List<Map<String, dynamic>> rows) {
+    for (final row in rows) {
+      final time = _string(row['TimeISO8601']);
+      if (time != null) return time;
+    }
+    return null;
+  }
+
   DateTime? _firstTime(List<Map<String, dynamic>> rows) {
     for (final row in rows) {
       final time = _date(row['TimeISO8601']);

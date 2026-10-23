@@ -43,8 +43,9 @@ class DiveComputerImportService {
     String? locationName,
     bool routeOptIn = false,
   }) async {
-    final duplicate = await _findNearDuplicate(clubId, memberId, preview);
-    if (duplicate != null) throw DuplicateDiveComputerImport(duplicate);
+    // Start/duration similarity is deliberately advisory: a client-side query
+    // cannot safely be the authority that refuses a new dive. Exact source
+    // hashes below are atomically reserved and are the only hard refusal.
     final importRef = _imports(clubId).doc('${memberId}_${preview.sourceHash}');
     await _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(importRef);
@@ -70,7 +71,7 @@ class DiveComputerImportService {
           safeSource, SettableMetadata(contentType: 'application/json'));
       await _storage.ref('$base/profile-v1.json').putString(
           jsonEncode(preview.profile.toStorageJson()),
-          SettableMetadata(contentType: 'application/json'));
+          metadata: SettableMetadata(contentType: 'application/json'));
       final entry = StudentLogbookEntry(
         id: '', memberId: memberId, memberName: memberName,
         source: 'dive_computer',
@@ -133,7 +134,7 @@ class DiveComputerImportService {
     }
   }
 
-  Future<String?> _findNearDuplicate(
+  Future<String?> findNearDuplicateAdvisory(
       String clubId, String memberId, DiveComputerImportPreview preview) async {
     final from = Timestamp.fromDate(
         preview.startedAt.subtract(const Duration(minutes: 2)));

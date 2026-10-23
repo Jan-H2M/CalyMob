@@ -2445,7 +2445,10 @@ service cloud.firestore {
       allow read: if isMember(clubId) && (
         resource.data.owner_id == request.auth.uid || isAdmin(clubId) || isEncadrantForClub(clubId)
       );
-      allow create: if isMember(clubId) && request.resource.data.owner_id == request.auth.uid;
+      allow create: if isMember(clubId)
+        && request.resource.data.owner_id == request.auth.uid
+        // Hash-keyed reservations cannot be created under another owner’s id.
+        && importId == request.auth.uid + '_' + request.resource.data.source_hash;
       allow update: if isMember(clubId)
         && resource.data.owner_id == request.auth.uid
         && request.resource.data.owner_id == resource.data.owner_id

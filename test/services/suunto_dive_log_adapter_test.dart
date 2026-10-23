@@ -9,7 +9,7 @@ void main() {
     () {
       final preview = adapter.parse(utf8.encode(jsonEncode(_fixture())));
       expect(preview.vendor, 'suunto');
-      expect(preview.startedAt.toIso8601String(), contains('+02:00'));
+      expect(preview.startedAtSource, contains('+02:00'));
       expect(preview.durationSeconds, 4016);
       expect(preview.maxDepthValue, 61.3);
       expect(preview.minTemperatureValue, 290.15);
@@ -49,34 +49,34 @@ void main() {
 
 /// Hand-written fixture: no real name, serial number or coordinates.
 Map<String, dynamic> _fixture() => {
-  'DeviceLog': {
-    'Header': {
-      'DateTime': '2026-10-22T10:38:51.210+02:00',
-      'DiveTime': 4016.5,
-      'Depth': {'Max': 61.3},
-    },
-    'Samples': [
-      {
-        'TimeISO8601': '2026-10-22T10:38:51.210+02:00',
-        'Depth': 0,
-        'Temperature': 290.15,
-        'Cylinders': [
-          {'GasNumber': 1, 'Pressure': 210},
-        ],
-        'DiveRouteOrigin': {'Latitude': 50.0, 'Longitude': 4.0},
-      },
-      {
-        'TimeISO8601': '2026-10-22T10:39:01.210+02:00',
-        'Depth': 61.0,
-        'Temperature': 292.15,
-        'Cylinders': [
-          {'GasNumber': 1, 'Pressure': 150},
-        ],
-        'DiveEvents': {
-          'Warning': {'Type': 'sample-warning', 'Active': true},
-          'GasSwitch': {'GasNumber': 1},
+      'DeviceLog': {
+        'Header': {
+          'DateTime': '2026-10-22T10:38:51.210+02:00',
+          'DiveTime': 4016.5,
+          'Depth': {'Max': 61.3},
         },
+        'Samples': [
+          {
+            'TimeISO8601': '2026-10-22T10:38:51.210+02:00',
+            'Depth': 0,
+            'Temperature': 290.15,
+            'Cylinders': [
+              {'GasNumber': 1, 'Pressure': 210},
+            ],
+            'DiveRouteOrigin': {'Latitude': 50.0, 'Longitude': 4.0},
+          },
+          {
+            'TimeISO8601': '2026-10-22T10:39:01.210+02:00',
+            'Depth': 61.0,
+            'Temperature': 292.15,
+            'Cylinders': [
+              {'GasNumber': 1, 'Pressure': 150},
+            ],
+            'DiveEvents': {
+              'Warning': {'Type': 'sample-warning', 'Active': true},
+              'GasSwitch': {'GasNumber': 1},
+            },
+          },
+        ],
       },
-    ],
-  },
-};
+    };
