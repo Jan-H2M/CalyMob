@@ -157,6 +157,30 @@ class DiveComputerImportService {
     return null;
   }
 
+  /// Removes the Carnet entry, private metadata and both Storage objects.
+  Future<void> deleteImportAndEntry({
+    required String clubId,
+    required String importId,
+    required String entryId,
+  }) async {
+    final ref = _imports(clubId).doc(importId);
+    final snapshot = await ref.get();
+    if (!snapshot.exists) throw StateError('Import introuvable.');
+    final data = snapshot.data()!;
+    for (final field in ['source_path', 'profile_path']) {
+      final path = data[field];
+      if (path is String && path.isNotEmpty) {
+        try {
+          await _storage.ref(path).delete();
+        } on FirebaseException catch (error) {
+          if (error.code != 'object-not-found') rethrow;
+        }
+      }
+    }
+    await _logbook.delete(clubId: clubId, entryId: entryId);
+    await ref.delete();
+  }
+
   /// Public pure helper for emulator/unit tests. It is the only source object
   /// allowed to reach Storage; original device bytes are never uploaded.
   static Uint8List privacyFilteredSource(Uint8List original,

@@ -34,3 +34,11 @@ trusted server pipeline or prohibit direct raw-source uploads entirely. The
 import service uses a deterministic hash-key reservation and best-effort
 rollback for failed multi-service saves; emulator tests must be run before any
 rules deployment.
+
+## Retention and deletion
+
+The user selects retention at import time. Default retention is until the
+Carnet dive is deleted. The detail page offers an owner-only delete action that
+first removes the private source/profile objects, then the Carnet entry and
+import metadata. Route storage remains off by default; an explicit import-time
+opt-in is required before route fields can remain in the filtered source.

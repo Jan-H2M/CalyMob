@@ -27,6 +27,7 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../utils/member_name.dart';
 import 'logbook_entry_screen.dart';
 import '../../services/dive_computer_profile_service.dart';
+import '../../services/dive_computer_import_service.dart';
 
 class LogbookEntryDetailScreen extends StatefulWidget {
   final String entryId;
@@ -148,9 +149,51 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
               memberId: data['member_id'] as String? ?? '',
               computerImport:
                   Map<String, dynamic>.from(data['computer_import'] as Map)),
+          if (_canEdit) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _deleteDiveComputerImport,
+              icon: const Icon(Icons.delete_outline),
+              label:
+                  const Text('Supprimer la plongée et ses données importées'),
+            ),
+          ],
         ],
       ],
     );
+  }
+
+  Future<void> _deleteDiveComputerImport() async {
+    final import = data['computer_import'];
+    final importId = import is Map ? import['id'] as String? : null;
+    if (importId == null) return;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Supprimer l’import ?'),
+              content: const Text(
+                  'La plongée, le fichier importé et le profil enregistré seront supprimés.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Annuler')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Supprimer'))
+              ],
+            ));
+    if (confirmed != true || !mounted) return;
+    try {
+      await DiveComputerImportService().deleteImportAndEntry(
+          clubId: FirebaseConfig.defaultClubId,
+          importId: importId,
+          entryId: entryId);
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Suppression impossible : $error')));
+    }
   }
 
   /// Pool entries are a different beast. No equipment, no binôme list, no
