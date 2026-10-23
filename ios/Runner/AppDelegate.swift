@@ -43,9 +43,15 @@ import UserNotifications
             resultValue = ["id": item.id, "filename": item.originalName, "uti": item.uti, "bytes": FlutterStandardTypedData(bytes: bytes)]
           } else {
             guard let id = call.arguments as? String, let index = items.firstIndex(where: { $0.id == id }) else { return }
-            let item = items.remove(at: index)
+            let item = items[index]
+            let payloadURL = container.appendingPathComponent(item.storedName)
+            // Preserve the manifest record if deletion fails, so a later retry can
+            // still clean up the shared file. A missing file is already clean.
+            if FileManager.default.fileExists(atPath: payloadURL.path) {
+              try FileManager.default.removeItem(at: payloadURL)
+            }
+            items.remove(at: index)
             try JSONEncoder().encode(items).write(to: url, options: .atomic)
-            try FileManager.default.removeItem(at: container.appendingPathComponent(item.storedName))
           }
         } catch {
           manifestError = error
