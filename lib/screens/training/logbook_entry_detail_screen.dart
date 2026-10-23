@@ -26,6 +26,7 @@ import '../../config/firebase_config.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../utils/member_name.dart';
 import 'logbook_entry_screen.dart';
+import '../../services/dive_computer_profile_service.dart';
 
 class LogbookEntryDetailScreen extends StatefulWidget {
   final String entryId;
@@ -141,6 +142,13 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
           themeSnapshot: themeSnapshot,
           validatorId: validatorId,
         ),
+        if (source == 'dive_computer' && data['computer_import'] is Map) ...[
+          const SizedBox(height: 12),
+          _DiveComputerProfileSection(
+              memberId: data['member_id'] as String? ?? '',
+              computerImport:
+                  Map<String, dynamic>.from(data['computer_import'] as Map)),
+        ],
       ],
     );
   }
@@ -1427,6 +1435,10 @@ class _SourceCard extends StatelessWidget {
       case 'imported':
         lines.add(_line(Icons.cloud_download, 'Importée'));
         break;
+      case 'dive_computer':
+        lines.add(_line(Icons.scuba_diving_outlined,
+            'Importée depuis un ordinateur de plongée'));
+        break;
       case 'manual':
       default:
         lines.add(_line(Icons.edit_note, 'Saisie manuelle'));
@@ -1481,5 +1493,170 @@ class _SourceCard extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _DiveComputerProfileSection extends StatefulWidget {
+  final String memberId;
+  final Map<String, dynamic> computerImport;
+  const _DiveComputerProfileSection(
+      {required this.memberId, required this.computerImport});
+  @override
+  State<_DiveComputerProfileSection> createState() =>
+      _DiveComputerProfileSectionState();
+}
+
+class _DiveComputerProfileSectionState
+    extends State<_DiveComputerProfileSection> {
+  late final Future<Map<String, dynamic>?> _profile = _load();
+  bool _showTemperature = true;
+  bool _showPressure = true;
+  Future<Map<String, dynamic>?> _load() {
+    final id = widget.computerImport['id'] as String?;
+    if (id == null || widget.memberId.isEmpty) return Future.value(null);
+    return DiveComputerProfileService().load(
+        'clubs/${FirebaseConfig.defaultClubId}/dive_computer_imports/${widget.memberId}/$id/profile-v1.json');
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
+      future: _profile,
+      builder: (context, snapshot) {
+        if (snapshot.hasError)
+          return const _Card(child: Text('Profil enregistré indisponible.'));
+        if (!snapshot.hasData)
+          return const _Card(
+              child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: CircularProgressIndicator()));
+        final recorded = Map<String, dynamic>.from(
+            (snapshot.data?['recorded'] as Map?) ?? const {});
+        return _Card(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const _SectionLabel('PROFIL ENREGISTRÉ PAR L’APPAREIL'),
+          const SizedBox(height: 8),
+          const Text(
+              'Données enregistrées par l’appareil. CalyMob ne calcule aucun conseil de décompression.',
+              style: TextStyle(fontSize: 12)),
+          Wrap(children: [
+            FilterChip(
+                label: const Text('Température'),
+                selected: _showTemperature,
+                onSelected: (v) => setState(() => _showTemperature = v)),
+            const SizedBox(width: 6),
+            FilterChip(
+                label: const Text('Pression'),
+                selected: _showPressure,
+                onSelected: (v) => setState(() => _showPressure = v)),
+          ]),
+          SizedBox(
+              height: 190,
+              child: _RecordedProfileGraph(
+                  recorded: recorded,
+                  showTemperature: _showTemperature,
+                  showPressure: _showPressure)),
+          _RecordedEventLegend(
+              events: (recorded['events'] as List? ?? const [])),
+          const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                  'Les segments et l’échelle sont des aides visuelles dérivées; profondeur, température, pression et événements restent des valeurs enregistrées.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54))),
+        ]));
+      });
+}
+
+class _RecordedProfileGraph extends StatelessWidget {
+  final Map<String, dynamic> recorded;
+  final bool showTemperature;
+  final bool showPressure;
+  const _RecordedProfileGraph(
+      {required this.recorded,
+      required this.showTemperature,
+      required this.showPressure});
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Profil: profondeur inversée; les valeurs restent celles de l’appareil.'))),
+        child: CustomPaint(
+            painter: _ProfilePainter(recorded, showTemperature, showPressure),
+            child: const SizedBox.expand()),
+      );
+}
+
+class _ProfilePainter extends CustomPainter {
+  final Map<String, dynamic> recorded;
+  final bool temp;
+  final bool pressure;
+  _ProfilePainter(this.recorded, this.temp, this.pressure);
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size,
+        Paint()..color = Colors.blueGrey.withValues(alpha: .08));
+    _draw(canvas, size, recorded['depth'] as List? ?? const [], Colors.blue,
+        invert: true);
+    if (temp)
+      _draw(canvas, size, recorded['temperature'] as List? ?? const [],
+          Colors.orange);
+    if (pressure)
+      for (final raw in (recorded['pressure_by_gas'] as Map? ?? const {})
+          .values) _draw(canvas, size, raw as List? ?? const [], Colors.green);
+  }
+
+  void _draw(Canvas canvas, Size size, List rows, Color color,
+      {bool invert = false}) {
+    final values = rows
+        .whereType<Map>()
+        .map((p) => (p['value'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    if (values.length < 2) return;
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final range = (max - min).abs() < .0001 ? 1 : max - min;
+    final path = Path();
+    for (var i = 0; i < values.length; i++) {
+      final x = size.width * i / (values.length - 1);
+      final y = 8 +
+          (size.height - 16) *
+              (invert
+                  ? (values[i] - min) / range
+                  : 1 - (values[i] - min) / range);
+      if (i == 0)
+        path.moveTo(x, y);
+      else
+        path.lineTo(x, y);
+    }
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProfilePainter old) =>
+      old.recorded != recorded || old.temp != temp || old.pressure != pressure;
+}
+
+class _RecordedEventLegend extends StatelessWidget {
+  final List events;
+  const _RecordedEventLegend({required this.events});
+  @override
+  Widget build(BuildContext context) {
+    final labels = events
+        .whereType<Map>()
+        .map((e) => e['category']?.toString())
+        .whereType<String>()
+        .where((x) => x.isNotEmpty)
+        .toSet();
+    return labels.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text('Événements enregistrés : ${labels.join(', ')}'));
   }
 }
