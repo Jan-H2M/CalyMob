@@ -28,7 +28,7 @@ class SubsurfaceDiveLogAdapter {
         vendor: 'subsurface',
         sourceHash: sha256.convert(bytes).toString(),
         startedAt: start,
-        startedAtSource: source,
+        startedAtSource: source!,
         durationSeconds: duration,
         maxDepthValue: double.tryParse(dive.getAttribute('maxdepth') ?? '') ??
             _max(depths),
