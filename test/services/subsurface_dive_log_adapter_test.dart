@@ -10,5 +10,6 @@ void main() {
     expect(result.vendor, 'subsurface');
     expect(result.durationSeconds, 1800);
     expect(result.startedAtSource, contains('+02:00'));
+    expect(result.profile.depth.single.at, result.startedAt);
   });
 }

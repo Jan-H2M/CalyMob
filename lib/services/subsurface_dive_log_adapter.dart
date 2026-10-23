@@ -22,8 +22,8 @@ class SubsurfaceDiveLogAdapter {
         double.tryParse(dive.getAttribute('duration') ?? '')?.round() ?? 0;
     if (start == null || duration < 1)
       throw const FormatException('Date ou durée Subsurface invalide.');
-    final depths = _values(dive, 'depth');
-    final temps = _values(dive, 'temperature');
+    final depths = _values(dive, 'depth', start);
+    final temps = _values(dive, 'temperature', start);
     return DiveComputerImportPreview(
         vendor: 'subsurface',
         sourceHash: sha256.convert(bytes).toString(),
@@ -48,14 +48,14 @@ class SubsurfaceDiveLogAdapter {
         warnings: const []);
   }
 
-  List<DiveProfilePoint> _values(XmlElement root, String name) => [
+  List<DiveProfilePoint> _values(
+          XmlElement root, String name, DateTime start) =>
+      [
         for (final e in root.descendants.whereType<XmlElement>())
           if (e.name.local.toLowerCase() == name)
             if (double.tryParse(e.innerText.trim()) case final value?)
               DiveProfilePoint(
-                  at: DateTime.fromMillisecondsSinceEpoch(0),
-                  value: value,
-                  unit: UnitProvenance.unknown)
+                  at: start, value: value, unit: UnitProvenance.unknown)
       ];
   double? _min(List<DiveProfilePoint> x) =>
       x.isEmpty ? null : x.map((p) => p.value).reduce((a, b) => a < b ? a : b);

@@ -35,6 +35,13 @@ import service uses a deterministic hash-key reservation and best-effort
 rollback for failed multi-service saves; emulator tests must be run before any
 rules deployment.
 
+For v1, only Suunto JSON has a field-level sanitiser and may be retained after
+filtering. FIT, ZIP-FIT, UDDF and Subsurface sources are **not retained**:
+only their normalised profile is stored. This avoids a false promise that
+Storage Rules can inspect vendor-specific raw data. A trusted server-side
+sanitisation/finalisation service remains a required blocker before any future
+raw-file retention expansion.
+
 ## Retention and deletion
 
 The user selects retention at import time. Default retention is until the

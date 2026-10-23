@@ -61,14 +61,20 @@ class DiveComputerImportService {
         'created_at': FieldValue.serverTimestamp(),
       });
     });
-    final safeSource =
-        privacyFilteredSource(originalBytes, allowRoute: routeOptIn);
+    // Only Suunto JSON has an audited field-level sanitiser. FIT/ZIP/XML raw
+    // files may contain identifiers/GPS in vendor-specific forms, so v1 never
+    // uploads them; it stores only the privacy-filtered normalized profile.
+    final safeSource = preview.vendor == 'suunto'
+        ? privacyFilteredSource(originalBytes, allowRoute: routeOptIn)
+        : null;
     final base =
         'clubs/$clubId/dive_computer_imports/$memberId/${importRef.id}';
     String? createdEntryId;
     try {
-      await _storage.ref('$base/source.json').putData(
-          safeSource, SettableMetadata(contentType: 'application/json'));
+      if (safeSource != null) {
+        await _storage.ref('$base/source.json').putData(
+            safeSource, SettableMetadata(contentType: 'application/json'));
+      }
       await _storage.ref('$base/profile-v1.json').putString(
           jsonEncode(preview.profile.toStorageJson()),
           metadata: SettableMetadata(contentType: 'application/json'));
@@ -108,7 +114,7 @@ class DiveComputerImportService {
         'duration_seconds': preview.durationSeconds,
         'retention': retention,
         'route_opt_in': routeOptIn,
-        'source_path': '$base/source.json',
+        if (safeSource != null) 'source_path': '$base/source.json',
         'profile_path': '$base/profile-v1.json',
         'status': 'complete',
         'updated_at': FieldValue.serverTimestamp(),
@@ -116,9 +122,11 @@ class DiveComputerImportService {
       return entryId;
     } catch (_) {
       // Roll back pending metadata and uploaded objects after a partial save.
-      try {
-        await _storage.ref('$base/source.json').delete();
-      } catch (_) {}
+      if (safeSource != null) {
+        try {
+          await _storage.ref('$base/source.json').delete();
+        } catch (_) {}
+      }
       try {
         await _storage.ref('$base/profile-v1.json').delete();
       } catch (_) {}
