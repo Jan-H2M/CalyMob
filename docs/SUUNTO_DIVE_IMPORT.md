@@ -52,3 +52,6 @@ published package metadata); no Garmin cloud/API access, GPL code, Subsurface
 code or `libdivecomputer` is linked. The dependency must be reviewed again at
 upgrade time. Files picker and iOS registration accept JSON, FIT, ZIP, UDDF,
 XML and SSRF; the native share handoff still validates final bytes in Dart.
+Subsurface support is a new, independently-written XML reader only: binary
+`.ssrf` exports receive an actionable XML-export prompt. No GPL Subsurface
+source and no `libdivecomputer` library is copied or linked.

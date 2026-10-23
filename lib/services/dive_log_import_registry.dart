@@ -3,6 +3,7 @@ import '../models/dive_computer_import.dart';
 import 'suunto_dive_log_adapter.dart';
 import 'uddf_dive_log_adapter.dart';
 import 'garmin_fit_dive_log_adapter.dart';
+import 'subsurface_dive_log_adapter.dart';
 
 /// Extension plus content sniffing prevents a renamed unrelated file from
 /// reaching a vendor parser. Future adapters stay behind this same boundary.
@@ -28,6 +29,9 @@ class DiveLogImportRegistry {
     if (lower.endsWith('.uddf') ||
         (lower.endsWith('.xml') && _utf8Contains(bytes, '<uddf')))
       return const UddfDiveLogAdapter().parse(bytes);
+    if ((lower.endsWith('.xml') || lower.endsWith('.ssrf')) &&
+        _utf8Contains(bytes, '<dive'))
+      return const SubsurfaceDiveLogAdapter().parse(bytes);
     throw const FormatException(
         'Format de journal non reconnu ou non pris en charge.');
   }
