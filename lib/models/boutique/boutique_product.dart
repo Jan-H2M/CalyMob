@@ -59,16 +59,43 @@ class BoutiqueVariant {
   bool get hasStock => stockCount == null || stockCount! > 0 || allowBackorder;
 
   factory BoutiqueVariant.fromMap(Map<String, dynamic> data) {
+    final attributes = Map<String, dynamic>.from(data['attributes'] ?? {});
+    final explicitLabel = data['label']?.toString().trim() ?? '';
+    final derivedLabel = deriveBoutiqueVariantLabel(attributes);
+
     return BoutiqueVariant(
       id: data['id']?.toString() ?? '',
-      label: data['label']?.toString() ?? 'Standard',
+      label: explicitLabel.isNotEmpty
+          ? explicitLabel
+          : derivedLabel.isNotEmpty
+              ? derivedLabel
+              : 'Standard',
       sku: data['sku']?.toString(),
-      attributes: Map<String, dynamic>.from(data['attributes'] ?? {}),
+      attributes: attributes,
       stockCount: _nullableInt(data['stockCount']),
       allowBackorder: data['allowBackorder'] == true,
       salePriceOverride: _nullableDouble(data['salePriceOverride']),
     );
   }
+}
+
+/// Returns the canonical, human-readable fallback for an unlabeled catalogue
+/// variant. Keep this field order aligned with CalyCompta so both clients show
+/// the same option: size, colour, then model/cut.
+String deriveBoutiqueVariantLabel(Map<String, dynamic> attributes) {
+  String firstNonEmpty(List<String> keys) {
+    for (final key in keys) {
+      final value = attributes[key];
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+    return '';
+  }
+
+  return [
+    firstNonEmpty(const ['taille', 'size']),
+    firstNonEmpty(const ['couleur', 'color']),
+    firstNonEmpty(const ['coupe', 'genre']),
+  ].where((value) => value.isNotEmpty).join(' · ');
 }
 
 class BoutiqueProduct {

@@ -105,4 +105,47 @@ void main() {
     expect(legacyName.priceForText('A'), 0.5);
     expect(legacyName.priceForText('ABCD'), 2);
   });
+
+  group('BoutiqueVariant labels', () {
+    test('derives an empty label using the CalyCompta attribute order', () {
+      final variant = BoutiqueVariant.fromMap({
+        'id': 'polo-blue-l',
+        'label': '  ',
+        'attributes': {
+          'taille': ' L ',
+          'couleur': ' Bleu ',
+          'coupe': ' Homme ',
+        },
+      });
+
+      expect(variant.label, 'L · Bleu · Homme');
+    });
+
+    test('supports the English and legacy model attribute aliases', () {
+      final variant = BoutiqueVariant.fromMap({
+        'id': 'shirt-red-m',
+        'attributes': {'size': 'M', 'color': 'Red', 'genre': 'Unisex'},
+      });
+
+      expect(variant.label, 'M · Red · Unisex');
+    });
+
+    test(
+      'keeps an explicit label and falls back to Standard without attributes',
+      () {
+        expect(
+          BoutiqueVariant.fromMap({
+            'id': 'explicit',
+            'label': 'Limited edition',
+            'attributes': {'size': 'L'},
+          }).label,
+          'Limited edition',
+        );
+        expect(
+          BoutiqueVariant.fromMap({'id': 'standard', 'label': ' '}).label,
+          'Standard',
+        );
+      },
+    );
+  });
 }
