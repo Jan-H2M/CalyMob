@@ -32,3 +32,12 @@ describe('resolution feedback attachment contract', () => {
       .toThrow('Au plus');
   });
 });
+
+describe('bug resolution feedback callables', () => {
+  test('deploy to europe-west1, where CalyMob and CalyCompta call them', () => {
+    const { queueBugResolutionFeedbackV1, respondToBugResolutionFeedbackV1 } = require('./bugResolutionFeedback');
+    for (const fn of [queueBugResolutionFeedbackV1, respondToBugResolutionFeedbackV1]) {
+      expect(fn.__endpoint.region).toEqual(['europe-west1']);
+    }
+  });
+});
