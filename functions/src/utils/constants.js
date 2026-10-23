@@ -3,6 +3,9 @@
  */
 
 module.exports = {
+  /** Standaardregio voor Cloud Functions (clients roepen europe-west1 aan) */
+  REGION: 'europe-west1',
+
   /** Aantal dagen na date_fin waarbinnen event-berichten nog unread counts incrementeren */
   EVENT_EXPIRY_GRACE_DAYS: 7,
 
