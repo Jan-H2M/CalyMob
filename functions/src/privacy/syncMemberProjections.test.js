@@ -15,6 +15,41 @@ const {
 const admin = require('firebase-admin');
 
 describe('member privacy projections', () => {
+  test('projects legacy telephone and modern phone_number after implicit legacy consent', () => {
+    expect(buildMemberDirectoryProjection({
+      telephone: ' +32 470 00 00 01 ',
+    })).toMatchObject({
+      share_phone: true,
+      phone_number: '+32 470 00 00 01',
+    });
+    expect(buildMemberDirectoryProjection({
+      phone_number: ' +32 470 00 00 02 ',
+      telephone: '+32 470 00 00 03',
+    })).toMatchObject({
+      share_phone: true,
+      phone_number: '+32 470 00 00 02',
+    });
+    expect(buildMemberDirectoryProjection({
+      phoneNumber: ' +32 470 00 00 04 ',
+    })).toMatchObject({
+      share_phone: true,
+      phone_number: '+32 470 00 00 04',
+    });
+  });
+
+  test('explicit contact opt-outs still remove every contact value', () => {
+    const projected = buildMemberDirectoryProjection({
+      email: 'member@example.test',
+      telephone: '+32 470 00 00 01',
+      share_email: false,
+      share_phone: false,
+    });
+    expect(projected.share_email).toBe(false);
+    expect(projected.share_phone).toBe(false);
+    expect(projected.email).toBeNull();
+    expect(projected.phone_number).toBeNull();
+  });
+
   test('directory only includes consented contact and photo fields', () => {
     const projected = buildMemberDirectoryProjection({
       prenom: 'Myriam',
@@ -87,7 +122,7 @@ describe('member privacy projections', () => {
     expect(projected.birth_day).toBeNull();
   });
 
-  test('contact sharing is opt-in in the projection', () => {
+  test('missing contact preferences preserve ProfilePage legacy defaults', () => {
     const projected = buildMemberDirectoryProjection({
       prenom: 'Jean',
       nom: 'Plongeur',
@@ -95,10 +130,10 @@ describe('member privacy projections', () => {
       phone_number: '123',
       photo_url: 'photo',
     });
-    expect(projected.share_email).toBe(false);
-    expect(projected.share_phone).toBe(false);
-    expect(projected.email).toBeNull();
-    expect(projected.phone_number).toBeNull();
+    expect(projected.share_email).toBe(true);
+    expect(projected.share_phone).toBe(true);
+    expect(projected.email).toBe('jean@example.test');
+    expect(projected.phone_number).toBe('123');
     expect(projected.photo_url).toBeNull();
   });
 

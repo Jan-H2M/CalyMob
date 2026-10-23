@@ -242,6 +242,31 @@ void main() {
       expect(profile.requiresExternalInsurance, isTrue);
     });
 
+    test('directory cards retain legacy contact defaults but honour opt-outs',
+        () {
+      final legacy = MemberProfile.fromDirectoryData('legacy', {
+        'first_name': 'Legacy',
+        'last_name': 'Member',
+        'email': 'legacy@example.test',
+        'phone_number': '+32 470 00 00 01',
+      });
+      final optedOut = MemberProfile.fromDirectoryData('opted-out', {
+        'first_name': 'Private',
+        'last_name': 'Member',
+        'email': 'private@example.test',
+        'phone_number': '+32 470 00 00 02',
+        'share_email': false,
+        'share_phone': false,
+      });
+
+      expect(legacy.shareEmail, isTrue);
+      expect(legacy.sharePhone, isTrue);
+      expect(legacy.email, 'legacy@example.test');
+      expect(legacy.phoneNumber, '+32 470 00 00 01');
+      expect(optedOut.shareEmail, isFalse);
+      expect(optedOut.sharePhone, isFalse);
+    });
+
     test('uses the projected club-local birthday parts for directory members',
         () {
       final profile = MemberProfile.fromDirectoryData(

@@ -211,8 +211,10 @@ class MemberProfile {
           (data['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? const [],
       photoUrl: _stringOrNull(data['photo_url']),
       consentInternalPhoto: data['consent_internal_photo'] == true,
-      shareEmail: data['share_email'] == true,
-      sharePhone: data['share_phone'] == true,
+      // Keep the directory card consistent with ProfilePage and the server
+      // projection: only an explicit false revokes legacy sharing defaults.
+      shareEmail: data['share_email'] != false,
+      sharePhone: data['share_phone'] != false,
       shareBirthday: sharesBirthday,
       phoneNumber: _stringOrNull(data['phone_number']),
       // Enforce the explicit opt-out at the client boundary too. This avoids
