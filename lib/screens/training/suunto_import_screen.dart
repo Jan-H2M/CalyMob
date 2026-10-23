@@ -156,10 +156,10 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         Text('Début : ${p.startedAt.toIso8601String()}'),
         Text('Durée : ${p.durationSeconds}s'),
         Text(
-          'Profondeur max (valeur source) : ${p.maxDepthMeters?.toStringAsFixed(1) ?? '—'} (${p.depthUnit.name})',
+          'Profondeur max (valeur source) : ${p.maxDepthValue?.toStringAsFixed(1) ?? '—'} (${p.depthUnit.name})',
         ),
         Text(
-          'Température (valeurs source) : ${p.minTemperatureCelsius?.toStringAsFixed(1) ?? '—'} – ${p.maxTemperatureCelsius?.toStringAsFixed(1) ?? '—'} (${p.temperatureUnit.name})',
+          'Température (valeurs source) : ${p.minTemperatureValue?.toStringAsFixed(1) ?? '—'} – ${p.maxTemperatureValue?.toStringAsFixed(1) ?? '—'} (${p.temperatureUnit.name})',
         ),
         Text('Gaz : ${p.gasNumbers.isEmpty ? '—' : p.gasNumbers.join(', ')}'),
         Text(
@@ -169,7 +169,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
           const SizedBox(height: 8),
           ...p.tanks.map(
             (tank) => Text(
-              'Gaz ${tank.gasNumber}: ${tank.startPressureBar?.toStringAsFixed(0) ?? '—'} → ${tank.endPressureBar?.toStringAsFixed(0) ?? '—'} (pression source, ${tank.pressureUnit.name})',
+              'Gaz ${tank.gasNumber}: ${tank.startPressureValue?.toStringAsFixed(0) ?? '—'} → ${tank.endPressureValue?.toStringAsFixed(0) ?? '—'} (pression source, ${tank.pressureUnit.name})',
             ),
           ),
         ],

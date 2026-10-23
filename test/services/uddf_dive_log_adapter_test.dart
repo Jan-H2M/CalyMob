@@ -9,7 +9,7 @@ void main() {
     final result = const UddfDiveLogAdapter().parse(utf8.encode(xml));
     expect(result.vendor, 'uddf');
     expect(result.durationSeconds, 1800);
-    expect(result.maxDepthMeters, 24.5);
+    expect(result.maxDepthValue, 24.5);
     expect(result.depthUnit, UnitProvenance.unknown);
   });
 }

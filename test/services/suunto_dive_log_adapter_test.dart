@@ -11,10 +11,10 @@ void main() {
       expect(preview.vendor, 'suunto');
       expect(preview.startedAt.toIso8601String(), contains('+02:00'));
       expect(preview.durationSeconds, 4016);
-      expect(preview.maxDepthMeters, 61.3);
-      expect(preview.minTemperatureCelsius, 290.15);
-      expect(preview.tanks.single.startPressureBar, 210);
-      expect(preview.tanks.single.endPressureBar, 150);
+      expect(preview.maxDepthValue, 61.3);
+      expect(preview.minTemperatureValue, 290.15);
+      expect(preview.tanks.single.startPressureValue, 210);
+      expect(preview.tanks.single.endPressureValue, 150);
       expect(preview.gasNumbers, [1]);
       expect(
         preview.events.map((e) => e.category),

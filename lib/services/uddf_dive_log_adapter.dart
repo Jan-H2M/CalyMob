@@ -12,15 +12,16 @@ class UddfDiveLogAdapter {
     final doc = XmlDocument.parse(utf8.decode(bytes));
     final dives = doc.descendants.whereType<XmlElement>().where((e) => e.name.local.toLowerCase().contains('dive')).toList();
     final dive = dives.firstWhere((e) => e.descendants.whereType<XmlElement>().any((x) => x.name.local.toLowerCase().contains('depth')), orElse: () => throw const FormatException('Aucune plongée UDDF lisible.'));
-    final start = _date(_text(dive, ['datetime', 'date_time', 'starttime', 'start_time'])) ?? throw const FormatException('Date UDDF absente.');
+    final start = _date(_text(dive, ['datetime', 'date_time', 'starttime', 'start_time']));
+    if (start == null) throw const FormatException('Date UDDF absente.');
     final duration = _number(dive, ['divetime', 'duration', 'duration_seconds'])?.round() ?? 0;
     if (duration < 1) throw const FormatException('Durée UDDF absente.');
     final depth = _points(dive, ['depth', 'depthvalue']);
     final temperature = _points(dive, ['temperature', 'temp']);
     return DiveComputerImportPreview(
       vendor: 'uddf', sourceHash: sha256.convert(bytes).toString(), startedAt: start, durationSeconds: duration,
-      maxDepthMeters: _number(dive, ['maximumdepth', 'maxdepth']) ?? _max(depth), depthUnit: UnitProvenance.unknown,
-      minTemperatureCelsius: _min(temperature), maxTemperatureCelsius: _max(temperature), temperatureUnit: UnitProvenance.unknown,
+      maxDepthValue: _number(dive, ['maximumdepth', 'maxdepth']) ?? _max(depth), depthUnit: UnitProvenance.unknown,
+      minTemperatureValue: _min(temperature), maxTemperatureValue: _max(temperature), temperatureUnit: UnitProvenance.unknown,
       tanks: const [], gasNumbers: const [], events: const [], locationHint: null,
       profile: DiveComputerProfile(depth: depth, temperature: temperature, pressureByGas: const {}, events: const []), warnings: const [],
     );

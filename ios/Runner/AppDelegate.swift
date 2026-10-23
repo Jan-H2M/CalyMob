@@ -16,9 +16,13 @@ import UserNotifications
       guard call.method == "consume" else { result(FlutterMethodNotImplemented); return }
       let group = "group.com.calypso.calymob"
       guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { result(nil); return }
-      let file = container.appendingPathComponent("suunto-import-inbox.json")
+      let manifest = container.appendingPathComponent("suunto-import-manifest.json")
+      guard let manifestData = try? Data(contentsOf: manifest), var names = try? JSONDecoder().decode([String].self, from: manifestData), !names.isEmpty else { result(nil); return }
+      let name = names.removeFirst()
+      let file = container.appendingPathComponent(name)
       guard let bytes = try? Data(contentsOf: file) else { result(nil); return }
-      // Consume first, then delete: the extension cannot leave a persistent copy.
+      // Atomically advance the queue, then delete the one-time handoff.
+      try? JSONEncoder().encode(names).write(to: manifest, options: .atomic)
       try? FileManager.default.removeItem(at: file)
       result(FlutterStandardTypedData(bytes: bytes))
     }

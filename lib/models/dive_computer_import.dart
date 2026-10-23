@@ -3,10 +3,10 @@ class DiveComputerImportPreview {
   final String sourceHash;
   final DateTime startedAt;
   final int durationSeconds;
-  final double? maxDepthMeters;
+  final double? maxDepthValue;
   final UnitProvenance depthUnit;
-  final double? minTemperatureCelsius;
-  final double? maxTemperatureCelsius;
+  final double? minTemperatureValue;
+  final double? maxTemperatureValue;
   final UnitProvenance temperatureUnit;
   final List<DiveTankSummary> tanks;
   final List<int> gasNumbers;
@@ -20,10 +20,10 @@ class DiveComputerImportPreview {
     required this.sourceHash,
     required this.startedAt,
     required this.durationSeconds,
-    required this.maxDepthMeters,
+    required this.maxDepthValue,
     required this.depthUnit,
-    required this.minTemperatureCelsius,
-    required this.maxTemperatureCelsius,
+    required this.minTemperatureValue,
+    required this.maxTemperatureValue,
     required this.temperatureUnit,
     required this.tanks,
     required this.gasNumbers,
@@ -57,19 +57,19 @@ enum UnitProvenance { declared, inferred, unknown }
 
 class DiveTankSummary {
   final int gasNumber;
-  final double? startPressureBar;
-  final double? endPressureBar;
+  final double? startPressureValue;
+  final double? endPressureValue;
   final UnitProvenance pressureUnit;
   const DiveTankSummary({
     required this.gasNumber,
-    this.startPressureBar,
-    this.endPressureBar,
+    this.startPressureValue,
+    this.endPressureValue,
     required this.pressureUnit,
   });
   Map<String, dynamic> toMap() => {
     'gas_number': gasNumber,
-    if (startPressureBar != null) 'start_pressure_bar': startPressureBar,
-    if (endPressureBar != null) 'end_pressure_bar': endPressureBar,
+      if (startPressureValue != null) 'start_pressure_value': startPressureValue,
+      if (endPressureValue != null) 'end_pressure_value': endPressureValue,
     'pressure_unit': pressureUnit.name,
   };
 }

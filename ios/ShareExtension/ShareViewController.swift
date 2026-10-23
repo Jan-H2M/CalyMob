@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// the App Group inbox, after which the Flutter host owns parsing/deletion.
 final class ShareViewController: SLComposeServiceViewController {
   private let appGroup = "group.com.calypso.calymob"
-  private let inboxName = "suunto-import-inbox.json"
+  private let manifestName = "suunto-import-manifest.json"
 
   override func isContentValid() -> Bool { true }
   override func didSelectPost() {
@@ -20,9 +20,9 @@ final class ShareViewController: SLComposeServiceViewController {
         self?.extensionContext?.cancelRequest(withError: NSError(domain: "CalyMobSuuntoShare", code: 2, userInfo: [NSLocalizedDescriptionKey: "The secure CalyMob inbox is unavailable."]))
         return
       }
-      let destination = container.appendingPathComponent(self.inboxName)
+      let fileName = "suunto-\(UUID().uuidString).json"
+      let destination = container.appendingPathComponent(fileName)
       do {
-        try? FileManager.default.removeItem(at: destination)
         if let url = item as? URL {
           let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
           if (attributes[.size] as? NSNumber)?.intValue ?? 0 > 20 * 1024 * 1024 { throw NSError(domain: "CalyMobSuuntoShare", code: 3, userInfo: [NSLocalizedDescriptionKey: "The file exceeds 20 MB."]) }
@@ -31,6 +31,9 @@ final class ShareViewController: SLComposeServiceViewController {
           if data.count > 20 * 1024 * 1024 { throw NSError(domain: "CalyMobSuuntoShare", code: 3, userInfo: [NSLocalizedDescriptionKey: "The file exceeds 20 MB."]) }
           try data.write(to: destination, options: .atomic)
         } else { throw NSError(domain: "CalyMobSuuntoShare", code: 4, userInfo: [NSLocalizedDescriptionKey: "Unsupported JSON item."]) }
+        let manifestURL = container.appendingPathComponent(self.manifestName)
+        let existing = (try? Data(contentsOf: manifestURL)).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        try JSONEncoder().encode(existing + [fileName]).write(to: manifestURL, options: .atomic)
         self.extensionContext?.completeRequest(returningItems: nil)
       } catch { self.extensionContext?.cancelRequest(withError: error) }
     }

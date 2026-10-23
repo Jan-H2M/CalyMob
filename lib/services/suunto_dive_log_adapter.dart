@@ -87,8 +87,8 @@ class SuuntoDiveLogAdapter {
             .map(
               (gas) => DiveTankSummary(
                 gasNumber: gas,
-                startPressureBar: firstPressure[gas],
-                endPressureBar: lastPressure[gas],
+                startPressureValue: firstPressure[gas],
+                endPressureValue: lastPressure[gas],
                 pressureUnit: UnitProvenance.inferred,
               ),
             )
@@ -100,10 +100,10 @@ class SuuntoDiveLogAdapter {
       sourceHash: sha256.convert(bytes).toString(),
       startedAt: start,
       durationSeconds: duration,
-      maxDepthMeters: headerDepth ?? _max(depth),
+      maxDepthValue: headerDepth ?? _max(depth),
       depthUnit: UnitProvenance.inferred,
-      minTemperatureCelsius: _min(temperature),
-      maxTemperatureCelsius: _max(temperature),
+      minTemperatureValue: _min(temperature),
+      maxTemperatureValue: _max(temperature),
       temperatureUnit: UnitProvenance.inferred,
       tanks: tanks,
       gasNumbers: tanks.map((tank) => tank.gasNumber).toList(),
