@@ -100,7 +100,7 @@ class SuuntoDiveLogAdapter {
       vendor: 'suunto',
       sourceHash: sha256.convert(bytes).toString(),
       startedAt: start,
-      startedAtSource: startSource,
+      startedAtSource: startSource!,
       durationSeconds: duration,
       maxDepthValue: headerDepth ?? _max(depth),
       depthUnit: UnitProvenance.inferred,

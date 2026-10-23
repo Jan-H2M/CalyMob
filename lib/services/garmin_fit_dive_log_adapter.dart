@@ -35,7 +35,7 @@ class GarminFitDiveLogAdapter {
       startedAt: started,
       startedAtSource: started.toIso8601String(),
       durationSeconds: seconds,
-      maxDepthValue: _readNum(session, ['maxDepth', 'max_depth']),
+      maxDepthValue: _readNum(session, ['maxDepth', 'max_depth'])?.toDouble(),
       depthUnit: UnitProvenance.unknown,
       minTemperatureValue: null,
       maxTemperatureValue: null,
