@@ -8,6 +8,10 @@ import '../models/dive_computer_import.dart';
 /// binary message stream. Garmin dive profile-field mapping remains deliberately
 /// conservative: unknown/developer fields are never treated as deco advice.
 class GarminFitDiveLogAdapter {
+  static const _maxZipEntries = 20;
+  static const _maxZipEntryBytes = 20 * 1024 * 1024;
+  static const _maxZipTotalBytes = 50 * 1024 * 1024;
+
   const GarminFitDiveLogAdapter();
   DiveComputerImportPreview parse(List<int> bytes, {bool zip = false}) {
     final fit = zip ? _fitFromZip(bytes) : Uint8List.fromList(bytes);
@@ -52,6 +56,7 @@ class GarminFitDiveLogAdapter {
   }
 
   Uint8List _fitFromZip(List<int> bytes) {
+    _validateZipCentralDirectory(bytes);
     final archive = ZipDecoder().decodeBytes(bytes);
     final entry = archive.files.firstWhere(
         (file) => file.isFile && file.name.toLowerCase().endsWith('.fit'),
@@ -62,6 +67,48 @@ class GarminFitDiveLogAdapter {
       throw const FormatException('Fichier FIT illisible dans l’archive.');
     return Uint8List.fromList(content);
   }
+
+  /// Rejects archive bombs from central-directory metadata before Archive
+  /// materialises any entry content. ZIP64 declared sizes are intentionally
+  /// unsupported for mobile imports rather than being guessed.
+  static void _validateZipCentralDirectory(List<int> bytes) {
+    var entries = 0;
+    var total = 0;
+    var foundCentralDirectory = false;
+    for (var index = 0; index + 46 <= bytes.length; index++) {
+      if (_u32(bytes, index) != 0x02014b50) continue;
+      foundCentralDirectory = true;
+      entries++;
+      if (entries > _maxZipEntries) {
+        throw const FormatException('L’archive ZIP contient trop de fichiers (maximum 20).');
+      }
+      final compressed = _u32(bytes, index + 20);
+      final uncompressed = _u32(bytes, index + 24);
+      if (compressed == 0xffffffff || uncompressed == 0xffffffff) {
+        throw const FormatException('Les archives ZIP64 ne sont pas prises en charge.');
+      }
+      if (uncompressed > _maxZipEntryBytes) {
+        throw const FormatException('Un fichier de l’archive ZIP dépasse 20 Mo décompressés.');
+      }
+      total += uncompressed;
+      if (total > _maxZipTotalBytes) {
+        throw const FormatException('L’archive ZIP dépasse 50 Mo décompressés.');
+      }
+      final nameLength = _u16(bytes, index + 28);
+      final extraLength = _u16(bytes, index + 30);
+      final commentLength = _u16(bytes, index + 32);
+      index += 45 + nameLength + extraLength + commentLength;
+    }
+    if (!foundCentralDirectory) {
+      throw const FormatException('Archive ZIP invalide ou sans répertoire central.');
+    }
+  }
+
+  static int _u16(List<int> bytes, int index) =>
+      bytes[index] | (bytes[index + 1] << 8);
+
+  static int _u32(List<int> bytes, int index) =>
+      _u16(bytes, index) | (_u16(bytes, index + 2) << 16);
 
   num? _readNum(dynamic object, List<String> names) {
     for (final name in names) {
