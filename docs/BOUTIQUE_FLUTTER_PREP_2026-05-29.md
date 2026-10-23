@@ -11,6 +11,15 @@ Scope: CalyMob leden-app, nog niet algemeen zichtbaar maken.
 > the canonical admin workflow remains CalyCompta. The historical plan below
 > is retained for context only.
 
+## Current management boundary (2026-10-20)
+
+- The CalyMob Boutique is a member and test surface, not a management client.
+- A member with the **Responsable boutique** responsibility sees **Beheer via
+  CalyCompta** and an explicit explanation of that boundary.
+- The link opens the CalyCompta Boutique administration. It does not grant
+  additional CalyCompta permissions; the web application's existing role and
+  Firestore-rule checks remain authoritative.
+
 ## Huidige stand
 
 - In CalyMob is nog geen echte boutique-module aanwezig.
