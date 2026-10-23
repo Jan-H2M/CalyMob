@@ -27,7 +27,9 @@ class SuuntoDiveLogAdapter {
     final startSource =
         _string(header['DateTime']) ?? _firstTimeSource(samples);
     final start = _date(startSource);
-    final duration = _number(header['DiveTime'])?.round();
+    // DeviceLog duration is expressed in seconds. Preserve the complete
+    // elapsed seconds rather than rounding a fractional telemetry value up.
+    final duration = _number(header['DiveTime'])?.toInt();
     if (start == null || duration == null || duration < 1) {
       throw const FormatException('Date ou durée de plongée Suunto invalide.');
     }

@@ -49,14 +49,34 @@ class SubsurfaceDiveLogAdapter {
   }
 
   List<DiveProfilePoint> _values(
-          XmlElement root, String name, DateTime start) =>
-      [
-        for (final e in root.descendants.whereType<XmlElement>())
-          if (e.name.local.toLowerCase() == name)
-            if (double.tryParse(e.innerText.trim()) case final value?)
-              DiveProfilePoint(
-                  at: start, value: value, unit: UnitProvenance.unknown)
-      ];
+    XmlElement root,
+    String name,
+    DateTime start,
+  ) {
+    final result = <DiveProfilePoint>[];
+    for (final sample in root.descendants.whereType<XmlElement>()) {
+      if (sample.name.local.toLowerCase() != 'sample') continue;
+      final offsetSeconds = double.tryParse(
+                sample.getAttribute('time') ??
+                    sample.getAttribute('seconds') ??
+                    '',
+              )
+              ?.round() ??
+          0;
+      for (final valueElement in sample.descendants.whereType<XmlElement>()) {
+        if (valueElement.name.local.toLowerCase() != name) continue;
+        final value = double.tryParse(valueElement.innerText.trim());
+        if (value == null) continue;
+        // `sample time` is an offset in seconds from dive start.
+        result.add(DiveProfilePoint(
+          at: start.add(Duration(seconds: offsetSeconds)),
+          value: value,
+          unit: UnitProvenance.unknown,
+        ));
+      }
+    }
+    return result;
+  }
   double? _min(List<DiveProfilePoint> x) =>
       x.isEmpty ? null : x.map((p) => p.value).reduce((a, b) => a < b ? a : b);
   double? _max(List<DiveProfilePoint> x) =>

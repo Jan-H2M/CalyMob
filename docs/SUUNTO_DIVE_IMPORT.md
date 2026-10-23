@@ -3,44 +3,45 @@
 ## Current implementation (2026-10-23)
 
 Supersedes the earlier analysis-only recommendation for issue #136. CalyMob
-now has a pure `SuuntoDiveLogAdapter`, Files JSON intake, an App Group host
+now has a pure `SuuntoDiveLogAdapter`, Files intake for supported dive-log
 inbox bridge and a preview that
 excludes serials, names, GPS and route geometry. The parser keeps source hash,
 timestamp offset, raw non-sensitive recorded values and inferred-unit markers.
 
 The iOS share source lives in `ios/ShareExtension`; Runner consumes and deletes
 the one-time App Group inbox through `calymob/suunto_share_inbox`. Before an
-iOS archive the `CalyMobSuuntoShare` target must be added/embedded in Xcode,
-assigned bundle ID/signing, and both Runner and extension must be granted App
-Group `group.com.calypso.calymob`. Verify on an iPhone whether Suunto
-shares an individual dive as `public.json`; direct Suunto cloud/API sync is
-out of scope.
+iOS project wiring embeds the `CalyMobSuuntoShare` target. Before an archive,
+the Apple team must assign its production bundle ID/signing and enable the App
+Group `group.com.calypso.calymob` for both targets; no signing material is in
+this repository. The extension accepts JSON, FIT, ZIP/FIT, UDDF/XML and SSRF
+advertised as `public.data`, then the Dart registry validates/sniffs content.
+Verify on an iPhone whether Suunto shares an individual dive as a supported
+file type; direct Suunto cloud/API sync is out of scope.
 
 ## Privacy contract
 
 GPS is read only in-memory to sort candidates from pluggable `DiveSiteSource`
 nearest-first (km). The chosen site id/name may be saved; coordinates, route
 geometry, device serials, names and the `Personal` payload are never stored by
-default. No global dive-site coordinate collection was confirmed during this
-work, so the production site source remains an explicit integration item.
+default. The candidate source reads `clubs/calypso/dive_locations` first
+(excluding merged locations) and augments it with
+`clubs/calypso/reference_dive_sites`; it must be verified against emulator
+rules before release.
 
 ## Storage boundary
 
-Storage Rules can limit owner, path, size and JSON content type, but cannot
-inspect JSON to prove that GPS, serials or personal data were stripped. The
-current client sanitiser is therefore a privacy best-effort, not a trust
-boundary. Before a production rollout, move sanitisation/finalisation to a
-trusted server pipeline or prohibit direct raw-source uploads entirely. The
-import service uses a deterministic hash-key reservation and best-effort
-rollback for failed multi-service saves; emulator tests must be run before any
-rules deployment.
+**Superseded storage proposal:** client-side sanitisation plus owner-scoped
+Storage Rules is not a privacy boundary. Rules can limit owner, path, size and
+content type, but cannot inspect JSON to prove that GPS, serials or personal
+data were stripped. The import service uses a deterministic hash-key
+reservation and best-effort rollback for failed multi-service saves; emulator
+tests must be run before any rules deployment.
 
-For v1, only Suunto JSON has a field-level sanitiser and may be retained after
-filtering. FIT, ZIP-FIT, UDDF and Subsurface sources are **not retained**:
-only their normalised profile is stored. This avoids a false promise that
-Storage Rules can inspect vendor-specific raw data. A trusted server-side
-sanitisation/finalisation service remains a required blocker before any future
-raw-file retention expansion.
+For v1, **no raw vendor source is retained**, including Suunto JSON: only a
+normalised profile is stored. Owner-scoped JSON Storage Rules cannot inspect
+content, so client filtering is not a privacy guarantee. A trusted server-side
+sanitisation/finalisation service is a real pre-release blocker before raw-file
+retention, regardless of vendor.
 
 ## Retention and deletion
 

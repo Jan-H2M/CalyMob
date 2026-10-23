@@ -61,12 +61,9 @@ class DiveComputerImportService {
         'created_at': FieldValue.serverTimestamp(),
       });
     });
-    // Only Suunto JSON has an audited field-level sanitiser. FIT/ZIP/XML raw
-    // files may contain identifiers/GPS in vendor-specific forms, so v1 never
-    // uploads them; it stores only the privacy-filtered normalized profile.
-    final safeSource = preview.vendor == 'suunto'
-        ? privacyFilteredSource(originalBytes, allowRoute: routeOptIn)
-        : null;
+    // Privacy-safe v1: no raw vendor source is uploaded. Storage Rules cannot
+    // inspect arbitrary payloads, so client filtering is not a trust boundary.
+    final Uint8List? safeSource = null;
     final base =
         'clubs/$clubId/dive_computer_imports/$memberId/${importRef.id}';
     String? createdEntryId;
