@@ -41,7 +41,6 @@ class DiveComputerImportPreview {
 
   Map<String, dynamic> computerImportMetadata({
     required String importId,
-    required String retention,
   }) =>
       {
         'id': importId,
@@ -52,7 +51,6 @@ class DiveComputerImportPreview {
         'duration_seconds': durationSeconds,
         'depth_unit': depthUnit.name,
         'temperature_unit': temperatureUnit.name,
-        'retention': retention,
       };
 }
 

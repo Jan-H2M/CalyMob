@@ -8,9 +8,12 @@ inbox bridge and a preview that
 excludes serials, names, GPS and route geometry. The parser keeps source hash,
 timestamp offset, raw non-sensitive recorded values and inferred-unit markers.
 
-The iOS share source lives in `ios/ShareExtension`; Runner consumes and deletes
-the one-time App Group inbox through `calymob/suunto_share_inbox`. Before an
-iOS project wiring embeds the `CalyMobSuuntoShare` target. Before an archive,
+The iOS share source lives in `ios/ShareExtension`; it keeps the original file
+name and UTI with each App Group inbox item. Runner passes that metadata and
+the bytes through `calymob/suunto_share_inbox`, then removes the inbox item
+only after a successful parse or after the user explicitly dismisses its
+actionable error. Before an iOS project wiring embeds the `CalyMobSuuntoShare`
+target. Before an archive,
 the Apple team must assign its production bundle ID/signing and enable the App
 Group `group.com.calypso.calymob` for both targets; no signing material is in
 this repository. The extension accepts JSON, FIT, ZIP/FIT, UDDF/XML and SSRF
@@ -45,10 +48,13 @@ retention, regardless of vendor.
 
 ## Retention and deletion
 
-The user selects retention at import time. Default retention is until the
-Carnet dive is deleted. The detail page offers an owner-only delete action that
-first removes the private source/profile objects, then the Carnet entry and
-import metadata.
+Imports are retained until the Carnet dive is deleted. The detail page offers
+an owner-only delete action that first removes the private source/profile
+objects, then the Carnet entry and import metadata.
+
+> **DEFERRED 30-DAY RETENTION:** automated `delete_after_30_days` retention
+> has been removed from the UI, model and service. It requires a trusted,
+> scheduled owner-aware deletion flow before it can be offered safely.
 
 > **SUPERSEDED ROUTE OPTION:** the earlier route-retention opt-in is not
 > available in the mobile import UI. Route geometry and coordinates are never

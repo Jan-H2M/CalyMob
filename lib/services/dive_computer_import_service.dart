@@ -13,7 +13,7 @@ class DuplicateDiveComputerImport implements Exception {
 
 /// Persists only privacy-filtered source/profile objects. The original bytes
 /// must never be uploaded because a Suunto export can contain GPS, serials and
-/// personal fields. Route is copied only when explicit opt-in is supplied.
+/// personal fields. Route retention is deliberately not available yet.
 class DiveComputerImportService {
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
@@ -38,7 +38,6 @@ class DiveComputerImportService {
     required String memberName,
     required DiveComputerImportPreview preview,
     required Uint8List originalBytes,
-    required String retention,
     String? locationId,
     String? locationName,
   }) async {
@@ -89,8 +88,7 @@ class DiveComputerImportService {
       final entryId =
           await _logbook.create(clubId: clubId, entry: entry, extras: {
         'computer_import': preview.computerImportMetadata(
-            importId: importRef.id,
-            retention: retention),
+            importId: importRef.id),
         if (preview.maxDepthValue != null)
           'computer_source_depth_max_value': preview.maxDepthValue,
         'entry_time': Timestamp.fromDate(preview.startedAt),
@@ -107,7 +105,6 @@ class DiveComputerImportService {
         'vendor': preview.vendor,
         'started_at': Timestamp.fromDate(preview.startedAt),
         'duration_seconds': preview.durationSeconds,
-        'retention': retention,
         if (safeSource != null) 'source_path': '$base/source.json',
         'profile_path': '$base/profile-v1.json',
         'status': 'complete',
