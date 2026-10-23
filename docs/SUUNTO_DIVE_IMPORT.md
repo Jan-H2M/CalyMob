@@ -48,8 +48,11 @@ retention, regardless of vendor.
 The user selects retention at import time. Default retention is until the
 Carnet dive is deleted. The detail page offers an owner-only delete action that
 first removes the private source/profile objects, then the Carnet entry and
-import metadata. Route storage remains off by default; an explicit import-time
-opt-in is required before route fields can remain in the filtered source.
+import metadata.
+
+> **SUPERSEDED ROUTE OPTION:** the earlier route-retention opt-in is not
+> available in the mobile import UI. Route geometry and coordinates are never
+> retained; the temporary start point is used only locally to rank dive sites.
 
 ## Parser registry and licenses
 

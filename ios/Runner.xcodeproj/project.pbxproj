@@ -18,7 +18,7 @@
 		AD848329F89AB853275432F6 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EF68495F5DF9FD4EFA85997D /* Pods_Runner.framework */; };
 		PRIVACY001CF9000F007C117D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PRIVACY002CF9000F007C117D /* PrivacyInfo.xcprivacy */; };
 		136000000000000000000011 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136000000000000000000001 /* ShareViewController.swift */; };
-		136000000000000000000012 /* CalyMobSuuntoShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 136000000000000000000004 /* CalyMobSuuntoShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		136000000000000000000012 /* CalyMobSuuntoShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 136000000000000000000004 /* CalyMobSuuntoShare.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +28,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		136000000000000000000062 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 136000000000000000000010;
+			remoteInfo = CalyMobSuuntoShare;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -232,6 +239,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				136000000000000000000063 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -450,6 +458,11 @@
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
 		};
+		136000000000000000000063 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 136000000000000000000010 /* CalyMobSuuntoShare */;
+			targetProxy = 136000000000000000000062 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -472,9 +485,9 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		136000000000000000000051 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Debug; };
-		136000000000000000000052 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Release; };
-		136000000000000000000053 /* Profile */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Profile; };
+		136000000000000000000051 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 53455KKD9G; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Debug; };
+		136000000000000000000052 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 53455KKD9G; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Release; };
+		136000000000000000000053 /* Profile */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ShareExtension/CalyMobSuuntoShare.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 53455KKD9G; INFOPLIST_FILE = ShareExtension/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = be.calypsodc.calymob.SuuntoShare; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Profile; };
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {

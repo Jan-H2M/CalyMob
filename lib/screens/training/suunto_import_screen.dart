@@ -29,7 +29,6 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
   String? _name;
   List<int>? _sourceBytes;
   String _retention = 'keep_until_deleted';
-  bool _routeOptIn = false;
   List<DiveSite> _nearbySites = const [];
   DiveSite? _chosenSite;
   final _freeTextSite = TextEditingController();
@@ -262,15 +261,6 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
               ? null
               : (value) => setState(() => _retention = value ?? _retention),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          value: _routeOptIn,
-          onChanged:
-              _working ? null : (value) => setState(() => _routeOptIn = value),
-          title: const Text('Conserver l’itinéraire de plongée'),
-          subtitle: const Text(
-              'Optionnel et sensible. Désactivé par défaut; les coordonnées ne sont sinon jamais enregistrées.'),
-        ),
         const SizedBox(height: 12),
         ElevatedButton.icon(
             onPressed: _working ? null : () => _save(preview),
@@ -294,7 +284,6 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         retention: _retention,
         locationId: _chosenSite?.id,
         locationName: _chosenSite?.name ?? _freeTextSite.text.trim(),
-        routeOptIn: _routeOptIn,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
