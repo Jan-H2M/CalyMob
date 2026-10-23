@@ -1,0 +1,1 @@
+Variantes plus claires, gestion boutique via CalyCompta, coordonnées Who is Who restaurées et import de plongées Suunto, UDDF, Garmin FIT et Subsurface dans le carnet.
