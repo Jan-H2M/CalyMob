@@ -42,3 +42,13 @@ Carnet dive is deleted. The detail page offers an owner-only delete action that
 first removes the private source/profile objects, then the Carnet entry and
 import metadata. Route storage remains off by default; an explicit import-time
 opt-in is required before route fields can remain in the filtered source.
+
+## Parser registry and licenses
+
+The import registry sniffs content as well as checking filename extensions.
+Suunto JSON and UDDF are pure in-tree parsers. Garmin FIT/ZIP support uses
+`dart_fit_decoder` 0.1.0, a pure-Dart package under the MIT License (per its
+published package metadata); no Garmin cloud/API access, GPL code, Subsurface
+code or `libdivecomputer` is linked. The dependency must be reviewed again at
+upgrade time. Files picker and iOS registration accept JSON, FIT, ZIP, UDDF,
+XML and SSRF; the native share handoff still validates final bytes in Dart.

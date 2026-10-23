@@ -39,6 +39,8 @@ dependencies:
   # HTTP Client
   http: ^1.2.0
   crypto: ^3.0.7
+  # MIT licensed pure-Dart FIT decoder; see docs/SUUNTO_DIVE_IMPORT.md.
+  dart_fit_decoder: ^0.1.0
 
   # Utilities
   url_launcher: ^6.1.14

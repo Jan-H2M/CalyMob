@@ -10,6 +10,7 @@ import '../../services/suunto_dive_log_adapter.dart';
 import '../../services/suunto_share_inbox.dart';
 import '../../services/dive_site_source.dart';
 import '../../services/dive_computer_import_service.dart';
+import '../../services/dive_log_import_registry.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Files-based intake. The native iOS extension hands off into the same route
@@ -22,7 +23,7 @@ class SuuntoImportScreen extends StatefulWidget {
 }
 
 class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
-  final _adapter = const SuuntoDiveLogAdapter();
+  final _registry = const DiveLogImportRegistry();
   DiveComputerImportPreview? _preview;
   String? _error;
   String? _name;
@@ -58,7 +59,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     try {
       final picked = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const ['json'],
+        allowedExtensions: DiveLogImportRegistry.supportedExtensions,
         withData: true,
       );
       final file = picked != null && picked.files.isNotEmpty
@@ -81,7 +82,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
   }
 
   Future<void> _parse(List<int> bytes, String name) async {
-    final preview = _adapter.parse(bytes);
+    final preview = _registry.parse(bytes: Uint8List.fromList(bytes), filename: name);
     if (!mounted) return;
     final source = widget.diveSiteSource;
     final sites = source != null && preview.locationHint != null
