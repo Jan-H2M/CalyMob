@@ -280,7 +280,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (context == null || Provider.of<AuthProvider>(context, listen: false).currentUser == null) return;
     _diveShareNavigationPending = true;
     try {
-      await _navigatorKey.currentState?.push<bool>(MaterialPageRoute(
+      await _navigatorKey.currentState?.push<Object?>(MaterialPageRoute<Object?>(
           builder: (_) => SuuntoImportScreen(diveSiteSource: FirestoreDiveSiteSource())));
     } finally {
       _diveShareNavigationPending = false;
