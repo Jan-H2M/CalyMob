@@ -8,9 +8,5 @@
 	<array>
 		<string>applinks:caly.club</string>
 	</array>
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.com.calypso.calymob</string>
-	</array>
 </dict>
 </plist>

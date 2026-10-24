@@ -9,14 +9,16 @@ excludes serials, names, GPS and route geometry. The parser keeps source hash,
 timestamp offset, raw non-sensitive recorded values and inferred-unit markers.
 
 The iOS share source lives in `ios/ShareExtension`; it keeps the original file
-name and UTI with each App Group inbox item. Runner passes that metadata and
-the bytes through `calymob/suunto_share_inbox`, then removes the inbox item
-only after a successful parse or after the user explicitly dismisses its
-actionable error. Before an iOS project wiring embeds the `CalyMobSuuntoShare`
-target. Before an archive,
-the Apple team must assign its production bundle ID/signing and enable the App
-Group `group.com.calypso.calymob` for both targets; no signing material is in
-this repository. The extension accepts JSON, FIT, ZIP/FIT, UDDF/XML and SSRF
+name and UTI with each inbox item. Runner passes that metadata and the bytes
+through `calymob/suunto_share_inbox`, then removes the item only after a
+successful parse or after the user explicitly dismisses its actionable error.
+It prefers the App Group inbox when provisioned, and otherwise uses a custom
+`be.calypsodc.calymob.suunto-share-inbox` queue on the device-local pasteboard,
+with a 24-hour expiry. This fallback removes the App Group entitlement from
+both targets; it is a short-lived handoff, not import storage. Before an iOS
+project wiring embeds the `CalyMobSuuntoShare` target, the Apple team must
+assign its production bundle ID/signing; no signing material is in this
+repository. The extension accepts JSON, FIT, ZIP/FIT, UDDF/XML and SSRF
 advertised as `public.data`, then the Dart registry validates/sniffs content.
 Verify on an iPhone whether Suunto shares an individual dive as a supported
 file type; direct Suunto cloud/API sync is out of scope.

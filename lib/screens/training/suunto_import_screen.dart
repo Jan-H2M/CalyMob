@@ -13,7 +13,8 @@ import '../../services/dive_log_import_registry.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Files-based intake. The native iOS extension hands off into the same route
-/// via an App Group inbox when the host app starts (see ios/ShareExtension).
+/// via an App Group inbox when provisioned, otherwise a 24-hour local-only
+/// iOS pasteboard queue (see ios/ShareExtension).
 class SuuntoImportScreen extends StatefulWidget {
   final DiveSiteSource? diveSiteSource;
   const SuuntoImportScreen({super.key, this.diveSiteSource});
