@@ -2,6 +2,22 @@ import Flutter
 import UIKit
 import UserNotifications
 
+enum SuuntoSharePasteboard {
+  static let type = "be.calypsodc.calymob.suunto-share-inbox"
+  struct Item: Codable { let id: String; let originalName: String; let uti: String; let base64Bytes: String }
+
+  static func queue() throws -> [Item] {
+    let board = UIPasteboard.general
+    guard board.contains(pasteboardTypes: [type]), let data = board.data(forPasteboardType: type) else { return [] }
+    return try JSONDecoder().decode([Item].self, from: data)
+  }
+
+  static func replace(_ items: [Item]) throws {
+    let data = try JSONEncoder().encode(items)
+    UIPasteboard.general.setItems([[type: data]], options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(24 * 60 * 60)])
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   override func application(
@@ -15,15 +31,13 @@ import UserNotifications
     inbox.setMethodCallHandler { call, result in
       guard ["consume", "ack", "discard"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
       let group = "group.com.calypso.calymob"
-      guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else {
-        result(FlutterError(code: "share_inbox_unavailable", message: "The CalyMob share inbox is unavailable.", details: nil))
-        return
-      }
-      let manifest = container.appendingPathComponent("suunto-import-manifest.json")
       struct InboxItem: Codable { let id: String; let storedName: String; let originalName: String; let uti: String }
       var resultValue: [String: Any]?
+      var handledAppGroup = false
       var coordinationError: NSError?
       var manifestError: Error?
+      if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) {
+      let manifest = container.appendingPathComponent("suunto-import-manifest.json")
       NSFileCoordinator().coordinate(writingItemAt: manifest, options: .forMerging, error: &coordinationError) { url in
         do {
           guard FileManager.default.fileExists(atPath: url.path) else { return }
@@ -41,6 +55,7 @@ import UserNotifications
             let item = items[0]
             let bytes = try Data(contentsOf: container.appendingPathComponent(item.storedName))
             resultValue = ["id": item.id, "filename": item.originalName, "uti": item.uti, "bytes": FlutterStandardTypedData(bytes: bytes)]
+            handledAppGroup = true
           } else {
             guard let id = call.arguments as? String, let index = items.firstIndex(where: { $0.id == id }) else { return }
             let item = items[index]
@@ -52,10 +67,12 @@ import UserNotifications
             }
             items.remove(at: index)
             try JSONEncoder().encode(items).write(to: url, options: .atomic)
+            handledAppGroup = true
           }
         } catch {
           manifestError = error
         }
+      }
       }
       if let coordinationError {
         result(FlutterError(code: "share_inbox_read_failed", message: coordinationError.localizedDescription, details: nil))
@@ -64,6 +81,22 @@ import UserNotifications
       if let manifestError {
         result(FlutterError(code: "share_inbox_read_failed", message: manifestError.localizedDescription, details: nil))
         return
+      }
+      if !handledAppGroup {
+        do {
+          var queue = try SuuntoSharePasteboard.queue()
+          if call.method == "consume" {
+            if let item = queue.first, let bytes = Data(base64Encoded: item.base64Bytes) {
+              resultValue = ["id": item.id, "filename": item.originalName, "uti": item.uti, "bytes": FlutterStandardTypedData(bytes: bytes)]
+            }
+          } else if let id = call.arguments as? String, let index = queue.firstIndex(where: { $0.id == id }) {
+            queue.remove(at: index)
+            try SuuntoSharePasteboard.replace(queue)
+          }
+        } catch {
+          result(FlutterError(code: "share_inbox_read_failed", message: error.localizedDescription, details: nil))
+          return
+        }
       }
       result(resultValue)
     }
