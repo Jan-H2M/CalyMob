@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'logbook_entry_screen.dart';
@@ -8,7 +9,8 @@ import 'suunto_import_screen.dart';
 import '../../services/dive_site_source.dart';
 
 class LogbookAddChoiceScreen extends StatelessWidget {
-  const LogbookAddChoiceScreen({super.key});
+  final FirebaseFirestore? firestore;
+  const LogbookAddChoiceScreen({super.key, this.firestore});
 
   @override
   Widget build(BuildContext context) {
@@ -64,14 +66,22 @@ class LogbookAddChoiceScreen extends StatelessWidget {
               _ChoiceButton(
                 icon: Icons.scuba_diving_outlined,
                 title: 'Importer depuis une app de plongée',
-                subtitle: 'Suunto, Garmin, Shearwater, Mares, Scubapro, Subsurface…',
+                subtitle:
+                    'Suunto, Garmin, Shearwater, Mares, Scubapro, Subsurface…',
                 onTap: () async {
-                  final result = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => SuuntoImportScreen(
-                            diveSiteSource: FirestoreDiveSiteSource())));
-                  if (context.mounted && result == true) Navigator.pop(context, true);
+                  final result = await Navigator.push<Object?>(
+                      context,
+                      MaterialPageRoute<Object?>(
+                          builder: (_) => SuuntoImportScreen(
+                              firestore: firestore,
+                              diveSiteSource: FirestoreDiveSiteSource(
+                                  firestore: firestore))));
+                  if (!context.mounted) return;
+                  if (result is LogbookEntrySaveResult) {
+                    Navigator.pop(context, result);
+                  } else if (result == true) {
+                    Navigator.pop(context);
+                  }
                 },
               ),
               const SizedBox(height: 12),

@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'package:provider/provider.dart';
@@ -13,6 +14,7 @@ import '../../services/dive_computer_import_service.dart';
 import '../../services/dive_log_import_registry.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/dive_location_picker.dart';
+import 'logbook_entry_screen.dart';
 
 /// Files-based intake. The native iOS extension hands off into the same route
 /// via an App Group inbox when provisioned, otherwise a 24-hour local-only
@@ -21,11 +23,13 @@ class SuuntoImportScreen extends StatefulWidget {
   final DiveSiteSource? diveSiteSource;
   final String clubId;
   final String? memberId;
+  final FirebaseFirestore? firestore;
   const SuuntoImportScreen({
     super.key,
     this.diveSiteSource,
     this.clubId = FirebaseConfig.defaultClubId,
     this.memberId,
+    this.firestore,
   });
   @override
   State<SuuntoImportScreen> createState() => _SuuntoImportScreenState();
@@ -98,8 +102,9 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     final preview =
         _registry.parse(bytes: Uint8List.fromList(bytes), filename: name);
     if (!mounted) return;
-    final source =
-        widget.diveSiteSource ?? FirestoreDiveSiteSource(clubId: widget.clubId);
+    final source = widget.diveSiteSource ??
+        FirestoreDiveSiteSource(
+            firestore: widget.firestore, clubId: widget.clubId);
     final sites = preview.locationHint != null
         ? await source.nearby(preview.locationHint!)
         : const <DiveSite>[];
@@ -154,7 +159,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     }
     if (!mounted) return;
     if (Navigator.canPop(context)) {
-      Navigator.pop(context, false);
+      Navigator.pop(context);
     } else {
       setState(_reset);
     }
@@ -384,7 +389,9 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     final member = context.read<MemberProvider>();
     setState(() => _working = true);
     try {
-      await DiveComputerImportService().saveAsNewEntry(
+      final firestore = widget.firestore ?? FirebaseFirestore.instance;
+      final entryId =
+          await DiveComputerImportService(firestore: firestore).saveAsNewEntry(
         clubId: widget.clubId,
         memberId: widget.memberId ?? user.uid,
         memberName: '${member.prenom ?? ''} ${member.nom ?? ''}'.trim(),
@@ -396,10 +403,32 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         isSea: site?.isSea ?? customSite?.isSea,
         zone: site?.zone ?? customSite?.zone,
       );
+      final docRef = firestore
+          .collection('clubs')
+          .doc(widget.clubId)
+          .collection('student_logbook_entries')
+          .doc(entryId);
+      var resolvedLocationName = site?.name ?? customSite?.name ?? '';
+      try {
+        final savedLocationName = (await docRef.get()).data()?['location_name'];
+        if (savedLocationName is String &&
+            savedLocationName.trim().isNotEmpty) {
+          resolvedLocationName = savedLocationName;
+        }
+      } on FirebaseException {
+        // The entry is already saved; a failed read must not make it look unsaved.
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Nouvelle plongée enregistrée.')));
-        Navigator.pop(context, true);
+        Navigator.pop(
+            context,
+            LogbookEntrySaveResult(
+              entryId: docRef.id,
+              date: preview.startedAt,
+              locationName: resolvedLocationName,
+              updated: false,
+            ));
       }
     } on DuplicateDiveComputerImport {
       if (mounted) {
