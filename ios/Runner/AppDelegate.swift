@@ -16,6 +16,11 @@ enum SuuntoSharePasteboard {
     let data = try JSONEncoder().encode(items)
     UIPasteboard.general.setItems([[type: data]], options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(24 * 60 * 60)])
   }
+  static func enqueue(bytes: Data, originalName: String, uti: String) throws {
+    var items = try queue()
+    items.append(Item(id: UUID().uuidString, originalName: originalName, uti: uti, base64Bytes: bytes.base64EncodedString()))
+    try replace(items)
+  }
 }
 
 @main
@@ -29,9 +34,19 @@ enum SuuntoSharePasteboard {
     let controller = window?.rootViewController as! FlutterViewController
     let inbox = FlutterMethodChannel(name: "calymob/suunto_share_inbox", binaryMessenger: controller.binaryMessenger)
     inbox.setMethodCallHandler { call, result in
-      guard ["consume", "ack", "discard"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
-      let group = "group.com.calypso.calymob"
       struct InboxItem: Codable { let id: String; let storedName: String; let originalName: String; let uti: String }
+      guard ["consume", "ack", "discard", "hasPending"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
+      if call.method == "hasPending" {
+        let groupHasItems: Bool = {
+          guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.calypso.calymob"),
+                let data = try? Data(contentsOf: container.appendingPathComponent("suunto-import-manifest.json")) else { return false }
+          return ((try? JSONDecoder().decode([InboxItem].self, from: data))?.isEmpty == false)
+        }()
+        let pasteboardHasItems = (try? SuuntoSharePasteboard.queue().isEmpty == false) ?? false
+        result(groupHasItems || pasteboardHasItems)
+        return
+      }
+      let group = "group.com.calypso.calymob"
       var resultValue: [String: Any]?
       var handledAppGroup = false
       var coordinationError: NSError?
@@ -122,6 +137,24 @@ enum SuuntoSharePasteboard {
                             didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
     print("📱 APNs token received: \(deviceToken.map { String(format: "%02.2hhx", $0) }.joined())")
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+
+  override func application(_ app: UIApplication, open url: URL,
+                            options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+    if url.scheme == "calymob" && url.host == "dive-share-inbox" {
+      return super.application(app, open: url, options: options)
+    }
+    guard url.isFileURL else { return super.application(app, open: url, options: options) }
+    let accessed = url.startAccessingSecurityScopedResource()
+    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let bytes = try Data(contentsOf: url)
+      guard bytes.count <= 20 * 1024 * 1024 else { return false }
+      try SuuntoSharePasteboard.enqueue(bytes: bytes, originalName: url.lastPathComponent, uti: "public.data")
+      if url.path.contains("/Documents/Inbox/") { try? FileManager.default.removeItem(at: url) }
+      if let inboxURL = URL(string: "calymob://dive-share-inbox") { _ = super.application(app, open: inboxURL, options: options) }
+      return true
+    } catch { return false }
   }
 
   // Handle APNs registration failure

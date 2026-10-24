@@ -114,18 +114,38 @@ class DiveComputerProfile {
     required this.pressureByGas,
     required this.events,
   });
-  Map<String, dynamic> toStorageJson() => {
+  Map<String, dynamic> toStorageJson({int maxPointsPerSeries = 240}) => {
         'schema_version': 1,
         'recorded': {
-          'depth': depth.map((p) => p.toMap()).toList(),
-          'temperature': temperature.map((p) => p.toMap()).toList(),
+          'depth': _downsample(depth, maxPointsPerSeries).map((p) => p.toMap()).toList(),
+          'temperature': _downsample(temperature, maxPointsPerSeries).map((p) => p.toMap()).toList(),
           'pressure_by_gas': {
             for (final e in pressureByGas.entries)
-              '${e.key}': e.value.map((p) => p.toMap()).toList(),
+              '${e.key}': _downsample(e.value, maxPointsPerSeries).map((p) => p.toMap()).toList(),
           },
           'events': events.map((event) => event.toMap()).toList(),
         },
       };
+
+  static List<DiveProfilePoint> _downsample(
+      List<DiveProfilePoint> points, int maximum) {
+    if (points.length <= maximum || maximum < 4) return List.of(points);
+    var min = 0;
+    var max = 0;
+    for (var index = 1; index < points.length; index++) {
+      if (points[index].value < points[min].value) min = index;
+      if (points[index].value > points[max].value) max = index;
+    }
+    final kept = <int>{0, points.length - 1, min, max};
+    for (var index = 1; index < points.length - 1 && kept.length < maximum; index++) {
+      kept.add((index * (points.length - 1) / (maximum - 1)).round());
+    }
+    for (var index = 1; index < points.length - 1 && kept.length < maximum; index++) {
+      kept.add(index);
+    }
+    final indices = kept.toList()..sort();
+    return [for (final index in indices) points[index]];
+  }
 }
 
 class DiveProfilePoint {

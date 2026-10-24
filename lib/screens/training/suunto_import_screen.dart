@@ -49,7 +49,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
       await SuuntoShareInbox().acknowledge(item.id);
       if (mounted) setState(() => _pendingShare = null);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Fichier partagé non pris en charge : $error');
+      if (mounted) setState(() => _error = 'Import impossible : $error');
     }
   }
 
@@ -71,13 +71,13 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
       final bytes = file.bytes;
       if (bytes == null || bytes.isEmpty)
         throw const FormatException(
-          'Le fichier JSON est vide ou inaccessible.',
+          'Le fichier est vide ou inaccessible.',
         );
       if (bytes.length > 20 * 1024 * 1024)
         throw const FormatException('Le fichier dépasse la limite de 20 Mo.');
       await _parse(bytes, file.name);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Import Suunto impossible : $error');
+      if (mounted) setState(() => _error = 'Import impossible : $error');
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -96,7 +96,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
       _name = name;
       _sourceBytes = bytes;
       _nearbySites = sites;
-      _chosenSite = null;
+      _chosenSite = sites.isEmpty ? null : sites.first;
     });
   }
 
@@ -116,11 +116,32 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     }
   }
 
+  String _decimal(double? value) => value == null
+      ? '—'
+      : value.toStringAsFixed(1).replaceAll('.', ',');
+
+  String _sourceWallClock(String source) {
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})')
+        .firstMatch(source);
+    return match == null
+        ? source
+        : '${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}';
+  }
+
+  String _distanceLabel(double? km) {
+    if (km == null) return '';
+    return km < 1
+        ? '${(km * 1000).round()} m'
+        : '${km.toStringAsFixed(1).replaceAll('.', ',')} km';
+  }
+
   @override
   void dispose() {
     _freeTextSite.dispose();
     super.dispose();
   }
+  Future<void> _cancelOrClose() async { if (_pendingShare != null) await SuuntoShareInbox().discard(_pendingShare!.id); if (!mounted) return; if (Navigator.canPop(context)) { Navigator.pop(context, false); } else { setState(_reset); } }
+  void _reset() { _preview=null; _error=null; _name=null; _sourceBytes=null; _pendingShare=null; _nearbySites=const []; _chosenSite=null; _freeTextSite.clear(); }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -132,12 +153,13 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
                 Row(
                   children: [
                     IconButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: _working ? null : _cancelOrClose,
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                     ),
+                    TextButton(onPressed: _working ? null : _cancelOrClose, child: const Text('Annuler', style: TextStyle(color: Colors.white))),
                     const Expanded(
                       child: Text(
-                        'Importer un journal Suunto',
+                        'Importer depuis une app de plongée',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 22,
@@ -149,7 +171,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Choisissez un export .json depuis Fichiers. Les coordonnées, itinéraires, numéros de série et données personnelles ne sont pas importés.',
+                  'Choisissez un export depuis Fichiers. Les coordonnées, itinéraires, numéros de série et données personnelles ne sont pas importés.',
                   style: TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 16),
@@ -158,19 +180,23 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
                   icon: const Icon(Icons.upload_file),
                   label: Text(
                     _name == null
-                        ? 'Choisir un fichier Suunto .json'
+                        ? 'Choisir un fichier (.json, .fit, .uddf, .xml, .ssrf, .zip)'
                         : 'Choisir un autre fichier',
                   ),
                 ),
+                if (_preview case final p?) ...[_previewCard(p), _locationCard(p), _saveCard(p)],
+                _card(const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Formats et export par marque', style: TextStyle(fontWeight: FontWeight.w800)),
+                    SizedBox(height: 6),
+                    Text('Suunto (Suunto App)\nOuvrez la plongée → ••• → Partager / Exporter le journal (JSON) → choisissez CalyMob (ou fichier .json).\n\nGarmin (Garmin Dive / Connect)\nExportez l’activité en FIT (.fit) ou archive .zip, puis partagez-la vers CalyMob ou choisissez le fichier.\n\nShearwater (Shearwater Cloud)\nOuvrez la plongée → Exporter au format UDDF (.uddf / .xml) ou Subsurface, puis partagez vers CalyMob.\n\nMares / Scubapro / Aqualung / Cressi\nExportez la plongée depuis l’app du fabricant au format UDDF (.uddf / .xml) (ou via Subsurface), puis partagez vers CalyMob.\n\nSubsurface (Mobile / Desktop)\nExportez au format Subsurface XML (.ssrf / .xml) ou UDDF (.uddf) et partagez vers CalyMob.'),
+                  ],
+                )),
                 if (_error != null)
                   _card(
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_error!, style: const TextStyle(color: Colors.redAccent)), if (_pendingShare != null) TextButton(onPressed: () async { final item = _pendingShare!; await SuuntoShareInbox().discard(item.id); if (mounted) setState(() { _pendingShare = null; _error = null; }); }, child: const Text('Ignorer ce fichier partagé'))]),
                   ),
-                if (_preview case final p?) ...[
-                  _previewCard(p),
-                  _locationCard(p),
-                  _saveCard(p)
-                ],
               ],
             ),
           ),
@@ -186,24 +212,16 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
             ),
             const SizedBox(height: 10),
-            Text('Début : ${p.startedAtSource}'),
-            Text('Durée : ${p.durationSeconds}s'),
-            Text(
-              'Profondeur max (valeur source) : ${p.maxDepthValue?.toStringAsFixed(1) ?? '—'} (${p.depthUnit.name})',
-            ),
-            Text(
-              'Température (valeurs source) : ${p.minTemperatureValue?.toStringAsFixed(1) ?? '—'} – ${p.maxTemperatureValue?.toStringAsFixed(1) ?? '—'} (${p.temperatureUnit.name})',
-            ),
-            Text(
-                'Gaz : ${p.gasNumbers.isEmpty ? '—' : p.gasNumbers.join(', ')}'),
-            Text(
-              'Alertes/appareil : ${p.events.where((e) => e.category == 'Warning' || e.category == 'Alarm').length}',
-            ),
+            Text('Date : ${_sourceWallClock(p.startedAtSource)}'),
+            Text('Durée : ${p.durationMinutes} min'),
+            Text('Profondeur max : ${_decimal(p.maxDepthValue)} m'),
+            if (p.minTemperatureValue != null || p.maxTemperatureValue != null)
+              Text('Température : ${_decimal(p.minTemperatureValue)} – ${_decimal(p.maxTemperatureValue)} °C'),
             if (p.tanks.isNotEmpty) ...[
               const SizedBox(height: 8),
               ...p.tanks.map(
                 (tank) => Text(
-                  'Gaz ${tank.gasNumber}: ${tank.startPressureValue?.toStringAsFixed(0) ?? '—'} → ${tank.endPressureValue?.toStringAsFixed(0) ?? '—'} (pression source, ${tank.pressureUnit.name})',
+                  '${p.tanks.length == 1 ? 'Pression' : 'Bouteille ${tank.gasNumber}'} : ${tank.startPressureValue?.round() ?? '—'} → ${tank.endPressureValue?.round() ?? '—'} bar${tank.startPressureValue != null && tank.endPressureValue != null ? ' (${(tank.endPressureValue! - tank.startPressureValue!).round()} bar)' : ''}',
                 ),
               ),
             ],
@@ -231,23 +249,15 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
             ),
             const SizedBox(height: 6),
             if (p.locationHint != null && _nearbySites.isNotEmpty)
-              DropdownButtonFormField<DiveSite>(
-                value: _chosenSite,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Sites proches (position non enregistrée)',
-                ),
-                items: _nearbySites
-                    .map(
-                      (site) => DropdownMenuItem(
-                        value: site,
-                        child: Text(
-                          '${site.name}${site.distanceKm == null ? '' : ' · ${site.distanceKm!.toStringAsFixed(1)} km'}',
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (site) => setState(() => _chosenSite = site),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _nearbySites.map((site) => ChoiceChip(
+                  selected: _chosenSite?.id == site.id,
+                  onSelected: (selected) => setState(() => _chosenSite = selected ? site : null),
+                  avatar: const Icon(Icons.location_pin, size: 16),
+                  label: Text('${site.name} · ${_distanceLabel(site.distanceKm)}'),
+                )).toList(),
               )
             else if (p.locationHint != null)
               const Text(
@@ -255,8 +265,12 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
               ),
             TextField(
               controller: _freeTextSite,
-              decoration: const InputDecoration(
+              onChanged: (_) => setState(() => _chosenSite = null),
+              textInputAction: TextInputAction.done,
+              onTapOutside: (_) => FocusScope.of(context).unfocus(),
+              decoration: InputDecoration(
                 labelText: 'Ou saisir un site librement',
+                suffixIcon: _freeTextSite.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _freeTextSite.clear())),
               ),
             ),
           ],
@@ -270,11 +284,13 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
             onPressed: _working ? null : () => _save(preview),
             icon: const Icon(Icons.save),
             label: const Text('Enregistrer comme nouvelle plongée')),
+        Wrap(spacing: 8, children: [OutlinedButton.icon(onPressed: _working ? null : _pick, icon: const Icon(Icons.swap_horiz), label: const Text('Choisir un autre fichier')), TextButton.icon(onPressed: _working ? null : _cancelOrClose, icon: const Icon(Icons.close), label: const Text('Annuler'))]),
       ]));
 
   Future<void> _save(DiveComputerImportPreview preview) async {
     final user = context.read<AuthProvider>().currentUser;
     final bytes = _sourceBytes;
+    final customSite = _freeTextSite.text.trim();
     if (user == null || bytes == null) return;
     final member = context.read<MemberProvider>();
     setState(() => _working = true);
@@ -286,7 +302,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         preview: preview,
         originalBytes: Uint8List.fromList(bytes),
         locationId: _chosenSite?.id,
-        locationName: _chosenSite?.name ?? _freeTextSite.text.trim(),
+        locationName: _chosenSite?.name ?? (customSite.isEmpty ? null : customSite),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

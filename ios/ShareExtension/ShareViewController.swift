@@ -7,11 +7,19 @@ final class ShareViewController: SLComposeServiceViewController {
   private let appGroup = "group.com.calypso.calymob"
   private let manifestName = "suunto-import-manifest.json"
   private let pasteboardType = "be.calypsodc.calymob.suunto-share-inbox"
+  private var hasStartedHandoff = false
   private struct InboxItem: Codable { let id: String; let storedName: String; let originalName: String; let uti: String }
   private struct PasteboardItem: Codable { let id: String; let originalName: String; let uti: String; let base64Bytes: String }
 
   override func isContentValid() -> Bool { true }
+  override func didSelectCancel() { hasStartedHandoff = true; extensionContext?.cancelRequest(withError: NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)) }
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if !hasStartedHandoff { didSelectPost() }
+  }
   override func didSelectPost() {
+    guard !hasStartedHandoff else { return }
+    hasStartedHandoff = true
     let accepted = [UTType.json, UTType.xml, UTType.zip, UTType.data]
     guard let item = extensionContext?.inputItems.first as? NSExtensionItem,
           let provider = item.attachments?.first(where: { provider in accepted.contains(where: { provider.hasItemConformingToTypeIdentifier($0.identifier) }) }),
@@ -38,8 +46,22 @@ final class ShareViewController: SLComposeServiceViewController {
         } catch {
           try self.enqueuePasteboard(bytes: bytes, id: id, originalName: originalName, uti: type.identifier)
         }
+        self.openHost()
         self.extensionContext?.completeRequest(returningItems: nil)
       } catch { self.extensionContext?.cancelRequest(withError: error) }
+    }
+  }
+
+  private func openHost() {
+    guard let url = URL(string: "calymob://dive-share-inbox") else { return }
+    extensionContext?.open(url, completionHandler: nil)
+    var responder: UIResponder? = self
+    while let current = responder {
+      if let application = current as? UIApplication {
+        application.open(url, options: [:], completionHandler: nil)
+        break
+      }
+      responder = current.next
     }
   }
 

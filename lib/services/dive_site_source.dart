@@ -24,6 +24,8 @@ abstract class DiveSiteSource {
 
 /// Reusable implementation for an in-memory/cached site list.
 class CoordinateDiveSiteSource implements DiveSiteSource {
+  static const maxDistanceKm = 15.0;
+  static const maxResults = 6;
   final Future<List<DiveSite>> Function() loadSites;
   CoordinateDiveSiteSource(this.loadSites);
   @override
@@ -40,8 +42,9 @@ class CoordinateDiveSiteSource implements DiveSiteSource {
           ),
         )
         .toList();
+    nearby.removeWhere((site) => site.distanceKm! > maxDistanceKm);
     nearby.sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
-    return nearby;
+    return nearby.take(maxResults).toList();
   }
 
   double distanceKm(DiveLocationHint hint, DiveSite site) =>

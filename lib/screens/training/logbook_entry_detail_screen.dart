@@ -172,7 +172,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
         builder: (context) => AlertDialog(
               title: const Text('Supprimer l’import ?'),
               content: const Text(
-                  'La plongée, le fichier importé et le profil enregistré seront supprimés.'),
+                  'La plongée et ses données importées seront supprimées.'),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context, false),
@@ -1555,10 +1555,34 @@ class _DiveComputerProfileSectionState
   bool _showTemperature = true;
   bool _showPressure = true;
   Future<Map<String, dynamic>?> _load() {
+    final inline = widget.computerImport['profile'];
+    if (inline is Map) return Future.value(_normaliseLegacyUnits(Map<String, dynamic>.from(inline)));
     final id = widget.computerImport['id'] as String?;
     if (id == null || widget.memberId.isEmpty) return Future.value(null);
     return DiveComputerProfileService().load(
         'clubs/${FirebaseConfig.defaultClubId}/dive_computer_imports/${widget.memberId}/$id/profile-v1.json');
+  }
+
+  Map<String, dynamic> _normaliseLegacyUnits(Map<String, dynamic> profile) {
+    final recorded = profile['recorded'];
+    if (recorded is! Map) return profile;
+    List normalise(dynamic rows, bool temperature) => (rows as List? ?? const [])
+        .map((row) {
+          final point = Map<String, dynamic>.from(row as Map);
+          final value = (point['value'] as num?)?.toDouble();
+          if (value != null && value > (temperature ? 150 : 1000)) {
+            point['value'] = temperature
+                ? ((value - 273.15) * 10).round() / 10
+                : ((value / 100000) * 10).round() / 10;
+          }
+          return point;
+        }).toList();
+    final copy = Map<String, dynamic>.from(recorded);
+    copy['temperature'] = normalise(copy['temperature'], true);
+    final pressures = Map<String, dynamic>.from(copy['pressure_by_gas'] as Map? ?? const {});
+    for (final key in pressures.keys) { pressures[key] = normalise(pressures[key], false); }
+    copy['pressure_by_gas'] = pressures;
+    return {...profile, 'recorded': copy};
   }
 
   @override

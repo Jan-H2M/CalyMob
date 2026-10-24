@@ -10,6 +10,7 @@ class SuuntoShareInbox {
     if (value is Map) return SuuntoShareInboxItem.fromMap(value);
     return null;
   }
+  Future<bool> hasPending() async { try { return await _channel.invokeMethod<bool>('hasPending') ?? false; } on MissingPluginException { return false; } on PlatformException { return false; } }
   Future<void> acknowledge(String id) => _channel.invokeMethod<void>('ack', id);
   Future<void> discard(String id) => _channel.invokeMethod<void>('discard', id);
 }

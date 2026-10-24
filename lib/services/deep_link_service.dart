@@ -32,6 +32,8 @@ class DeepLinkService {
       StreamController<HistoricalValidationLinkData>.broadcast();
   Stream<HistoricalValidationLinkData> get onHistoricalValidation =>
       _historicalValidationController.stream;
+  final _diveShareInboxController = StreamController<void>.broadcast();
+  Stream<void> get onDiveShareInbox => _diveShareInboxController.stream;
 
   StreamSubscription<Uri>? _linkSubscription;
   bool _isInitialized = false;
@@ -71,6 +73,10 @@ class DeepLinkService {
     debugPrint('DeepLink: Handling URI: $uri');
     debugPrint(
         'DeepLink: Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
+    if (uri.scheme == 'calymob' && uri.host == 'dive-share-inbox') {
+      _diveShareInboxController.add(null);
+      return;
+    }
 
     // Check if it's a password reset link from caly.club
     // Format: https://caly.club/reset-password?oobCode=xxx&mode=resetPassword
@@ -163,6 +169,7 @@ class DeepLinkService {
     _paymentReturnController.close();
     _passwordResetController.close();
     _historicalValidationController.close();
+    _diveShareInboxController.close();
     _isInitialized = false;
   }
 }
