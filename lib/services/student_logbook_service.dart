@@ -9,7 +9,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/student_logbook_entry.dart';
 
 class StudentLogbookService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+
+  StudentLogbookService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _collection(String clubId) =>
       _firestore
@@ -68,12 +71,14 @@ class StudentLogbookService {
   }) {
     final q = _collection(clubId).where('member_id', isEqualTo: userId);
     return q.snapshots().map((snap) {
-      final rows = snap.docs.map((d) => {
-            'id': d.id,
-            // WP-23 — écriture hors ligne pas encore synchronisée.
-            '_pending': d.metadata.hasPendingWrites,
-            ...d.data(),
-          }).where((row) {
+      final rows = snap.docs
+          .map((d) => {
+                'id': d.id,
+                // WP-23 — écriture hors ligne pas encore synchronisée.
+                '_pending': d.metadata.hasPendingWrites,
+                ...d.data(),
+              })
+          .where((row) {
         if (year == null) return true;
         final ts = row['date'];
         return ts is Timestamp && ts.toDate().year == year;
