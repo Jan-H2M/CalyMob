@@ -307,6 +307,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _query.clear())),
                     hintText: 'Vodelée, Strijenham, La Gombe…',
                     hintStyle: TextStyle(
                       color: Colors.grey.shade400,
@@ -335,6 +336,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                           )
                         : _resultsList(filtered, q),
               ),
+              Padding(padding: const EdgeInsets.all(12), child: Row(children: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')), const Spacer(), if (_query.text.trim().isNotEmpty) ElevatedButton(onPressed: () => Navigator.pop(context, DiveLocationSelection(name: _query.text.trim())), child: Text('Confirmer « ${_query.text.trim()} »'))])),
             ],
           ),
         ),

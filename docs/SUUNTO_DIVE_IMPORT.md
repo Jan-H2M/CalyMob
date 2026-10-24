@@ -23,6 +23,16 @@ advertised as `public.data`, then the Dart registry validates/sniffs content.
 Verify on an iPhone whether Suunto shares an individual dive as a supported
 file type; direct Suunto cloud/API sync is out of scope.
 
+## Formats et export par marque
+
+- **Suunto** : exportez un journal JSON depuis Suunto, puis choisissez le
+  fichier dans Fichiers ou partagez-le vers CalyMob.
+- **Garmin** : exportez un fichier FIT (ou une archive ZIP contenant un FIT).
+- **Shearwater, Oceanic/Pelagic, Scubapro, Mares** : utilisez l’export UDDF
+  proposé par le logiciel du fabricant lorsque disponible.
+- **Subsurface** : exportez un XML/SSRF XML; les exports binaires ne sont pas
+  pris en charge.
+
 ## Privacy contract
 
 GPS is read only in-memory to sort candidates from pluggable `DiveSiteSource`

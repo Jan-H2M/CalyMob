@@ -19,6 +19,8 @@ import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'services/notification_navigation_service.dart';
 import 'services/deep_link_service.dart';
+import 'services/suunto_share_inbox.dart';
+import 'services/dive_site_source.dart';
 import 'services/local_read_tracker.dart';
 import 'services/app_update_service.dart';
 import 'services/formation_task_service.dart';
@@ -57,6 +59,7 @@ import 'screens/training/logbook_dive_confirmation_screen.dart';
 import 'screens/training/actions_evaluations_screen.dart';
 import 'screens/communication/bug_resolution_feedback_screen.dart';
 import 'screens/training/historical_validation_screen.dart';
+import 'screens/training/suunto_import_screen.dart';
 import 'screens/exercises/validate_exercise_screen.dart';
 
 // Models (pour la navigation depuis les notifications)
@@ -229,6 +232,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _notificationIdentityInitialized = false;
   String? _notificationIdentityUserId;
   int _notificationIdentityGeneration = 0;
+  bool _diveShareNavigationPending = false;
 
   @override
   void initState() {
@@ -243,6 +247,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     );
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
+    _deepLinkService.onDiveShareInbox.listen((_) => _openDiveShareInbox());
     _setupNotificationTapHandlers();
     NotificationHistoryNavigationDispatcher.instance.handler = (data) {
       _enqueueNotificationRequest(
@@ -264,7 +269,22 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         unawaited(_handleInitialLocalNotification(initialLocalPayload));
       }
       _updateBadgeFromUnreadCounts();
+      unawaited(_openDiveShareInbox());
     });
+  }
+
+  Future<void> _openDiveShareInbox() async {
+    if (_diveShareNavigationPending || !mounted) return;
+    if (!await SuuntoShareInbox().hasPending() || !mounted) return;
+    final context = _navigatorKey.currentContext;
+    if (context == null || Provider.of<AuthProvider>(context, listen: false).currentUser == null) return;
+    _diveShareNavigationPending = true;
+    try {
+      await _navigatorKey.currentState?.push<bool>(MaterialPageRoute(
+          builder: (_) => SuuntoImportScreen(diveSiteSource: FirestoreDiveSiteSource())));
+    } finally {
+      _diveShareNavigationPending = false;
+    }
   }
 
   /// Configure les handlers pour la navigation quand l'utilisateur tape sur une notification
@@ -435,6 +455,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _handleNotificationAuthChanged() {
     _synchronizeNotificationIdentity();
     _scheduleNotificationDrain();
+    unawaited(_openDiveShareInbox());
   }
 
   void _synchronizeNotificationIdentity() {
@@ -992,6 +1013,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Re-save FCM token bij elke app resume (vangt geroteerde tokens op
       // die veranderd zijn terwijl de app in de achtergrond was)
       _refreshFcmToken();
+      unawaited(_openDiveShareInbox());
     } else if (state == AppLifecycleState.paused) {
       // Badge updaten bij vertrek uit app
       _updateBadgeFromUnreadCounts();

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:calymob/services/suunto_dive_log_adapter.dart';
+import 'package:calymob/models/dive_computer_import.dart';
 
 void main() {
   const adapter = SuuntoDiveLogAdapter();
@@ -12,9 +13,11 @@ void main() {
       expect(preview.startedAtSource, contains('+02:00'));
       expect(preview.durationSeconds, 4016);
       expect(preview.maxDepthValue, 61.3);
-      expect(preview.minTemperatureValue, 290.15);
+      expect(preview.minTemperatureValue, 17.0);
       expect(preview.tanks.single.startPressureValue, 210);
       expect(preview.tanks.single.endPressureValue, 150);
+      expect(preview.depthUnit, UnitProvenance.declared);
+      expect(preview.temperatureUnit, UnitProvenance.declared);
       expect(preview.gasNumbers, [1]);
       expect(
         preview.events.map((e) => e.category),
@@ -34,6 +37,21 @@ void main() {
 
   test('rejects a non DeviceLog JSON file', () {
     expect(() => adapter.parse(utf8.encode('{}')), throwsFormatException);
+  });
+
+  test('keeps zero-indexed primary tank and converts Kelvin and Pascals', () {
+    final json = _fixture();
+    final samples = json['DeviceLog']!['Samples'] as List;
+    for (final sample in samples) {
+      sample['Temperature'] = sample == samples.first ? 290.3 : 298.5;
+      sample['Cylinders'] = [{'GasNumber': 0, 'Pressure': sample == samples.first ? 22448438 : 3332812}];
+    }
+    final preview = adapter.parse(utf8.encode(jsonEncode(json)));
+    final tank = preview.tanks.firstWhere((tank) => tank.gasNumber == 0);
+    expect(tank.startPressureValue, 224.5);
+    expect(tank.endPressureValue, 33.3);
+    expect(preview.minTemperatureValue, 17.2);
+    expect(preview.maxTemperatureValue, 25.4);
   });
 
   test('sorts each channel even when the full stream is out of order', () {

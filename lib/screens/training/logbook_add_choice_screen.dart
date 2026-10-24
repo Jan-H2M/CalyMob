@@ -63,14 +63,16 @@ class LogbookAddChoiceScreen extends StatelessWidget {
               const SizedBox(height: 12),
               _ChoiceButton(
                 icon: Icons.scuba_diving_outlined,
-                title: 'Importer depuis Suunto',
-                subtitle:
-                    'Choisir et vérifier un export .json depuis Fichiers.',
-                onTap: () => Navigator.push(
+                title: 'Importer depuis une app de plongée',
+                subtitle: 'Suunto, Garmin, Shearwater, Mares, Scubapro, Subsurface…',
+                onTap: () async {
+                  final result = await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
                         builder: (_) => SuuntoImportScreen(
-                            diveSiteSource: FirestoreDiveSiteSource()))),
+                            diveSiteSource: FirestoreDiveSiteSource())));
+                  if (context.mounted && result == true) Navigator.pop(context, true);
+                },
               ),
               const SizedBox(height: 12),
               _ChoiceButton(

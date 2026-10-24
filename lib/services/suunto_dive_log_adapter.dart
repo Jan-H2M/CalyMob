@@ -33,10 +33,9 @@ class SuuntoDiveLogAdapter {
     if (start == null || duration == null || duration < 1) {
       throw const FormatException('Date ou durée de plongée Suunto invalide.');
     }
-    final depth = _points(samples, 'Depth', (v) => v);
-    // Do not convert temperature: the DeviceLog fixture has no declared unit.
-    // `value` is the original recorded number and the provenance is inferred.
-    final temperature = _points(samples, 'Temperature', (value) => value);
+    final depth = _points(samples, 'Depth', (v) => v, UnitProvenance.declared);
+    final temperature = _points(
+        samples, 'Temperature', _celsius, UnitProvenance.declared);
     final pressure = <int, List<DiveProfilePoint>>{};
     final firstPressure = <int, double>{};
     final lastPressure = <int, double>{};
@@ -50,13 +49,13 @@ class SuuntoDiveLogAdapter {
         final tank = _map(raw);
         final gas = _number(tank['GasNumber'])?.toInt();
         final rawPressure = _number(tank['Pressure']);
-        if (gas == null || rawPressure == null || rawPressure < 0) continue;
+        if (gas == null || gas < 0 || rawPressure == null || rawPressure <= 0) continue;
         gases.add(gas);
-        final bar = rawPressure.toDouble(); // Source has no declared unit.
+        final bar = _bar(rawPressure);
         firstPressure.putIfAbsent(gas, () => bar);
         lastPressure[gas] = bar;
         (pressure[gas] ??= []).add(
-          DiveProfilePoint(at: at, value: bar, unit: UnitProvenance.inferred),
+          DiveProfilePoint(at: at, value: bar, unit: UnitProvenance.declared),
         );
       }
       for (final entry in _map(sample['DiveEvents']).entries) {
@@ -86,13 +85,13 @@ class SuuntoDiveLogAdapter {
     _sort(temperature);
     for (final points in pressure.values) _sort(points);
     events.sort((a, b) => a.at.compareTo(b.at));
-    final tanks = gases
+    final tanks = firstPressure.keys
         .map(
           (gas) => DiveTankSummary(
             gasNumber: gas,
             startPressureValue: firstPressure[gas],
             endPressureValue: lastPressure[gas],
-            pressureUnit: UnitProvenance.inferred,
+            pressureUnit: UnitProvenance.declared,
           ),
         )
         .toList()
@@ -105,10 +104,10 @@ class SuuntoDiveLogAdapter {
       startedAtSource: startSource!,
       durationSeconds: duration,
       maxDepthValue: headerDepth ?? _max(depth),
-      depthUnit: UnitProvenance.inferred,
+      depthUnit: UnitProvenance.declared,
       minTemperatureValue: _min(temperature),
       maxTemperatureValue: _max(temperature),
-      temperatureUnit: UnitProvenance.inferred,
+      temperatureUnit: UnitProvenance.declared,
       tanks: tanks,
       gasNumbers: tanks.map((tank) => tank.gasNumber).toList(),
       events: events,
@@ -130,6 +129,7 @@ class SuuntoDiveLogAdapter {
     List<Map<String, dynamic>> rows,
     String field,
     double Function(double) convert,
+    UnitProvenance unit,
   ) =>
       [
         for (final row in rows)
@@ -138,12 +138,18 @@ class SuuntoDiveLogAdapter {
               DiveProfilePoint(
                 at: at,
                 value: convert(value),
-                unit: UnitProvenance.inferred,
+                unit: unit,
               ),
       ];
   Map<String, dynamic> _map(dynamic value) =>
       value is Map ? Map<String, dynamic>.from(value) : const {};
   double? _number(dynamic value) => value is num ? value.toDouble() : null;
+  double _celsius(double value) => value > 150
+      ? ((value - 273.15) * 10).round() / 10
+      : value;
+  double _bar(double value) => value > 1000
+      ? ((value / 100000) * 10).round() / 10
+      : value;
   DateTime? _date(dynamic value) =>
       value is String ? DateTime.tryParse(value) : null;
   String? _string(dynamic value) => value is String ? value : null;

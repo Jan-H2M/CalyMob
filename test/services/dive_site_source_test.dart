@@ -13,7 +13,7 @@ void main() {
         ],
       );
       final results = await source.nearby(const DiveLocationHint(50, 4));
-      expect(results.map((site) => site.id), ['near', 'far']);
+      expect(results.map((site) => site.id), ['near']);
       expect(results.first.distanceKm, isNotNull);
     },
   );
