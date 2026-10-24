@@ -11,7 +11,7 @@
 <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 <key>CFBundleDocumentTypes</key><array>
-  <dict><key>CFBundleTypeName</key><string>Dive computer log</string><key>CFBundleTypeRole</key><string>Viewer</string><key>LSItemContentTypes</key><array><string>public.json</string><string>public.xml</string><string>com.pkware.zip-archive</string><string>com.garmin.fit</string><string>com.subsurface.ssrf</string></array></dict>
+  <dict><key>CFBundleTypeName</key><string>Dive computer log</string><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>public.json</string><string>public.xml</string><string>com.pkware.zip-archive</string><string>com.garmin.fit</string><string>com.subsurface.ssrf</string></array></dict>
 </array>
 <key>UTImportedTypeDeclarations</key><array>
   <dict><key>UTTypeIdentifier</key><string>com.garmin.fit</string><key>UTTypeConformsTo</key><array><string>public.data</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>fit</string></array></dict></dict>
