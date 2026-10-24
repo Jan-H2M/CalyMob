@@ -303,6 +303,9 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         originalBytes: Uint8List.fromList(bytes),
         locationId: _chosenSite?.id,
         locationName: _chosenSite?.name ?? (customSite.isEmpty ? null : customSite),
+        country: _chosenSite?.country,
+        isSea: _chosenSite?.isSea,
+        zone: _chosenSite?.zone,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -8,12 +8,18 @@ class DiveSite {
   final double latitude;
   final double longitude;
   final double? distanceKm;
+  final String? country;
+  final bool isSea;
+  final String? zone;
   const DiveSite({
     required this.id,
     required this.name,
     required this.latitude,
     required this.longitude,
     this.distanceKm,
+    this.country,
+    this.isSea = false,
+    this.zone,
   });
 }
 
@@ -39,6 +45,9 @@ class CoordinateDiveSiteSource implements DiveSiteSource {
             latitude: site.latitude,
             longitude: site.longitude,
             distanceKm: _distance(hint, site),
+            country: site.country,
+            isSea: site.isSea,
+            zone: site.zone,
           ),
         )
         .toList();
@@ -113,6 +122,9 @@ class FirestoreDiveSiteSource implements DiveSiteSource {
                       .toString(),
                   latitude: latitude,
                   longitude: longitude,
+                  country: (document.data()['country'] ?? document.data()['country_code'])?.toString(),
+                  zone: (document.data()['zone'] ?? document.data()['region'])?.toString(),
+                  isSea: _isSea(document.data(), latitude, longitude),
                 ),
       ];
     } on FirebaseException {
@@ -122,6 +134,14 @@ class FirestoreDiveSiteSource implements DiveSiteSource {
   }
 
   double? _number(dynamic value) => value is num ? value.toDouble() : null;
+  bool _isSea(Map<String, dynamic> data, double latitude, double longitude) {
+    if (data['is_sea'] == true || data['water_type']?.toString().toLowerCase() == 'sea') return true;
+    final country = (data['country'] ?? data['country_code'] ?? '').toString().toUpperCase();
+    final name = (data['name'] ?? data['label'] ?? '').toString().toLowerCase();
+    if (const {'MT', 'MALTA', 'MALTE', 'EG', 'GR', 'HR', 'ES', 'IT', 'PT'}.contains(country)) return true;
+    if (['gozo', 'malta', 'mer', 'sea', 'zelande', 'zeeland', 'oosterschelde', 'grevelingen'].any(name.contains)) return true;
+    return latitude >= 35 && latitude <= 37 && longitude >= 14 && longitude <= 15;
+  }
 }
 
 // Avoid exposing coordinates beyond this source boundary. dart:math aliases

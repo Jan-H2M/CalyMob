@@ -35,6 +35,9 @@ class DiveComputerImportService {
     required Uint8List originalBytes,
     String? locationId,
     String? locationName,
+    String? country,
+    bool? isSea,
+    String? zone,
   }) async {
     final entries = await _entries(clubId).where('member_id', isEqualTo: memberId).get();
     for (final doc in entries.docs) {
@@ -50,6 +53,8 @@ class DiveComputerImportService {
         source: 'dive_computer',
         date: preview.startedAt, locationId: locationId,
         locationName: locationName ?? '(à compléter)',
+        country: country,
+        zone: zone,
         depthMaxMeters: preview.maxDepthValue,
         durationMinutes: preview.durationMinutes,
       );
@@ -66,6 +71,7 @@ class DiveComputerImportService {
         'tank_summaries': preview.tanks.map((tank) => tank.toMap()).toList(),
         'computer_events':
             preview.events.map((event) => event.toMap()).toList(),
+        if (isSea != null) 'is_sea': isSea,
       });
   }
 
