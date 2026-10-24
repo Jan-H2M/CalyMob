@@ -49,6 +49,32 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
 
   String get entryId => widget.entryId;
 
+  @override
+  void initState() {
+    super.initState();
+    if (data['source'] == 'dive_computer' &&
+        _canEdit &&
+        DiveComputerImportService.needsRepair(data)) {
+      _autoHealImport();
+    }
+  }
+
+  Future<void> _autoHealImport() async {
+    final initial = data;
+    try {
+      final repaired = await DiveComputerImportService().repairExistingEntry(
+        clubId: FirebaseConfig.defaultClubId,
+        memberId: data['member_id'] as String,
+        entryId: entryId,
+      );
+      if (mounted && repaired != null && identical(data, initial)) {
+        setState(() => data = repaired);
+      }
+    } catch (error) {
+      debugPrint('[LogbookEntryDetail] import repair failed: $error');
+    }
+  }
+
   /// Editable when this is the signed-in member's own entry. Imported,
   /// manually created and pool-generated entries all use the same edit screen;
   /// Firestore rules still enforce ownership on save.
@@ -113,25 +139,21 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
           date: date,
           entryTime: _readTime(data, 'entry_time', 'entry_time_str'),
           exitTime: _readTime(data, 'exit_time', 'exit_time_str'),
+          startedAt: DiveComputerImportService.startTime(data),
+          durationMinutes: duration,
         ),
         const SizedBox(height: 12),
         _ParamsCard(depth: depth, duration: duration, waterTemp: waterTemp),
-        if (counters.isNotEmpty || data['zone'] != null) ...[
-          const SizedBox(height: 12),
-          _CountersCard(counters: counters, zone: data['zone'] as String?),
-        ],
-        if (_hasEquipment(data)) ...[
-          const SizedBox(height: 12),
-          _EquipmentCard(data: data),
-        ],
-        if (binomes.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _BinomesCard(
-            entryId: entryId,
-            binomes: binomes,
-            onCorrect: _canEdit ? _openEditSheet : null,
-          ),
-        ],
+        const SizedBox(height: 12),
+        _CountersCard(counters: counters, zone: data['zone'] as String?),
+        const SizedBox(height: 12),
+        _EquipmentCard(data: data),
+        const SizedBox(height: 12),
+        _BinomesCard(
+          entryId: entryId,
+          binomes: binomes,
+          onCorrect: _canEdit ? _openEditSheet : null,
+        ),
         if (notes != null && notes.isNotEmpty) ...[
           const SizedBox(height: 12),
           _NotesCard(notes: notes),
@@ -354,14 +376,6 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
       // ignore — UI already reflects whatever the edit screen pushed via
       // its own snackbar feedback.
     }
-  }
-
-  bool _hasEquipment(Map<String, dynamic> data) {
-    return data['combi_type'] != null ||
-        data['combi'] is Map ||
-        data['tank'] is Map ||
-        data['lestage_kg'] != null ||
-        data['o2_pct'] != null;
   }
 
   /// Read a time field — prefer the structured Timestamp version, fall back
@@ -766,12 +780,17 @@ class _LocationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sea = isSea ||
+        DiveComputerImportService.isSeaLocation(
+          name: name,
+          country: country,
+        );
     return _Card(
       child: Row(
         children: [
           Icon(
-            isSea ? Icons.waves : Icons.terrain,
-            color: isSea ? Colors.cyan.shade700 : Colors.green.shade700,
+            sea ? Icons.waves : Icons.terrain,
+            color: sea ? Colors.cyan.shade700 : Colors.green.shade700,
             size: 36,
           ),
           const SizedBox(width: 12),
@@ -811,8 +830,15 @@ class _DateTimeCard extends StatelessWidget {
   final DateTime? date;
   final String? entryTime;
   final String? exitTime;
+  final DateTime? startedAt;
+  final int? durationMinutes;
 
-  const _DateTimeCard({this.date, this.entryTime, this.exitTime});
+  const _DateTimeCard(
+      {this.date,
+      this.entryTime,
+      this.exitTime,
+      this.startedAt,
+      this.durationMinutes});
 
   static const _months = [
     'janvier',
@@ -841,6 +867,19 @@ class _DateTimeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final start = startedAt ??
+        (date != null && (date!.hour != 0 || date!.minute != 0) ? date : null);
+    final immersion = entryTime?.trim().isNotEmpty == true
+        ? entryTime
+        : start == null
+            ? null
+            : DiveComputerImportService.formatTime(start);
+    final exit = exitTime?.trim().isNotEmpty == true
+        ? exitTime
+        : start != null && (durationMinutes ?? 0) > 0
+            ? DiveComputerImportService.formatTime(
+                start.add(Duration(minutes: durationMinutes!)))
+            : null;
     String dateLabel = '—';
     if (date != null) {
       final d = date!;
@@ -870,14 +909,14 @@ class _DateTimeCard extends StatelessWidget {
               ),
             ],
           ),
-          if (entryTime != null || exitTime != null) ...[
+          if (immersion != null || exit != null) ...[
             const Divider(height: 16),
             Row(
               children: [
                 Expanded(
                   child: _TimeBox(
                     label: "IMMERSION",
-                    value: entryTime,
+                    value: immersion,
                     icon: Icons.south,
                   ),
                 ),
@@ -885,7 +924,7 @@ class _DateTimeCard extends StatelessWidget {
                 Expanded(
                   child: _TimeBox(
                     label: 'SORTIE',
-                    value: exitTime,
+                    value: exit,
                     icon: Icons.north,
                   ),
                 ),
@@ -1066,15 +1105,13 @@ class _CountersCard extends StatelessWidget {
     if (zone != null && _zoneLabels.containsKey(zone)) {
       on.add(_zoneLabels[zone]!);
     }
-    if (on.isEmpty) {
-      return const SizedBox.shrink();
-    }
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionLabel('COMPTEURS'),
           const SizedBox(height: 8),
+          if (on.isEmpty) const Text('Aucun compteur renseigné'),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -1179,6 +1216,34 @@ class _EquipmentCard extends StatelessWidget {
         value: '${_fmt(lestage)} kg',
       ));
     }
+    final startPressure = (data['start_pressure_bar'] as num?)?.toDouble();
+    final endPressure = (data['end_pressure_bar'] as num?)?.toDouble();
+    final summaries =
+        (data['tank_summaries'] as List? ?? const []).whereType<Map>().toList();
+    final pressures = startPressure != null || endPressure != null
+        ? [
+            {
+              'start_pressure_value': startPressure,
+              'end_pressure_value': endPressure
+            }
+          ]
+        : summaries;
+    for (var i = 0; i < pressures.length; i++) {
+      final summary = pressures[i];
+      double? bar(dynamic value) => value is num
+          ? (value > 1000 ? value / 100000 : value.toDouble())
+          : null;
+      final start = bar(summary['start_pressure_value']);
+      final end = bar(summary['end_pressure_value']);
+      if (start == null && end == null) continue;
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 6));
+      rows.add(_row(
+        icon: Icons.speed,
+        label: pressures.length == 1 ? 'Pression' : 'Pression ${i + 1}',
+        value: '${start?.round() ?? '—'} → ${end?.round() ?? '—'} bar'
+            '${start != null && end != null ? ' (${(end - start).round()} bar)' : ''}',
+      ));
+    }
     // WP-20 finition — % O₂ explicite (nitrox).
     final o2Pct = (data['o2_pct'] as num?)?.toDouble();
     if (o2Pct != null && o2Pct > 0) {
@@ -1196,6 +1261,7 @@ class _EquipmentCard extends StatelessWidget {
         children: [
           const _SectionLabel('ÉQUIPEMENT'),
           const SizedBox(height: 8),
+          if (rows.isEmpty) const Text('Aucun équipement renseigné'),
           ...rows,
         ],
       ),
@@ -1259,57 +1325,66 @@ class _BinomesCard extends StatelessWidget {
         children: [
           const _SectionLabel('BINÔMES'),
           const SizedBox(height: 8),
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('clubs')
-                .doc(clubId)
-                .collection('logbook_dive_confirmations')
-                .where('source_entry_id', isEqualTo: entryId)
-                // Requis par les rules Firestore: la query doit prouver que
-                // le lecteur est l'expéditeur (source_member_id == uid).
-                .where('source_member_id',
-                    isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                .snapshots(),
-            builder: (context, snap) {
-              final confirmations = <String, Map<String, dynamic>>{};
-              for (final doc in snap.data?.docs ?? const []) {
-                final data = doc.data();
-                final memberId = data['target_member_id'] as String?;
-                if (memberId != null) confirmations[memberId] = data;
-              }
+          if (binomes.isEmpty) ...[
+            const Text('Aucun binôme renseigné'),
+            if (onCorrect != null)
+              TextButton.icon(
+                onPressed: onCorrect,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Ajouter un binôme'),
+              ),
+          ] else
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('clubs')
+                  .doc(clubId)
+                  .collection('logbook_dive_confirmations')
+                  .where('source_entry_id', isEqualTo: entryId)
+                  // Requis par les rules Firestore: la query doit prouver que
+                  // le lecteur est l'expéditeur (source_member_id == uid).
+                  .where('source_member_id',
+                      isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                  .snapshots(),
+              builder: (context, snap) {
+                final confirmations = <String, Map<String, dynamic>>{};
+                for (final doc in snap.data?.docs ?? const []) {
+                  final data = doc.data();
+                  final memberId = data['target_member_id'] as String?;
+                  if (memberId != null) confirmations[memberId] = data;
+                }
 
-              final hasDeclined =
-                  confirmations.values.any((c) => c['status'] == 'declined');
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final b in binomes)
-                    _BinomeStatusRow(
-                      binome: b,
-                      confirmation: b.memberId == null
-                          ? null
-                          : confirmations[b.memberId!],
-                    ),
-                  // WP-21 (C7) — un binôme a refusé : proposer de le corriger.
-                  // Le nouveau binôme déclenche une nouvelle demande (trigger
-                  // existant) ; l'ancien refus reste en historique.
-                  if (hasDeclined && onCorrect != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: OutlinedButton.icon(
-                        onPressed: onCorrect,
-                        icon: const Icon(Icons.edit, size: 16),
-                        label: const Text('Corriger le binôme'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red.shade700,
-                          side: BorderSide(color: Colors.red.shade200),
+                final hasDeclined =
+                    confirmations.values.any((c) => c['status'] == 'declined');
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final b in binomes)
+                      _BinomeStatusRow(
+                        binome: b,
+                        confirmation: b.memberId == null
+                            ? null
+                            : confirmations[b.memberId!],
+                      ),
+                    // WP-21 (C7) — un binôme a refusé : proposer de le corriger.
+                    // Le nouveau binôme déclenche une nouvelle demande (trigger
+                    // existant) ; l'ancien refus reste en historique.
+                    if (hasDeclined && onCorrect != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: OutlinedButton.icon(
+                          onPressed: onCorrect,
+                          icon: const Icon(Icons.edit, size: 16),
+                          label: const Text('Corriger le binôme'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                            side: BorderSide(color: Colors.red.shade200),
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              );
-            },
-          ),
+                  ],
+                );
+              },
+            ),
         ],
       ),
     );
@@ -1556,7 +1631,9 @@ class _DiveComputerProfileSectionState
   bool _showPressure = true;
   Future<Map<String, dynamic>?> _load() {
     final inline = widget.computerImport['profile'];
-    if (inline is Map) return Future.value(_normaliseLegacyUnits(Map<String, dynamic>.from(inline)));
+    if (inline is Map)
+      return Future.value(
+          _normaliseLegacyUnits(Map<String, dynamic>.from(inline)));
     final id = widget.computerImport['id'] as String?;
     if (id == null || widget.memberId.isEmpty) return Future.value(null);
     return DiveComputerProfileService().load(
@@ -1566,8 +1643,8 @@ class _DiveComputerProfileSectionState
   Map<String, dynamic> _normaliseLegacyUnits(Map<String, dynamic> profile) {
     final recorded = profile['recorded'];
     if (recorded is! Map) return profile;
-    List normalise(dynamic rows, bool temperature) => (rows as List? ?? const [])
-        .map((row) {
+    List normalise(dynamic rows, bool temperature) =>
+        (rows as List? ?? const []).map((row) {
           final point = Map<String, dynamic>.from(row as Map);
           final value = (point['value'] as num?)?.toDouble();
           if (value != null && value > (temperature ? 150 : 1000)) {
@@ -1579,8 +1656,11 @@ class _DiveComputerProfileSectionState
         }).toList();
     final copy = Map<String, dynamic>.from(recorded);
     copy['temperature'] = normalise(copy['temperature'], true);
-    final pressures = Map<String, dynamic>.from(copy['pressure_by_gas'] as Map? ?? const {});
-    for (final key in pressures.keys) { pressures[key] = normalise(pressures[key], false); }
+    final pressures =
+        Map<String, dynamic>.from(copy['pressure_by_gas'] as Map? ?? const {});
+    for (final key in pressures.keys) {
+      pressures[key] = normalise(pressures[key], false);
+    }
     copy['pressure_by_gas'] = pressures;
     return {...profile, 'recorded': copy};
   }
@@ -1663,31 +1743,54 @@ class _ProfilePainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size,
         Paint()..color = Colors.blueGrey.withValues(alpha: .08));
     _draw(canvas, size, recorded['depth'] as List? ?? const [], Colors.blue,
-        invert: true);
+        invert: true, zeroBased: true, unit: 'm');
     if (temp)
       _draw(canvas, size, recorded['temperature'] as List? ?? const [],
           Colors.orange);
-    if (pressure)
-      for (final raw in (recorded['pressure_by_gas'] as Map? ?? const {})
-          .values) _draw(canvas, size, raw as List? ?? const [], Colors.green);
+    if (pressure) {
+      final series = (recorded['pressure_by_gas'] as Map? ?? const {})
+          .values
+          .whereType<List>()
+          .toList();
+      final values = series
+          .expand((rows) => rows)
+          .whereType<Map>()
+          .map((point) => point['value'])
+          .whereType<num>()
+          .toList();
+      final maximum = values.isEmpty
+          ? null
+          : values.reduce((a, b) => a > b ? a : b).toDouble();
+      for (var i = 0; i < series.length; i++) {
+        _draw(canvas, size, series[i], Colors.green,
+            zeroBased: true,
+            maximum: maximum,
+            unit: i == 0 ? 'bar' : null,
+            labelRight: true);
+      }
+    }
   }
 
   void _draw(Canvas canvas, Size size, List rows, Color color,
-      {bool invert = false}) {
+      {bool invert = false,
+      bool zeroBased = false,
+      double? maximum,
+      String? unit,
+      bool labelRight = false}) {
     final values = rows
         .whereType<Map>()
         .map((p) => (p['value'] as num?)?.toDouble())
         .whereType<double>()
         .toList();
     if (values.length < 2) return;
-    final min = values.reduce((a, b) => a < b ? a : b);
-    final max = values.reduce((a, b) => a > b ? a : b);
+    final min = zeroBased ? 0.0 : values.reduce((a, b) => a < b ? a : b);
+    final max = maximum ?? values.reduce((a, b) => a > b ? a : b);
     final range = (max - min).abs() < .0001 ? 1 : max - min;
     final path = Path();
     for (var i = 0; i < values.length; i++) {
-      final x = size.width * i / (values.length - 1);
-      final y = 8 +
-          (size.height - 16) *
+      final x = 8 + (size.width - 16) * i / (values.length - 1);
+      final y = 18 +
+          (size.height - 36) *
               (invert
                   ? (values[i] - min) / range
                   : 1 - (values[i] - min) / range);
@@ -1702,6 +1805,23 @@ class _ProfilePainter extends CustomPainter {
           ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2);
+    if (unit != null) {
+      void label(double value, double y) {
+        final text = TextPainter(
+          text: TextSpan(
+              text:
+                  '${value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1)} $unit',
+              style:
+                  TextStyle(fontSize: 10, color: color.withValues(alpha: .7))),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        text.paint(
+            canvas, Offset(labelRight ? size.width - text.width - 4 : 4, y));
+      }
+
+      label(invert ? min : max, 2);
+      label(invert ? max : min, size.height - 13);
+    }
   }
 
   @override

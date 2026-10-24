@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../models/dive_computer_import.dart';
@@ -11,13 +12,21 @@ import '../../services/dive_site_source.dart';
 import '../../services/dive_computer_import_service.dart';
 import '../../services/dive_log_import_registry.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/dive_location_picker.dart';
 
 /// Files-based intake. The native iOS extension hands off into the same route
 /// via an App Group inbox when provisioned, otherwise a 24-hour local-only
 /// iOS pasteboard queue (see ios/ShareExtension).
 class SuuntoImportScreen extends StatefulWidget {
   final DiveSiteSource? diveSiteSource;
-  const SuuntoImportScreen({super.key, this.diveSiteSource});
+  final String clubId;
+  final String? memberId;
+  const SuuntoImportScreen({
+    super.key,
+    this.diveSiteSource,
+    this.clubId = FirebaseConfig.defaultClubId,
+    this.memberId,
+  });
   @override
   State<SuuntoImportScreen> createState() => _SuuntoImportScreenState();
 }
@@ -31,7 +40,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
   SuuntoShareInboxItem? _pendingShare;
   List<DiveSite> _nearbySites = const [];
   DiveSite? _chosenSite;
-  final _freeTextSite = TextEditingController();
+  DiveLocationSelection? _customSite;
   bool _working = false;
 
   @override
@@ -69,12 +78,14 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
           : null;
       if (file == null) return;
       final bytes = file.bytes;
-      if (bytes == null || bytes.isEmpty)
+      if (bytes == null || bytes.isEmpty) {
         throw const FormatException(
           'Le fichier est vide ou inaccessible.',
         );
-      if (bytes.length > 20 * 1024 * 1024)
+      }
+      if (bytes.length > 20 * 1024 * 1024) {
         throw const FormatException('Le fichier dépasse la limite de 20 Mo.');
+      }
       await _parse(bytes, file.name);
     } catch (error) {
       if (mounted) setState(() => _error = 'Import impossible : $error');
@@ -84,10 +95,12 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
   }
 
   Future<void> _parse(List<int> bytes, String name) async {
-    final preview = _registry.parse(bytes: Uint8List.fromList(bytes), filename: name);
+    final preview =
+        _registry.parse(bytes: Uint8List.fromList(bytes), filename: name);
     if (!mounted) return;
-    final source = widget.diveSiteSource;
-    final sites = source != null && preview.locationHint != null
+    final source =
+        widget.diveSiteSource ?? FirestoreDiveSiteSource(clubId: widget.clubId);
+    final sites = preview.locationHint != null
         ? await source.nearby(preview.locationHint!)
         : const <DiveSite>[];
     if (!mounted) return;
@@ -97,6 +110,7 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
       _sourceBytes = bytes;
       _nearbySites = sites;
       _chosenSite = sites.isEmpty ? null : sites.first;
+      _customSite = null;
     });
   }
 
@@ -116,13 +130,12 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
     }
   }
 
-  String _decimal(double? value) => value == null
-      ? '—'
-      : value.toStringAsFixed(1).replaceAll('.', ',');
+  String _decimal(double? value) =>
+      value == null ? '—' : value.toStringAsFixed(1).replaceAll('.', ',');
 
   String _sourceWallClock(String source) {
-    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})')
-        .firstMatch(source);
+    final match =
+        RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})').firstMatch(source);
     return match == null
         ? source
         : '${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}';
@@ -135,13 +148,28 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         : '${km.toStringAsFixed(1).replaceAll('.', ',')} km';
   }
 
-  @override
-  void dispose() {
-    _freeTextSite.dispose();
-    super.dispose();
+  Future<void> _cancelOrClose() async {
+    if (_pendingShare != null) {
+      await SuuntoShareInbox().discard(_pendingShare!.id);
+    }
+    if (!mounted) return;
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context, false);
+    } else {
+      setState(_reset);
+    }
   }
-  Future<void> _cancelOrClose() async { if (_pendingShare != null) await SuuntoShareInbox().discard(_pendingShare!.id); if (!mounted) return; if (Navigator.canPop(context)) { Navigator.pop(context, false); } else { setState(_reset); } }
-  void _reset() { _preview=null; _error=null; _name=null; _sourceBytes=null; _pendingShare=null; _nearbySites=const []; _chosenSite=null; _freeTextSite.clear(); }
+
+  void _reset() {
+    _preview = null;
+    _error = null;
+    _name = null;
+    _sourceBytes = null;
+    _pendingShare = null;
+    _nearbySites = const [];
+    _chosenSite = null;
+    _customSite = null;
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -156,7 +184,10 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
                       onPressed: _working ? null : _cancelOrClose,
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                     ),
-                    TextButton(onPressed: _working ? null : _cancelOrClose, child: const Text('Annuler', style: TextStyle(color: Colors.white))),
+                    TextButton(
+                        onPressed: _working ? null : _cancelOrClose,
+                        child: const Text('Annuler',
+                            style: TextStyle(color: Colors.white))),
                     const Expanded(
                       child: Text(
                         'Importer depuis une app de plongée',
@@ -184,18 +215,42 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
                         : 'Choisir un autre fichier',
                   ),
                 ),
-                if (_preview case final p?) ...[_previewCard(p), _locationCard(p), _saveCard(p)],
+                if (_preview case final p?) ...[
+                  _previewCard(p),
+                  _locationCard(p),
+                  _saveCard(p)
+                ],
                 _card(const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Formats et export par marque', style: TextStyle(fontWeight: FontWeight.w800)),
+                    Text('Formats et export par marque',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
                     SizedBox(height: 6),
-                    Text('Suunto (Suunto App)\nOuvrez la plongée → ••• → Partager / Exporter le journal (JSON) → choisissez CalyMob (ou fichier .json).\n\nGarmin (Garmin Dive / Connect)\nExportez l’activité en FIT (.fit) ou archive .zip, puis partagez-la vers CalyMob ou choisissez le fichier.\n\nShearwater (Shearwater Cloud)\nOuvrez la plongée → Exporter au format UDDF (.uddf / .xml) ou Subsurface, puis partagez vers CalyMob.\n\nMares / Scubapro / Aqualung / Cressi\nExportez la plongée depuis l’app du fabricant au format UDDF (.uddf / .xml) (ou via Subsurface), puis partagez vers CalyMob.\n\nSubsurface (Mobile / Desktop)\nExportez au format Subsurface XML (.ssrf / .xml) ou UDDF (.uddf) et partagez vers CalyMob.'),
+                    Text(
+                        'Suunto (Suunto App)\nOuvrez la plongée → ••• → Partager / Exporter le journal (JSON) → choisissez CalyMob (ou fichier .json).\n\nGarmin (Garmin Dive / Connect)\nExportez l’activité en FIT (.fit) ou archive .zip, puis partagez-la vers CalyMob ou choisissez le fichier.\n\nShearwater (Shearwater Cloud)\nOuvrez la plongée → Exporter au format UDDF (.uddf / .xml) ou Subsurface, puis partagez vers CalyMob.\n\nMares / Scubapro / Aqualung / Cressi\nExportez la plongée depuis l’app du fabricant au format UDDF (.uddf / .xml) (ou via Subsurface), puis partagez vers CalyMob.\n\nSubsurface (Mobile / Desktop)\nExportez au format Subsurface XML (.ssrf / .xml) ou UDDF (.uddf) et partagez vers CalyMob.'),
                   ],
                 )),
                 if (_error != null)
                   _card(
-                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_error!, style: const TextStyle(color: Colors.redAccent)), if (_pendingShare != null) TextButton(onPressed: () async { final item = _pendingShare!; await SuuntoShareInbox().discard(item.id); if (mounted) setState(() { _pendingShare = null; _error = null; }); }, child: const Text('Ignorer ce fichier partagé'))]),
+                    Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_error!,
+                              style: const TextStyle(color: Colors.redAccent)),
+                          if (_pendingShare != null)
+                            TextButton(
+                                onPressed: () async {
+                                  final item = _pendingShare!;
+                                  await SuuntoShareInbox().discard(item.id);
+                                  if (mounted) {
+                                    setState(() {
+                                      _pendingShare = null;
+                                      _error = null;
+                                    });
+                                  }
+                                },
+                                child: const Text('Ignorer ce fichier partagé'))
+                        ]),
                   ),
               ],
             ),
@@ -216,7 +271,8 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
             Text('Durée : ${p.durationMinutes} min'),
             Text('Profondeur max : ${_decimal(p.maxDepthValue)} m'),
             if (p.minTemperatureValue != null || p.maxTemperatureValue != null)
-              Text('Température : ${_decimal(p.minTemperatureValue)} – ${_decimal(p.maxTemperatureValue)} °C'),
+              Text(
+                  'Température : ${_decimal(p.minTemperatureValue)} – ${_decimal(p.maxTemperatureValue)} °C'),
             if (p.tanks.isNotEmpty) ...[
               const SizedBox(height: 8),
               ...p.tanks.map(
@@ -252,26 +308,46 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _nearbySites.map((site) => ChoiceChip(
-                  selected: _chosenSite?.id == site.id,
-                  onSelected: (selected) => setState(() => _chosenSite = selected ? site : null),
-                  avatar: const Icon(Icons.location_pin, size: 16),
-                  label: Text('${site.name} · ${_distanceLabel(site.distanceKm)}'),
-                )).toList(),
+                children: _nearbySites
+                    .map((site) => ChoiceChip(
+                          selected: _chosenSite?.id == site.id,
+                          selectedColor: AppColors.middenblauw,
+                          showCheckmark: true,
+                          checkmarkColor: Colors.white,
+                          onSelected: _working
+                              ? null
+                              : (_) => setState(() {
+                                    _chosenSite = site;
+                                    _customSite = null;
+                                  }),
+                          label: Text(
+                            '${site.name} · ${_distanceLabel(site.distanceKm)}',
+                            style: TextStyle(
+                              color: _chosenSite?.id == site.id
+                                  ? Colors.white
+                                  : null,
+                              fontWeight: _chosenSite?.id == site.id
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ))
+                    .toList(),
               )
             else if (p.locationHint != null)
               const Text(
-                'Aucune source de sites géolocalisés n’est configurée; vous pouvez saisir le site librement.',
+                'Aucun site trouvé à proximité; vous pouvez choisir un lieu ci-dessous.',
               ),
-            TextField(
-              controller: _freeTextSite,
-              onChanged: (_) => setState(() => _chosenSite = null),
-              textInputAction: TextInputAction.done,
-              onTapOutside: (_) => FocusScope.of(context).unfocus(),
-              decoration: InputDecoration(
-                labelText: 'Ou saisir un site librement',
-                suffixIcon: _freeTextSite.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _freeTextSite.clear())),
-              ),
+            DiveLocationPickerField(
+              clubId: widget.clubId,
+              uid: widget.memberId,
+              value: _customSite,
+              hint: 'Ou choisir un autre lieu…',
+              readOnly: _working,
+              onSelected: (site) => setState(() {
+                _chosenSite = null;
+                _customSite = site;
+              }),
             ),
           ],
         ),
@@ -284,28 +360,41 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
             onPressed: _working ? null : () => _save(preview),
             icon: const Icon(Icons.save),
             label: const Text('Enregistrer comme nouvelle plongée')),
-        Wrap(spacing: 8, children: [OutlinedButton.icon(onPressed: _working ? null : _pick, icon: const Icon(Icons.swap_horiz), label: const Text('Choisir un autre fichier')), TextButton.icon(onPressed: _working ? null : _cancelOrClose, icon: const Icon(Icons.close), label: const Text('Annuler'))]),
+        Wrap(spacing: 8, children: [
+          OutlinedButton.icon(
+              onPressed: _working ? null : _pick,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Choisir un autre fichier')),
+          TextButton.icon(
+              onPressed: _working ? null : _cancelOrClose,
+              icon: const Icon(Icons.close),
+              label: const Text('Annuler'))
+        ]),
       ]));
 
   Future<void> _save(DiveComputerImportPreview preview) async {
     final user = context.read<AuthProvider>().currentUser;
     final bytes = _sourceBytes;
-    final customSite = _freeTextSite.text.trim();
+    final customSite = _customSite;
+    final site = _chosenSite ??
+        (customSite == null && _nearbySites.isNotEmpty
+            ? _nearbySites.first
+            : null);
     if (user == null || bytes == null) return;
     final member = context.read<MemberProvider>();
     setState(() => _working = true);
     try {
       await DiveComputerImportService().saveAsNewEntry(
-        clubId: FirebaseConfig.defaultClubId,
-        memberId: user.uid,
+        clubId: widget.clubId,
+        memberId: widget.memberId ?? user.uid,
         memberName: '${member.prenom ?? ''} ${member.nom ?? ''}'.trim(),
         preview: preview,
         originalBytes: Uint8List.fromList(bytes),
-        locationId: _chosenSite?.id,
-        locationName: _chosenSite?.name ?? (customSite.isEmpty ? null : customSite),
-        country: _chosenSite?.country,
-        isSea: _chosenSite?.isSea,
-        zone: _chosenSite?.zone,
+        locationId: site?.id ?? customSite?.id,
+        locationName: site?.name ?? customSite?.name,
+        country: site?.country ?? customSite?.country,
+        isSea: site?.isSea ?? customSite?.isSea,
+        zone: site?.zone ?? customSite?.zone,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -313,12 +402,14 @@ class _SuuntoImportScreenState extends State<SuuntoImportScreen> {
         Navigator.pop(context, true);
       }
     } on DuplicateDiveComputerImport {
-      if (mounted)
+      if (mounted) {
         setState(() => _error =
             'Cette plongée semble déjà importée. Aucune plongée existante n’a été modifiée.');
+      }
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = 'Enregistrement impossible : $error');
+      }
     } finally {
       if (mounted) setState(() => _working = false);
     }

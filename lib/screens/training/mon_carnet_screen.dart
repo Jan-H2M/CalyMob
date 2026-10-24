@@ -998,6 +998,11 @@ class _SourceBadge extends StatelessWidget {
         bg = const Color(0xFF8B5CF6); // violet-500
         icon = Icons.cloud_download;
         break;
+      case 'dive_computer':
+        label = 'Ordinateur';
+        bg = AppColors.middenblauw;
+        icon = Icons.watch;
+        break;
       case 'manual':
       default:
         label = 'Manuelle';

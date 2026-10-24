@@ -41,6 +41,8 @@ class DiveLocationSelection {
 }
 
 class DiveLocationPickerField extends StatelessWidget {
+  final String clubId;
+  final String? uid;
   final DiveLocationSelection? value;
   final ValueChanged<DiveLocationSelection> onSelected;
   final bool readOnly;
@@ -48,6 +50,8 @@ class DiveLocationPickerField extends StatelessWidget {
 
   const DiveLocationPickerField({
     super.key,
+    this.clubId = FirebaseConfig.defaultClubId,
+    this.uid,
     required this.value,
     required this.onSelected,
     this.readOnly = false,
@@ -68,9 +72,12 @@ class DiveLocationPickerField extends StatelessWidget {
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (_) => const _DiveLocationPickerSheet(),
+                  builder: (_) => _DiveLocationPickerSheet(
+                    clubId: clubId,
+                    uid: uid ?? context.read<AuthProvider>().currentUser?.uid,
+                  ),
                 );
-                if (result != null) onSelected(result);
+                if (context.mounted && result != null) onSelected(result);
               },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -132,7 +139,9 @@ class DiveLocationPickerField extends StatelessWidget {
 }
 
 class _DiveLocationPickerSheet extends StatefulWidget {
-  const _DiveLocationPickerSheet();
+  final String clubId;
+  final String? uid;
+  const _DiveLocationPickerSheet({required this.clubId, this.uid});
 
   @override
   State<_DiveLocationPickerSheet> createState() =>
@@ -153,8 +162,8 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
 
   Future<void> _load() async {
     try {
-      const clubId = FirebaseConfig.defaultClubId;
-      final userId = context.read<AuthProvider>().currentUser?.uid;
+      final clubId = widget.clubId;
+      final userId = widget.uid;
       final db = FirebaseFirestore.instance;
       final centralSnap = await db
           .collection('clubs')
@@ -198,7 +207,9 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
             id: d.id,
             name: (data['name'] as String?)?.trim() ?? '—',
             country: (data['country'] as String?)?.trim(),
-            isSea: waterType == 'sea' || waterType == 'mer',
+            isSea: data['is_sea'] == true ||
+                waterType == 'sea' ||
+                waterType == 'mer',
             zone: ((data['zone'] ?? data['region']) as String?)?.trim(),
             type: (data['location_type'] as String?)?.trim(),
             aliases: [
@@ -220,9 +231,11 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
         final counters = data['counters'];
         addRow(
           _LocationRow(
+            id: data['location_id'] as String?,
             name: name,
             country: (data['country'] as String?)?.trim(),
             isSea: counters is Map && counters['mer'] == true,
+            zone: (data['zone'] as String?)?.trim(),
           ),
         );
       }
@@ -307,7 +320,11 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _query.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _query.clear())),
+                    suffixIcon: _query.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () => setState(() => _query.clear())),
                     hintText: 'Vodelée, Strijenham, La Gombe…',
                     hintStyle: TextStyle(
                       color: Colors.grey.shade400,
@@ -336,7 +353,19 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                           )
                         : _resultsList(filtered, q),
               ),
-              Padding(padding: const EdgeInsets.all(12), child: Row(children: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')), const Spacer(), if (_query.text.trim().isNotEmpty) ElevatedButton(onPressed: () => Navigator.pop(context, DiveLocationSelection(name: _query.text.trim())), child: Text('Confirmer « ${_query.text.trim()} »'))])),
+              Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(children: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Annuler')),
+                    const Spacer(),
+                    if (_query.text.trim().isNotEmpty)
+                      ElevatedButton(
+                          onPressed: () => Navigator.pop(context,
+                              DiveLocationSelection(name: _query.text.trim())),
+                          child: Text('Confirmer « ${_query.text.trim()} »'))
+                  ])),
             ],
           ),
         ),
