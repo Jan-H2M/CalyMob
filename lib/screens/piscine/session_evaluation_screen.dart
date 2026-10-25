@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/piscine_session_service.dart';
 import '../../services/member_observation_service.dart';
+import '../../services/lifras_service.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/observation_bottom_sheet.dart';
 
@@ -20,22 +21,30 @@ class SessionEvaluationScreen extends StatefulWidget {
   final PiscineSession session;
   final String? themeTitle;
   final List<String>? relatedExerciceCodes;
+  final MemberObservationService? observationService;
+  final LifrasService? lifrasService;
+  final PiscineSessionService? sessionService;
 
   const SessionEvaluationScreen({
     super.key,
     required this.session,
     this.themeTitle,
     this.relatedExerciceCodes,
+    this.observationService,
+    this.lifrasService,
+    this.sessionService,
   });
 
   @override
   State<SessionEvaluationScreen> createState() =>
       _SessionEvaluationScreenState();
 }
+
 class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
-  final PiscineSessionService _sessionService = PiscineSessionService();
-  final MemberObservationService _observationService =
-      MemberObservationService();
+  late final PiscineSessionService _sessionService =
+      widget.sessionService ?? PiscineSessionService();
+  late final MemberObservationService _observationService =
+      widget.observationService ?? MemberObservationService();
   final String _clubId = FirebaseConfig.defaultClubId;
 
   List<PiscineAttendee> _attendees = [];
@@ -45,6 +54,7 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
   StreamSubscription<List<PiscineAttendee>>? _attendeesSubscription;
   StreamSubscription<List<MemberObservation>>? _observationsSubscription;
   int _loadGeneration = 0;
+  bool _canEvaluate = false;
 
   @override
   void initState() {
@@ -64,7 +74,8 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
       plongeurCode: memberProvider.plongeurCode,
       appRole: memberProvider.appRole,
     );
-    if (!canReadAllObservations) {
+    final memberId = context.read<AuthProvider>().currentUser?.uid ?? '';
+    if (!canReadAllObservations && memberId.isEmpty) {
       setState(() {
         _loading = false;
         _loadErrorMessage =
@@ -76,10 +87,12 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
     setState(() {
       _loading = true;
       _loadErrorMessage = null;
+      _canEvaluate = canReadAllObservations;
     });
 
     final attendeesStream = _sessionService.getAttendeesStream(
-      _clubId, widget.session.id,
+      _clubId,
+      widget.session.id,
     );
     _attendeesSubscription = attendeesStream.listen((attendees) {
       if (!mounted || generation != _loadGeneration) return;
@@ -89,9 +102,12 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
     });
 
     // Luister naar observaties om count per lid bij te houden
-    _observationsSubscription = _observationService
-        .watchFullSessionObservations(_clubId, widget.session.id)
-        .listen((observations) {
+    final observationsStream = canReadAllObservations
+        ? _observationService.watchFullSessionObservations(
+            _clubId, widget.session.id)
+        : _observationService.watchOwnSessionObservations(
+            _clubId, memberId, widget.session.id);
+    _observationsSubscription = observationsStream.listen((observations) {
       if (!mounted || generation != _loadGeneration) return;
       final counts = <String, int>{};
       for (final obs in observations) {
@@ -125,6 +141,7 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
   }
 
   void _openObservationSheet(PiscineAttendee attendee) {
+    if (!_canEvaluate) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberProvider = Provider.of<MemberProvider>(context, listen: false);
     final observerName = memberProvider.displayName;
@@ -143,7 +160,7 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
         sessionTitle: 'Piscine ${_formatDate(widget.session.date)}',
         sessionDate: widget.session.date,
         observerId: observerId,
-        observerName: observerName,        defaultThemeTitle: widget.themeTitle,
+        observerName: observerName, defaultThemeTitle: widget.themeTitle,
         suggestedExerciceCodes: widget.relatedExerciceCodes,
       ),
     );
@@ -201,7 +218,9 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
                           return _AttendeeRow(
                             attendee: attendee,
                             observationCount: count,
-                            onTap: () => _openObservationSheet(attendee),
+                            onTap: _canEvaluate
+                                ? () => _openObservationSheet(attendee)
+                                : null,
                           );
                         },
                       ),
@@ -216,7 +235,7 @@ class _SessionEvaluationScreenState extends State<SessionEvaluationScreen> {
 class _AttendeeRow extends StatelessWidget {
   final PiscineAttendee attendee;
   final int observationCount;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _AttendeeRow({
     required this.attendee,
@@ -251,7 +270,8 @@ class _AttendeeRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.green.shade100,
                 borderRadius: BorderRadius.circular(12),
-              ),              child: Text(
+              ),
+              child: Text(
                 '$observationCount obs.',
                 style: TextStyle(
                   color: Colors.green.shade800,
@@ -260,8 +280,10 @@ class _AttendeeRow extends StatelessWidget {
                 ),
               ),
             ),
-          const SizedBox(width: 4),
-          const Icon(Icons.chevron_right, color: Colors.grey),
+          if (onTap != null) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
         ],
       ),
       onTap: onTap,

@@ -55,6 +55,7 @@ import '../training/monitor_planning_screen.dart';
 class OperationDetailScreen extends StatefulWidget {
   final String operationId;
   final String clubId;
+  final MemberObservationService? observationService;
 
   @visibleForTesting
   final OperationService? operationService;
@@ -69,6 +70,7 @@ class OperationDetailScreen extends StatefulWidget {
     Key? key,
     required this.operationId,
     required this.clubId,
+    this.observationService,
     this.operationService,
     this.profileService,
     this.loadAuxiliaryProfileData = true,
@@ -84,6 +86,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   final LifrasService _lifrasService = LifrasService();
   final DiveLocationService _diveLocationService = DiveLocationService();
   late final OperationService _operationService;
+  late final MemberObservationService _observationService;
 
   MemberProfile? _userProfile;
   MemberProfile? _organisateurProfile;
@@ -279,6 +282,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     super.initState();
     _operationService = widget.operationService ?? OperationService();
     _profileService = widget.profileService ?? ProfileService();
+    _observationService = widget.observationService ?? MemberObservationService();
     _registrationRequestIdentity = RegistrationRequestIdentity(
       requestIdFactory: _operationService.newRegistrationRequestId,
     );
@@ -3550,13 +3554,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                             participant.membreId]?[code];
                                         final statusColor =
                                             _getObservationColor(obs?.result);
-                                        final isMonitor = _canManagePalanquees(
-                                          context
-                                              .read<OperationProvider>()
-                                              .selectedOperation!,
-                                        );
                                         return GestureDetector(
-                                          onTap: isMonitor
+                                          onTap: _canReadAllMemberObservations
                                               ? () =>
                                                   _showExerciseEvaluationSheet(
                                                     memberId:
@@ -5072,6 +5071,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               userId: userId,
               canEdit: canEdit,
               canReadAllObservations: _canReadAllMemberObservations,
+              observationService: _observationService,
             ),
           ),
         );
@@ -5366,7 +5366,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     await _exerciceObservationsSubscription?.cancel();
     if (!mounted || generation != _exerciceObservationsGeneration) return;
 
-    final service = MemberObservationService();
+    final service = _observationService;
     final stream = _canReadAllMemberObservations
         ? service.watchFullSessionObservations(widget.clubId, operation.id)
         : service.watchOwnSessionObservations(
@@ -5449,6 +5449,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required String exerciceDescription,
     MemberObservation? existingObservation,
   }) {
+    if (!_canReadAllMemberObservations) return;
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return;
 
@@ -5563,51 +5564,60 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       onPressed: selectedResult == null
                           ? null
                           : () async {
-                              final service = MemberObservationService();
+                              try {
+                                final service = _observationService;
 
-                              if (existingObservation != null) {
-                                // Update existing
-                                await service.updateObservation(
-                                  widget.clubId,
-                                  existingObservation.id,
-                                  {
-                                    'result': selectedResult,
-                                    'note': noteController.text.trim(),
-                                    'updatedAt': DateTime.now(),
-                                  },
-                                );
-                              } else {
-                                // Create new observation
-                                final participants = context
-                                    .read<OperationProvider>()
-                                    .selectedOperationParticipants;
+                                if (existingObservation != null) {
+                                  // Update existing
+                                  await service.updateObservation(
+                                    widget.clubId,
+                                    existingObservation.id,
+                                    {
+                                      'result': selectedResult,
+                                      'note': noteController.text.trim(),
+                                      'updatedAt': DateTime.now(),
+                                    },
+                                  );
+                                } else {
+                                  // Create new observation
+                                  final obs = MemberObservation(
+                                    id: '',
+                                    memberId: memberId,
+                                    memberName: memberName,
+                                    memberNiveau: '',
+                                    contextType: operation.categorie == 'plongee'
+                                        ? 'plongee'
+                                        : 'piscine',
+                                    contextId: operation.id,
+                                    contextDate:
+                                        operation.dateDebut ?? DateTime.now(),
+                                    contextTitle: operation.titre,
+                                    category: 'exercice_lifras',
+                                    exerciceCode: exerciceCode,
+                                    exerciceDescription: exerciceDescription,
+                                    result: selectedResult,
+                                    note: noteController.text.trim(),
+                                    observerId: currentUserId,
+                                    observerName: currentUserName,
+                                    createdAt: DateTime.now(),
+                                  );
+                                  await service.addObservation(
+                                      widget.clubId, obs);
+                                }
 
-                                final obs = MemberObservation(
-                                  id: '',
-                                  memberId: memberId,
-                                  memberName: memberName,
-                                  memberNiveau: '',
-                                  contextType: operation.categorie == 'plongee'
-                                      ? 'plongee'
-                                      : 'piscine',
-                                  contextId: operation.id,
-                                  contextDate:
-                                      operation.dateDebut ?? DateTime.now(),
-                                  contextTitle: operation.titre,
-                                  category: 'exercice_lifras',
-                                  exerciceCode: exerciceCode,
-                                  exerciceDescription: exerciceDescription,
-                                  result: selectedResult,
-                                  note: noteController.text.trim(),
-                                  observerId: currentUserId,
-                                  observerName: currentUserName,
-                                  createdAt: DateTime.now(),
+                                if (mounted && ctx.mounted) Navigator.pop(ctx);
+                              } catch (error) {
+                                debugPrint(
+                                    '❌ Erreur sauvegarde évaluation activité: $error');
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Impossible d’enregistrer l’évaluation pour le moment. Réessayez.',
+                                    ),
+                                  ),
                                 );
-                                await service.addObservation(
-                                    widget.clubId, obs);
                               }
-
-                              if (mounted) Navigator.pop(ctx);
                             },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal,

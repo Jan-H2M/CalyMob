@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
@@ -13,42 +15,90 @@ import 'my_goals_screen.dart';
 /// Read-only progressie-overzicht voor het ingelogde lid.
 /// Toont alle observaties gegroepeerd per categorie.
 class MyProgressionScreen extends StatefulWidget {
-  const MyProgressionScreen({super.key});
+  final MemberObservationService? observationService;
+  final FormationSnapshotReader? snapshotReader;
+  const MyProgressionScreen(
+      {super.key, this.observationService, this.snapshotReader});
 
   @override
   State<MyProgressionScreen> createState() => _MyProgressionScreenState();
 }
 
 class _MyProgressionScreenState extends State<MyProgressionScreen> {
-  final MemberObservationService _service = MemberObservationService();
-  final FormationSnapshotReader _snapshotReader = FormationSnapshotReader();
+  late final MemberObservationService _service =
+      widget.observationService ?? MemberObservationService();
+  late final FormationSnapshotReader _snapshotReader =
+      widget.snapshotReader ?? FormationSnapshotReader();
   final String _clubId = FirebaseConfig.defaultClubId;
   List<MemberObservation> _observations = [];
-  FormationSnapshotDoc? _snapshot; // WP-12 : points d'attention (formulation positive)
+  FormationSnapshotDoc?
+      _snapshot; // WP-12 : points d'attention (formulation positive)
   bool _loading = true;
+  StreamSubscription<List<MemberObservation>>? _observationsSubscription;
+  int _observationsLoadGeneration = 0;
+  String? _observationLoadError;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    unawaited(_loadData());
   }
 
-  void _loadData() {
+  @override
+  void dispose() {
+    _observationsLoadGeneration++;
+    unawaited(_observationsSubscription?.cancel());
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    final generation = ++_observationsLoadGeneration;
+    final previous = _observationsSubscription;
+    _observationsSubscription = null;
+    await previous?.cancel();
+    if (!mounted || generation != _observationsLoadGeneration) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberId = authProvider.currentUser?.uid;
-    if (memberId == null) return;
-
-    _snapshotReader.getSnapshot(_clubId, memberId).then((snap) {
-      if (mounted) setState(() => _snapshot = snap);
+    if (memberId == null || memberId.isEmpty) {
+      setState(() {
+        _loading = false;
+        _observations = [];
+        _snapshot = null;
+        _observationLoadError = null;
+      });
+      return;
+    }
+    setState(() {
+      _loading = _observations.isEmpty;
+      _observationLoadError = null;
     });
 
-    _service.getObservationsForMember(_clubId, memberId).listen((obs) {
-      if (mounted) {
+    unawaited(_snapshotReader.getSnapshot(_clubId, memberId).then<void>((snap) {
+      if (mounted && generation == _observationsLoadGeneration) {
+        setState(() => _snapshot = snap);
+      }
+    }).catchError((Object error, StackTrace stackTrace) {
+      if (!mounted || generation != _observationsLoadGeneration) return;
+      debugPrint('❌ Erreur chargement snapshot progression: $error');
+    }));
+
+    _observationsSubscription =
+        _service.getObservationsForMember(_clubId, memberId).listen((obs) {
+      if (mounted && generation == _observationsLoadGeneration) {
         setState(() {
           _observations = obs;
           _loading = false;
+          _observationLoadError = null;
         });
       }
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (!mounted || generation != _observationsLoadGeneration) return;
+      debugPrint('❌ Erreur chargement observations progression: $error');
+      setState(() {
+        _loading = false;
+        _observationLoadError =
+            'Les observations sont indisponibles pour le moment.';
+      });
     });
   }
 
@@ -76,30 +126,48 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _observations.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.school_outlined, size: 48,
-                          color: Colors.grey.shade400),
-                        const SizedBox(height: 12),
-                        Text('Aucune observation enregistrée',
-                          style: TextStyle(fontSize: 16,
-                            color: Colors.grey.shade500)),
-                        const SizedBox(height: 4),
-                        Text('Tes moniteurs noteront ta progression ici.',
-                          style: TextStyle(fontSize: 13,
-                            color: Colors.grey.shade400)),
-                      ],
-                    ),
-                  ),
-                )
-              : _buildContent(),
+      body: Column(children: [
+        if (_observationLoadError != null)
+          Material(
+            color: Colors.amber.shade50,
+            child: ListTile(
+              dense: true,
+              leading: Icon(Icons.info_outline, color: Colors.amber.shade900),
+              title: Text(_observationLoadError!),
+              trailing: TextButton(
+                onPressed: () => unawaited(_loadData()),
+                child: const Text('Réessayer'),
+              ),
+            ),
+          ),
+        Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _observations.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.school_outlined,
+                                  size: 48, color: Colors.grey.shade400),
+                              const SizedBox(height: 12),
+                              Text('Aucune observation enregistrée',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey.shade500)),
+                              const SizedBox(height: 4),
+                              Text('Tes moniteurs noteront ta progression ici.',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey.shade400)),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _buildContent()),
+      ]),
     );
   }
 
@@ -133,7 +201,8 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
 
     // Stats summary
     final acquis = _observations.where((o) => o.result == 'acquis').length;
-    final enProgres = _observations.where((o) => o.result == 'en_progres').length;
+    final enProgres =
+        _observations.where((o) => o.result == 'en_progres').length;
     final aRevoir = _observations.where((o) => o.result == 'a_revoir').length;
 
     return ListView(
@@ -147,14 +216,16 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
             decoration: BoxDecoration(
               color: AppColors.oranje.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.oranje.withValues(alpha: 0.4)),
+              border:
+                  Border.all(color: AppColors.oranje.withValues(alpha: 0.4)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: const [
-                    Icon(Icons.fitness_center, color: AppColors.oranje, size: 18),
+                    Icon(Icons.fitness_center,
+                        color: AppColors.oranje, size: 18),
                     SizedBox(width: 6),
                     Text('Encore à travailler',
                         style: TextStyle(
@@ -184,10 +255,13 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8, offset: const Offset(0, 2),
-            )],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              )
+            ],
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -211,8 +285,8 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(catLabel,
-                  style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 ...obs.map((o) => _observationTile(o)),
               ],
@@ -227,10 +301,10 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
     return Column(
       children: [
         Text('$count',
-          style: TextStyle(
-            fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+            style: TextStyle(
+                fontSize: 24, fontWeight: FontWeight.bold, color: color)),
         Text(label,
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
       ],
     );
   }
@@ -248,8 +322,7 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
     };
     final color = resultColors[obs.result] ?? Colors.grey;
     final label = resultLabels[obs.result] ?? '—';
-    final dateStr =
-        '${obs.contextDate.day.toString().padLeft(2, '0')}/'
+    final dateStr = '${obs.contextDate.day.toString().padLeft(2, '0')}/'
         '${obs.contextDate.month.toString().padLeft(2, '0')}';
 
     return Container(
@@ -270,8 +343,8 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(label,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                color: color)),
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: color)),
           ),
           const SizedBox(width: 10),
           // Detail
@@ -281,17 +354,18 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
               children: [
                 if (obs.exerciceCode != null && obs.exerciceCode!.isNotEmpty)
                   Text(obs.exerciceCode!,
-                    style: const TextStyle(fontSize: 13,
-                      fontWeight: FontWeight.w500)),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w500)),
                 if (obs.themeTitle != null && obs.themeTitle!.isNotEmpty)
                   Text(obs.themeTitle!,
-                    style: const TextStyle(fontSize: 13,
-                      fontWeight: FontWeight.w500)),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w500)),
                 if (obs.note.isNotEmpty)
                   Text(obs.note,
-                    style: TextStyle(fontSize: 12,
-                      color: Colors.grey.shade600),
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
@@ -300,9 +374,9 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(dateStr,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
               Text(obs.observerName,
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
             ],
           ),
         ],

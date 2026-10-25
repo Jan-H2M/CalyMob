@@ -23,6 +23,9 @@ class PalanqueeScreen extends StatefulWidget {
   final String userId;
   final bool canEdit;
   final bool canReadAllObservations;
+  final MemberObservationService? observationService;
+  final LifrasService? lifrasService;
+  final PalanqueeService? palanqueeService;
   const PalanqueeScreen({
     Key? key,
     required this.operation,
@@ -31,6 +34,9 @@ class PalanqueeScreen extends StatefulWidget {
     required this.userId,
     this.canEdit = false,
     required this.canReadAllObservations,
+    this.observationService,
+    this.lifrasService,
+    this.palanqueeService,
   }) : super(key: key);
 
   @override
@@ -38,7 +44,12 @@ class PalanqueeScreen extends StatefulWidget {
 }
 
 class _PalanqueeScreenState extends State<PalanqueeScreen> {
-  final PalanqueeService _service = PalanqueeService();
+  late final PalanqueeService _service =
+      widget.palanqueeService ?? PalanqueeService();
+  late final LifrasService _lifrasService =
+      widget.lifrasService ?? LifrasService();
+  late final MemberObservationService _observationService =
+      widget.observationService ?? MemberObservationService();
 
   List<Palanquee> _palanquees = [];
   Map<String, String> _memberLevels = {};
@@ -88,7 +99,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
 
       // Load exercise catalog
-      final allExercices = await LifrasService().getAllExercices(widget.clubId);
+      final allExercices = await _lifrasService.getAllExercices(widget.clubId);
       _exerciceCatalog = {for (var ex in allExercices) ex.id: ex};
       _revalidate();
     } catch (e) {
@@ -555,7 +566,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     await _exerciceObservationsSubscription?.cancel();
     if (!mounted || generation != _exerciceObservationsGeneration) return;
 
-    final service = MemberObservationService();
+    if (!widget.canReadAllObservations && widget.userId.isEmpty) return;
+    final service = _observationService;
     final stream = widget.canReadAllObservations
         ? service.watchFullSessionObservations(
             widget.clubId,
@@ -607,6 +619,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     String exerciceDescription,
     String? membreNiveau,
   ) {
+    if (!widget.canReadAllObservations) return;
     final existing = _exerciceObservations[memberId]?[exerciceCode];
     String result = existing?.result ?? 'en_progres';
     String remarks = existing?.note ?? '';
@@ -744,18 +757,18 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
                       try {
                         if (existing?.id.isEmpty ?? true) {
-                          await MemberObservationService().addObservation(
+                          await _observationService.addObservation(
                             widget.clubId,
                             obs,
                           );
                         } else {
-                          await MemberObservationService().updateObservation(
+                          await _observationService.updateObservation(
                             widget.clubId,
                             existing!.id,
                             obs.toMap(),
                           );
                         }
-                        if (mounted) {
+                        if (mounted && ctx.mounted) {
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -765,6 +778,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                           );
                         }
                       } catch (e) {
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Erreur: $e'),
@@ -1062,7 +1076,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                                 final obs = _exerciceObservations[p.membreId]?[code];
                                 final color = _getObservationColor(obs?.result);
                                 return GestureDetector(
-                                  onTap: () {
+                                  onTap: widget.canReadAllObservations ? () {
                                     final exercice = _exerciceCatalog.values
                                         .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, niveau: NiveauLIFRAS.nb, description: code));
                                     _showExerciseEvaluationSheet(
@@ -1072,7 +1086,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                                       exercice.description,
                                       _getLevelForMember(p.membreId),
                                     );
-                                  },
+                                  } : null,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                     decoration: BoxDecoration(
@@ -1311,7 +1325,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       final obs = _exerciceObservations[p.membreId]?[code];
                       final color = _getObservationColor(obs?.result);
                       return GestureDetector(
-                        onTap: () {
+                        onTap: widget.canReadAllObservations ? () {
                           final exercice = _exerciceCatalog.values
                               .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, niveau: NiveauLIFRAS.nb, description: code));
                           _showExerciseEvaluationSheet(
@@ -1321,7 +1335,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                             exercice.description,
                             p.niveau,
                           );
-                        },
+                        } : null,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                           decoration: BoxDecoration(
