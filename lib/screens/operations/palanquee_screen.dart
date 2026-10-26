@@ -186,7 +186,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   void _revalidate() {
     _validationResults = validateAllPalanquees(
       _palanquees,
-      lieuType: widget.operation.lieu,
+      lieuType: widget.operation.lieuType ?? widget.operation.lieu,
     );
   }
 
@@ -302,7 +302,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
     final result = PalanqueeAutoAssignService.autoAssign(
       allParticipants,
-      lieuType: widget.operation.lieu,
+      lieuType: widget.operation.lieuType ?? widget.operation.lieu,
     );
 
     setState(() {

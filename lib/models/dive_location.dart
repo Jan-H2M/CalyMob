@@ -1,6 +1,92 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tariff.dart';
 
+/// Human-facing environment categories shared with CalyCompta's
+/// `location_type` values.  Existing locations which only have `water_type`
+/// remain readable: their broad legacy type is represented without rewriting
+/// the Firestore document.
+enum DiveEnvironment {
+  career('Carrière', '⛏️'),
+  lake('Lac', '🏞️'),
+  sea('Mer', '🏖️'),
+  northSea('Mer du Nord', '🚢'),
+  zeeland('Zélande', '🌊'),
+  pool('Piscine', '🏊'),
+  freshWater('Eau douce', '💧'),
+  other('Autre', '📍');
+
+  const DiveEnvironment(this.label, this.icon);
+  final String label;
+  final String icon;
+
+  static DiveEnvironment fromFirestore(Map<String, dynamic> data) {
+    switch (data['location_type']?.toString().trim().toLowerCase()) {
+      case 'carrière':
+      case 'carriere':
+        return DiveEnvironment.career;
+      case 'lac':
+        return DiveEnvironment.lake;
+      case 'mer':
+        return DiveEnvironment.sea;
+      case 'mer du nord':
+        return DiveEnvironment.northSea;
+      case 'zélande':
+      case 'zelande':
+        return DiveEnvironment.zeeland;
+      case 'piscine':
+        return DiveEnvironment.pool;
+      case 'autre':
+        return DiveEnvironment.other;
+    }
+
+    // Compatibility for the older, broader catalogue shape.  Do not infer a
+    // quarry or lake from fresh water: that distinction did not exist there.
+    switch (data['water_type']?.toString().trim().toLowerCase()) {
+      case 'sea':
+      case 'mer':
+        return DiveEnvironment.sea;
+      case 'pool':
+      case 'piscine':
+        return DiveEnvironment.pool;
+      case 'fresh':
+      case 'eau douce':
+        return DiveEnvironment.freshWater;
+      default:
+        return DiveEnvironment.other;
+    }
+  }
+
+  /// Exact CalyCompta value for new operations. `Eau douce` is legacy-only:
+  /// it deliberately remains unspecified rather than inventing a category.
+  String? get operationLieuType => switch (this) {
+        DiveEnvironment.career => 'Carrière',
+        DiveEnvironment.lake => 'Lac',
+        DiveEnvironment.sea => 'Mer',
+        DiveEnvironment.northSea => 'Mer du Nord',
+        DiveEnvironment.zeeland => 'Zélande',
+        DiveEnvironment.pool => 'Piscine',
+        DiveEnvironment.other => 'Autre',
+        DiveEnvironment.freshWater => null,
+      };
+
+  bool get isSea =>
+      this == DiveEnvironment.sea ||
+      this == DiveEnvironment.northSea ||
+      this == DiveEnvironment.zeeland;
+}
+
+/// Groups catalogue locations by their explicit environment while preserving
+/// the legacy broad environment for records which have no `location_type`.
+Map<DiveEnvironment, List<DiveLocation>> groupDiveLocationsByEnvironment(
+  Iterable<DiveLocation> locations,
+) {
+  final groups = <DiveEnvironment, List<DiveLocation>>{};
+  for (final location in locations) {
+    groups.putIfAbsent(location.environment, () => []).add(location);
+  }
+  return groups;
+}
+
 /// Modèle DiveLocation - Lieu de plongée avec tarifs
 /// Firestore collection: clubs/{clubId}/dive_locations
 class DiveLocation {
@@ -26,6 +112,7 @@ class DiveLocation {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? createdBy;
+  final DiveEnvironment environment;
 
   DiveLocation({
     required this.id,
@@ -43,6 +130,7 @@ class DiveLocation {
     required this.createdAt,
     required this.updatedAt,
     this.createdBy,
+    this.environment = DiveEnvironment.other,
   });
 
   /// Convertir depuis Firestore DocumentSnapshot
@@ -65,6 +153,7 @@ class DiveLocation {
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       createdBy: data['created_by'],
+      environment: DiveEnvironment.fromFirestore(data),
     );
   }
 
