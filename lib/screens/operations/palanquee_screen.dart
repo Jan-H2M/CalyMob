@@ -14,6 +14,8 @@ import '../../models/exercice_lifras.dart';
 import '../../services/lifras_service.dart';
 import '../../models/member_observation.dart';
 import '../../services/member_observation_service.dart';
+import '../../services/member_service.dart';
+import '../../utils/palanquee_simulation_selection.dart';
 
 /// Écran de composition des palanquées (tap-to-assign)
 class PalanqueeScreen extends StatefulWidget {
@@ -26,6 +28,7 @@ class PalanqueeScreen extends StatefulWidget {
   final MemberObservationService? observationService;
   final LifrasService? lifrasService;
   final PalanqueeService? palanqueeService;
+  final MemberService? memberService;
   const PalanqueeScreen({
     Key? key,
     required this.operation,
@@ -37,6 +40,7 @@ class PalanqueeScreen extends StatefulWidget {
     this.observationService,
     this.lifrasService,
     this.palanqueeService,
+    this.memberService,
   }) : super(key: key);
 
   @override
@@ -50,8 +54,11 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       widget.lifrasService ?? LifrasService();
   late final MemberObservationService _observationService =
       widget.observationService ?? MemberObservationService();
+  late final MemberService _memberService =
+      widget.memberService ?? MemberService();
 
   List<Palanquee> _palanquees = [];
+  final List<ParticipantOperation> _simulationParticipants = [];
   Map<String, String> _memberLevels = {};
   Map<int, ValidationResult> _validationResults = {};
   Map<String, ExerciceLIFRAS> _exerciceCatalog = {};
@@ -95,6 +102,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
       if (assignments != null && assignments.palanquees.isNotEmpty) {
         _palanquees = assignments.palanquees;
+        _restoreSimulationParticipantsFromAssignments();
       }
 
 
@@ -157,7 +165,48 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         assignedIds.add(p.membreId);
       }
     }
-    return widget.participants.where((p) => !assignedIds.contains(p.membreId)).toList();
+    return _allParticipants.where((p) => !assignedIds.contains(p.membreId)).toList();
+  }
+
+  List<ParticipantOperation> get _allParticipants {
+    final participantIds = <String>{};
+    return [...widget.participants, ..._simulationParticipants]
+        .where((participant) => participantIds.add(participant.membreId))
+        .toList();
+  }
+
+  /// Restores members added by the silent planning picker on a previous edit.
+  ///
+  /// They exist only as snapshots inside the saved palanquée assignment (not
+  /// as operation inscriptions). Keeping them in the local roster also means
+  /// that removing one from a group returns them to the unassigned panel.
+  void _restoreSimulationParticipantsFromAssignments() {
+    final registeredIds = widget.participants.map((p) => p.membreId).toSet();
+    final restoredIds = <String>{};
+    for (final palanquee in _palanquees) {
+      for (final participant in palanquee.participants) {
+        if (participant.membreId.isEmpty ||
+            registeredIds.contains(participant.membreId) ||
+            !restoredIds.add(participant.membreId)) {
+          continue;
+        }
+        _simulationParticipants.add(
+          ParticipantOperation(
+            id: 'palanquee-simulation:${participant.membreId}',
+            operationId: widget.operation.id,
+            membreId: participant.membreId,
+            membreNom: participant.membreNom,
+            membrePrenom: participant.membrePrenom,
+            prix: 0,
+            dateInscription: DateTime.now(),
+            registrationStatus: 'simulation',
+          ),
+        );
+        if (participant.niveau.isNotEmpty) {
+          _memberLevels[participant.membreId] = participant.niveau;
+        }
+      }
+    }
   }
 
   String _getLevelForMember(String membreId) {
@@ -173,7 +222,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
   List<String> _getExerciseCodesForMember(String membreId) {
     try {
-      final participant = widget.participants.firstWhere((p) => p.membreId == membreId);
+      final participant = _allParticipants.firstWhere((p) => p.membreId == membreId);
       return participant.exercices
           .map((exId) => _exerciceCatalog[exId]?.code)
           .where((code) => code != null)
@@ -290,7 +339,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
   void _autoAssign() {
     // Convertir tous les participants en PalanqueeParticipant
-    final allParticipants = widget.participants.map((p) {
+    final allParticipants = _allParticipants.map((p) {
       final level = _getLevelForMember(p.membreId);
       return PalanqueeParticipant(
         membreId: p.membreId,
@@ -466,6 +515,175 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         },
       ),
     );
+  }
+
+  /// Adds active club members to the local palanquée roster for planning.
+  ///
+  /// This deliberately does not call an inscription API: organisers can build
+  /// or simulate groups without registering members or producing any push or
+  /// email traffic. Only a later save writes the palanquée assignment.
+  Future<void> _showBulkSimulationMemberPicker() async {
+    if (!widget.canEdit) return;
+
+    List<Map<String, dynamic>> directoryMembers;
+    try {
+      directoryMembers = await _memberService.getAllMembers(widget.clubId);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossible de charger les membres : $error')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final candidates = selectableSimulationMembers(
+      directoryMembers: directoryMembers,
+      excludedMemberIds: _allParticipants.map((p) => p.membreId),
+    );
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun autre membre actif à ajouter')),
+      );
+      return;
+    }
+
+    final selectedIds = <String>{};
+    var query = '';
+    final selected = await showModalBottomSheet<List<Map<String, dynamic>>>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final visible = candidates.where((member) {
+            final label = '${member['nom'] ?? ''} ${member['prenom'] ?? ''}'
+                .toLowerCase();
+            return label.contains(query.toLowerCase());
+          }).toList();
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * .78,
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 2),
+                    child: Text(
+                      'Ajouter des membres du club',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'Mode simulation : aucune inscription, aucun e-mail et aucune notification ne sont envoyés.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Rechercher un membre',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) => setSheetState(() => query = value),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => setSheetState(() {
+                            final visibleIds = visible.map((member) => member['id'].toString());
+                            if (visibleIds.every(selectedIds.contains)) {
+                              selectedIds.removeAll(visibleIds);
+                            } else {
+                              selectedIds.addAll(visibleIds);
+                            }
+                          }),
+                          child: Text(
+                            visible.every((member) => selectedIds.contains(member['id'].toString()))
+                                ? 'Tout désélectionner'
+                                : 'Tout sélectionner',
+                          ),
+                        ),
+                        const Spacer(),
+                        Text('${selectedIds.length} sélectionné(s)'),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: visible.length,
+                      itemBuilder: (context, index) {
+                        final member = visible[index];
+                        final id = member['id'].toString();
+                        final level = member['plongeur_code']?.toString() ?? '';
+                        return CheckboxListTile(
+                          value: selectedIds.contains(id),
+                          onChanged: (checked) => setSheetState(() {
+                            if (checked == true) {
+                              selectedIds.add(id);
+                            } else {
+                              selectedIds.remove(id);
+                            }
+                          }),
+                          title: Text('${(member['nom'] ?? '').toString().toUpperCase()} ${member['prenom'] ?? ''}'),
+                          subtitle: level.isEmpty ? null : Text(_getLevelDisplay(level)),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: selectedIds.isEmpty ? null : () => Navigator.pop(
+                          sheetContext,
+                          candidates.where((member) => selectedIds.contains(member['id'].toString())).toList(),
+                        ),
+                        icon: const Icon(Icons.group_add),
+                        label: const Text('Ajouter à la simulation'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (selected == null || selected.isEmpty || !mounted) return;
+    final additions = simulationParticipantsFromSelection(
+      selectedMembers: selected,
+      operationId: widget.operation.id,
+      now: DateTime.now(),
+    );
+    setState(() {
+      _simulationParticipants.addAll(additions);
+      for (final member in selected) {
+        final level = member['plongeur_code']?.toString();
+        if (level != null && level.isNotEmpty) {
+          _memberLevels[member['id'].toString()] = level;
+        }
+      }
+      _hasChanges = true;
+      _revalidate();
+    });
   }
 
   void _showAssignToBottomSheet(ParticipantOperation participant) {
@@ -896,6 +1114,14 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // Silent planning roster — it only changes palanquée assignments,
+          // never event inscriptions or their notification side effects.
+          if (widget.canEdit)
+            IconButton(
+              onPressed: _isLoading ? null : _showBulkSimulationMemberPicker,
+              icon: const Icon(Icons.group_add_outlined),
+              tooltip: 'Ajouter des membres (simulation silencieuse)',
+            ),
           // Auto-assign — organisateur uniquement
           if (widget.canEdit)
             IconButton(
@@ -986,7 +1212,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   }
 
   Widget _buildInfoBar() {
-    final total = widget.participants.length;
+    final total = _allParticipants.length;
     final assigned = total - _unassignedParticipants.length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
