@@ -20,6 +20,7 @@ import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
 import '../../utils/organizer_contact_policy.dart';
+import '../../utils/operation_payment_presentation.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/dive_location_service.dart';
@@ -2510,16 +2511,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             if (isRegistered &&
                                 !isPaid &&
                                 userInscription != null) ...[
-                              operation.paymentPlanEnabled
-                                  ? _buildPaymentPlanStatusCard(
-                                      inscription: userInscription,
-                                      operation: operation,
-                                    )
-                                  : _buildInscriptionStatusCard(
-                                      inscription: userInscription,
-                                      operation: operation,
-                                      inscriptionPrice: inscriptionPrice,
-                                    ),
+                              switch (unpaidPaymentCardKind(
+                                inscription: userInscription,
+                                paymentPlanEnabled:
+                                    operation.paymentPlanEnabled,
+                              )) {
+                                UnpaidPaymentCardKind.paymentPlan =>
+                                  _buildPaymentPlanStatusCard(
+                                    inscription: userInscription,
+                                    operation: operation,
+                                  ),
+                                UnpaidPaymentCardKind.standard ||
+                                UnpaidPaymentCardKind.manualReview =>
+                                  _buildInscriptionStatusCard(
+                                    inscription: userInscription,
+                                    operation: operation,
+                                    inscriptionPrice: inscriptionPrice,
+                                  ),
+                              },
                               const SizedBox(height: 12),
                             ],
 

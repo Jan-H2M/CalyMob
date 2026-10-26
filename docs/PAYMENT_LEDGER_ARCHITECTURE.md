@@ -34,9 +34,11 @@ When CalyCompta identifies a participant for an event-linked transaction but
 cannot settle it safely, it projects `payment_status: manual_review` together
 with `payment_review_transaction_id` and `payment_review_reason`. CalyMob shows
 **Vérification bancaire** and disables new QR/payment confirmation actions for
-that participant. This review state takes precedence over old QR communication
-wording and does not grant mobile access to private bank transactions or payment
-intent collections.
+that participant. This includes payment-plan activities: the review card
+replaces the installment plan and its QR action until CalyCompta resolves the
+review. This state takes precedence over old QR communication wording and does
+not grant mobile access to private bank transactions or payment intent
+collections.
 
 ## Server responsibilities
 

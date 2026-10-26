@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:calymob/models/operation.dart';
 import 'package:calymob/models/participant_operation.dart';
 import 'package:calymob/models/user_event_registration.dart';
+import 'package:calymob/utils/operation_payment_presentation.dart';
 
 void main() {
   Future<ParticipantOperation> readParticipant({
@@ -166,6 +167,30 @@ void main() {
         expect(registration.statusColor, 'deepOrange');
       },
     );
+
+    test('manual review bypasses the payment-plan card and its QR action',
+        () async {
+      final participant = await readParticipant(
+        id: 'plan-review',
+        firstName: 'Participant',
+        amount: 8,
+        paymentFields: {
+          'paye': false,
+          'payment_status': 'manual_review',
+          'transaction_matched': false,
+          'payment_review_transaction_id': 'bank-vodelee-plan-review',
+        },
+      );
+
+      expect(
+        unpaidPaymentCardKind(
+          inscription: participant,
+          paymentPlanEnabled: true,
+        ),
+        UnpaidPaymentCardKind.manualReview,
+      );
+      expect(participant.paymentDisplayStatus, 'Vérification bancaire');
+    });
 
     test('a linked transaction id alone is not proof of settlement', () async {
       final participant = await readParticipant(
