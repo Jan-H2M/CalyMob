@@ -15,6 +15,31 @@ be updated whenever a mobile payment screen or Cloud Function changes.
 - Never write `paye`, `transaction_id`, `transaction_montant`,
   `transaction_matched`, allocation data or refund totals directly.
 
+## Participant payment presentation — 26 October 2026
+
+> **Superseded (2026-10-26):** the former mobile presentation rule that
+> rendered `paye: true` without a second matched-transaction flag as “Payé via
+> CalyMob / En attente banque” is retained here for history but no longer
+> applies. It caused a settled inscription to remain amber when CalyCompta's
+> denormalised fields did not update in the same write.
+
+`ParticipantOperation.isPaymentSettled` is the single display contract for an
+activity inscription. The app shows **Payé** when any authoritative Firestore
+signal says the inscription is settled: `paye: true`, `payment_status` equal to
+`paid` or `settled`, `transaction_matched: true`, or a denormalised payment
+intent status equal to `paid` or `settled`. A transaction ID on its own is only
+a link and is not proof of settlement.
+
+When CalyCompta identifies a participant for an event-linked transaction but
+cannot settle it safely, it projects `payment_status: manual_review` together
+with `payment_review_transaction_id` and `payment_review_reason`. CalyMob shows
+**Vérification bancaire** and disables new QR/payment confirmation actions for
+that participant. This includes payment-plan activities: the review card
+replaces the installment plan and its QR action until CalyCompta resolves the
+review. This state takes precedence over old QR communication wording and does
+not grant mobile access to private bank transactions or payment intent
+collections.
+
 ## Server responsibilities
 
 Cloud Functions in `functions/src/payment/` validate the member, operation,

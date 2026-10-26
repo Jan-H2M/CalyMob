@@ -243,7 +243,10 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
                   ),
 
                   // Bouton payer si non payé et événement à venir (hide when price not yet set)
-                  if (!operation.priceTbd && !participant.paye && !registration.isPast)
+                  if (!operation.priceTbd &&
+                      !participant.isPaymentSettled &&
+                      !participant.isPaymentInManualReview &&
+                      !registration.isPast)
                     ElevatedButton.icon(
                       onPressed: () {
                         // TODO: Implémenter paiement (Phase 3)
@@ -291,7 +294,10 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
     Color color;
     IconData icon;
 
-    if (!registration.isPaid) {
+    if (registration.isPaymentInManualReview) {
+      color = Colors.deepOrange.shade700;
+      icon = Icons.manage_search_outlined;
+    } else if (!registration.isPaid) {
       color = Colors.orange;
       icon = Icons.pending;
     } else if (registration.isPaidAwaitingBank) {

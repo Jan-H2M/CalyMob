@@ -20,6 +20,7 @@ import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
 import '../../utils/organizer_contact_policy.dart';
+import '../../utils/operation_payment_presentation.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/dive_location_service.dart';
@@ -1567,6 +1568,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required dynamic operation,
   }) async {
     if (!_canConfirmPayment) return;
+    if (participant.isPaymentInManualReview) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Ce paiement est en vérification bancaire dans CalyCompta.'),
+            backgroundColor: Colors.deepOrange,
+          ),
+        );
+      }
+      return;
+    }
     // First, load bank settings from Firestore
     try {
       final bankDoc = await FirebaseFirestore.instance
@@ -1645,9 +1658,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         }
         aggregatedAmount = openInstallment.aggregatedAmount;
       } else {
-        aggregatedAmount = (participant.paye ? 0 : participant.totalPrix) +
+        aggregatedAmount =
+            (participant.isPaymentSettled ? 0 : participant.totalPrix) +
             linkedGuests
-                .where((g) => !g.paye)
+                .where((g) => !g.isPaymentSettled)
                 .fold<double>(0.0, (sum, g) => sum + g.totalPrix);
         if (aggregatedAmount <= 0) {
           if (mounted) {
@@ -1710,14 +1724,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               } else {
                 // Sans plan: comportement existant, mais uniquement pour les
                 // personnes encore non payées.
-                if (!participant.paye) {
+                if (!participant.isPaymentSettled) {
                   await _operationService.markParticipantAsPaid(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
                     participantId: participant.id,
                   );
                 }
-                for (final g in linkedGuests.where((g) => !g.paye)) {
+                for (final g
+                    in linkedGuests.where((g) => !g.isPaymentSettled)) {
                   await _operationService.markParticipantAsPaid(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
@@ -2323,7 +2338,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
               // Get user's inscription to check payment status and price
               final userInscription = _userInscription;
-              final isPaid = userInscription?.paye ?? false;
+              final isPaid = userInscription?.isPaymentSettled ?? false;
 
               // Calculate price based on user function if not already inscribed
               // If inscribed, use the total price (base + supplements); otherwise calculate from tariffs
@@ -2496,16 +2511,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             if (isRegistered &&
                                 !isPaid &&
                                 userInscription != null) ...[
-                              operation.paymentPlanEnabled
-                                  ? _buildPaymentPlanStatusCard(
-                                      inscription: userInscription,
-                                      operation: operation,
-                                    )
-                                  : _buildInscriptionStatusCard(
-                                      inscription: userInscription,
-                                      operation: operation,
-                                      inscriptionPrice: inscriptionPrice,
-                                    ),
+                              switch (unpaidPaymentCardKind(
+                                inscription: userInscription,
+                                paymentPlanEnabled:
+                                    operation.paymentPlanEnabled,
+                              )) {
+                                UnpaidPaymentCardKind.paymentPlan =>
+                                  _buildPaymentPlanStatusCard(
+                                    inscription: userInscription,
+                                    operation: operation,
+                                  ),
+                                UnpaidPaymentCardKind.standard ||
+                                UnpaidPaymentCardKind.manualReview =>
+                                  _buildInscriptionStatusCard(
+                                    inscription: userInscription,
+                                    operation: operation,
+                                    inscriptionPrice: inscriptionPrice,
+                                  ),
+                              },
                               const SizedBox(height: 12),
                             ],
 
@@ -3396,7 +3419,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             participant.parentInscriptionId != null &&
                             participant.parentInscriptionId!.isNotEmpty;
                         final canShowPaymentCard = _canConfirmPayment &&
-                            !participant.paye &&
+                            !participant.isPaymentSettled &&
+                            !participant.isPaymentInManualReview &&
                             participant.totalPrix > 0 &&
                             !hasParent;
                         // Get payment status info for subtitle
@@ -4025,7 +4049,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Widget _buildPaymentStatusBadge(ParticipantOperation? inscription) {
     if (inscription == null) return const SizedBox.shrink();
 
-    final isAwaitingBank = inscription.isPaidAwaitingBank;
     final isFullyPaid = inscription.isFullyPaid;
 
     // Determine colors and text based on status
@@ -4040,18 +4063,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       textColor = Colors.green.shade700;
       icon = Icons.check_circle;
       text = 'Payé';
-    } else if (isAwaitingBank) {
-      // Paid via CalyMob but awaiting bank processing
-      bgColor = Colors.orange.shade100;
-      textColor = Colors.orange.shade700;
-      icon = Icons.schedule;
-      text = 'Payé via CalyMob\nEn attente de traitement bancaire';
     } else {
-      // Fallback - just show paid (legacy data without transaction_matched)
-      bgColor = Colors.green.shade100;
-      textColor = Colors.green.shade700;
-      icon = Icons.check_circle;
-      text = 'Inscription payée';
+      // Defensive fallback: this widget is reached only after the derived
+      // settlement gate in build().
+      bgColor = Colors.orange.shade100;
+      textColor = Colors.orange.shade800;
+      icon = Icons.schedule;
+      text = 'Vérification du paiement';
     }
 
     return Container(
@@ -4481,25 +4499,41 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required dynamic operation,
     required double inscriptionPrice,
   }) {
-    final isEmail = inscription.paymentStatus == 'qr_email_sent';
+    final isManualReview = inscription.isPaymentInManualReview;
+    final isEmail = !isManualReview &&
+        inscription.paymentStatus?.trim().toLowerCase() == 'qr_email_sent';
 
-    final Color bgColor =
-        isEmail ? Colors.blue.shade50 : Colors.blueGrey.shade50;
-    final Color borderColor =
-        isEmail ? Colors.blue.shade200 : Colors.blueGrey.shade200;
-    final Color accentColor =
-        isEmail ? Colors.blue.shade700 : Colors.blueGrey.shade700;
-    final IconData icon =
-        isEmail ? Icons.mark_email_read_outlined : Icons.qr_code_scanner;
+    final Color bgColor = isManualReview
+        ? Colors.deepOrange.shade50
+        : isEmail
+            ? Colors.blue.shade50
+            : Colors.blueGrey.shade50;
+    final Color borderColor = isManualReview
+        ? Colors.deepOrange.shade200
+        : isEmail
+            ? Colors.blue.shade200
+            : Colors.blueGrey.shade200;
+    final Color accentColor = isManualReview
+        ? Colors.deepOrange.shade800
+        : isEmail
+            ? Colors.blue.shade700
+            : Colors.blueGrey.shade700;
+    final IconData icon = isManualReview
+        ? Icons.manage_search_outlined
+        : isEmail
+            ? Icons.mark_email_read_outlined
+            : Icons.qr_code_scanner;
 
     final String title = inscription.registrationStatus == 'pending_payment'
         ? 'Inscription provisoire'
         : 'Inscrit';
-    final String subtitle = isEmail
-        ? 'QR code envoyé par email'
-        : inscription.paymentStatus == 'qr_on_site'
-            ? 'Paiement sur place via QR code'
-            : 'Paiement en attente';
+    final String subtitle = isManualReview
+        ? 'Paiement en vérification bancaire dans CalyCompta'
+        : isEmail
+            ? 'QR code envoyé par email'
+            : inscription.paymentStatus == 'qr_on_site'
+                ? 'Paiement sur place via QR code'
+                : 'Paiement en attente';
 
     String? timestampLine;
     if (isEmail && inscription.paymentStatusAt != null) {
@@ -4514,11 +4548,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _showPaymentOptionsSheet(
-          inscription: inscription,
-          operation: operation,
-          inscriptionPrice: inscriptionPrice,
-        ),
+        onTap: isManualReview
+            ? null
+            : () => _showPaymentOptionsSheet(
+                  inscription: inscription,
+                  operation: operation,
+                  inscriptionPrice: inscriptionPrice,
+                ),
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -4566,8 +4602,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   ],
                 ),
               ),
-              Icon(Icons.more_horiz,
-                  color: accentColor.withOpacity(0.6), size: 20),
+              Icon(
+                isManualReview ? Icons.hourglass_top : Icons.more_horiz,
+                color: accentColor.withOpacity(0.6),
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -4586,6 +4625,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     String? installmentId,
     String? installmentLabel,
   }) async {
+    if (inscription.isPaymentInManualReview ||
+        inscription.isPaymentSettled) {
+      return;
+    }
+
     final isEmail = installmentId == null
         ? inscription.paymentStatus == 'qr_email_sent'
         : inscription.installmentPayments[installmentId]?.status == 'qr_sent';
@@ -5301,6 +5345,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         icon = Icons.check;
         color = Colors.orange;
         break;
+      case 'manual_review':
+        icon = Icons.manage_search_outlined;
+        color = Colors.deepOrange.shade700;
+        break;
       case 'partial':
         // Gedeeltelijk betaald (minstens één schijf) - oranje halve cirkel
         icon = Icons.incomplete_circle;
@@ -5341,6 +5389,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         return {'text': 'Payé', 'color': Colors.green};
       case 'pending_bank':
         return {'text': 'En attente bancaire', 'color': Colors.orange};
+      case 'manual_review':
+        return {
+          'text': 'Vérification bancaire',
+          'color': Colors.deepOrange.shade700,
+        };
       case 'partial':
         return {'text': 'Partiellement payé', 'color': Colors.orange.shade700};
       case 'qr_sent':
