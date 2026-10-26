@@ -174,6 +174,70 @@ void main() {
     await initializeDateFormatting('fr_FR');
   });
 
+  for (final explicitDeadline in [false, true]) {
+    testWidgets(
+        'event date stays distinct from the ${explicitDeadline ? 'explicit' : 'default'} registration deadline',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final year = DateTime.now().year + 1;
+      final operation = Operation(
+        id: 'synthetic-date-event',
+        type: 'evenement',
+        titre: 'Sortie synthétique',
+        montantPrevu: 0,
+        statut: 'ouvert',
+        dateDebut: DateTime(year, 11, 8, 12, 30),
+        registrationDeadline:
+            explicitDeadline ? DateTime(year, 11, 6, 18) : null,
+        createdAt: DateTime(year - 1),
+        updatedAt: DateTime(year - 1),
+      );
+      final inscription = ParticipantOperation(
+        id: 'synthetic-registration',
+        operationId: operation.id,
+        membreId: 'member-1',
+        prix: 0,
+        dateInscription: DateTime(year, 10, 8),
+      );
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+              value: _MockAuthProvider(_MockUser())),
+          ChangeNotifierProvider<EventMessageProvider>.value(
+              value: _MockEventMessageProvider()),
+          ChangeNotifierProvider<MemberProvider>.value(
+              value: _MockMemberProvider()),
+          ChangeNotifierProvider<OperationProvider>.value(
+              value: _MockOperationProvider(operation)),
+        ],
+        child: MaterialApp(
+          home: OperationDetailScreen(
+            clubId: 'calypso',
+            operationId: operation.id,
+            operationService: _MockOperationService(inscription),
+            profileService: _MockProfileService(),
+            loadAuxiliaryProfileData: false,
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.textContaining('8 novembre 12:30'), findsOneWidget);
+      expect(
+          find.textContaining(RegExp(explicitDeadline
+              ? r'Clôture inscriptions : .*6 nov\. 18:00'
+              : r'Clôture inscriptions : .*7 nov\. 12:30')),
+          findsOneWidget);
+      expect(find.textContaining('Inscr. '), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('encadrant sees only a directory-shared participant phone',
       (tester) async {
     final now = DateTime(2026, 10, 15);
