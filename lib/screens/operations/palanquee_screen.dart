@@ -14,6 +14,8 @@ import '../../models/exercice_lifras.dart';
 import '../../services/lifras_service.dart';
 import '../../models/member_observation.dart';
 import '../../services/member_observation_service.dart';
+import '../../services/member_service.dart';
+import '../../utils/palanquee_simulation_selection.dart';
 
 /// Écran de composition des palanquées (tap-to-assign)
 class PalanqueeScreen extends StatefulWidget {
@@ -26,6 +28,7 @@ class PalanqueeScreen extends StatefulWidget {
   final MemberObservationService? observationService;
   final LifrasService? lifrasService;
   final PalanqueeService? palanqueeService;
+  final MemberService? memberService;
   const PalanqueeScreen({
     Key? key,
     required this.operation,
@@ -37,6 +40,7 @@ class PalanqueeScreen extends StatefulWidget {
     this.observationService,
     this.lifrasService,
     this.palanqueeService,
+    this.memberService,
   }) : super(key: key);
 
   @override
@@ -50,8 +54,11 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       widget.lifrasService ?? LifrasService();
   late final MemberObservationService _observationService =
       widget.observationService ?? MemberObservationService();
+  late final MemberService _memberService =
+      widget.memberService ?? MemberService();
 
   List<Palanquee> _palanquees = [];
+  final List<ParticipantOperation> _simulationParticipants = [];
   Map<String, String> _memberLevels = {};
   Map<int, ValidationResult> _validationResults = {};
   Map<String, ExerciceLIFRAS> _exerciceCatalog = {};
@@ -95,8 +102,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
       if (assignments != null && assignments.palanquees.isNotEmpty) {
         _palanquees = assignments.palanquees;
+        _restoreSimulationParticipantsFromAssignments();
       }
-
 
       // Load exercise catalog
       final allExercices = await _lifrasService.getAllExercices(widget.clubId);
@@ -157,7 +164,50 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         assignedIds.add(p.membreId);
       }
     }
-    return widget.participants.where((p) => !assignedIds.contains(p.membreId)).toList();
+    return _allParticipants
+        .where((p) => !assignedIds.contains(p.membreId))
+        .toList();
+  }
+
+  List<ParticipantOperation> get _allParticipants {
+    return palanqueeRosterParticipants(
+      registeredParticipants: widget.participants,
+      simulationParticipants: _simulationParticipants,
+    );
+  }
+
+  /// Restores members added by the silent planning picker on a previous edit.
+  ///
+  /// They exist only as snapshots inside the saved palanquée assignment (not
+  /// as operation inscriptions). Keeping them in the local roster also means
+  /// that removing one from a group returns them to the unassigned panel.
+  void _restoreSimulationParticipantsFromAssignments() {
+    final registeredIds = widget.participants.map((p) => p.membreId).toSet();
+    final restoredIds = <String>{};
+    for (final palanquee in _palanquees) {
+      for (final participant in palanquee.participants) {
+        if (participant.membreId.isEmpty ||
+            registeredIds.contains(participant.membreId) ||
+            !restoredIds.add(participant.membreId)) {
+          continue;
+        }
+        _simulationParticipants.add(
+          ParticipantOperation(
+            id: 'palanquee-simulation:${participant.membreId}',
+            operationId: widget.operation.id,
+            membreId: participant.membreId,
+            membreNom: participant.membreNom,
+            membrePrenom: participant.membrePrenom,
+            prix: 0,
+            dateInscription: DateTime.now(),
+            registrationStatus: 'simulation',
+          ),
+        );
+        if (participant.niveau.isNotEmpty) {
+          _memberLevels[participant.membreId] = participant.niveau;
+        }
+      }
+    }
   }
 
   String _getLevelForMember(String membreId) {
@@ -170,10 +220,10 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     return level;
   }
 
-
   List<String> _getExerciseCodesForMember(String membreId) {
     try {
-      final participant = widget.participants.firstWhere((p) => p.membreId == membreId);
+      final participant =
+          _allParticipants.firstWhere((p) => p.membreId == membreId);
       return participant.exercices
           .map((exId) => _exerciceCatalog[exId]?.code)
           .where((code) => code != null)
@@ -183,6 +233,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       return [];
     }
   }
+
   void _revalidate() {
     _validationResults = validateAllPalanquees(
       _palanquees,
@@ -215,7 +266,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     });
   }
 
-  void _assignTopalanquee(ParticipantOperation participant, int palanqueeNumero) {
+  void _assignTopalanquee(
+      ParticipantOperation participant, int palanqueeNumero) {
     setState(() {
       final palIdx = _palanquees.indexWhere((p) => p.numero == palanqueeNumero);
       if (palIdx == -1) return;
@@ -229,10 +281,12 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         ordre: _palanquees[palIdx].participants.length,
       );
 
-      final updatedParticipants = List<PalanqueeParticipant>.from(_palanquees[palIdx].participants)
-        ..add(newParticipant);
+      final updatedParticipants =
+          List<PalanqueeParticipant>.from(_palanquees[palIdx].participants)
+            ..add(newParticipant);
 
-      _palanquees[palIdx] = _palanquees[palIdx].copyWith(participants: updatedParticipants);
+      _palanquees[palIdx] =
+          _palanquees[palIdx].copyWith(participants: updatedParticipants);
       _hasChanges = true;
       _revalidate();
     });
@@ -248,7 +302,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
           .where((p) => p.membreId != membreId)
           .toList();
 
-      _palanquees[palIdx] = _palanquees[palIdx].copyWith(participants: updatedParticipants);
+      _palanquees[palIdx] =
+          _palanquees[palIdx].copyWith(participants: updatedParticipants);
       _hasChanges = true;
       _revalidate();
     });
@@ -290,7 +345,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
 
   void _autoAssign() {
     // Convertir tous les participants en PalanqueeParticipant
-    final allParticipants = widget.participants.map((p) {
+    final allParticipants = _allParticipants.map((p) {
       final level = _getLevelForMember(p.membreId);
       return PalanqueeParticipant(
         membreId: p.membreId,
@@ -321,13 +376,14 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       await FichePalanqueePdf.generateAndShare(
         context: context,
         operation: widget.operation,
-        participants: widget.participants,
+        participants: _allParticipants,
         clubId: widget.clubId,
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur PDF: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Erreur PDF: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -354,8 +410,11 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
-                          Expanded(child: Text(w, style: const TextStyle(fontSize: 13))),
+                          const Text('• ',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          Expanded(
+                              child: Text(w,
+                                  style: const TextStyle(fontSize: 13))),
                         ],
                       ),
                     ))
@@ -435,14 +494,17 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       dense: true,
                       title: Text(
                         '${(p.membreNom ?? '').toUpperCase()} ${p.membrePrenom ?? ''}',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500),
                       ),
                       trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: _levelColor(level).withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _levelColor(level).withOpacity(0.4)),
+                          border: Border.all(
+                              color: _levelColor(level).withOpacity(0.4)),
                         ),
                         child: Text(
                           _getLevelDisplay(level),
@@ -466,6 +528,186 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         },
       ),
     );
+  }
+
+  /// Adds active club members to the local palanquée roster for planning.
+  ///
+  /// This deliberately does not call an inscription API: organisers can build
+  /// or simulate groups without registering members or producing any push or
+  /// email traffic. Only a later save writes the palanquée assignment.
+  Future<void> _showBulkSimulationMemberPicker() async {
+    if (!widget.canEdit) return;
+
+    List<Map<String, dynamic>> directoryMembers;
+    try {
+      directoryMembers = await _memberService.getAllMembers(widget.clubId);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossible de charger les membres : $error')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final candidates = selectableSimulationMembers(
+      directoryMembers: directoryMembers,
+      excludedMemberIds: _allParticipants.map((p) => p.membreId),
+    );
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun autre membre actif à ajouter')),
+      );
+      return;
+    }
+
+    final selectedIds = <String>{};
+    var query = '';
+    final selected = await showModalBottomSheet<List<Map<String, dynamic>>>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final visible = candidates.where((member) {
+            final label = '${member['nom'] ?? ''} ${member['prenom'] ?? ''}'
+                .toLowerCase();
+            return label.contains(query.toLowerCase());
+          }).toList();
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * .78,
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 2),
+                    child: Text(
+                      'Ajouter des membres du club',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'Mode simulation : aucune inscription, aucun e-mail et aucune notification ne sont envoyés.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Rechercher un membre',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) => setSheetState(() => query = value),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => setSheetState(() {
+                            final visibleIds = visible
+                                .map((member) => member['id'].toString());
+                            if (visibleIds.every(selectedIds.contains)) {
+                              selectedIds.removeAll(visibleIds);
+                            } else {
+                              selectedIds.addAll(visibleIds);
+                            }
+                          }),
+                          child: Text(
+                            visible.every((member) => selectedIds
+                                    .contains(member['id'].toString()))
+                                ? 'Tout désélectionner'
+                                : 'Tout sélectionner',
+                          ),
+                        ),
+                        const Spacer(),
+                        Text('${selectedIds.length} sélectionné(s)'),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: visible.length,
+                      itemBuilder: (context, index) {
+                        final member = visible[index];
+                        final id = member['id'].toString();
+                        final level = member['plongeur_code']?.toString() ?? '';
+                        return CheckboxListTile(
+                          value: selectedIds.contains(id),
+                          onChanged: (checked) => setSheetState(() {
+                            if (checked == true) {
+                              selectedIds.add(id);
+                            } else {
+                              selectedIds.remove(id);
+                            }
+                          }),
+                          title: Text(
+                              '${(member['nom'] ?? '').toString().toUpperCase()} ${member['prenom'] ?? ''}'),
+                          subtitle: level.isEmpty
+                              ? null
+                              : Text(_getLevelDisplay(level)),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: selectedIds.isEmpty
+                            ? null
+                            : () => Navigator.pop(
+                                  sheetContext,
+                                  candidates
+                                      .where((member) => selectedIds
+                                          .contains(member['id'].toString()))
+                                      .toList(),
+                                ),
+                        icon: const Icon(Icons.group_add),
+                        label: const Text('Ajouter à la simulation'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (selected == null || selected.isEmpty || !mounted) return;
+    final additions = simulationParticipantsFromSelection(
+      selectedMembers: selected,
+      operationId: widget.operation.id,
+      now: DateTime.now(),
+    );
+    setState(() {
+      _simulationParticipants.addAll(additions);
+      for (final member in selected) {
+        final level = member['plongeur_code']?.toString();
+        if (level != null && level.isNotEmpty) {
+          _memberLevels[member['id'].toString()] = level;
+        }
+      }
+      _hasChanges = true;
+      _revalidate();
+    });
   }
 
   void _showAssignToBottomSheet(ParticipantOperation participant) {
@@ -510,16 +752,20 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
           const Divider(height: 1),
           ..._palanquees.map((pal) {
             final validation = _validationResults[pal.numero];
-            final depthText = validation?.maxDepth != null ? '${validation!.maxDepth}m' : '—';
+            final depthText =
+                validation?.maxDepth != null ? '${validation!.maxDepth}m' : '—';
             return ListTile(
               leading: CircleAvatar(
                 radius: 16,
                 backgroundColor: AppColors.middenblauw,
-                child: Text('${pal.numero}', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                child: Text('${pal.numero}',
+                    style: const TextStyle(color: Colors.white, fontSize: 14)),
               ),
               title: Text('Palanquée ${pal.numero}'),
-              subtitle: Text('${pal.participants.length} plongeur(s) • $depthText'),
-              trailing: const Icon(Icons.add_circle_outline, color: AppColors.middenblauw),
+              subtitle:
+                  Text('${pal.participants.length} plongeur(s) • $depthText'),
+              trailing: const Icon(Icons.add_circle_outline,
+                  color: AppColors.middenblauw),
               onTap: () {
                 _assignTopalanquee(participant, pal.numero);
                 Navigator.pop(context);
@@ -559,7 +805,6 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   // ============================================================
   // Build
   // ============================================================
-
 
   Future<void> _loadExerciceObservations() async {
     final generation = ++_exerciceObservationsGeneration;
@@ -633,7 +878,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModalState) => SingleChildScrollView(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+            padding: EdgeInsets.fromLTRB(
+                16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -743,7 +989,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                         memberNiveau: membreNiveau ?? '',
                         contextType: 'operation',
                         contextId: widget.operation.id,
-                        contextDate: widget.operation.dateDebut ?? DateTime.now(),
+                        contextDate:
+                            widget.operation.dateDebut ?? DateTime.now(),
                         contextTitle: widget.operation.titre,
                         category: 'lifras',
                         exerciceCode: exerciceCode,
@@ -882,7 +1129,6 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     }
   }
 
-
   // ============================================================
   // Build
   // ============================================================
@@ -891,11 +1137,20 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Palanquées', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Palanquées',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.donkerblauw,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // Silent planning roster — it only changes palanquée assignments,
+          // never event inscriptions or their notification side effects.
+          if (widget.canEdit)
+            IconButton(
+              onPressed: _isLoading ? null : _showBulkSimulationMemberPicker,
+              icon: const Icon(Icons.group_add_outlined),
+              tooltip: 'Ajouter des membres (simulation silencieuse)',
+            ),
           // Auto-assign — organisateur uniquement
           if (widget.canEdit)
             IconButton(
@@ -917,7 +1172,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
                     )
                   : Icon(
                       Icons.save,
@@ -935,15 +1191,18 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                 if (!widget.canEdit)
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     color: Colors.blue.shade50,
                     child: const Row(
                       children: [
-                        Icon(Icons.lock_outline, size: 15, color: Colors.blueGrey),
+                        Icon(Icons.lock_outline,
+                            size: 15, color: Colors.blueGrey),
                         SizedBox(width: 6),
                         Text(
                           'Lecture seule — seul l\'organisateur peut modifier',
-                          style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.blueGrey),
                         ),
                       ],
                     ),
@@ -962,14 +1221,16 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       // Ajouter palanquée button — organisateur uniquement
                       if (widget.canEdit)
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
                           child: OutlinedButton.icon(
                             onPressed: _addPalanquee,
                             icon: const Icon(Icons.add),
                             label: const Text('Ajouter une palanquée'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.middenblauw,
-                              side: const BorderSide(color: AppColors.middenblauw),
+                              side: const BorderSide(
+                                  color: AppColors.middenblauw),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -986,7 +1247,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   }
 
   Widget _buildInfoBar() {
-    final total = widget.participants.length;
+    final total = _allParticipants.length;
     final assigned = total - _unassignedParticipants.length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1000,7 +1261,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: assigned == total ? Colors.green[700] : AppColors.donkerblauw,
+              color:
+                  assigned == total ? Colors.green[700] : AppColors.donkerblauw,
             ),
           ),
           const Spacer(),
@@ -1018,7 +1280,10 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
               ),
               child: const Text(
                 'Non sauvegardé',
-                style: TextStyle(fontSize: 10, color: AppColors.oranje, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    fontSize: 10,
+                    color: AppColors.oranje,
+                    fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1046,7 +1311,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 14,
-            color: unassigned.isEmpty ? Colors.green[700] : AppColors.donkerblauw,
+            color:
+                unassigned.isEmpty ? Colors.green[700] : AppColors.donkerblauw,
           ),
         ),
         children: unassigned.isEmpty
@@ -1055,7 +1321,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                   padding: EdgeInsets.all(16),
                   child: Text(
                     'Tous les plongeurs sont assignés ✓',
-                    style: TextStyle(color: Colors.green, fontStyle: FontStyle.italic),
+                    style: TextStyle(
+                        color: Colors.green, fontStyle: FontStyle.italic),
                   ),
                 ),
               ]
@@ -1065,7 +1332,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                   dense: true,
                   title: Text(
                     '${(p.membreNom ?? '').toUpperCase()} ${p.membrePrenom ?? ''}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                   subtitle: _getExerciseCodesForMember(p.membreId).isNotEmpty
                       ? Wrap(
@@ -1073,60 +1341,72 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                           runSpacing: 2,
                           children: _getExerciseCodesForMember(p.membreId)
                               .map((code) {
-                                final obs = _exerciceObservations[p.membreId]?[code];
-                                final color = _getObservationColor(obs?.result);
-                                return GestureDetector(
-                                  onTap: widget.canReadAllObservations ? () {
-                                    final exercice = _exerciceCatalog.values
-                                        .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, niveau: NiveauLIFRAS.nb, description: code));
-                                    _showExerciseEvaluationSheet(
-                                      p.membreId,
-                                      '${(p.membreNom ?? "").toUpperCase()} ${p.membrePrenom ?? ""}',
+                            final obs =
+                                _exerciceObservations[p.membreId]?[code];
+                            final color = _getObservationColor(obs?.result);
+                            return GestureDetector(
+                              onTap: widget.canReadAllObservations
+                                  ? () {
+                                      final exercice = _exerciceCatalog.values
+                                          .firstWhere((ex) => ex.code == code,
+                                              orElse: () => ExerciceLIFRAS(
+                                                  id: '',
+                                                  code: code,
+                                                  niveau: NiveauLIFRAS.nb,
+                                                  description: code));
+                                      _showExerciseEvaluationSheet(
+                                        p.membreId,
+                                        '${(p.membreNom ?? "").toUpperCase()} ${p.membrePrenom ?? ""}',
+                                        code,
+                                        exercice.description,
+                                        _getLevelForMember(p.membreId),
+                                      );
+                                    }
+                                  : null,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: color.withOpacity(0.15),
+                                  border: obs != null
+                                      ? Border.all(color: color, width: 1)
+                                      : null,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
                                       code,
-                                      exercice.description,
-                                      _getLevelForMember(p.membreId),
-                                    );
-                                  } : null,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.15),
-                                      border: obs != null ? Border.all(color: color, width: 1) : null,
-                                      borderRadius: BorderRadius.circular(4),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: color,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          code,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: color,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        if (obs != null) ...[
-                                          const SizedBox(width: 2),
-                                          Icon(
-                                            _getObservationIcon(obs.result),
-                                            size: 8,
-                                            color: color,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              })
-                              .toList(),
+                                    if (obs != null) ...[
+                                      const SizedBox(width: 2),
+                                      Icon(
+                                        _getObservationIcon(obs.result),
+                                        size: 8,
+                                        color: color,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         )
                       : null,
                   trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: _levelColor(level).withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _levelColor(level).withOpacity(0.4)),
+                      border: Border.all(
+                          color: _levelColor(level).withOpacity(0.4)),
                     ),
                     child: Text(
                       _getLevelDisplay(level),
@@ -1137,7 +1417,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       ),
                     ),
                   ),
-                  onTap: widget.canEdit ? () => _showAssignToBottomSheet(p) : null,
+                  onTap:
+                      widget.canEdit ? () => _showAssignToBottomSheet(p) : null,
                 );
               }).toList(),
       ),
@@ -1184,7 +1465,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppColors.donkerblauw,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Row(
               children: [
@@ -1199,24 +1481,33 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                 const SizedBox(width: 8),
                 if (maxDepth != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       '${maxDepth}m',
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 const Spacer(),
-                Icon(statusIcon, color: statusColor == Colors.green ? Colors.greenAccent : statusColor, size: 18),
+                Icon(statusIcon,
+                    color: statusColor == Colors.green
+                        ? Colors.greenAccent
+                        : statusColor,
+                    size: 18),
                 const SizedBox(width: 4),
                 // Supprimer palanquée — organisateur uniquement
                 if (widget.canEdit)
                   InkWell(
                     onTap: () => _confirmRemovePalanquee(pal.numero),
-                    child: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
+                    child: const Icon(Icons.delete_outline,
+                        color: Colors.white54, size: 18),
                   ),
               ],
             ),
@@ -1236,13 +1527,19 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                           padding: const EdgeInsets.only(bottom: 2),
                           child: Text(
                             e.message,
-                            style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500),
                           ),
                         )),
                   if (hasWarnings && !hasErrors)
                     Text(
                       '${validation!.warnings.length} avis',
-                      style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500),
                     ),
                 ],
               ),
@@ -1254,11 +1551,15 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
               padding: EdgeInsets.all(16),
               child: Text(
                 'Aucun plongeur',
-                style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic, fontSize: 13),
+                style: TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 13),
               ),
             )
           else
-            ...pal.participants.map((p) => _buildParticipantTile(pal.numero, p)),
+            ...pal.participants
+                .map((p) => _buildParticipantTile(pal.numero, p)),
 
           // Ajouter button — organisateur uniquement
           if (widget.canEdit)
@@ -1269,7 +1570,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   border: Border(top: BorderSide(color: Colors.grey[200]!)),
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(12)),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1294,10 +1596,12 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   }
 
   Widget _buildParticipantTile(int palanqueeNumero, PalanqueeParticipant p) {
-    final level = p.niveau.isNotEmpty ? p.niveau : _getLevelForMember(p.membreId);
+    final level =
+        p.niveau.isNotEmpty ? p.niveau : _getLevelForMember(p.membreId);
     return Dismissible(
       key: ValueKey('${palanqueeNumero}_${p.membreId}'),
-      direction: widget.canEdit ? DismissDirection.endToStart : DismissDirection.none,
+      direction:
+          widget.canEdit ? DismissDirection.endToStart : DismissDirection.none,
       background: Container(
         color: Colors.red[50],
         alignment: Alignment.centerRight,
@@ -1320,54 +1624,62 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
             ? Wrap(
                 spacing: 4,
                 runSpacing: 2,
-                children: _getExerciseCodesForMember(p.membreId)
-                    .map((code) {
-                      final obs = _exerciceObservations[p.membreId]?[code];
-                      final color = _getObservationColor(obs?.result);
-                      return GestureDetector(
-                        onTap: widget.canReadAllObservations ? () {
-                          final exercice = _exerciceCatalog.values
-                              .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, niveau: NiveauLIFRAS.nb, description: code));
-                          _showExerciseEvaluationSheet(
-                            p.membreId,
-                            '${p.membreNom.toUpperCase()} ${p.membrePrenom}',
+                children: _getExerciseCodesForMember(p.membreId).map((code) {
+                  final obs = _exerciceObservations[p.membreId]?[code];
+                  final color = _getObservationColor(obs?.result);
+                  return GestureDetector(
+                    onTap: widget.canReadAllObservations
+                        ? () {
+                            final exercice = _exerciceCatalog.values.firstWhere(
+                                (ex) => ex.code == code,
+                                orElse: () => ExerciceLIFRAS(
+                                    id: '',
+                                    code: code,
+                                    niveau: NiveauLIFRAS.nb,
+                                    description: code));
+                            _showExerciseEvaluationSheet(
+                              p.membreId,
+                              '${p.membreNom.toUpperCase()} ${p.membrePrenom}',
+                              code,
+                              exercice.description,
+                              p.niveau,
+                            );
+                          }
+                        : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.15),
+                        border: obs != null
+                            ? Border.all(color: color, width: 1)
+                            : null,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
                             code,
-                            exercice.description,
-                            p.niveau,
-                          );
-                        } : null,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.15),
-                            border: obs != null ? Border.all(color: color, width: 1) : null,
-                            borderRadius: BorderRadius.circular(4),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: color,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                code,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: color,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              if (obs != null) ...[
-                                const SizedBox(width: 2),
-                                Icon(
-                                  _getObservationIcon(obs.result),
-                                  size: 8,
-                                  color: color,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    })
-                    .toList(),
+                          if (obs != null) ...[
+                            const SizedBox(width: 2),
+                            Icon(
+                              _getObservationIcon(obs.result),
+                              size: 8,
+                              color: color,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
               )
             : null,
         trailing: Container(
@@ -1394,8 +1706,10 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Retirer le plongeur ?', style: TextStyle(fontSize: 16)),
-        content: Text('${p.membreNom} ${p.membrePrenom} sera remis dans les non assignés.'),
+        title:
+            const Text('Retirer le plongeur ?', style: TextStyle(fontSize: 16)),
+        content: Text(
+            '${p.membreNom} ${p.membrePrenom} sera remis dans les non assignés.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1418,7 +1732,8 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer la palanquée ?', style: TextStyle(fontSize: 16)),
+        title: const Text('Supprimer la palanquée ?',
+            style: TextStyle(fontSize: 16)),
         content: Text(
           pal.participants.isEmpty
               ? 'Supprimer la palanquée $numero ?'
