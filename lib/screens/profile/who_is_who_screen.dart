@@ -15,12 +15,15 @@ import '../../services/sensitive_info_service.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/profile/emergency_contacts_card.dart';
 import '../../widgets/profile/directory_contact_actions.dart';
+import '../../widgets/profile/directory_birthday.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/pool_formation_snapshot_doc.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/pool_formation_overview_reader.dart';
 import '../exercises/member_exercises_screen.dart';
 import '../formation/student_360_screen.dart';
+
+export '../../utils/directory_birthday.dart' show formatDirectoryBirthday;
 
 @visibleForTesting
 List<FormationModality> formationListModalities(FormationTrackingScope scope) {
@@ -813,18 +816,12 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
 
               const SizedBox(height: 20),
 
-              if (_birthdayLabel(member) != null) ...[
-                Text(
-                  'Anniversaire : ${_birthdayLabel(member)}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800,
-                  ),
+              DirectoryBirthday(
+                profiles: _profileService.watchDirectoryProfile(
+                  _clubId,
+                  member.id,
                 ),
-                const SizedBox(height: 16),
-              ],
+              ),
 
               if (isCurrentUser) ...[
                 _administrativeStatusBadge(member),
@@ -1161,35 +1158,6 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     return upperCode;
   }
 
-  static const _monthNamesFr = [
-    'janvier',
-    'février',
-    'mars',
-    'avril',
-    'mai',
-    'juin',
-    'juillet',
-    'août',
-    'septembre',
-    'octobre',
-    'novembre',
-    'décembre',
-  ];
-
-  /// Day + month only. Never expose the year in Qui est qui.
-  String? _birthdayLabel(MemberProfile member) {
-    return formatDirectoryBirthday(member, _monthNamesFr);
-  }
-}
-
-String? formatDirectoryBirthday(MemberProfile member, List<String> monthNames) {
-  if (!member.shareBirthday) return null;
-  final day = member.birthDay;
-  final month = member.birthMonth;
-  if (day == null || month == null || month < 1 || month > monthNames.length) {
-    return null;
-  }
-  return '$day ${monthNames[month - 1]}';
 }
 
 /// WP-10 — Liste « Formation » de Who's who (encadrants uniquement).

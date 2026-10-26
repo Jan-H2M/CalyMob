@@ -8,6 +8,7 @@ on:
       - 'lib/services/profile_service.dart'
       - 'lib/screens/profile/**'
       - 'lib/widgets/profile/**'
+      - 'lib/utils/directory_birthday.dart'
       - 'test/models/member_profile*.dart'
       - 'test/services/profile_service*.dart'
       - 'test/screens/profile/**'
