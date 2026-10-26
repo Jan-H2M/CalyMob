@@ -1,0 +1,36 @@
+name: Profile regressions
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/profile-regressions.yml'
+      - 'lib/models/member_profile.dart'
+      - 'lib/services/profile_service.dart'
+      - 'lib/screens/profile/**'
+      - 'lib/widgets/profile/**'
+      - 'test/models/member_profile*.dart'
+      - 'test/services/profile_service*.dart'
+      - 'test/screens/profile/**'
+      - 'test/widgets/directory*.dart'
+      - 'test/widgets/birthday*.dart'
+permissions:
+  contents: read
+concurrency:
+  group: profile-regressions-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  profile-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Directory privacy, live contact actions and birthday preferences
+        run: flutter test test/models/member_profile_contact_privacy_test.dart test/models/member_profile_test.dart test/services/profile_service_directory_stream_test.dart test/services/profile_service_birthday_privacy_test.dart test/screens/profile test/widgets/directory*test.dart test/widgets/birthday*test.dart test/utils/directory_contact_visibility_test.dart
+      - name: Check locked dependency versions
+        run: git diff --exit-code -- pubspec.lock

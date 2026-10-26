@@ -64,6 +64,14 @@ class ProfileService {
 
   /// Récupérer uniquement les champs consentis du répertoire du club.
   /// Utiliser ceci pour afficher un autre membre (chat, organisateur, etc.).
+  Stream<MemberProfile?> watchDirectoryProfile(String clubId, String userId) {
+    return _firestore
+        .collection('clubs/$clubId/member_directory')
+        .doc(userId)
+        .snapshots()
+        .map((doc) => doc.exists ? MemberProfile.fromDirectory(doc) : null);
+  }
+
   Future<MemberProfile?> getDirectoryProfile(
     String clubId,
     String userId,

@@ -153,7 +153,9 @@ class MemberProfile {
       shareEmail: data['share_email'] ?? true,
       sharePhone: data['share_phone'] ?? true,
       shareBirthday: data['share_birthday'] != false,
-      phoneNumber: data['phone_number'],
+      phoneNumber: _stringOrNull(data['phone_number']) ??
+          _stringOrNull(data['phoneNumber']) ??
+          _stringOrNull(data['telephone']),
       birthDate:
           _parseDate(data['birth_date']) ?? _parseDate(data['date_naissance']),
       birthMonth: _intOrNull(data['birth_month']),
@@ -200,7 +202,9 @@ class MemberProfile {
       id: id,
       nom: memberLastName(data) ?? '',
       prenom: memberFirstName(data) ?? '',
-      email: _stringOrNull(data['email']) ?? '',
+      email: data['share_email'] != false
+          ? _stringOrNull(data['email']) ?? ''
+          : '',
       appRole: _stringOrNull(data['app_role']),
       plongeurCode: _stringOrNull(data['plongeur_code']),
       targetFormationLevel: _stringOrNull(data['target_formation_level']),
@@ -216,7 +220,9 @@ class MemberProfile {
       shareEmail: data['share_email'] != false,
       sharePhone: data['share_phone'] != false,
       shareBirthday: sharesBirthday,
-      phoneNumber: _stringOrNull(data['phone_number']),
+      phoneNumber: data['share_phone'] != false
+          ? _stringOrNull(data['phone_number'])
+          : null,
       // Enforce the explicit opt-out at the client boundary too. This avoids
       // exposing stale projected values while an older directory document is
       // waiting to be refreshed by syncMemberProjections.
