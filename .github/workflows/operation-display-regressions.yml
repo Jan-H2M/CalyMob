@@ -1,0 +1,32 @@
+name: Operation display regressions
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/operation-display-regressions.yml'
+      - 'lib/screens/operations/operation_detail_screen.dart'
+      - 'lib/models/operation.dart'
+      - 'lib/models/participant_operation.dart'
+      - 'test/screens/operation_detail_unregister_test.dart'
+      - 'test/services/operation_payment_status_integrity_test.dart'
+      - 'test/providers/operation_provider_selection_test.dart'
+permissions:
+  contents: read
+concurrency:
+  group: operation-display-regressions-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  operation-display-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Dates, registration actions, live selection and payment boundaries
+        run: flutter test test/screens/operation_detail_unregister_test.dart test/services/operation_payment_status_integrity_test.dart test/providers/operation_provider_selection_test.dart
+      - run: git diff --exit-code -- pubspec.lock

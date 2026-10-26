@@ -2606,8 +2606,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 iconColor:
                     deadlinePassed ? Colors.orangeAccent : Colors.white70,
                 text: deadlinePassed
-                    ? 'Clôturé'
-                    : 'Inscr. '
+                    ? 'Inscriptions closes'
+                    : 'Clôture inscriptions : '
                         '${DateFormatter.formatDayMonthShort(deadline)} '
                         '${DateFormatter.formatTime(deadline)}',
                 style: TextStyle(
