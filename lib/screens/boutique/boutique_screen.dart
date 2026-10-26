@@ -16,6 +16,7 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
+import 'boutique_management_screen.dart';
 import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
@@ -40,6 +41,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
   @override
   Widget build(BuildContext context) {
     return BoutiqueAccessGuard(
+      allowPickupEntry: true,
       accessService: widget.accessService,
       clubId: widget.clubId,
       testUserIdOverride: widget.testUserIdOverride,
@@ -68,7 +70,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                 children: [
                   Text(
-                    'Articles club, vêtements, abonnements et accessoires.',
+                    access.canAccess
+                        ? 'Articles club, vêtements, abonnements et accessoires.'
+                        : 'Vos tâches de réception et de remise confiées par le responsable Boutique.',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.84),
                       fontSize: 15,
@@ -76,6 +80,37 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
+                  if (showSection('gestion')) ...[
+                    _BoutiqueHomeCard(
+                        icon: Icons.inventory_2_outlined,
+                        title: 'Gestion Boutique',
+                        subtitle:
+                            'Scanner un lot, suivre Jim, déplacer et confier les remises.',
+                        emphasized: true,
+                        onTap: () => Navigator.push(
+                            context,
+                            boutiqueAccessGuardedRoute(
+                                sourceContext: context,
+                                requiredSection: 'gestion',
+                                builder: (_) => const BoutiqueManagementScreen(
+                                    manager: true)))),
+                    const SizedBox(height: 12),
+                  ] else if (showSection('remises')) ...[
+                    _BoutiqueHomeCard(
+                        icon: Icons.assignment_turned_in_outlined,
+                        title: 'Mes remises',
+                        subtitle:
+                            'Réceptionner et remettre les lots qui vous sont confiés.',
+                        emphasized: true,
+                        onTap: () => Navigator.push(
+                            context,
+                            boutiqueAccessGuardedRoute(
+                                sourceContext: context,
+                                requiredSection: 'remises',
+                                builder: (_) => const BoutiqueManagementScreen(
+                                    manager: false)))),
+                    const SizedBox(height: 12),
+                  ],
                   if (showSection('produits')) ...[
                     _BoutiqueHomeCard(
                       icon: Icons.storefront_outlined,

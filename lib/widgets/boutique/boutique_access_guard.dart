@@ -14,6 +14,7 @@ typedef BoutiqueAccessGuardBuilder = Widget Function(
 class BoutiqueAccessGuard extends StatefulWidget {
   final BoutiqueAccessGuardBuilder builder;
   final String? requiredSection;
+  final bool allowPickupEntry;
   final BoutiqueAccessService? accessService;
   final String clubId;
   final String? _authBoundUserId;
@@ -28,6 +29,7 @@ class BoutiqueAccessGuard extends StatefulWidget {
     super.key,
     required this.builder,
     this.requiredSection,
+    this.allowPickupEntry = false,
     this.accessService,
     this.clubId = FirebaseConfig.defaultClubId,
     this.testUserIdOverride,
@@ -40,7 +42,8 @@ class BoutiqueAccessGuard extends StatefulWidget {
     this.accessService,
     this.clubId = FirebaseConfig.defaultClubId,
     this.testUserIdOverride,
-  }) : _authBoundUserId = authBoundUserId;
+  })  : _authBoundUserId = authBoundUserId,
+        allowPickupEntry = false;
 
   @override
   State<BoutiqueAccessGuard> createState() => _BoutiqueAccessGuardState();
@@ -126,7 +129,7 @@ class _BoutiqueAccessGuardState extends State<BoutiqueAccessGuard> {
 
         final access = snapshot.requireData;
         final allowed = widget.requiredSection == null
-            ? access.canAccess
+            ? (widget.allowPickupEntry ? access.canOpenEntry : access.canAccess)
             : access.canAccessSection(widget.requiredSection!);
         if (!allowed) return const BoutiqueAccessUnavailable();
 
@@ -216,6 +219,7 @@ MaterialPageRoute<T> boutiqueAccessGuardedRoute<T>({
   required WidgetBuilder builder,
   BuildContext? sourceContext,
   String? requiredSection,
+  String? authBoundUserId,
   BoutiqueAccessService? accessService,
   String? clubId,
   @visibleForTesting String? testUserIdOverride,
@@ -231,8 +235,8 @@ MaterialPageRoute<T> boutiqueAccessGuardedRoute<T>({
       requiredSection: requiredSection,
       accessService: accessService ?? inherited?.accessService,
       clubId: clubId ?? inherited?.clubId ?? FirebaseConfig.defaultClubId,
-      authBoundUserId:
-          inherited?.testUserIdOverride == null ? inherited?.userId : null,
+      authBoundUserId: authBoundUserId ??
+          (inherited?.testUserIdOverride == null ? inherited?.userId : null),
       testUserIdOverride: testUserIdOverride ?? inherited?.testUserIdOverride,
       builder: (context, _) => builder(context),
     ),

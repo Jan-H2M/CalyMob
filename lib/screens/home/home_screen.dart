@@ -46,6 +46,18 @@ class _HomeScreenState extends State<HomeScreen> {
   final ProfileService _profileService = ProfileService();
   int _currentIndex = 0;
   bool _canScan = false;
+  final _boutiqueAccess = BoutiqueAccessService();
+  String? _boutiqueUid;
+  Stream<bool>? _boutiqueEntry;
+  Stream<bool> _watchBoutique(String uid) {
+    if (_boutiqueUid != uid) {
+      _boutiqueUid = uid;
+      _boutiqueEntry =
+          _boutiqueAccess.watchCanAccessBoutique(clubId: _clubId, userId: uid);
+    }
+    return _boutiqueEntry!;
+  }
+
   CompatibilityStatus? _compatibilityStatus;
 
   @override
@@ -272,10 +284,8 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           if (authProvider.currentUser?.uid != null)
             StreamBuilder<bool>(
-              stream: BoutiqueAccessService().watchCanAccessBoutique(
-                clubId: FirebaseConfig.defaultClubId,
-                userId: authProvider.currentUser!.uid,
-              ),
+              key: ValueKey(authProvider.currentUser!.uid),
+              stream: _watchBoutique(authProvider.currentUser!.uid),
               builder: (context, snapshot) {
                 if (snapshot.data != true) return const SizedBox.shrink();
                 return IconButton(

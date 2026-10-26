@@ -42,6 +42,8 @@ import 'providers/availability_provider.dart';
 import 'providers/activity_provider.dart';
 import 'providers/unread_count_provider.dart';
 import 'providers/boutique_cart_provider.dart';
+import 'screens/boutique/mes_commandes_screen.dart';
+import 'widgets/boutique/boutique_access_guard.dart';
 
 // Bug Report
 import 'widgets/bug_report_widget.dart';
@@ -588,6 +590,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     try {
       switch (request.routeKind) {
+        case NotificationRouteKind.boutiquePickup:
+          if (clubId != FirebaseConfig.defaultClubId || !identityIsCurrent()) {
+            return false;
+          }
+          unawaited(navigator.push(boutiqueAccessGuardedRoute(
+              clubId: clubId,
+              authBoundUserId: expectedUserId,
+              requiredSection: 'commandes',
+              builder: (_) => const MesCommandesScreen())));
+          break;
         case NotificationRouteKind.birthday:
           // A birthday push has no detail page. Opening the app is the
           // intended destination, so keep the member on the home screen.
