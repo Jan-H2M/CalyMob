@@ -12,9 +12,9 @@ import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../services/sensitive_info_service.dart';
-import '../../utils/directory_contact_visibility.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/profile/emergency_contacts_card.dart';
+import '../../widgets/profile/directory_contact_actions.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../models/pool_formation_snapshot_doc.dart';
 import '../../services/formation_snapshot_reader.dart';
@@ -693,8 +693,6 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   }
 
   void _showMemberDetails(MemberProfile member, bool isCurrentUser) {
-    final showDirectoryEmail = canShowDirectoryEmail(member);
-    final showDirectoryPhone = canShowDirectoryPhone(member);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -885,44 +883,19 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                       ),
                     ),
 
-                  if ((isCurrentUser || _canManageExercises) &&
-                      showDirectoryEmail)
-                    const SizedBox(height: 8),
-
-                  // Email
-                  if (showDirectoryEmail)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _launchEmail(member.email);
-                        },
-                        icon: const Icon(Icons.email),
-                        label: const Text('Envoyer un email'),
-                      ),
-                    ),
-
-                  if (showDirectoryEmail && showDirectoryPhone)
-                    const SizedBox(height: 8),
-
-                  // Phone call
-                  if (showDirectoryPhone)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _launchPhone(member.phoneNumber!);
-                        },
-                        icon: const Icon(Icons.phone),
-                        label: Text('Appeler ${member.phoneNumber}'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ),
+                  DirectoryContactActions(
+                    profiles: _profileService.watchDirectoryProfile(
+                        _clubId, member.id),
+                    hasPreviousAction: isCurrentUser || _canManageExercises,
+                    onEmail: (email) {
+                      Navigator.pop(context);
+                      _launchEmail(email);
+                    },
+                    onPhone: (phone) {
+                      Navigator.pop(context);
+                      _launchPhone(phone);
+                    },
+                  ),
                 ],
               ),
             ],

@@ -110,6 +110,38 @@ Future<void> _toggleBirthday(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Paramètres enables the phone choice for a known legacy alias',
+      (tester) async {
+    final firestore = await _profileFirestore();
+    await firestore.doc('clubs/calypso/members/member-1').update({
+      'telephone': '+3200000000',
+      'share_phone': false,
+    });
+    await tester.pumpWidget(_withAuth(
+      SettingsScreen(
+        profileService: ProfileService(firestore: firestore),
+        notificationService: _MockNotificationService(),
+        biometricService: _MockBiometricService(),
+        runStartupChecks: false,
+      ),
+      settingsProviders: true,
+    ));
+    await tester.pump();
+    await tester.pump();
+    await tester.scrollUntilVisible(find.text('Partager mon téléphone'), 300);
+    await tester.pump();
+    final phone = tester.widget<SwitchListTile>(
+        find.widgetWithText(SwitchListTile, 'Partager mon téléphone'));
+    expect(phone.onChanged, isNotNull);
+    expect(phone.value, isFalse);
+    expect(find.text('Ajoutez d\'abord un numéro de téléphone'), findsNothing);
+    // Displaying own data cannot silently opt in or canonicalize its storage.
+    final source =
+        (await firestore.doc('clubs/calypso/members/member-1').get()).data()!;
+    expect(source['share_phone'], isFalse);
+    expect(source.containsKey('phone_number'), isFalse);
+  });
+
   testWidgets('Identité never shows success for an empty unconfirmed receipt',
       (tester) async {
     final firestore = await _profileFirestore();
