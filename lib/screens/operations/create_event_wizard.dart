@@ -530,6 +530,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         'event_number': eventNumber,
         'lieu': _selectedLocation?.name ?? '',
         if (_selectedLocation != null) 'lieu_id': _selectedLocation!.id,
+        if (_selectedLocation?.environment.operationLieuType != null)
+          'lieu_type': _selectedLocation!.environment.operationLieuType,
         if (_capaciteController.text.isNotEmpty)
           'capacite_max': int.tryParse(_capaciteController.text),
         'allow_waitlist': _allowWaitlist,
@@ -779,13 +781,35 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         else
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-            child: Column(
-              children: [
-                for (final location in filteredLocations)
-                  _buildLocationCard(location),
-              ],
-            ),
+            child: _buildGroupedLocationList(filteredLocations),
           ),
+      ],
+    );
+  }
+
+  Widget _buildGroupedLocationList(List<DiveLocation> locations) {
+    final groups = groupDiveLocationsByEnvironment(locations);
+    return Column(
+      children: [
+        for (final environment in DiveEnvironment.values)
+          if (groups[environment]?.isNotEmpty == true) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${environment.icon} ${environment.label}',
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            for (final location in groups[environment]!)
+              _buildLocationCard(location),
+          ],
       ],
     );
   }

@@ -56,6 +56,8 @@ class Operation {
   final DateTime? dateFin;
   final String? lieu;
   final String? lieuId;
+  /// Mirrors CalyCompta's `lieu_type`; it is optional for old operations.
+  final String? lieuType;
   final int? capaciteMax;
   final double? prixMembre; // Legacy: prix pour membres
   final double? prixNonMembre; // Legacy: prix pour non-membres
@@ -132,6 +134,7 @@ class Operation {
     this.dateFin,
     this.lieu,
     this.lieuId,
+    this.lieuType,
     this.capaciteMax,
     this.prixMembre,
     this.prixNonMembre,
@@ -175,6 +178,7 @@ class Operation {
       dateFin: (data['date_fin'] as Timestamp?)?.toDate(),
       lieu: data['lieu'],
       lieuId: data['lieu_id'],
+      lieuType: data['lieu_type'] as String?,
       capaciteMax: data['capacite_max'],
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
