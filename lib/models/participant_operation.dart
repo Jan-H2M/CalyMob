@@ -131,6 +131,9 @@ class ParticipantOperation {
   final double supplementTotal; // Somme des prix des suppléments
   final String?
       paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
+  final String? paymentIntentStatus;
+  final String? paymentReviewTransactionId;
+  final String? paymentReviewReason;
   final String registrationStatus;
   final DateTime? paymentExpiresAt;
   final DateTime?
@@ -189,6 +192,9 @@ class ParticipantOperation {
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
     this.paymentStatus,
+    this.paymentIntentStatus,
+    this.paymentReviewTransactionId,
+    this.paymentReviewReason,
     this.registrationStatus = 'confirmed',
     this.paymentExpiresAt,
     this.paymentStatusAt,
@@ -212,24 +218,34 @@ class ParticipantOperation {
     this.editHistory,
   });
 
-  /// True when the bank-side reconciliation is considered done.
-  ///
-  /// Accepts either:
-  /// - transactionMatched=true (canonical flag written by CalyCompta)
-  /// - transactionId != null (fallback: a bank transaction is linked even
-  ///   if the transaction_matched flag got out of sync from legacy code
-  ///   paths that forgot to set it)
-  bool get _hasMatchedBankTransaction =>
+  String? get _normalizedPaymentStatus => paymentStatus?.trim().toLowerCase();
+
+  String? get _normalizedPaymentIntentStatus =>
+      paymentIntentStatus?.trim().toLowerCase();
+
+  /// The single read-only settlement decision for every mobile presentation.
+  bool get isPaymentSettled =>
+      paye ||
       transactionMatched ||
-      (transactionId != null && transactionId!.isNotEmpty);
+      _normalizedPaymentStatus == 'paid' ||
+      _normalizedPaymentStatus == 'settled' ||
+      _normalizedPaymentIntentStatus == 'paid' ||
+      _normalizedPaymentIntentStatus == 'settled';
 
-  /// Payment is confirmed but bank transaction not yet matched
+  /// CalyCompta linked a receipt to this participant but deliberately left it
+  /// for review. An old QR communication marker must not hide this state.
+  bool get isPaymentInManualReview =>
+      !isPaymentSettled &&
+      (_normalizedPaymentStatus == 'manual_review' ||
+          _normalizedPaymentIntentStatus == 'manual_review');
+
+  /// Explicit legacy pending-bank state. `paye: true` is itself a valid paid
+  /// signal and is therefore no longer rendered as pending.
   bool get isPaidAwaitingBank =>
-      paye && !_hasMatchedBankTransaction && modePaiement != 'cash';
+      !isPaymentSettled && _normalizedPaymentStatus == 'pending_bank';
 
-  /// Payment is fully confirmed (bank transaction matched, or paid in cash)
-  bool get isFullyPaid =>
-      paye && (_hasMatchedBankTransaction || modePaiement == 'cash');
+  /// Payment is fully confirmed by any canonical Firestore paid signal.
+  bool get isFullyPaid => isPaymentSettled;
 
   /// Total price including supplements
   double get totalPrix => prix + supplementTotal;
@@ -239,27 +255,23 @@ class ParticipantOperation {
   /// Used to show "Partiellement payé" instead of the misleading "Non payé"
   /// when e.g. only the first acompte has been settled.
   bool get hasPartialPayment =>
-      !paye && installmentPayments.values.any((p) => p.status == 'paid');
+      !isPaymentSettled &&
+      installmentPayments.values.any((p) => p.status == 'paid');
 
   /// Waitlist entries reserve no place and never enter payment flows.
   bool get isWaitlisted => registrationStatus == 'waitlisted';
 
   /// Get display status for payment
   String get paymentDisplayStatus {
-    // Fully paid with bank transaction matched
-    if (paye && _hasMatchedBankTransaction) return 'Payé';
-
-    // Paid in cash (no bank transaction involved)
-    if (paye && modePaiement == 'cash') return 'Espèces';
-
-    // Paid but awaiting bank reconciliation
-    if (paye) return 'Payé via CalyMob\nEn attente banque';
+    if (isPaymentSettled && modePaiement == 'cash') return 'Espèces';
+    if (isPaymentSettled) return 'Payé';
+    if (isPaymentInManualReview) return 'Vérification bancaire';
 
     // At least one installment paid, but not the full inscription yet
     if (hasPartialPayment) return 'Partiellement payé';
 
     // Check payment_status for pending states
-    switch (paymentStatus) {
+    switch (_normalizedPaymentStatus) {
       case 'qr_email_sent':
         return 'QR code envoyé';
       case 'qr_on_site':
@@ -273,11 +285,12 @@ class ParticipantOperation {
 
   /// Get payment status category for styling
   String get paymentStatusCategory {
-    if (paye && _hasMatchedBankTransaction) return 'paid';
-    if (paye && modePaiement == 'cash') return 'cash';
-    if (paye) return 'pending_bank';
+    if (isPaymentSettled && modePaiement == 'cash') return 'cash';
+    if (isPaymentSettled) return 'paid';
+    if (isPaymentInManualReview) return 'manual_review';
+    if (isPaidAwaitingBank) return 'pending_bank';
     if (hasPartialPayment) return 'partial';
-    switch (paymentStatus) {
+    switch (_normalizedPaymentStatus) {
       case 'qr_email_sent':
         return 'qr_sent';
       case 'qr_on_site':
@@ -322,7 +335,11 @@ class ParticipantOperation {
       selectedSupplements:
           _parseSelectedSupplements(data['selected_supplements']),
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
-      paymentStatus: data['payment_status'],
+      paymentStatus: data['payment_status']?.toString(),
+      paymentIntentStatus: _readPaymentIntentStatus(data),
+      paymentReviewTransactionId:
+          data['payment_review_transaction_id']?.toString(),
+      paymentReviewReason: data['payment_review_reason']?.toString(),
       registrationStatus: data['registration_status'] as String? ?? 'confirmed',
       paymentExpiresAt: (data['payment_expires_at'] as Timestamp?)?.toDate(),
       paymentStatusAt: (data['payment_status_at'] as Timestamp?)?.toDate(),
@@ -358,6 +375,18 @@ class ParticipantOperation {
       }
     });
     return result;
+  }
+
+  static String? _readPaymentIntentStatus(Map<String, dynamic> data) {
+    final direct = data['payment_intent_status'] ??
+        data['event_payment_intent_status'];
+    if (direct != null) return direct.toString();
+
+    final nested = data['payment_intent'];
+    if (nested is Map && nested['status'] != null) {
+      return nested['status'].toString();
+    }
+    return null;
   }
 
   /// Parse edit history from Firestore data
@@ -467,6 +496,9 @@ class ParticipantOperation {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? paymentStatus,
+    String? paymentIntentStatus,
+    String? paymentReviewTransactionId,
+    String? paymentReviewReason,
     String? registrationStatus,
     DateTime? paymentExpiresAt,
     DateTime? paymentStatusAt,
@@ -506,6 +538,10 @@ class ParticipantOperation {
       selectedSupplements: selectedSupplements ?? this.selectedSupplements,
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentIntentStatus: paymentIntentStatus ?? this.paymentIntentStatus,
+      paymentReviewTransactionId:
+          paymentReviewTransactionId ?? this.paymentReviewTransactionId,
+      paymentReviewReason: paymentReviewReason ?? this.paymentReviewReason,
       registrationStatus: registrationStatus ?? this.registrationStatus,
       paymentExpiresAt: paymentExpiresAt ?? this.paymentExpiresAt,
       paymentStatusAt: paymentStatusAt ?? this.paymentStatusAt,

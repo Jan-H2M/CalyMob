@@ -1,5 +1,17 @@
 # CalyMob — geconsolideerde releasekandidaat
 
+## DEV-wijziging in afwachting van een afzonderlijk goedgekeurde app-release — 26 oktober 2026
+
+- Vodelée 8/11 betaalstatus: alle canonieke Firestore-signalen (`paye`,
+  `payment_status`, `transaction_matched`, vereffende payment intent) sturen
+  voortaan dezelfde afgeleide status **Payé** in het activiteitendetail, de
+  deelnemerslijst en “Mijn evenementen”.
+- Een deelnemersspecifieke `manual_review` wordt zichtbaar als
+  **Vérification bancaire** en kan niet langer terugvallen op het misleidende
+  “QR envoyé par email” of een nieuwe betaalactie.
+- Deze DEV-wijziging voert geen productie-, TestFlight- of storepublicatie uit.
+  Publicatie vereist Jans afzonderlijke releasegoedkeuring.
+
 > **Superseded (2026-10-02):** De status, versie en publicatievolgorde van de
 > kandidaat van 12 september hieronder blijven behouden als historisch verslag,
 > maar zijn niet meer de actieve release-instructies.

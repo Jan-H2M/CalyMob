@@ -19,7 +19,11 @@ class UserEventRegistration {
   }
 
   /// L'événement est-il payé ?
-  bool get isPaid => participant.paye;
+  bool get isPaid => participant.isPaymentSettled;
+
+  /// A bank receipt was linked to this participant but still requires a
+  /// CalyCompta decision. This is not the same as an unpaid QR request.
+  bool get isPaymentInManualReview => participant.isPaymentInManualReview;
 
   /// Payment is confirmed via Mollie but bank transaction not yet matched
   bool get isPaidAwaitingBank => participant.isPaidAwaitingBank;
@@ -29,6 +33,7 @@ class UserEventRegistration {
 
   /// Statut pour l'affichage
   String get statusLabel {
+    if (isPaymentInManualReview) return 'Vérification bancaire';
     if (!isPaid) return 'À payer';
     if (isPaidAwaitingBank) return 'En attente banque';
     return 'Payé';
@@ -36,6 +41,7 @@ class UserEventRegistration {
 
   /// Couleur du badge de statut
   String get statusColor {
+    if (isPaymentInManualReview) return 'deepOrange';
     if (!isPaid) return 'orange';
     if (isPaidAwaitingBank) return 'amber';
     return 'green';
