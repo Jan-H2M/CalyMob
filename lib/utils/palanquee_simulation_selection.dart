@@ -45,3 +45,16 @@ List<ParticipantOperation> simulationParticipantsFromSelection({
           ),
         )
         .toList();
+
+/// The printable roster must use the same deduplicated list as the planner.
+/// This keeps silently selected club members visible in a saved/printed
+/// palanquée without creating a registration for them.
+List<ParticipantOperation> palanqueeRosterParticipants({
+  required Iterable<ParticipantOperation> registeredParticipants,
+  required Iterable<ParticipantOperation> simulationParticipants,
+}) {
+  final participantIds = <String>{};
+  return [...registeredParticipants, ...simulationParticipants]
+      .where((participant) => participantIds.add(participant.membreId))
+      .toList();
+}

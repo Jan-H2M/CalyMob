@@ -54,5 +54,41 @@ void main() {
         isTrue,
       );
     });
+
+    test(
+        'includes silent selected members in the deduplicated printable roster',
+        () {
+      final selected = simulationParticipantsFromSelection(
+        selectedMembers: [
+          {'id': 'member-2', 'nom': 'Dupont', 'prenom': 'Alice'},
+        ],
+        operationId: 'operation-1',
+        now: DateTime.utc(2026, 10, 26),
+      );
+      final roster = palanqueeRosterParticipants(
+        registeredParticipants: [
+          selected.single.copyWith(
+            id: 'registration:member-2',
+            registrationStatus: 'registered',
+          ),
+        ],
+        simulationParticipants: [
+          ...selected,
+          ...simulationParticipantsFromSelection(
+            selectedMembers: [
+              {'id': 'member-3', 'nom': 'Longrée', 'prenom': 'Denis'},
+            ],
+            operationId: 'operation-1',
+            now: DateTime.utc(2026, 10, 26),
+          ),
+        ],
+      );
+
+      expect(roster.map((participant) => participant.membreId), [
+        'member-2',
+        'member-3',
+      ]);
+      expect(roster.last.registrationStatus, 'simulation');
+    });
   });
 }
