@@ -12,6 +12,7 @@ on:
       - 'test/models/member_profile*.dart'
       - 'test/services/profile_service*.dart'
       - 'test/screens/profile/**'
+      - 'test/screens/formation_list*.dart'
       - 'test/widgets/directory*.dart'
       - 'test/widgets/birthday*.dart'
 permissions:
@@ -35,3 +36,5 @@ jobs:
         run: flutter test test/models/member_profile_contact_privacy_test.dart test/models/member_profile_test.dart test/services/profile_service_directory_stream_test.dart test/services/profile_service_birthday_privacy_test.dart test/screens/profile test/widgets/directory*test.dart test/widgets/birthday*test.dart test/utils/directory_contact_visibility_test.dart
       - name: Check locked dependency versions
         run: git diff --exit-code -- pubspec.lock
+      - name: Formation list priority and pool-only boundaries
+        run: flutter test test/screens/formation_list_attention_order_test.dart test/screens/formation_list_error_state_test.dart test/services/pool_formation_overview_reader_test.dart test/models/formation_modality_progress_test.dart

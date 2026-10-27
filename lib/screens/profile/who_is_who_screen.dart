@@ -1157,7 +1157,6 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     }
     return upperCode;
   }
-
 }
 
 /// WP-10 — Liste « Formation » de Who's who (encadrants uniquement).
@@ -1199,6 +1198,28 @@ class _FormationRow {
 
   const _FormationRow.pool({required this.profile, required this.poolSnapshot})
       : fullSnapshot = null;
+
+  // Match only the signals already displayed in this row. Pool instructors
+  // must never need a full snapshot to determine their list order.
+  bool get hasVisibleSignals =>
+      (fullSnapshot?.attentionCount ?? 0) > 0 ||
+      (fullSnapshot?.pendingCount ?? 0) > 0 ||
+      (fullSnapshot?.goalCount ?? 0) > 0 ||
+      (poolSnapshot?.pending ?? 0) > 0;
+}
+
+int _compareFormationRows(_FormationRow a, _FormationRow b) {
+  if (a.hasVisibleSignals != b.hasVisibleSignals) {
+    return a.hasVisibleSignals ? -1 : 1;
+  }
+  final byFirst = a.profile.prenom.toLowerCase().compareTo(
+        b.profile.prenom.toLowerCase(),
+      );
+  if (byFirst != 0) return byFirst;
+  final byLast = a.profile.nom.toLowerCase().compareTo(
+        b.profile.nom.toLowerCase(),
+      );
+  return byLast != 0 ? byLast : a.profile.id.compareTo(b.profile.id);
 }
 
 class _FormationListViewState extends State<FormationListView> {
@@ -1225,7 +1246,8 @@ class _FormationListViewState extends State<FormationListView> {
               poolSnapshot: student.snapshot,
             ),
           )
-          .toList(growable: false);
+          .toList(growable: false)
+        ..sort(_compareFormationRows);
     }
     final profilesLoader = widget.profilesLoader ??
         (String clubId) => (_profileService ??= ProfileService())
@@ -1245,14 +1267,9 @@ class _FormationListViewState extends State<FormationListView> {
       if (p == null) continue;
       rows.add(_FormationRow.full(profile: p, fullSnapshot: s));
     }
-    // Tri par défaut : prénom (puis nom) — ordre alphabétique.
-    rows.sort((a, b) {
-      final byFirst = a.profile.prenom.toLowerCase().compareTo(
-            b.profile.prenom.toLowerCase(),
-          );
-      if (byFirst != 0) return byFirst;
-      return a.profile.nom.toLowerCase().compareTo(b.profile.nom.toLowerCase());
-    });
+    // Existing attention/pending/goal badges first, alphabetical within each
+    // group. This is not an unread count and does not mark anything as read.
+    rows.sort(_compareFormationRows);
     return rows;
   }
 
