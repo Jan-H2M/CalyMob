@@ -295,11 +295,11 @@ function generatePaymentCommunication(eventNumber, eventId, eventTitle, eventDat
   // 3. No date (removed to avoid digits)
 
   // 4. Participant name (max 30 chars)
-  const participantName = `${firstName || ''} ${lastName || ''}`.trim().substring(0, 30);
+  const participantName = `${firstName || ''} ${lastName || ''}`.replace(/\s+/g, ' ').trim().substring(0, 30);
   const installmentText = formatInstallmentForCommunication(installmentLabel);
 
-  // 5. Build communication (max 140 chars for EPC spec)
-  const communication = `${code} ${name} ${installmentText} ${participantName}`.trim();
+  // 5. Build communication (max 140 chars for EPC spec, collapse empty optional segments)
+  const communication = `${code} ${name} ${installmentText} ${participantName}`.replace(/\s+/g, ' ').trim();
   return communication.substring(0, 140);
 }
 
@@ -944,4 +944,4 @@ const sendPaymentQrEmail = onCall(
   }
 );
 
-module.exports = { sendPaymentQrEmail, sendPaymentEmailForMember };
+module.exports = { sendPaymentQrEmail, sendPaymentEmailForMember, generatePaymentCommunication };
