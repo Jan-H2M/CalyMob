@@ -13,6 +13,10 @@
 - Geen versiebumper, push, merge, rule-/backenddeploy of storepublicatie.
   Deze correctie moet vóór de volgende gezamenlijke release mee en opnieuw
   functioneel worden afgenomen; lokale tests zijn geen toesteltest.
+- De bijbehorende CalyCompta-regelcorrectie sluit het bestaande eigen/gast-
+  creatiegat voor `payment_status`, tranchegegevens en betaald bedrag.
+  Onafhankelijke review en apart goedgekeurde regeluitrol zijn nodig vóór
+  gezamenlijke vrijgave; alleen de mobiele aliasreparatie is onvoldoende.
 
 ## DEV-wijziging in afwachting van een afzonderlijk goedgekeurde app-release — 26 oktober 2026
 

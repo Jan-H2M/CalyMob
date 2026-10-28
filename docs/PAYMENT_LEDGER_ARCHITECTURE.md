@@ -39,6 +39,13 @@ hide a payment action, or make an inscription paid. This does not read or
 change the server-owned payment-intent collection or change Firestore rules.
 No existing alias values are migrated or rewritten.
 
+The paired CalyCompta MOB-044 rules candidate also closes the pre-existing
+own/guest-create gap for canonical `payment_status` and installment maps.
+That independently reviewed rule change must be deployed with separate
+approval before this mobile status contract is accepted for release. Merely
+removing the three aliases is not a claim that older live rules already
+guarantee server-owned canonical values on creation.
+
 When CalyCompta identifies a participant for an event-linked transaction but
 cannot settle it safely, it projects `payment_status: manual_review` together
 with `payment_review_transaction_id` and `payment_review_reason`. CalyMob shows
