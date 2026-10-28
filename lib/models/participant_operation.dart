@@ -131,7 +131,6 @@ class ParticipantOperation {
   final double supplementTotal; // Somme des prix des suppléments
   final String?
       paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
-  final String? paymentIntentStatus;
   final String? paymentReviewTransactionId;
   final String? paymentReviewReason;
   final String registrationStatus;
@@ -192,7 +191,6 @@ class ParticipantOperation {
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
     this.paymentStatus,
-    this.paymentIntentStatus,
     this.paymentReviewTransactionId,
     this.paymentReviewReason,
     this.registrationStatus = 'confirmed',
@@ -220,24 +218,20 @@ class ParticipantOperation {
 
   String? get _normalizedPaymentStatus => paymentStatus?.trim().toLowerCase();
 
-  String? get _normalizedPaymentIntentStatus =>
-      paymentIntentStatus?.trim().toLowerCase();
-
   /// The single read-only settlement decision for every mobile presentation.
+  /// Read only canonical inscription accounting fields. Inline payment-intent
+  /// aliases are not protected by CalyCompta's accounting-field rules and must
+  /// never be treated as ledger evidence or as a manual-review instruction.
   bool get isPaymentSettled =>
       paye ||
       transactionMatched ||
       _normalizedPaymentStatus == 'paid' ||
-      _normalizedPaymentStatus == 'settled' ||
-      _normalizedPaymentIntentStatus == 'paid' ||
-      _normalizedPaymentIntentStatus == 'settled';
+      _normalizedPaymentStatus == 'settled';
 
   /// CalyCompta linked a receipt to this participant but deliberately left it
   /// for review. An old QR communication marker must not hide this state.
   bool get isPaymentInManualReview =>
-      !isPaymentSettled &&
-      (_normalizedPaymentStatus == 'manual_review' ||
-          _normalizedPaymentIntentStatus == 'manual_review');
+      !isPaymentSettled && _normalizedPaymentStatus == 'manual_review';
 
   /// Explicit legacy pending-bank state. `paye: true` is itself a valid paid
   /// signal and is therefore no longer rendered as pending.
@@ -336,7 +330,6 @@ class ParticipantOperation {
           _parseSelectedSupplements(data['selected_supplements']),
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status']?.toString(),
-      paymentIntentStatus: _readPaymentIntentStatus(data),
       paymentReviewTransactionId:
           data['payment_review_transaction_id']?.toString(),
       paymentReviewReason: data['payment_review_reason']?.toString(),
@@ -375,18 +368,6 @@ class ParticipantOperation {
       }
     });
     return result;
-  }
-
-  static String? _readPaymentIntentStatus(Map<String, dynamic> data) {
-    final direct = data['payment_intent_status'] ??
-        data['event_payment_intent_status'];
-    if (direct != null) return direct.toString();
-
-    final nested = data['payment_intent'];
-    if (nested is Map && nested['status'] != null) {
-      return nested['status'].toString();
-    }
-    return null;
   }
 
   /// Parse edit history from Firestore data
@@ -496,7 +477,6 @@ class ParticipantOperation {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? paymentStatus,
-    String? paymentIntentStatus,
     String? paymentReviewTransactionId,
     String? paymentReviewReason,
     String? registrationStatus,
@@ -538,7 +518,6 @@ class ParticipantOperation {
       selectedSupplements: selectedSupplements ?? this.selectedSupplements,
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
-      paymentIntentStatus: paymentIntentStatus ?? this.paymentIntentStatus,
       paymentReviewTransactionId:
           paymentReviewTransactionId ?? this.paymentReviewTransactionId,
       paymentReviewReason: paymentReviewReason ?? this.paymentReviewReason,
