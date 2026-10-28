@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 String poolApneeTrackName(String track) => switch (track) {
@@ -39,7 +40,7 @@ class PoolApneeLesson {
   }
 }
 
-class PoolApneeOverview extends StatelessWidget {
+class PoolApneeOverview extends StatefulWidget {
   final Stream<List<PoolApneeLesson>> lessons;
   final Future<Map<String, String>> Function(Set<String> ids) resolveNames;
 
@@ -50,8 +51,45 @@ class PoolApneeOverview extends StatelessWidget {
   });
 
   @override
+  State<PoolApneeOverview> createState() => _PoolApneeOverviewState();
+}
+
+class _PoolApneeOverviewState extends State<PoolApneeOverview> {
+  Set<String>? _nameIds;
+  Future<Map<String, String>>? _names;
+
+  @override
+  void didUpdateWidget(PoolApneeOverview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lessons != widget.lessons ||
+        oldWidget.resolveNames != widget.resolveNames) {
+      _nameIds = null;
+      _names = null;
+    }
+  }
+
+  Future<Map<String, String>> _loadNames(Set<String> ids) =>
+      Future.sync(() => widget.resolveNames(ids))
+          .timeout(const Duration(seconds: 8));
+
+  Future<Map<String, String>> _namesFor(Set<String> ids) {
+    if (_names == null || !setEquals(_nameIds, ids)) {
+      _nameIds = Set.unmodifiable(ids);
+      _names = ids.isEmpty ? Future.value(const {}) : _loadNames(_nameIds!);
+    }
+    return _names!;
+  }
+
+  void _retryNames() {
+    setState(() {
+      _names = _loadNames(_nameIds!);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) => StreamBuilder<List<PoolApneeLesson>>(
-        stream: lessons,
+        key: ObjectKey(widget.lessons),
+        stream: widget.lessons,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return const Text(
@@ -60,7 +98,11 @@ class PoolApneeOverview extends StatelessWidget {
             );
           }
           final rows = snapshot.data;
-          if (rows == null || rows.isEmpty) return const SizedBox.shrink();
+          if (rows == null || rows.isEmpty) {
+            _nameIds = null;
+            _names = null;
+            return const SizedBox.shrink();
+          }
           final sorted = [...rows]..sort(
               (a, b) => a.hour.compareTo(b.hour) == 0
                   ? a.track.compareTo(b.track)
@@ -69,12 +111,15 @@ class PoolApneeOverview extends StatelessWidget {
           final ids = sorted
               .expand((row) => [...row.instructorIds, ...row.memberIds])
               .toSet();
+          final namesFuture = _namesFor(ids);
           return FutureBuilder<Map<String, String>>(
-            future: resolveNames(ids),
+            key: ObjectKey(namesFuture),
+            future: namesFuture,
             builder: (context, namesSnapshot) {
               final names = namesSnapshot.data ?? const <String, String>{};
               String people(List<String> memberIds, String empty) {
                 if (memberIds.isEmpty) return empty;
+                if (namesSnapshot.hasError) return 'Noms indisponibles';
                 if (!namesSnapshot.hasData) return 'Chargement…';
                 return memberIds.map((id) => names[id] ?? 'Membre').join(', ');
               }
@@ -93,6 +138,24 @@ class PoolApneeOverview extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (namesSnapshot.hasError)
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Noms des participants indisponibles.',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _retryNames,
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Réessayer'),
+                        ),
+                      ],
+                    ),
                   ...sorted.map(
                     (row) => Card(
                       color: Colors.white.withValues(alpha: 0.96),

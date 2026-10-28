@@ -7,6 +7,7 @@ import '../../config/firebase_config.dart';
 import '../../utils/epc_qr_code.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/payment_communication_copy_button.dart';
+import '../../widgets/boutique/boutique_current_payment_panel.dart';
 
 class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   final String? orderId;
@@ -80,7 +81,9 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        formatter.format(amount),
+                        orderId != null
+                            ? 'Consultez le paiement actuel ci-dessous'
+                            : formatter.format(amount),
                         style: const TextStyle(
                           color: AppColors.oranje,
                           fontWeight: FontWeight.w900,
@@ -88,7 +91,9 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      if (paymentMethod == 'email')
+                      if (orderId != null && orderId!.isNotEmpty)
+                        BoutiqueCurrentPaymentPanel(orderId: orderId!)
+                      else if (paymentMethod == 'email')
                         _EmailPaymentDetails(
                           orderId: orderId,
                           instruction:
@@ -102,7 +107,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                           amount: amount,
                         ),
                       const SizedBox(height: 18),
-                      if (orderId != null && orderId!.isNotEmpty) ...[
+                      if (orderId == null) ...[
                         const SizedBox(height: 10),
                         SizedBox(
                           width: double.infinity,

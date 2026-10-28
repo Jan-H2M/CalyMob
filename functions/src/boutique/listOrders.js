@@ -21,6 +21,8 @@ function simplifyOrder(doc) {
     expiresAt: timestampToIso(data.expiresAt),
     pricing: data.pricing || {},
     payment: data.payment || {},
+    paymentPlan: data.paymentPlan || null,
+    lastVariantAmendment: data.lastVariantAmendment || null,
     buyer: data.buyer || {},
     paymentCommunication: data.paymentCommunication || data.structuredCommunication || data.ogm_display || '',
     structuredCommunication: data.structuredCommunication || '',

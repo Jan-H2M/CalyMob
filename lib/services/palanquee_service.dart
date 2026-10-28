@@ -7,7 +7,10 @@ import '../models/palanquee.dart';
 /// Firestore path: clubs/{clubId}/operations/{operationId}/palanquees/assignments
 /// Eén document per operatie met alle palanquée-toewijzingen.
 class PalanqueeService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+
+  PalanqueeService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   static const String _docId = 'assignments';
 
@@ -51,14 +54,11 @@ class PalanqueeService {
     String userId,
   ) async {
     try {
-      final data = {
-        'palanquees': assignments.palanquees.map((p) => p.toMap()).toList(),
-        'updated_at': FieldValue.serverTimestamp(),
-        'updated_by': userId,
-      };
+      final data = assignments.copyWith(updatedBy: userId).toFirestore();
 
       await _docRef(clubId, operationId).set(data);
-      debugPrint('✅ Palanquée assignments opgeslagen voor operatie $operationId');
+      debugPrint(
+          '✅ Palanquée assignments opgeslagen voor operatie $operationId');
     } catch (e) {
       debugPrint('❌ Fout bij opslaan palanquée assignments: $e');
       rethrow;

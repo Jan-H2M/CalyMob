@@ -24,11 +24,27 @@ be updated whenever a mobile payment screen or Cloud Function changes.
 > denormalised fields did not update in the same write.
 
 `ParticipantOperation.isPaymentSettled` is the single display contract for an
-activity inscription. The app shows **Payé** when any authoritative Firestore
-signal says the inscription is settled: `paye: true`, `payment_status` equal to
-`paid` or `settled`, `transaction_matched: true`, or a denormalised payment
-intent status equal to `paid` or `settled`. A transaction ID on its own is only
-a link and is not proof of settlement.
+activity inscription. The app shows **Payé** from the canonical inscription
+accounting fields: `paye: true`, `payment_status` equal to `paid` or `settled`,
+or `transaction_matched: true`. A transaction ID on its own is only a link and
+is not proof of settlement.
+
+**MOB-044 correction (28 October 2026):** the previous inline-intent rule was
+not safe and is superseded. `payment_intent_status`,
+`event_payment_intent_status` and the nested `payment_intent.status` on an
+inscription are not protected accounting fields in the canonical CalyCompta
+rules. The mobile reader ignores all three completely, including `paid`,
+`settled` and `manual_review`. They cannot replace a canonical review state,
+hide a payment action, or make an inscription paid. This does not read or
+change the server-owned payment-intent collection or change Firestore rules.
+No existing alias values are migrated or rewritten.
+
+The paired CalyCompta MOB-044 rules candidate also closes the pre-existing
+own/guest-create gap for canonical `payment_status` and installment maps.
+That independently reviewed rule change must be deployed with separate
+approval before this mobile status contract is accepted for release. Merely
+removing the three aliases is not a claim that older live rules already
+guarantee server-owned canonical values on creation.
 
 When CalyCompta identifies a participant for an event-linked transaction but
 cannot settle it safely, it projects `payment_status: manual_review` together

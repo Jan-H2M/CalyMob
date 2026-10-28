@@ -1,9 +1,27 @@
 # CalyMob — geconsolideerde releasekandidaat
 
+## MOB-044 — herstel vertrouwensgrens, lokaal — 28 oktober 2026
+
+- De eerdere inline-intentregel hieronder is onveilig en vervallen:
+  `payment_intent_status`, `event_payment_intent_status` en
+  `payment_intent.status` in een inschrijving worden volledig genegeerd.
+  Alleen de bestaande canonieke inschrijvingsvelden sturen betaald/review;
+  een transactie-ID blijft op zichzelf onvoldoende betaalbewijs.
+- Negatieve synthetische regressies testen alle drie aliases tegen onbetaald,
+  bankcontrole, deelbetaling en betaald, inclusief lijst/detail/my-events en
+  de keuze van de betaalkaart. Geen echte financiële data of mutatie.
+- Geen versiebumper, push, merge, rule-/backenddeploy of storepublicatie.
+  Deze correctie moet vóór de volgende gezamenlijke release mee en opnieuw
+  functioneel worden afgenomen; lokale tests zijn geen toesteltest.
+- De bijbehorende CalyCompta-regelcorrectie sluit het bestaande eigen/gast-
+  creatiegat voor `payment_status`, tranchegegevens en betaald bedrag.
+  Onafhankelijke review en apart goedgekeurde regeluitrol zijn nodig vóór
+  gezamenlijke vrijgave; alleen de mobiele aliasreparatie is onvoldoende.
+
 ## DEV-wijziging in afwachting van een afzonderlijk goedgekeurde app-release — 26 oktober 2026
 
 - Vodelée 8/11 betaalstatus: alle canonieke Firestore-signalen (`paye`,
-  `payment_status`, `transaction_matched`, vereffende payment intent) sturen
+  `payment_status`, `transaction_matched`; inline-intentregel vervallen) sturen
   voortaan dezelfde afgeleide status **Payé** in het activiteitendetail, de
   deelnemerslijst en “Mijn evenementen”.
 - Een deelnemersspecifieke `manual_review` wordt zichtbaar als

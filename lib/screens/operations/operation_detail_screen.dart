@@ -17,6 +17,7 @@ import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/exercice_selection_policy.dart';
 import '../../utils/tariff_utils.dart';
+import '../../utils/event_registration_error.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
 import '../../utils/organizer_contact_policy.dart';
@@ -755,7 +756,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(e.toString()),
+                content: Text(eventRegistrationErrorMessage(e)),
                 backgroundColor: Colors.red,
               ),
             );
@@ -838,7 +839,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(e.toString()),
+                content: Text(eventRegistrationErrorMessage(e)),
                 backgroundColor: Colors.red,
               ),
             );
@@ -1070,7 +1071,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString()),
+            content: Text(eventRegistrationErrorMessage(e)),
             backgroundColor: Colors.red,
           ),
         );
@@ -2120,8 +2121,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// True when the current user is allowed to add a guest to this operation.
   ///
   /// Two paths:
-  ///  1. Admin / encadrant / organisateur. This event-staff permission is
-  ///     deliberately independent from the attendance scanner permission.
+  ///  1. Admin / encadrant / organisateur, only when the event allows guests.
+  ///     This staff permission is independent from the attendance scanner.
   ///  2. Any regular member when the event has opted-in via
   ///     `allow_guests=true` and the member has an active registration. The
   ///     server applies the selected guest tariff or the explicit free-event
@@ -2150,7 +2151,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// can be aggregated. Event staff use the server-authorized standalone path.
   Future<void> _showAddGuestDialog() async {
     final operation = context.read<OperationProvider>().selectedOperation;
-    if (operation == null) return;
+    if (operation == null || !_canAddGuest) return;
     final staffFlow = _canAddGuestAsStaff(operation);
     final tariffs = _guestTariffs;
 
@@ -2167,6 +2168,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       final authProvider = context.read<AuthProvider>();
       final operationProvider = context.read<OperationProvider>();
       if (operationProvider.selectedOperation == null) return;
+      if (operationProvider.selectedOperation!.allowGuests != true) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Les invités ne sont pas autorisés pour cette activité.'),
+        ));
+        return;
+      }
 
       // Member-driven flow: link the new guest to the member's own inscription.
       // Admin/encadrant flow stays unlinked (parentInscriptionId = null) to
@@ -5933,8 +5940,9 @@ bool canAddGuestFromOperationDetail({
   required int currentCount,
   int? capacity,
 }) {
+  if (!allowGuests) return false;
   if (staff) return true;
-  if (!allowGuests || !hasActiveRegistration) return false;
+  if (!hasActiveRegistration) return false;
   return capacity == null || currentCount < capacity;
 }
 

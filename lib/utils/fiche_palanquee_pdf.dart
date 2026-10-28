@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../models/operation.dart';
 import '../models/participant_operation.dart';
+import 'palanquee_simulation_selection.dart';
 
 /// Génère et partage la Fiche de Palanquée (PDF) depuis CalyMob.
 ///
@@ -26,23 +27,34 @@ class FichePalanqueePdf {
   static const String _clubName = 'Calypso Diving Club';
 
   static const List<String> _colHeaders = [
-    'Nom Prénom', 'Niv.', 'Fct', 'Gaz', 'H.Imm.', 'H.Sort.', 'Prof.R', 'Paliers', 'Obs.'
+    'Nom Prénom',
+    'Niv.',
+    'Fct',
+    'Gaz',
+    'H.Imm.',
+    'H.Sort.',
+    'Prof.R',
+    'Paliers',
+    'Obs.'
   ];
-  static const List<double> _colFlex = [3.2, 0.8, 0.8, 0.9, 1.1, 1.1, 1.0, 1.6, 2.5];
+  static const List<double> _colFlex = [
+    3.2,
+    0.8,
+    0.8,
+    0.9,
+    1.1,
+    1.1,
+    1.0,
+    1.6,
+    2.5
+  ];
 
-  /// Point d'entrée : génère le PDF et ouvre le dialog de partage.
-  static Future<void> generateAndShare({
-    required BuildContext context,
+  /// Pure rendering entry: no database, files, registration or notification writes.
+  static Future<Uint8List> buildBytes({
     required Operation operation,
     required List<ParticipantOperation> participants,
-    required String clubId,
+    required Map<String, String> memberLevels,
   }) async {
-    // Récupérer les niveaux de plongée depuis Firestore
-    final memberLevels = await _fetchMemberLevels(
-      clubId,
-      participants.map((p) => p.membreId).where((id) => id.isNotEmpty).toList(),
-    );
-
     // Préparer les données
     final sortedParticipants = List<ParticipantOperation>.from(participants)
       ..sort((a, b) => (a.membreNom ?? '').compareTo(b.membreNom ?? ''));
@@ -71,7 +83,8 @@ class FichePalanqueePdf {
     // On estime : header ~45mm, table participants ~(n*5+15)mm, légende ~30mm
     final tableEstimate = 15.0 + sortedParticipants.length * 5.0;
     final headerAndTableH = 45.0 + tableEstimate + 30.0;
-    final availableOnPage1 = 210.0 - 20.0 - headerAndTableH; // A4 landscape height - margins
+    final availableOnPage1 =
+        210.0 - 20.0 - headerAndTableH; // A4 landscape height - margins
     final palHeight = 38.0; // ~height per palanquée row (2 side by side)
     final palRowsOnPage1 = (availableOnPage1 / palHeight).floor().clamp(0, 10);
     final palsOnPage1 = (palRowsOnPage1 * _palCols).clamp(0, totalPalanquees);
@@ -102,7 +115,8 @@ class FichePalanqueePdf {
                 children: [
                   pw.Expanded(
                     flex: 5,
-                    child: _buildParticipantsTable(sortedParticipants, memberLevels),
+                    child: _buildParticipantsTable(
+                        sortedParticipants, memberLevels),
                   ),
                   pw.SizedBox(width: 10),
                   pw.Expanded(
@@ -137,7 +151,8 @@ class FichePalanqueePdf {
 
     while (palDrawn < totalPalanquees) {
       pageNum++;
-      final palsThisPage = (totalPalanquees - palDrawn).clamp(0, 8); // max 8 per page
+      final palsThisPage =
+          (totalPalanquees - palDrawn).clamp(0, 8); // max 8 per page
 
       final startNum = palDrawn + 1;
       final endNum = palDrawn + palsThisPage;
@@ -158,7 +173,7 @@ class FichePalanqueePdf {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      'FICHE DE PALANQUÉE — ${operation.titre} — $eventDate',
+                      'FICHE DE PALANQUÉE - ${operation.titre} - $eventDate',
                       style: pw.TextStyle(
                         font: pw.Font.helveticaBold(),
                         fontSize: 9,
@@ -166,8 +181,9 @@ class FichePalanqueePdf {
                       ),
                     ),
                     pw.Text(
-                      '${sortedParticipants.length} plongeurs inscrits',
-                      style: pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
+                      palanqueeRosterSummary(sortedParticipants),
+                      style:
+                          pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
                     ),
                   ],
                 ),
@@ -177,7 +193,8 @@ class FichePalanqueePdf {
 
                 // Palanquée grid
                 pw.Expanded(
-                  child: _buildPalanqueeGrid(startNum, palsThisPage, totalPalanquees),
+                  child: _buildPalanqueeGrid(
+                      startNum, palsThisPage, totalPalanquees),
                 ),
 
                 // Footer
@@ -190,12 +207,33 @@ class FichePalanqueePdf {
       );
     }
 
-    // Sauvegarder et partager
-    final bytes = await pdf.save();
+    return pdf.save();
+  }
+
+  /// Read the directory, render the same bytes, then open/share the local PDF.
+  static Future<void> generateAndShare({
+    required BuildContext context,
+    required Operation operation,
+    required List<ParticipantOperation> participants,
+    required String clubId,
+  }) async {
+    final levels = await _fetchMemberLevels(
+        clubId,
+        participants
+            .map((p) => p.membreId)
+            .where((id) => id.isNotEmpty)
+            .toList());
+    final bytes = await buildBytes(
+        operation: operation, participants: participants, memberLevels: levels);
+    final date = operation.dateDebut;
+    final eventDate = date == null
+        ? '___/___/______'
+        : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
     final safeName = (operation.titre)
         .replaceAll(RegExp(r'[^a-zA-Z0-9À-ÿ\s-]'), '')
         .replaceAll(RegExp(r'\s+'), '_');
-    final fileName = 'Fiche_Palanquee_${safeName}_${eventDate.replaceAll('/', '-')}.pdf';
+    final fileName =
+        'Fiche_Palanquee_${safeName}_${eventDate.replaceAll('/', '-')}.pdf';
 
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/$fileName');
@@ -205,13 +243,13 @@ class FichePalanqueePdf {
     final result = await OpenFilex.open(file.path);
     if (result.type != ResultType.done) {
       // Fallback: partager via le dialog système si l'ouverture échoue
+      if (!context.mounted) return;
       final box = context.findRenderObject() as RenderBox?;
       await Share.shareXFiles(
         [XFile(file.path)],
         subject: 'Fiche de Palanquée - ${operation.titre}',
-        sharePositionOrigin: box != null
-            ? box.localToGlobal(Offset.zero) & box.size
-            : null,
+        sharePositionOrigin:
+            box != null ? box.localToGlobal(Offset.zero) & box.size : null,
       );
     }
   }
@@ -257,9 +295,12 @@ class FichePalanqueePdf {
     if (niveau == null || niveau.isEmpty) return '';
     final m = RegExp(r'(\d)\s*\*').firstMatch(niveau);
     if (m != null) return '${m.group(1)}*';
-    if (RegExp(r'moniteur\s*club', caseSensitive: false).hasMatch(niveau)) return 'MC';
-    if (RegExp(r'aide\s*moniteur', caseSensitive: false).hasMatch(niveau)) return 'AM';
-    if (RegExp(r'moniteur\s*f', caseSensitive: false).hasMatch(niveau)) return 'MF';
+    if (RegExp(r'moniteur\s*club', caseSensitive: false).hasMatch(niveau))
+      return 'MC';
+    if (RegExp(r'aide\s*moniteur', caseSensitive: false).hasMatch(niveau))
+      return 'AM';
+    if (RegExp(r'moniteur\s*f', caseSensitive: false).hasMatch(niveau))
+      return 'MF';
     return niveau;
   }
 
@@ -328,7 +369,8 @@ class FichePalanqueePdf {
     return pw.Row(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
-        pw.Text(label, style: pw.TextStyle(font: pw.Font.helveticaBold(), fontSize: 8.5)),
+        pw.Text(label,
+            style: pw.TextStyle(font: pw.Font.helveticaBold(), fontSize: 8.5)),
         pw.SizedBox(width: 2),
         pw.Text(value, style: const pw.TextStyle(fontSize: 8.5)),
       ],
@@ -343,8 +385,11 @@ class FichePalanqueePdf {
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          'PARTICIPANTS INSCRITS',
-          style: pw.TextStyle(font: pw.Font.helveticaBold(), fontSize: 9, color: _navy),
+          participants.any(isPalanqueeSimulation)
+              ? 'PARTICIPANTS - INSCRITS ET SIMULATION'
+              : 'PARTICIPANTS INSCRITS',
+          style: pw.TextStyle(
+              font: pw.Font.helveticaBold(), fontSize: 9, color: _navy),
         ),
         pw.SizedBox(height: 2),
         pw.TableHelper.fromTextArray(
@@ -356,14 +401,15 @@ class FichePalanqueePdf {
             color: PdfColors.white,
           ),
           cellStyle: const pw.TextStyle(fontSize: 7.5),
-          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          cellPadding:
+              const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 1),
           headerCellDecoration: pw.BoxDecoration(color: _navy),
-          headers: ['N°', 'Nom Prénom', 'Niveau', 'Fct', 'Payé'],
+          headers: ['N°', 'Nom Prénom', 'Niveau', 'Statut', 'Payé'],
           columnWidths: {
             0: const pw.FixedColumnWidth(20),
             1: const pw.FlexColumnWidth(4),
             2: const pw.FixedColumnWidth(30),
-            3: const pw.FixedColumnWidth(22),
+            3: const pw.FixedColumnWidth(44),
             4: const pw.FixedColumnWidth(28),
           },
           cellAlignments: {
@@ -378,14 +424,16 @@ class FichePalanqueePdf {
             final nom = (p.membreNom ?? '').toUpperCase();
             final prenom = p.membrePrenom ?? '';
             final niveau = memberLevels[p.membreId] ?? '';
-            final fct = p.isGuest ? 'G' : 'M';
+            final simulation = isPalanqueeSimulation(p);
+            final status =
+                simulation ? 'Simulation' : (p.isGuest ? 'Invité' : 'Inscrit');
 
             return [
               '${i + 1}',
               '$nom $prenom',
               niveau.isEmpty ? '-' : niveau,
-              fct,
-              p.paye ? 'OK' : 'NON',
+              status,
+              simulation ? '-' : (p.paye ? 'OK' : 'NON'),
             ];
           }).toList(),
         ),
@@ -399,7 +447,8 @@ class FichePalanqueePdf {
       children: [
         pw.Text(
           'LÉGENDE',
-          style: pw.TextStyle(font: pw.Font.helveticaBold(), fontSize: 7.5, color: _navy),
+          style: pw.TextStyle(
+              font: pw.Font.helveticaBold(), fontSize: 7.5, color: _navy),
         ),
         pw.SizedBox(height: 3),
         ...[
@@ -413,16 +462,21 @@ class FichePalanqueePdf {
                 children: [
                   pw.Text(pair[0],
                       style: pw.TextStyle(
-                          font: pw.Font.helveticaBold(), fontSize: 7, color: PdfColors.grey700)),
+                          font: pw.Font.helveticaBold(),
+                          fontSize: 7,
+                          color: PdfColors.grey700)),
                   pw.SizedBox(width: 4),
-                  pw.Text(pair[1], style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+                  pw.Text(pair[1],
+                      style: const pw.TextStyle(
+                          fontSize: 7, color: PdfColors.grey700)),
                 ],
               ),
             )),
         pw.SizedBox(height: 6),
         pw.Text(
           'Signature DP:',
-          style: pw.TextStyle(font: pw.Font.helveticaBold(), fontSize: 7.5, color: _navy),
+          style: pw.TextStyle(
+              font: pw.Font.helveticaBold(), fontSize: 7.5, color: _navy),
         ),
         pw.SizedBox(height: 2),
         pw.Container(
@@ -490,10 +544,12 @@ class FichePalanqueePdf {
               pw.Row(
                 children: [
                   pw.Text('Prof: ______m',
-                      style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.white)),
+                      style: const pw.TextStyle(
+                          fontSize: 6.5, color: PdfColors.white)),
                   pw.SizedBox(width: 10),
                   pw.Text('Durée: ______min',
-                      style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.white)),
+                      style: const pw.TextStyle(
+                          fontSize: 6.5, color: PdfColors.white)),
                 ],
               ),
             ],
@@ -511,10 +567,12 @@ class FichePalanqueePdf {
               return pw.Expanded(
                 flex: (_colFlex[i] * 10).round(),
                 child: pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                  padding:
+                      const pw.EdgeInsets.symmetric(horizontal: 1, vertical: 1),
                   decoration: i > 0
                       ? pw.BoxDecoration(
-                          border: pw.Border(left: pw.BorderSide(color: _navy, width: 0.2)),
+                          border: pw.Border(
+                              left: pw.BorderSide(color: _navy, width: 0.2)),
                         )
                       : null,
                   child: pw.Text(
@@ -547,14 +605,16 @@ class FichePalanqueePdf {
                     decoration: i > 0
                         ? const pw.BoxDecoration(
                             border: pw.Border(
-                              left: pw.BorderSide(color: PdfColors.grey400, width: 0.15),
+                              left: pw.BorderSide(
+                                  color: PdfColors.grey400, width: 0.15),
                             ),
                           )
                         : null,
                     alignment: pw.Alignment.centerLeft,
                     child: i == 3 // Gaz column
                         ? pw.Text('Air',
-                            style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey500))
+                            style: const pw.TextStyle(
+                                fontSize: 6.5, color: PdfColors.grey500))
                         : pw.Container(),
                   ),
                 );
@@ -571,7 +631,7 @@ class FichePalanqueePdf {
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
         pw.Text(
-          'Fiche de Palanquée — $_clubName',
+          'Fiche de Palanquée - $_clubName',
           style: pw.TextStyle(
             font: pw.Font.helveticaOblique(),
             fontSize: 6.5,

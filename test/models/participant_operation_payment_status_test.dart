@@ -85,7 +85,7 @@ void main() {
       expect(participant.paymentStatusCategory, 'paid');
     });
 
-    test('settled and paid payment-intent projections are paid', () async {
+    test('inline payment-intent aliases are not settlement evidence', () async {
       final direct = await readParticipant(
         id: 'bertrand',
         firstName: 'Bertrand',
@@ -107,10 +107,10 @@ void main() {
         },
       );
 
-      expect(direct.isPaymentSettled, isTrue);
-      expect(nested.isPaymentSettled, isTrue);
-      expect(direct.paymentStatusCategory, 'paid');
-      expect(nested.paymentStatusCategory, 'paid');
+      expect(direct.isPaymentSettled, isFalse);
+      expect(nested.isPaymentSettled, isFalse);
+      expect(direct.paymentStatusCategory, 'unpaid');
+      expect(nested.paymentStatusCategory, 'unpaid');
     });
 
     test('settled payment_status alias is paid', () async {

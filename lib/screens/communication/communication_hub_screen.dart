@@ -50,12 +50,6 @@ class CommunicationHubScreen extends StatefulWidget {
 class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   late _CommunicationFilter _selectedFilter;
   String _searchQuery = '';
-  List<String> _stableRoles = const [];
-  bool _stableIncludeAllChannels = false;
-  String? _stablePlongeurCode;
-  String? _stableTargetFormationLevel;
-  bool _stableFormationActive = false;
-  bool _hasStableMemberContext = false;
 
   Future<void> _markCommunicationSectionAsRead(String section) async {
     final confirmed = await showDialog<bool>(
@@ -102,32 +96,16 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   Widget build(BuildContext context) {
     final memberProvider = context.watch<MemberProvider>();
     final unreadProvider = context.watch<UnreadCountProvider>();
-    final currentRoles = memberProvider.clubStatuten;
-    final currentIncludeAllChannels = ClubRoleUtils.hasAdminAccess(
-      currentRoles,
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    final hasMemberContext = userId != null &&
+        memberProvider.isLoadedFor(FirebaseConfig.defaultClubId, userId);
+    // MemberProvider already retains data during same-identity refreshes.
+    // Do not cache a second copy of another identity's roles in this screen.
+    final roles = memberProvider.clubStatuten;
+    final includeAllChannels = ClubRoleUtils.hasAdminAccess(
+      roles,
       appRole: memberProvider.appRole,
     );
-    if (memberProvider.isLoaded) {
-      _stableRoles = List<String>.from(currentRoles);
-      _stableIncludeAllChannels = currentIncludeAllChannels;
-      _stablePlongeurCode = memberProvider.plongeurCode;
-      _stableTargetFormationLevel = memberProvider.targetFormationLevel;
-      _stableFormationActive = memberProvider.formationActive;
-      _hasStableMemberContext = true;
-    }
-    final roles = _hasStableMemberContext ? _stableRoles : currentRoles;
-    final includeAllChannels = _hasStableMemberContext
-        ? _stableIncludeAllChannels
-        : currentIncludeAllChannels;
-    final plongeurCode = _hasStableMemberContext
-        ? _stablePlongeurCode
-        : memberProvider.plongeurCode;
-    final targetFormationLevel = _hasStableMemberContext
-        ? _stableTargetFormationLevel
-        : memberProvider.targetFormationLevel;
-    final formationActive = _hasStableMemberContext
-        ? _stableFormationActive
-        : memberProvider.formationActive;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -161,17 +139,32 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                 },
               ),
               Expanded(
-                child: _CommunicationInboxList(
-                  selectedFilter: _selectedFilter,
-                  searchQuery: _searchQuery,
-                  announcementUnreadCount: unreadProvider.announcements,
-                  sessionUnreadCount: unreadProvider.sessionMessages,
-                  roles: roles,
-                  includeAllChannels: includeAllChannels,
-                  plongeurCode: plongeurCode,
-                  targetFormationLevel: targetFormationLevel,
-                  formationActive: formationActive,
-                ),
+                child: !hasMemberContext
+                    ? memberProvider.errorMessage != null && userId != null
+                        ? _CommunicationLoadError(
+                            label: 'Impossible de charger votre profil.',
+                            onRetry: () => memberProvider.loadMemberData(
+                              FirebaseConfig.defaultClubId,
+                              userId,
+                            ),
+                          )
+                        : const Center(
+                            key: ValueKey('communication-profile-pending'),
+                            child: CircularProgressIndicator(),
+                          )
+                    : _CommunicationInboxList(
+                        key: ValueKey(userId),
+                        selectedFilter: _selectedFilter,
+                        searchQuery: _searchQuery,
+                        announcementUnreadCount: unreadProvider.announcements,
+                        sessionUnreadCount: unreadProvider.sessionMessages,
+                        roles: roles,
+                        includeAllChannels: includeAllChannels,
+                        plongeurCode: memberProvider.plongeurCode,
+                        targetFormationLevel:
+                            memberProvider.targetFormationLevel,
+                        formationActive: memberProvider.formationActive,
+                      ),
               ),
             ],
           ),
@@ -226,6 +219,7 @@ class _CommunicationInboxList extends StatelessWidget {
   final bool formationActive;
 
   const _CommunicationInboxList({
+    super.key,
     required this.selectedFilter,
     required this.searchQuery,
     required this.announcementUnreadCount,
@@ -1159,25 +1153,8 @@ class _SessionConversationRow extends StatelessWidget {
     const clubId = FirebaseConfig.defaultClubId;
     final unread = context.watch<UnreadCountProvider>();
     final userId = context.watch<AuthProvider>().currentUser?.uid;
-    final scopeLevel = group.type == SessionGroupType.niveau
-        ? group.level
-        : null;
-    final count = unread.usesCursorReadState
-        ? (!unread.isCursorReady || userId == null
-              ? null
-              : _cursor.countSessionChat(
-                  clubId,
-                  userId,
-                  session.id,
-                  group.type.value,
-                  groupLevel: scopeLevel,
-                ))
-        : _legacy.countUnreadForSessionChat(
-            clubId,
-            session.id,
-            group.type.value,
-            groupLevel: scopeLevel,
-          );
+    final scopeLevel =
+        group.type == SessionGroupType.niveau ? group.level : null;
     final scopeId = readStateSessionScopeId(
       session.id,
       group.type.value,
@@ -1187,7 +1164,22 @@ class _SessionConversationRow extends StatelessWidget {
     if (snapshotCount != null) {
       return _buildRow(context, snapshotCount, statusUnavailable: false);
     }
-
+    final count = unread.usesCursorReadState
+        ? (!unread.isCursorReady || userId == null
+            ? null
+            : _cursor.countSessionChat(
+                clubId,
+                userId,
+                session.id,
+                group.type.value,
+                groupLevel: scopeLevel,
+              ))
+        : _legacy.countUnreadForSessionChat(
+            clubId,
+            session.id,
+            group.type.value,
+            groupLevel: scopeLevel,
+          );
     return FutureBuilder<int>(
       future: count,
       builder: (context, snapshot) {
@@ -1271,38 +1263,38 @@ class _CommunicationLoadError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    liveRegion: true,
-    child: Container(
-      key: const ValueKey('communication-load-error'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.shade700),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.sync_problem_rounded, color: Colors.orange.shade800),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.orange.shade900,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+        liveRegion: true,
+        child: Container(
+          key: const ValueKey('communication-load-error'),
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.shade700),
           ),
-          if (onRetry != null)
-            TextButton(
-              onPressed: () => unawaited(onRetry!()),
-              child: const Text('Réessayer'),
-            ),
-        ],
-      ),
-    ),
-  );
+          child: Row(
+            children: [
+              Icon(Icons.sync_problem_rounded, color: Colors.orange.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.orange.shade900,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (onRetry != null)
+                TextButton(
+                  onPressed: () => unawaited(onRetry!()),
+                  child: const Text('Réessayer'),
+                ),
+            ],
+          ),
+        ),
+      );
 }
 
 bool _matchesSearch(String query, Iterable<String?> values) {

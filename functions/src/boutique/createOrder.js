@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { randomUUID } = require('crypto');
 const QRCode = require('qrcode');
+const { currentBoutiquePayment, assertCurrentPayment } = require('./paymentContext');
 const {
   REGION,
   assertBoutiqueAccess,
@@ -387,6 +388,16 @@ function buildBoutiqueOrderTemplateData(order, emailSettings) {
 }
 
 async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
+  let currentPayment = null;
+  if (order.paymentPlan) {
+    currentPayment = currentBoutiquePayment(order);
+    if (!currentPayment.requestId) throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Aucun nouveau virement à demander. Réception bancaire en attente.');
+    const qrCodeUrl = await QRCode.toDataURL(currentPayment.epcPayload);
+    const fresh = await orderRef.get();
+    if (!fresh.exists) throw buildDomainError('ORDER_NOT_FOUND', 'Commande introuvable.');
+    assertCurrentPayment(currentPayment, currentBoutiquePayment(fresh.data()));
+    order = { ...order, payment: { ...order.payment, amount: currentPayment.amount, communication: currentPayment.communication, qrCodeUrl } };
+  }
   const buyer = order.buyer || {};
   const recipientEmail = String(buyer.email || '').trim();
   if (!recipientEmail) {
@@ -397,7 +408,9 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const templateType = 'boutique_order_payment';
   const templateData = buildBoutiqueOrderTemplateData(order, emailSettings);
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
-  const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
+  const rendered = renderCommunicationTemplate(resolvedTemplate.template, templateData);
+  const subject = currentPayment?.kind === 'supplement' ? `Complément de paiement — ${rendered.subject}` : rendered.subject;
+  const html = currentPayment ? `<p><strong>Demande actuelle : ${formatAmount(currentPayment.amount)} uniquement.</strong> Total de la commande : ${formatAmount(currentPayment.orderTotal)}. Déjà reçu en banque : ${formatAmount(currentPayment.receivedAmount)}. Virement déclaré en cours, non reçu : ${formatAmount(currentPayment.reportedAmount)}.</p><p>Ne payez pas à nouveau le total. Les anciens e-mails et QR ne peuvent pas être rappelés. Avant de payer, consultez toujours la demande actuelle dans CalyMob → Mes commandes.</p>${rendered.html}` : rendered.html;
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
   const entityLabel = `Commande ${order.orderNumber}`;
   const recipientName = buyer.displayName || recipientEmail;
@@ -412,6 +425,18 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const configuredFromName = emailSettings.provider === 'gmail'
     ? (emailSettings.emailConfig.gmail?.fromName || emailSettings.clubName)
     : (emailSettings.emailConfig.resend?.fromName || emailSettings.clubName);
+  // Last read is deliberately after every preparation await, immediately before
+  // the external send. A receipt arriving during template/settings resolution
+  // must suppress the now-obsolete supplement e-mail.
+  if (currentPayment) {
+    const latest = await orderRef.get();
+    if (!latest.exists) throw buildDomainError('ORDER_NOT_FOUND', 'Commande introuvable.');
+    const latestOrder = latest.data();
+    assertCurrentPayment(currentPayment, currentBoutiquePayment(latestOrder));
+    if (latestOrder.buyer?.userId !== order.buyer?.userId || latestOrder.buyer?.email !== order.buyer?.email) {
+      throw buildDomainError('INVALID_INPUT', 'Le destinataire a changé. Rechargez la demande.');
+    }
+  }
   const result = await sendEmailWithConfig(emailSettings.emailConfig, {
     to: recipientEmail,
     subject,
@@ -944,7 +969,11 @@ exports.sendBoutiqueOrderPaymentEmail = onCall(
       if (order.buyer?.userId !== request.auth.uid) {
         throw new HttpsError('permission-denied', 'Accès refusé');
       }
-      if (order.status !== 'awaiting_payment' || order.payment?.status !== 'pending') {
+      if (order.paymentPlan) {
+        const context = currentBoutiquePayment(order);
+        assertCurrentPayment({ requestId: request.data?.requestId, revision: request.data?.revision, amount: request.data?.amount }, context);
+      }
+      if (!order.paymentPlan && (order.status !== 'awaiting_payment' || order.payment?.status !== 'pending')) {
         throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Cette commande n’est plus en attente de paiement.');
       }
       const emailSentAt = await sendBoutiqueOrderEmail({
