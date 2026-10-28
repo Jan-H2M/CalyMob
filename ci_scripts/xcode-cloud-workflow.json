@@ -18,7 +18,8 @@
           "isAllMatch": false,
           "patterns": [
             {"pattern": "dev", "isPrefix": false},
-            {"pattern": "codex/mob-xcode-cloud-20261016", "isPrefix": false}
+            {"pattern": "codex/mob-xcode-cloud-20261016", "isPrefix": false},
+            {"pattern": "codex/joint-bug-build-20261028", "isPrefix": false}
           ]
         }
       },
