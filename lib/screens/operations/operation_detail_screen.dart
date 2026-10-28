@@ -17,6 +17,7 @@ import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/exercice_selection_policy.dart';
 import '../../utils/tariff_utils.dart';
+import '../../utils/event_registration_error.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
 import '../../utils/organizer_contact_policy.dart';
@@ -755,7 +756,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(e.toString()),
+                content: Text(eventRegistrationErrorMessage(e)),
                 backgroundColor: Colors.red,
               ),
             );
@@ -838,7 +839,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(e.toString()),
+                content: Text(eventRegistrationErrorMessage(e)),
                 backgroundColor: Colors.red,
               ),
             );
@@ -1070,7 +1071,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString()),
+            content: Text(eventRegistrationErrorMessage(e)),
             backgroundColor: Colors.red,
           ),
         );
