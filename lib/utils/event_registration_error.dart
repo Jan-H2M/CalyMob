@@ -4,6 +4,35 @@ import 'package:cloud_functions/cloud_functions.dart';
 String eventRegistrationErrorMessage(Object error) {
   if (error is FirebaseFunctionsException) {
     final message = error.message ?? '';
+    final normalized = message.replaceAll('’', "'");
+    if (error.code == 'failed-precondition') {
+      if (normalized.contains('Les inscriptions sont fermées')) {
+        return 'Les inscriptions sont fermées pour cette activité. '
+            'Contactez l’organisateur.';
+      }
+      if (normalized.contains("La date limite d'inscription est dépassée")) {
+        return 'La date limite d’inscription est dépassée. '
+            'Contactez l’organisateur.';
+      }
+      if (normalized.contains('invités ne sont pas autorisés')) {
+        return 'Ces invités ne sont pas autorisés pour cette activité. '
+            'Vérifiez votre sélection ou contactez l’organisateur.';
+      }
+    }
+    if (error.code == 'resource-exhausted' &&
+        normalized.contains('Événement complet')) {
+      return 'Cette activité est complète. '
+          'Consultez la liste d’attente si elle est proposée.';
+    }
+    if (error.code == 'already-exists') {
+      return normalized.contains("sur la liste d'attente")
+          ? 'Vous êtes déjà sur la liste d’attente.'
+          : 'Une inscription existe déjà. Vérifiez vos inscriptions.';
+    }
+    if (error.code == 'not-found') {
+      return 'Cette activité ou votre inscription n’est plus disponible. '
+          'Actualisez la liste ou contactez l’organisateur.';
+    }
     if ((error.code == 'failed-precondition' ||
             error.code == 'invalid-argument') &&
         (message.contains('Aucun tarif membre') ||

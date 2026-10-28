@@ -3,6 +3,46 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  final businessErrors = <(String, String, String)>[
+    (
+      'failed-precondition',
+      'Les inscriptions sont fermées pour cet événement.',
+      'Les inscriptions sont fermées'
+    ),
+    (
+      'failed-precondition',
+      'La date limite d’inscription est dépassée.',
+      'La date limite d’inscription est dépassée'
+    ),
+    (
+      'resource-exhausted',
+      'Événement complet (12 places).',
+      'Cette activité est complète'
+    ),
+    (
+      'failed-precondition',
+      'Ces invités ne sont pas autorisés.',
+      'Ces invités ne sont pas autorisés'
+    ),
+    (
+      'already-exists',
+      'Vous êtes déjà sur la liste d’attente.',
+      'Vous êtes déjà sur la liste d’attente'
+    ),
+    ('not-found', 'Événement introuvable.', 'n’est plus disponible'),
+  ];
+  for (final (code, detail, expected) in businessErrors) {
+    test('definitive business rejection remains actionable: $code / $detail',
+        () {
+      final message = eventRegistrationErrorMessage(FirebaseFunctionsException(
+        code: code,
+        message: detail,
+      ));
+      expect(message, contains(expected));
+      expect(message, isNot(contains('avant de réessayer')));
+      expect(message, isNot(contains('Firebase')));
+    });
+  }
   test('COM-147 missing member tariff explains remedy without exposing stack',
       () {
     final message = eventRegistrationErrorMessage(FirebaseFunctionsException(
