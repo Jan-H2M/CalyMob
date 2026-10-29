@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:calymob/models/boutique/boutique_physical_unit.dart';
+import 'package:calymob/models/boutique/boutique_unit_qr.dart';
+import 'package:calymob/services/boutique/boutique_operations_service.dart';
 import 'package:calymob/screens/boutique/boutique_action_wizard_screen.dart';
 import 'package:calymob/services/boutique/boutique_access_service.dart';
 import 'package:calymob/widgets/boutique/boutique_access_guard.dart';
@@ -27,9 +30,13 @@ class Access extends WizardQaAccess {
 void main() {
   late LocalBoutiqueWizardStore store;
   late Access access;
+  BoutiqueOperationsService? customService;
+  Widget Function(Future<String> Function(String))? scanner;
   setUp(() {
     store = LocalBoutiqueWizardStore();
     access = Access();
+    customService = null;
+    scanner = null;
   });
   tearDown(() => access.states.close());
   Future<void> open(WidgetTester tester) async {
@@ -51,8 +58,9 @@ void main() {
                                 requiredSection: 'gestion',
                                 builder: (_, __) => BoutiqueActionWizardScreen(
                                     clubId: 'synthetic-boutique',
-                                    service: store.service,
+                                    service: customService ?? store.service,
                                     scannerBuilder: (scan) =>
+                                        scanner?.call(scan) ??
                                         SyntheticQrEntry(scan))))),
                     child: const Text('QA home'))))));
     await tester.tap(find.text('QA home'));
@@ -200,6 +208,95 @@ void main() {
     await review(tester);
     expect(find.text('Choisissez les paquets'), findsOneWidget);
     expect(find.byKey(const Key('wizard-error')), findsOneWidget);
+    expect(store.applied, 0);
+  });
+  testWidgets('a late scan cannot erase a pending confirmation or its retry',
+      (tester) async {
+    store = LocalBoutiqueWizardStore(ambiguous: true);
+    final lookup = Completer<Map<String, dynamic>>();
+    customService = BoutiqueOperationsService(transport: (request) {
+      if (request['action'] == 'lookup' && request['unitId'] == 'bonnet-b') {
+        return lookup.future;
+      }
+      return store.call(request);
+    });
+    Future<String> Function(String)? scan;
+    scanner = (callback) {
+      scan = callback;
+      return const Scaffold(body: Text('Delayed scanner'));
+    };
+    await open(tester);
+    await startMove(tester);
+    await tap(tester, find.byType(Checkbox).first);
+    expect(find.textContaining('2 pièce(s) sélectionnée(s)'), findsOneWidget);
+    await tap(tester, find.text('Scanner des pièces · facultatif'));
+    final pendingScan = scan!(
+        const BoutiqueUnitQr(clubId: 'synthetic-boutique', unitId: 'bonnet-b')
+            .url);
+    final rejected = expectLater(pendingScan, throwsA(isA<FormatException>()));
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await review(tester);
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    expect(store.applied, 1);
+    expect(find.textContaining('Réponse encore inconnue'), findsOneWidget);
+    lookup.complete({'unit': Map.of(store.units['bonnet-b']!)});
+    await rejected;
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2 pièce(s) sélectionnée(s)'), findsOneWidget);
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    expect(find.text('Lot enregistré'), findsOneWidget);
+    expect(store.applied, 1);
+    final calls = store.requests
+        .where((r) => r['action'] == 'move' && r['preview'] != true)
+        .toList();
+    expect(calls, hasLength(2));
+    expect(jsonEncode(calls[0]), jsonEncode(calls[1]));
+    expect(store.units['bonnet-b']!['location'], 'Jim');
+  });
+  testWidgets('rapid duplicate review callbacks start only one preview',
+      (tester) async {
+    final lookup = Completer<Map<String, dynamic>>();
+    var lookupStarts = 0;
+    customService = BoutiqueOperationsService(transport: (request) {
+      if (request['action'] == 'lookup' && request['unitId'] == 'polo-a') {
+        lookupStarts++;
+        return lookup.future;
+      }
+      return store.call(request);
+    });
+    await open(tester);
+    await startMove(tester);
+    await selectAll(tester);
+    final reviewCallback = tester
+        .widget<FilledButton>(find.byKey(const Key('wizard-next')))
+        .onPressed!;
+    reviewCallback();
+    reviewCallback();
+    expect(lookupStarts, 1);
+    lookup.complete({'unit': Map.of(store.units['polo-a']!)});
+    await tester.pumpAndSettle();
+    expect(find.text('Vérifiez avant de confirmer'), findsOneWidget);
+    expect(store.requests.where((r) => r['preview'] == true), hasLength(1));
+    expect(store.applied, 0);
+  });
+  testWidgets('reopening the same category preserves its specific action',
+      (tester) async {
+    await open(tester);
+    await tap(tester, find.text('Statut / finition'));
+    await select(tester, 'Action', 'Broderie terminée chez Jim');
+    await select(tester, 'Lieu actuel des pièces', 'Jim');
+    await tester.enterText(find.byKey(const Key('wizard-note')), 'Contrôlé');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tap(tester, find.text('Statut / finition'));
+    expect(find.text('Broderie terminée chez Jim'), findsWidgets);
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('wizard-note')))
+            .controller!
+            .text,
+        'Contrôlé');
     expect(store.applied, 0);
   });
   testWidgets(

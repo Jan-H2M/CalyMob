@@ -73,6 +73,7 @@ String? boutiqueBatchBlockedReason(
 
 class _WizardState extends State<BoutiqueActionWizardScreen> {
   int _step = 0;
+  int _generation = 0;
   String? _category, _action, _source;
   final _destination = TextEditingController(),
       _note = TextEditingController(),
@@ -154,6 +155,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   void _invalidate() {
+    _generation++;
     _prepared = null;
     _preview = null;
     _preparedAction = null;
@@ -161,12 +163,25 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   void _setAction(String action) {
+    if (_locked) return;
     setState(() {
       _action = action;
       _presence = false;
       _invalidate();
       // Do not discard selected pieces or silently change their source.
       // They are explicitly revalidated before review after any action change.
+    });
+  }
+
+  void _setCategory(String category) {
+    if (_locked) return;
+    setState(() {
+      if (_category != category) {
+        _action = category == 'move' ? 'move' : 'prepareJim';
+      }
+      _category = category;
+      _step = 1;
+      _invalidate();
     });
   }
 
@@ -225,6 +240,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   void _toggleMany(List<BoutiquePhysicalUnit> units, bool select) {
+    if (_locked || _step != 2) return;
     final next = {..._selected};
     for (final unit in units) {
       if (select) {
@@ -247,6 +263,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   Future<void> _chooseOrder() async {
+    if (_locked || _step != 2) return;
+    final generation = _generation;
     final units = await Navigator.push<List<BoutiquePhysicalUnit>>(
         context,
         boutiqueAccessGuardedRoute<List<BoutiquePhysicalUnit>>(
@@ -256,7 +274,13 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                 clubId: widget.clubId,
                 location: _source!,
                 service: widget.service)));
-    if (!mounted || units == null) return;
+    if (!mounted ||
+        units == null ||
+        _locked ||
+        _step != 2 ||
+        generation != _generation) {
+      return;
+    }
     final seen = <String>{};
     if (units.isEmpty ||
         units.any((u) => !seen.add(u.id) || _reason(u) != null) ||
@@ -275,6 +299,10 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   Future<String> _scan(String value) async {
+    if (_locked || _step != 2) {
+      throw const FormatException('La sélection est verrouillée.');
+    }
+    final generation = _generation;
     final parser =
         BoutiqueScanSelection(clubId: widget.clubId, location: _source!);
     final id = parser.parse(value);
@@ -282,7 +310,10 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       throw const FormatException('Cette pièce est déjà sélectionnée.');
     }
     final unit = await widget.service.lookup(widget.clubId, id);
-    if (!mounted) throw const FormatException('Session fermée.');
+    if (!mounted || _locked || _step != 2 || generation != _generation) {
+      throw const FormatException(
+          'La sélection a changé. Revenez aux paquets avant de scanner.');
+    }
     final reason = _reason(unit);
     if (reason != null) throw FormatException(reason);
     if (_selected.length >= 50) {
@@ -297,6 +328,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   Future<void> _review() async {
+    if (_locked || _step != 2) return;
     final error = _valuesError();
     if (error != null ||
         _selected.isEmpty ||
@@ -310,6 +342,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       setState(() => _error = 'Accès Boutique à vérifier.');
       return;
     }
+    final generation = ++_generation;
     setState(() {
       _busy = true;
       _error = null;
@@ -320,7 +353,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       for (final unit in _selection) {
         refreshed.add(await widget.service.lookup(widget.clubId, unit.id));
       }
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       if (refreshed.any((u) => _reason(u) != null)) {
         throw const FormatException(
             'La préparation ou le lieu a changé. Revoyez la sélection.');
@@ -345,7 +378,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       };
       final preview = await widget.service
           .call(widget.clubId, _action!, {...request, 'preview': true});
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       if (preview['count'] != refreshed.length) {
         throw const FormatException(
             'Le contrôle du lot est incomplet. Actualisez la sélection.');
@@ -357,11 +390,11 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         _step = 3;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _generation) {
         setState(() => _error = BoutiqueOperationsService.message(e));
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && generation == _generation) setState(() => _busy = false);
     }
   }
 
@@ -818,22 +851,12 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                                     'Déplacer',
                                     'Changer de lieu ou organiser un transport.',
                                     Icons.local_shipping_outlined,
-                                    () => setState(() {
-                                          _category = 'move';
-                                          _action = 'move';
-                                          _step = 1;
-                                          _invalidate();
-                                        })),
+                                    () => _setCategory('move')),
                                 _choice(
                                     'Statut / finition',
                                     'Préparer la broderie, confirmer une étape ou contrôler des articles.',
                                     Icons.fact_check_outlined,
-                                    () => setState(() {
-                                          _category = 'finish';
-                                          _action = 'prepareJim';
-                                          _step = 1;
-                                          _invalidate();
-                                        })),
+                                    () => _setCategory('finish')),
                               ],
                               if (_step == 1) _values(),
                               if (_step == 2) _packages(),

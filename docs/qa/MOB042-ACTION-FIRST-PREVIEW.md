@@ -33,16 +33,20 @@ remain unchanged. Reusing this prototype in a release is a separate decision.
 - Review refreshes selected pieces and runs a preview, not an apply. Confirmation
   alone applies. Unknown responses lock edits and reuse the identical action,
   actor, revisions and idempotency key. Role withdrawal disposes the wizard.
+- Late scan/order results are discarded after the selection generation changes;
+  duplicate review callbacks cannot start parallel previews or erase a pending
+  confirmation. Returning to the same category preserves its specific action.
 - Moving preserves finishing and customer reservation; finishing does not move
   the pieces or automatically notify buyers.
 
 ## Verification
 
-Eight new focused VM tests pass. The same tests plus six existing Boutique
-files pass in Chrome: **54 passed**. These counts overlap, not 62 unique tests.
+Eleven new focused VM tests pass. The same tests plus six existing Boutique
+files pass in Chrome: **57 passed**. These counts overlap, not 68 unique tests.
 Targeted analysis of the three new Dart files reports **No issues found**.
 Coverage includes 390×844 layout, back navigation, explicit confirmation,
-changed stock, permission withdrawal, duplicate QR and ambiguous-response retry.
+changed stock, permission withdrawal, duplicate QR, delayed scan completion,
+duplicate preview callbacks and ambiguous-response retry.
 
 The preview is not a physical-device, authenticated live-backend, payment or
 real notification acceptance test. No real orders/stock/payments are modified.
