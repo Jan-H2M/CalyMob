@@ -190,7 +190,7 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 This script:
 - Reads current version from `pubspec.yaml` (format: `MAJOR.MINOR.PATCH+BUILD`)
 - Increments the specified marketing-version part
-- Reads App Store Connect and reserves exactly its next product-wide build number
+- Reads the latest Xcode Cloud run and reserves exactly its next product-wide build number
 - Updates `pubspec.yaml`
 - Leaves Firestore publication for Jan's separate post-store action
 
@@ -792,13 +792,16 @@ cloud build, then obtain separate approval before any submission mutation.
 
 ### Historical local upload procedure — superseded
 
-Every iOS upload must use the repository Fastlane lane. The lane runs
+> Do not execute this section. The local `ios deploy` and `ios release` lanes now
+> fail immediately; it is retained only to explain the retired gate.
+
+Historically, every iOS upload used the repository Fastlane lane. The lane ran
 `verify_store_release.cjs` before it reads the canonical `RH75BJ54V4`
 credential from `ios/fastlane/Fastfile`; direct `xcrun altool`, Xcode Organizer,
 and Transporter uploads bypass the approval gate and are not allowed for this
 release workflow.
 
-### Step 1: Verify API Key Setup
+### Historical Step 1: Verify API Key Setup
 
 ```bash
 cd /Users/jan/Dev/GitHub/Calypso/CalyMob
@@ -808,11 +811,10 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 This read-only lane validates the single Fastfile credential source. Do not
 print, copy, or substitute the key.
 
-### Step 2: Gated upload
+### Historical Step 2: Gated upload
 
-Complete and export the schema-v2 manifest described in the Android upload
-section first. Use `ios deploy` for TestFlight or `ios release` for the editable
-App Store version. Both call the same verifier before any network mutation.
+The retired flow used `ios deploy` for TestFlight or `ios release` for the editable
+App Store version. These lanes are now technically disabled.
 
 ```bash
 cat > /tmp/upload_ios.sh << 'SCRIPT'
