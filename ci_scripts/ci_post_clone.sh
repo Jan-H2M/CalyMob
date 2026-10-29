@@ -69,6 +69,10 @@ flutter test --no-pub \
   test/screens/boutique_screen_access_test.dart \
   test/services/boutique_access_service_test.dart \
   test/widgets/boutique_access_guard_test.dart \
+  test/screens/boutique_management_navigation_test.dart \
+  test/screens/boutique_stock_selection_flow_test.dart \
+  test/screens/boutique_qr_confirmation_lifecycle_test.dart \
+  test/widgets/boutique_current_payment_panel_test.dart \
   test/services/dive_computer_import_service_test.dart \
   test/services/dive_log_import_registry_test.dart \
   test/services/suunto_dive_log_adapter_test.dart \
