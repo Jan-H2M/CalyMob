@@ -15,13 +15,14 @@ if [[ ! "$version_line" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)$ ]]; then
 fi
 local_version=${BASH_REMATCH[1]}
 local_build=${BASH_REMATCH[2]}
-IFS=$'\t' read -r latest_version latest_build < <("$tooling_root/scripts/read_app_store_build_number.sh" tsv)
+IFS=$'\t' read -r cloud_build latest_version latest_build < <("$tooling_root/scripts/read_xcode_cloud_build_status.sh" tsv)
 
 node "$tooling_root/scripts/build_number_sync.cjs" \
   --local-version "$local_version" \
   --local-build "$local_build" \
+  --cloud-build "$cloud_build" \
   --latest-version "$latest_version" \
   --latest-build "$latest_build" >/dev/null
 
-printf 'Build-number sync verified: local %s+%s; App Store Connect latest %s+%s.\n' \
-  "$local_version" "$local_build" "$latest_version" "$latest_build"
+printf 'Build-number sync verified: local %s+%s; Xcode Cloud latest %s; App Store Connect latest %s+%s.\n' \
+  "$local_version" "$local_build" "$cloud_build" "$latest_version" "$latest_build"

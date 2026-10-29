@@ -111,14 +111,21 @@ test('Fastlane wrapper resolves a working locked bundle or supported Homebrew la
 
 test('store mutations fail closed on the shared App Store/Xcode Cloud build counter', () => {
   const wrapper = read('scripts/run_fastlane.sh');
+  const iosFastfile = read('ios/fastlane/Fastfile');
+  const androidFastfile = read('android/fastlane/Fastfile');
   const cloud = read('ci_scripts/ci_post_clone.sh');
   const scaffold = read('scripts/scaffold_release_manifest.cjs');
   assert.match(wrapper, /check_build_number_sync\.sh/);
-  assert.match(wrapper, /android:deploy\|android:submit\|ios:deploy\|ios:release\|ios:submit\|ios:update_notes/);
+  assert.match(wrapper, /android:deploy\|android:submit\|ios:submit\|ios:update_notes/);
+  assert.match(wrapper, /Local iOS build\/upload is disabled/);
+  assert.match(iosFastfile, /check_build_number_sync\.sh/);
+  assert.match(androidFastfile, /check_build_number_sync\.sh/);
+  assert.doesNotMatch(iosFastfile, /upload_to_testflight|upload_to_app_store/);
   assert.match(cloud, /CI_BUILD_NUMBER.*RESERVED_BUILD_NUMBER/);
   assert.doesNotMatch(cloud, /> 226|exceed existing App Store Connect build 226/);
   assert.match(scaffold, /buildNumberSource/);
-  assert.match(scaffold, /read_app_store_build_number\.sh/);
+  assert.match(scaffold, /read_xcode_cloud_build_status\.sh/);
+  assert.match(scaffold, /run\.sourceCommit === sourceCommit/);
 });
 
 test('secret scan limits a newly created branch to its tip commit', () => {
