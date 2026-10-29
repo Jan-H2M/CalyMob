@@ -73,6 +73,29 @@ flutter test --no-pub \
   test/screens/boutique_stock_selection_flow_test.dart \
   test/screens/boutique_qr_confirmation_lifecycle_test.dart \
   test/widgets/boutique_current_payment_panel_test.dart \
+  test/services/pool_formation_overview_reader_test.dart \
+  test/services/formation_task_roster_service_test.dart \
+  test/models/formation_task_roster_test.dart \
+  test/widgets/pool_apnee_overview_test.dart \
+  test/providers/activity_provider_retry_test.dart \
+  test/providers/unread_count_provider_cursor_test.dart \
+  test/screens/operations_filter_bar_test.dart \
+  test/screens/operations_list_filter_test.dart \
+  test/utils/retained_stream_loader_test.dart \
+  test/screens/communication_identity_gate_test.dart \
+  test/widgets/bug_report_form_test.dart \
+  test/services/bug_report_screenshot_upload_test.dart \
+  test/models/participant_operation_payment_status_test.dart \
+  test/models/participant_operation_untrusted_payment_aliases_test.dart \
+  test/screens/operation_detail_unregister_test.dart \
+  test/models/dive_environment_test.dart \
+  test/screens/formation_list_attention_order_test.dart \
+  test/screens/palanquee_simulation_persistence_test.dart \
+  test/screens/free_guest_registration_flow_test.dart \
+  test/utils/event_registration_error_test.dart \
+  test/widgets/directory_contact_actions_test.dart \
+  test/services/profile_service_directory_stream_test.dart \
+  test/models/member_profile_contact_privacy_test.dart \
   test/services/dive_computer_import_service_test.dart \
   test/services/dive_log_import_registry_test.dart \
   test/services/suunto_dive_log_adapter_test.dart \
