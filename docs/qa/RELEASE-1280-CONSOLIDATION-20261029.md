@@ -105,3 +105,15 @@ required. No new native build, release bump, push, store or backend mutation.
 Jan requested smaller batches during this work: no further bug implementation
 is added to this consolidation. MOB-050 is separately triaged on the board;
 similar unread symptoms are not claimed fixed for its reporter without proof.
+
+### Independent review repair
+
+The first exact-commit review of local merge `4eeb8d7` confirmed the restored
+clusters, with 96 independent Flutter and 124 Functions cases green, but found
+one P2: source locations could be absent beyond the inventory's first 200 units.
+The action-first wizard now reads all pages before exposing location choice,
+with bounded unique cursors and no partial success. A synthetic 201-unit test
+proves a location existing only on page two is reachable and reviewable without
+an apply. All 29 targeted Boutique integration/navigation/receipt tests pass.
+The former partial-inventory notice is removed because a successful load is
+now complete. No backend query or business mutation contract is changed.

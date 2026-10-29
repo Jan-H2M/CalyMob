@@ -101,6 +101,41 @@ void main() {
     }
   }
 
+  testWidgets('a source location on the second inventory page stays reachable',
+      (tester) async {
+    seedPieces(200);
+    final template = Map<String, dynamic>.of(store.units.values.first);
+    store.units['second-page'] = {
+      ...template,
+      'id': 'second-page',
+      'location': 'Piscine'
+    };
+    customService = BoutiqueOperationsService(transport: (request) async {
+      if (request['action'] != 'list') return store.call(request);
+      final second = request['cursor'] == 'page-two';
+      return {
+        'units': second
+            ? [store.units['second-page']!]
+            : store.units.values.take(200).toList(),
+        'hasMore': !second,
+        'nextCursor': second ? null : 'page-two',
+        if (!second)
+          'assignees': [
+            {'id': 'demo-helper', 'name': 'Accueil Exemple'}
+          ],
+      };
+    });
+    await open(tester);
+    await tap(tester, find.text('Déplacer'));
+    await select(tester, 'Lieu actuel des pièces', 'Piscine');
+    await tester.enterText(find.byKey(const Key('wizard-destination')), 'Jim');
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    await selectAll(tester);
+    expect(find.textContaining('1 pièce(s) sélectionnée(s)'), findsOneWidget);
+    await review(tester);
+    expect(find.text('Vérifiez avant de confirmer'), findsOneWidget);
+    expect(store.applied, 0);
+  });
   testWidgets('preserves the deployed 100-piece move-only limit',
       (tester) async {
     seedPieces(100);

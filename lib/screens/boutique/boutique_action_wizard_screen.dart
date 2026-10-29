@@ -85,7 +85,6 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   List<Map<String, dynamic>> _assignees = [];
   String _search = '';
   bool _loading = true,
-      _limited = false,
       _busy = false,
       _pickup = true,
       _partial = false,
@@ -130,6 +129,28 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     });
     try {
       final data = await widget.service.call(widget.clubId, 'list');
+      final loaded = <String, BoutiquePhysicalUnit>{};
+      final cursors = <String>{};
+      var page = data;
+      while (true) {
+        for (final value in page['units'] as List) {
+          final unit =
+              BoutiquePhysicalUnit(Map<String, dynamic>.from(value as Map));
+          loaded[unit.id] = unit;
+        }
+        if (page['hasMore'] != true) break;
+        final cursor = page['nextCursor'];
+        if (cursor is! String ||
+            cursor.isEmpty ||
+            !cursors.add(cursor) ||
+            cursors.length > 100) {
+          throw const FormatException(
+              'Tous les lieux ne peuvent pas être chargés. Réessayez avant de choisir un lot.');
+        }
+        if (!mounted) return;
+        page = await widget.service
+            .call(widget.clubId, 'list', {'cursor': cursor});
+      }
       if (!mounted) return;
       setState(() {
         final retained = {
@@ -138,15 +159,10 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         };
         _units.clear();
         _units.addAll(retained);
-        for (final value in data['units'] as List) {
-          final unit =
-              BoutiquePhysicalUnit(Map<String, dynamic>.from(value as Map));
-          _units[unit.id] = unit;
-        }
+        _units.addAll(loaded);
         _assignees = (data['assignees'] as List? ?? [])
             .map((a) => Map<String, dynamic>.from(a as Map))
             .toList();
-        _limited = data['hasMore'] == true;
       });
     } catch (e) {
       if (mounted) {
@@ -669,9 +685,6 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
             onPressed: _locked ? null : () => _toggleMany(_selection, false),
             child: const Text('Tout désélectionner'))
       ]),
-      if (_limited)
-        const Text(
-            'Aperçu limité aux 200 premières pièces. « Commande complète » et le scan retrouvent aussi les autres pièces ; Tout sélectionner ne concerne que la liste affichée.'),
       for (final entry in groups.entries)
         Card(
             child: ExpansionTile(
