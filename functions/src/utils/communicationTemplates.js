@@ -440,8 +440,18 @@ async function resolveCommunicationTemplate(db, clubId, emailType, fallbackPolic
 }
 
 function renderCommunicationTemplate(template, data) {
-  const subject = Handlebars.compile(template.subject || '')(data);
-  const html = Handlebars.compile(template.htmlContent || '')(data);
+  if (!template || typeof template !== 'object' || Array.isArray(template)) {
+    throw new TypeError('Configuration invalide: template attendu.');
+  }
+  // Firestore values must never reach Handlebars as executable AST objects.
+  // Validate both fields before compiling either one; absent fields remain empty.
+  for (const field of ['subject', 'htmlContent']) {
+    if (template[field] != null && typeof template[field] !== 'string') {
+      throw new TypeError(`Configuration invalide: ${field} doit être du texte.`);
+    }
+  }
+  const subject = Handlebars.compile(template.subject ?? '')(data);
+  const html = Handlebars.compile(template.htmlContent ?? '')(data);
   const unreplacedVariables = `${subject} ${html}`.match(/\{\{[^}]+\}\}/g) || [];
 
   if (unreplacedVariables.length > 0) {
