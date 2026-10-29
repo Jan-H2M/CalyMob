@@ -93,6 +93,40 @@ void main() {
   Future<void> review(WidgetTester tester) =>
       tap(tester, find.byKey(const Key('wizard-next')));
 
+  void seedPieces(int count) {
+    final template = Map<String, dynamic>.of(store.units['polo-a']!);
+    store.units.clear();
+    for (var i = 0; i < count; i++) {
+      store.units['demo-$i'] = {...template, 'id': 'demo-$i'};
+    }
+  }
+
+  testWidgets('preserves the deployed 100-piece move-only limit',
+      (tester) async {
+    seedPieces(100);
+    await open(tester);
+    await startMove(tester);
+    await selectAll(tester);
+    expect(find.textContaining('100 pièce(s) sélectionnée(s)'), findsOneWidget);
+    await review(tester);
+    expect(find.text('Vérifiez avant de confirmer'), findsOneWidget);
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    expect(find.text('Lot enregistré'), findsOneWidget);
+    expect(store.applied, 1);
+    expect(store.units.values.every((u) => u['location'] == 'Piscine'), isTrue);
+  });
+  testWidgets('over-limit selection is rejected atomically, never truncated',
+      (tester) async {
+    seedPieces(101);
+    await open(tester);
+    await startMove(tester);
+    await selectAll(tester);
+    expect(find.textContaining('100 pièces maximum par lot'), findsOneWidget);
+    expect(find.textContaining('0 pièce(s) sélectionnée(s)'), findsOneWidget);
+    expect(store.applied, 0);
+    expect(store.requests.any((r) => r['preview'] == true), isFalse);
+  });
+
   testWidgets(
       'action then values then packages; preview never applies; move preserves finish and customer',
       (tester) async {

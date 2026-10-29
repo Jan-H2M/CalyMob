@@ -6,17 +6,18 @@ import '../../widgets/boutique/boutique_access_guard.dart';
 import 'boutique_order_selection_screen.dart';
 import 'boutique_qr_scan_screen.dart';
 
-/// Action-first candidate, currently reached only by the synthetic QA entry.
-/// No production route, backend contract or physical transition is changed.
+/// Guarded action-first workflow. Existing server transitions remain authoritative.
 class BoutiqueActionWizardScreen extends StatefulWidget {
   final String clubId;
   final BoutiqueOperationsService service;
   final Widget Function(Future<String> Function(String))? scannerBuilder;
+  final WidgetBuilder? missionsBuilder;
   const BoutiqueActionWizardScreen(
       {super.key,
       required this.clubId,
       required this.service,
-      this.scannerBuilder});
+      this.scannerBuilder,
+      this.missionsBuilder});
   @override
   State<BoutiqueActionWizardScreen> createState() => _WizardState();
 }
@@ -96,6 +97,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   List<BoutiquePhysicalUnit> get _selection =>
       _selected.map((id) => _units[id]!).toList();
   bool get _locked => _busy || _pendingApply;
+  int get _maxPieces => _action == 'move' ? 100 : 50;
   bool get _needsDestination =>
       ['move', 'dispatch', 'confirmJim'].contains(_action);
   bool get _needsNote =>
@@ -249,9 +251,9 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         next.remove(unit.id);
       }
     }
-    if (next.length > 50) {
-      setState(
-          () => _error = '50 pièces maximum par lot. Affinez votre sélection.');
+    if (next.length > _maxPieces) {
+      setState(() => _error =
+          '$_maxPieces pièces maximum par lot. Affinez votre sélection.');
       return;
     }
     setState(() {
@@ -284,7 +286,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     final seen = <String>{};
     if (units.isEmpty ||
         units.any((u) => !seen.add(u.id) || _reason(u) != null) ||
-        {..._selected, ...seen}.length > 50) {
+        {..._selected, ...seen}.length > _maxPieces) {
       setState(() => _error =
           'Ce paquet complet ne convient pas à cette action. Choisissez ses pièces compatibles dans la liste.');
       return;
@@ -316,8 +318,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     }
     final reason = _reason(unit);
     if (reason != null) throw FormatException(reason);
-    if (_selected.length >= 50) {
-      throw const FormatException('50 pièces maximum par lot.');
+    if (_selected.length >= _maxPieces) {
+      throw FormatException('$_maxPieces pièces maximum par lot.');
     }
     setState(() {
       _units[id] = unit;
@@ -332,9 +334,12 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     final error = _valuesError();
     if (error != null ||
         _selected.isEmpty ||
+        _selected.length > _maxPieces ||
         _selection.any((u) => _reason(u) != null)) {
-      setState(() => _error =
-          error ?? 'Retirez les pièces incompatibles avant de continuer.');
+      setState(() => _error = error ??
+          (_selected.length > _maxPieces
+              ? '$_maxPieces pièces maximum pour cette action. Réduisez la sélection.'
+              : 'Retirez les pièces incompatibles avant de continuer.'));
       return;
     }
     final actor = BoutiqueAccessScope.maybeOf(context);
@@ -857,6 +862,19 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                                     'Préparer la broderie, confirmer une étape ou contrôler des articles.',
                                     Icons.fact_check_outlined,
                                     () => _setCategory('finish')),
+                                if (widget.missionsBuilder != null)
+                                  OutlinedButton.icon(
+                                      onPressed: () => Navigator.push(
+                                          context,
+                                          boutiqueAccessGuardedRoute<void>(
+                                              sourceContext: context,
+                                              requiredSection: 'gestion',
+                                              builder:
+                                                  widget.missionsBuilder!)),
+                                      icon: const Icon(
+                                          Icons.assignment_turned_in_outlined),
+                                      label: const Text(
+                                          'Transports et remises partagés')),
                               ],
                               if (_step == 1) _values(),
                               if (_step == 2) _packages(),

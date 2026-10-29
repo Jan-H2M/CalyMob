@@ -8,10 +8,12 @@ import 'boutique_pickup_mission_screen.dart';
 
 class BoutiqueManagementScreen extends StatefulWidget {
   final bool manager;
+  final bool showStockPreparation;
   final BoutiqueOperationsService service;
   const BoutiqueManagementScreen(
       {super.key,
       required this.manager,
+      this.showStockPreparation = true,
       this.service = const BoutiqueOperationsService()});
   @override
   State<BoutiqueManagementScreen> createState() =>
@@ -53,7 +55,8 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
     try {
       final results = await Future.wait([
         widget.service.call(_club, 'missions'),
-        if (widget.manager) widget.service.call(_club, 'list')
+        if (widget.manager && widget.showStockPreparation)
+          widget.service.call(_club, 'list')
       ]);
       final missionPage = results[0];
       for (var page = 1;
@@ -75,7 +78,7 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
         _missions = (missionPage['missions'] as List)
             .map((m) => Map<String, dynamic>.from(m as Map))
             .toList();
-        if (widget.manager) {
+        if (widget.manager && widget.showStockPreparation) {
           _units = (results[1]['units'] as List)
               .map((m) => Map<String, dynamic>.from(m as Map))
               .toList();
@@ -173,7 +176,9 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
                 TextButton(
                     onPressed: () => _load(), child: const Text('Réessayer'))
               ],
-              if (widget.manager && _error == null) ...[
+              if (widget.manager &&
+                  widget.showStockPreparation &&
+                  _error == null) ...[
                 Text('Un lot, une action',
                     style: Theme.of(context).textTheme.headlineSmall),
                 const Text(

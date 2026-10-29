@@ -9,6 +9,7 @@ import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../services/boutique/boutique_access_service.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../services/boutique/boutique_operations_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/boutique/boutique_product_image.dart';
@@ -17,12 +18,14 @@ import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
 import 'boutique_management_screen.dart';
+import 'boutique_action_management_screen.dart';
 import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
   final BoutiqueAccessService? accessService;
   final String clubId;
+  final BoutiqueOperationsService operationsService;
   @visibleForTesting
   final String? testUserIdOverride;
 
@@ -30,6 +33,7 @@ class BoutiqueScreen extends StatefulWidget {
     super.key,
     this.accessService,
     this.clubId = FirebaseConfig.defaultClubId,
+    this.operationsService = const BoutiqueOperationsService(),
     this.testUserIdOverride,
   });
 
@@ -85,15 +89,15 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                         icon: Icons.inventory_2_outlined,
                         title: 'Gestion Boutique',
                         subtitle:
-                            'Sélectionner les pièces, gérer leur lieu et leur finition, puis suivre les remises.',
+                            'Choisir une action, préciser les valeurs, sélectionner les paquets et confirmer.',
                         emphasized: true,
                         onTap: () => Navigator.push(
                             context,
                             boutiqueAccessGuardedRoute(
                                 sourceContext: context,
                                 requiredSection: 'gestion',
-                                builder: (_) => const BoutiqueManagementScreen(
-                                    manager: true)))),
+                                builder: (_) => BoutiqueActionManagementScreen(
+                                    service: widget.operationsService)))),
                     const SizedBox(height: 12),
                   ] else if (showSection('remises')) ...[
                     _BoutiqueHomeCard(

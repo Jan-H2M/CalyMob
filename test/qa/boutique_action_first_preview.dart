@@ -141,7 +141,9 @@ class LocalBoutiqueWizardStore {
       if (reason != null) fail(reason);
       return u;
     }).toList();
-    if (selected.isEmpty || selected.length > 50) fail('Sélection invalide.');
+    if (selected.isEmpty || selected.length > (action == 'move' ? 100 : 50)) {
+      fail('Sélection invalide.');
+    }
     final dest = input['destination'] as String?;
     if (['move', 'dispatch', 'confirmJim'].contains(action) &&
         (dest == null || dest.trim().isEmpty)) {
