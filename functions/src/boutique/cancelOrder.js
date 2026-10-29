@@ -8,14 +8,7 @@ const {
   mapErrorToHttps,
 } = require('./shared');
 
-exports.cancelBoutiqueOrder = onCall(
-  {
-    region: REGION,
-    memory: '256MiB',
-    timeoutSeconds: 30,
-    maxInstances: 10,
-  },
-  async (request) => {
+async function cancelBoutiqueOrderHandler(request, dependencies = {}) {
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError('unauthenticated', 'Authentification requise');
     }
@@ -26,9 +19,9 @@ exports.cancelBoutiqueOrder = onCall(
       throw new HttpsError('invalid-argument', 'clubId ou orderId manquant');
     }
 
-    const db = admin.firestore();
+    const db = dependencies.db || admin.firestore();
     const clubRef = getClubRef(db, clubId);
-    await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
+    await (dependencies.assertAccess || assertBoutiqueAccess)({ clubRef, authUid: request.auth.uid, HttpsError });
 
     const orderRef = clubRef.collection('orders').doc(orderId);
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
@@ -43,6 +36,9 @@ exports.cancelBoutiqueOrder = onCall(
         const order = orderSnap.data() || {};
         if (order.buyer?.userId !== request.auth.uid) {
           throw new HttpsError('permission-denied', 'Cette commande ne vous appartient pas');
+        }
+        if (order.paymentPlan) {
+          throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Une commande modifiée avec virements en cours doit être vérifiée par le responsable Boutique avant annulation.');
         }
         if (order.status !== 'awaiting_payment' || order.payment?.status !== 'pending') {
           throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Cette commande ne peut plus être supprimée', {
@@ -107,5 +103,6 @@ exports.cancelBoutiqueOrder = onCall(
     } catch (error) {
       throw mapErrorToHttps(error, HttpsError);
     }
-  },
-);
+}
+exports.cancelBoutiqueOrderHandler = cancelBoutiqueOrderHandler;
+exports.cancelBoutiqueOrder = onCall({ region: REGION, memory: '256MiB', timeoutSeconds: 30, maxInstances: 10 }, cancelBoutiqueOrderHandler);
