@@ -88,7 +88,8 @@ export async function createDevServer(root, source, {port = PORT} = {}) {
       const decoded = decodeURIComponent((req.url || '/').split('?')[0]);
       if (!decoded.startsWith('/') || decoded.includes('\\') ||
           decoded.split('/').some(part => part === '..' || part.startsWith('.')) ||
-          /service_worker|firebase-messaging|manifest\.json|isolated-dev\.json/i.test(decoded)) {
+          /service_worker|firebase-messaging/i.test(decoded) ||
+          decoded === '/manifest.json' || decoded === '/isolated-dev.json') {
         res.writeHead(404).end(); return;
       }
       const name = decoded === '/' ? '/index.html' : decoded;

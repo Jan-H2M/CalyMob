@@ -24,6 +24,8 @@ async function fixture(t) {
   t.after(() => fs.rm(dir, {recursive:true, force:true}));
   await fs.writeFile(path.join(dir, 'index.html'), '<title>DEV isolé</title>');
   await fs.writeFile(path.join(dir, 'main.dart.js'), '/* synthetic */');
+  await fs.mkdir(path.join(dir,'assets'));
+  await fs.writeFile(path.join(dir,'assets/FontManifest.json'), '[]');
   const manifest = {schema:1, workItem:'DEV-ISOLATION-001', source, dirty:false,
     entrypoint:'tool/isolated_dev/main.dart', data:'fictional-in-memory', backend:'none',
     origin:'http://127.0.0.1:7375', network:'same-origin-only', treeSha256:await fingerprint(dir)};
@@ -70,6 +72,7 @@ test('loopback server refuses cross-origin access, writes, secrets and traversal
   assert.equal((await get(port,'/')).body, home.body);
   await fs.writeFile(path.join(dir,'service-account.json'), '{"private":"not-served"}');
   assert.equal((await get(port,'/__dev/health')).status,200);
+  assert.equal((await get(port,'/assets/FontManifest.json')).status,200);
   assert.equal((await get(port,'/',{host:'caly.club'})).status,403);
   assert.equal((await get(port,'/',{origin:'https://caly.club'})).status,403);
   assert.equal((await get(port,'/',{},'POST')).status,405);

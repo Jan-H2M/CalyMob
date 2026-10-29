@@ -49,6 +49,13 @@ if (createHash('sha256').update(emojiFont).digest('hex') !== 'de6c18832938afc99c
 }
 await fs.writeFile(path.join(localFonts,'NotoEmoji.ttf'), emojiFont);
 await fs.copyFile(path.join(root,'tool/isolated_dev/fonts/OFL.txt'), path.join(localFonts,'NotoEmoji-OFL.txt'));
+// Declare before engine startup too: otherwise its default Roboto fallback
+// runs before the Dart entrypoint has a chance to load the offline fonts.
+const fontManifestPath = path.join(output,'assets/FontManifest.json');
+const fonts = JSON.parse(await fs.readFile(fontManifestPath,'utf8'));
+fonts.push({family:'Roboto',fonts:[{asset:'dev-fonts/Roboto-Regular.ttf'}]},
+  {family:'Noto Emoji',fonts:[{asset:'dev-fonts/NotoEmoji.ttf'}]});
+await fs.writeFile(fontManifestPath, JSON.stringify(fonts));
 // No service worker or production web app manifest in this separate origin.
 for (const name of ['flutter_service_worker.js', 'manifest.json', '.last_build_id']) {
   await fs.rm(path.join(output, name), {force: true});
