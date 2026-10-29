@@ -4,6 +4,7 @@ import '../../services/boutique/boutique_operations_service.dart';
 import 'boutique_qr_scan_screen.dart';
 import 'boutique_order_selection_screen.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
 class BoutiqueStockSessionScreen extends StatefulWidget {
   final String clubId;
@@ -284,14 +285,17 @@ class _BoutiqueStockSessionScreenState
   @override
   Widget build(BuildContext context) {
     final locked = _busy || _pending != null;
-    return Scaffold(
-        appBar: AppBar(title: const Text('Scanner un lot')),
+    return BoutiqueOperationsScaffold(
+        title: 'Lieu et état du lot',
         body: SafeArea(
             child: ListView(padding: const EdgeInsets.all(16), children: [
           Text('Lieu de cette session : ${widget.location}',
               style: Theme.of(context).textTheme.titleMedium),
           const Text(
               'Sélectionnez d’abord les pièces, puis choisissez une action commune. Rien ne change avant votre confirmation.'),
+          const SizedBox(height: 8),
+          const Text(
+              'Le lieu et la finition sont distincts : déplacer les pièces ne les marque pas comme brodées. Les étapes chez Jim et le contrôle restent à confirmer séparément.'),
           const SizedBox(height: 16),
           Text('1 · Sélection · ${_selection.units.length}/50 pièce(s)',
               style: Theme.of(context).textTheme.titleMedium),

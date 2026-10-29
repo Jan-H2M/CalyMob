@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/boutique/boutique_operations_service.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 import 'boutique_stock_session_screen.dart';
 import 'boutique_pickup_mission_screen.dart';
 
@@ -153,15 +154,14 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
       final place = u['location'] as String? ?? 'Lieu inconnu';
       locations.update(place, (v) => v + 1, ifAbsent: () => 1);
     }
-    return Scaffold(
-        appBar: AppBar(
-            title: Text(widget.manager ? 'Gestion Boutique' : 'Mes remises'),
-            actions: [
-              IconButton(
-                  tooltip: 'Actualiser',
-                  onPressed: _loading ? null : () => _load(),
-                  icon: const Icon(Icons.refresh))
-            ]),
+    return BoutiqueOperationsScaffold(
+        title: widget.manager ? 'Gestion Boutique' : 'Mes remises',
+        actions: [
+          IconButton(
+              tooltip: 'Actualiser',
+              onPressed: _loading ? null : () => _load(),
+              icon: const Icon(Icons.refresh))
+        ],
         body: RefreshIndicator(
             onRefresh: _load,
             child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -177,7 +177,7 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
                 Text('Un lot, une action',
                     style: Theme.of(context).textTheme.headlineSmall),
                 const Text(
-                    'Choisissez le lieu où vous travaillez, puis scannez plusieurs fiches articles. Toutes les pièces seront traitées ensemble.'),
+                    'Choisissez le lieu actuel, puis sélectionnez les pièces par commande ou par scan. Vous pourrez changer leur lieu ou suivre leur finition et leur broderie.'),
                 const SizedBox(height: 12),
                 Wrap(
                     spacing: 8,
@@ -203,7 +203,7 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
                         ? null
                         : _start,
                     icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('Scanner un lot')),
+                    label: const Text('Sélectionner un lot')),
                 const SizedBox(height: 28),
               ],
               Text(

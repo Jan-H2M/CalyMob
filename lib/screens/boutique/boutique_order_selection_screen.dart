@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/boutique/boutique_physical_unit.dart';
 import '../../services/boutique/boutique_operations_service.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
 /// Only selects existing physical pieces. No action, payment or stock write.
 class BoutiqueOrderSelectionScreen extends StatefulWidget {
@@ -85,8 +86,8 @@ class _BoutiqueOrderSelectionScreenState
         '${o['orderNumber']} ${o['customerName']}'
             .toLowerCase()
             .contains(_search));
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sélectionner une commande')),
+    return BoutiqueOperationsScaffold(
+      title: 'Sélectionner une commande',
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Text('Lieu : ${widget.location}'),
         const Text(
@@ -115,7 +116,7 @@ class _BoutiqueOrderSelectionScreenState
             trailing: const Icon(Icons.add_circle_outline),
             onTap: _loading ? null : () => _choose(order),
           ),
-        if (!_loading && orders.isEmpty)
+        if (!_loading && _error == null && orders.isEmpty)
           const Text('Aucune commande correspondante chargée.'),
         if (_hasMore)
           OutlinedButton(

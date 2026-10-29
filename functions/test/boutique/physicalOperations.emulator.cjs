@@ -188,3 +188,63 @@ test('qty2 with only one received piece reports one missing article and records 
   await mutate('helper1','deliver',[42],{missionId:rest.missionId,recipientMemberId:'buyer12',confirmed:true});
   const complete=(await club.collection('orders').doc('o12').get()).data();assert.equal(complete.status,'delivered');assert.equal(complete.items[0].deliveredQty,2);
 });
+
+test('a preprinted QR does not fabricate stock and explains receipt before movements', async () => {
+  const before = await count('boutique_physical_stock_units');
+  await assert.rejects(call('rb', 'lookup', { unitId: 'qr1_' + 'a'.repeat(64) }), e => e.code === 'failed-precondition' && e.message.includes('confirmez la réception'));
+  await assert.rejects(call('outsider', 'lookup', { unitId: 'qr1_' + 'a'.repeat(64) }), e => e.code === 'permission-denied');
+  assert.equal(await count('boutique_physical_stock_units'), before);
+});
+
+
+test('undecided received stock is confirmed plain only during explicit later control; required/customer embroidery stays protected', async () => {
+  const base = { productName: 'Stock réceptionné QA', variantLabel: 'M', stockPurchaseOrderId: 'stock-qa', location: 'Jan', finish: 'unembroidered', saleStatus: 'not_ready', destination: 'free', history: [] };
+  await club.collection('boutique_physical_stock_units').doc('u70').set(base);
+  await mutate('rb', 'reviewPlain', [70], { sourceLocation: 'Jan', note: 'Aucune broderie nécessaire, contrôle effectué' });
+  const plain = (await club.collection('boutique_physical_stock_units').doc('u70').get()).data();
+  assert.equal(plain.requiresEmbroidery, false); assert.equal(plain.location, 'Jan'); assert.equal(plain.saleStatus, 'sale_ready');
+  assert.ok(plain.history.some(event => event.kind === 'finish_requirement_confirmed'));
+  assert.ok(!plain.history.some(event => event.kind === 'moved'));
+  await club.collection('boutique_physical_stock_units').doc('u71').set({ ...base, requiresEmbroidery: true });
+  await assert.rejects(mutate('rb', 'reviewPlain', [71], { sourceLocation: 'Jan', note: 'Contrôlé' }), { code: 'failed-precondition' });
+  await club.collection('orders').doc('o-plain-guard').set({ status: 'preparing', buyer: { userId: 'buyer0' }, payment: { status: 'paid' }, items: [{ lineId: 'line', qty: 1, physicalStockUnitIds: ['u72'], customizations: { name: { text: 'Required name' } }, fulfillmentStatus: 'preparing' }] });
+  await club.collection('boutique_physical_stock_units').doc('u72').set({ ...base, destination: 'customer_reserved', customerOrderId: 'o-plain-guard', customerLineId: 'line' });
+  await assert.rejects(mutate('rb', 'reviewPlain', [72], { sourceLocation: 'Jan', note: 'Contrôlé' }), { code: 'failed-precondition' });
+  assert.equal((await piece(72)).saleStatus, 'not_ready');
+});
+
+test('complete receipt listing pages beyond 200 with batch identity and manager-only access; 60-piece move stays atomic and move-only', async () => {
+  const writes = db.batch();
+  for (let i = 0; i < 205; i++) writes.set(club.collection('boutique_physical_stock_units').doc(`page_${String(i).padStart(3, '0')}`), {
+    productName: 'Receipt QA', variantLabel: 'M', location: 'Jan', supplierBatchId: 'receipt-qa', supplierOrderReference: 'W-QA', finish: 'unembroidered', saleStatus: 'not_ready', destination: 'club_stock', history: []
+  });
+  await writes.commit();
+  const first = await call('rb', 'list');
+  assert.equal(first.units.length, 200); assert.equal(first.hasMore, true); assert.ok(first.nextCursor);
+  const second = await call('rb', 'list', { cursor: first.nextCursor });
+  assert.equal(second.hasMore, false); assert.equal(second.nextCursor, null);
+  const all = [...first.units, ...second.units];
+  assert.equal(new Set(all.map(u => u.id)).size, all.length);
+  const receipt = all.filter(u => u.supplierBatchId === 'receipt-qa');
+  assert.equal(receipt.length, 205); assert.ok(receipt.every(u => u.supplierOrderReference === 'W-QA' && u.revision));
+  await assert.rejects(call('helper1', 'list', { cursor: first.nextCursor }), { code: 'permission-denied' });
+  const chosen = receipt.slice(0, 60).map(({id,revision}) => ({id,revision}));
+  const request = { units: chosen, sourceLocation: 'Jan', destination: 'Jim', idempotencyKey: key() };
+  await assert.rejects(call('rb', 'prepareJim', request), { code:'invalid-argument' });
+  const notifications = await count('boutique_pickup_notifications');
+  const stale = club.collection('boutique_physical_stock_units').doc(chosen.at(-1).id);
+  await stale.update({ updatedAt: admin.firestore.Timestamp.now() });
+  await assert.rejects(call('rb', 'move', request), { code: 'aborted' });
+  for (const u of chosen) assert.equal((await club.collection('boutique_physical_stock_units').doc(u.id).get()).data().location, 'Jan');
+  request.units = await Promise.all(chosen.map(async u => { const {id,revision} = (await call('rb','lookup',{unitId:u.id})).unit; return {id,revision}; }));
+  const preview = await call('rb', 'move', { ...request, preview: true }); assert.equal(preview.count, 60);
+  const result = await call('rb', 'move', request); assert.equal(result.count, 60);
+  const replay = await call('rb', 'move', request); assert.equal(replay.replayed, true);
+  for (const u of request.units) {
+    const moved = (await club.collection('boutique_physical_stock_units').doc(u.id).get()).data();
+    assert.equal(moved.location, 'Jim'); assert.equal(moved.finish, 'unembroidered'); assert.equal(moved.saleStatus, 'not_ready'); assert.equal(moved.destination, 'club_stock');
+    assert.equal(moved.history.length, 1); assert.equal(moved.history[0].kind, 'moved');
+  }
+  assert.equal((await club.collection('boutique_physical_stock_units').doc(receipt[60].id).get()).data().location, 'Jan');
+  assert.equal(await count('boutique_pickup_notifications'), notifications);
+});

@@ -85,7 +85,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                         icon: Icons.inventory_2_outlined,
                         title: 'Gestion Boutique',
                         subtitle:
-                            'Scanner un lot, suivre Jim, déplacer et confier les remises.',
+                            'Sélectionner les pièces, gérer leur lieu et leur finition, puis suivre les remises.',
                         emphasized: true,
                         onTap: () => Navigator.push(
                             context,
@@ -132,9 +132,9 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                   if (canManageBoutique) ...[
                     _BoutiqueHomeCard(
                       icon: Icons.open_in_new_outlined,
-                      title: 'Beheer via CalyCompta',
+                      title: 'Ouvrir CalyCompta',
                       subtitle:
-                          'Als Responsable boutique kun je hier alleen testen. Beheer catalogus, bestellingen en voorraad in CalyCompta.',
+                          'Gérer le catalogue, les commandes et le stock dans CalyCompta.',
                       onTap: _openBoutiqueManagement,
                     ),
                     const SizedBox(height: 12),
