@@ -6,7 +6,8 @@ backend**. It does not validate callable authorization, security rules, bank
 settlement, real registrations, or native phone integrations.
 
 It runs the merged MOB-048 formation list with injected fictional loaders,
-MOB-044's actual participant/registration payment model using an in-memory fake,
+MOB-044's actual participant/registration payment parser using an immutable
+in-memory document fixture (no SDK platform mock),
 and COM-147's actual error formatter with fabricated exceptions. The ordinary
 app entrypoint, Firebase options, authentication and notification bootstrap are
 not started. Formation dossier navigation is disabled. There is no QR, IBAN,
@@ -61,10 +62,15 @@ serving. Do not host this lab on the existing production-backed Vercel project.
 node --test scripts/isolated-dev/server.test.mjs
 flutter test test/dev/isolated_dev_test.dart
 flutter test --platform chrome test/dev/isolated_dev_test.dart
+node scripts/isolated-dev/smoke.mjs
 ```
 
 The dedicated PR workflow also runs the existing three fixes' targeted tests and
-builds this exact standalone web target. Green CI and the independent exact-commit
+builds this exact standalone web target. The smoke command requires the built
+artifact and free port7375: it starts a temporary loopback server and renders all
+three release-compiled scenarios in fresh Chrome profiles with remote DNS/proxy
+traffic disabled. It closes its server afterward. This catches release-only
+differences that debug widget tests cannot prove. Green CI and the independent exact-commit
 review precede DEV merge. The local lab is built again from the actual merged
 DEV commit before delivery. No changes to protected release PR #166 or security
 patches are included.

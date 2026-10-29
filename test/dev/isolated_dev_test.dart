@@ -41,6 +41,19 @@ void main() {
     expect(Firebase.apps, isEmpty);
   });
 
+  test('unknown payment fixture inputs fail closed and document data is copied',
+      () async {
+    await expectLater(
+        fictionalPayment('production', null), throwsArgumentError);
+    await expectLater(
+        fictionalPayment('unpaid', 'unknown'), throwsArgumentError);
+    final document = FictionalParticipantDocument({'prix': 8});
+    final data = document.data();
+    data['prix'] = 999;
+    expect(document.data()['prix'], 8);
+    expect(Firebase.apps, isEmpty);
+  });
+
   Future<void> open(WidgetTester tester, {double width = 800}) async {
     tester.view.physicalSize = Size(width, 1200);
     tester.view.devicePixelRatio = 1;

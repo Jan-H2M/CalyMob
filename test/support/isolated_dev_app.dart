@@ -10,14 +10,15 @@ import 'package:calymob/utils/event_registration_error.dart';
 import 'package:calymob/utils/permission_helper.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
+SemanticsHandle? devSemanticsHandle;
 
 /// Separate entrypoint: never imports main.dart or initializes a Firebase app.
 /// This lab verifies three CLIENT fixes, not server rules or real settlement.
@@ -36,7 +37,12 @@ Future<void> main() async {
     await (FontLoader(family)..addFont(rootBundle.load('dev-fonts/$file')))
         .load();
   }
-  runApp(const IsolatedDevApp());
+  // Keep readable DOM semantics for accessibility and release-artifact smoke QA.
+  devSemanticsHandle = WidgetsBinding.instance.ensureSemantics();
+  const pages = {'students': 0, 'payments': 1, 'registration': 2};
+  final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
+  if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
+  runApp(IsolatedDevApp(initialPage: pages[scenario]!));
 }
 
 void validateDevOrigin(Uri uri, {required bool enabled, required bool isWeb}) {
@@ -90,17 +96,41 @@ const paymentAliases = [
   'payment_intent.status',
 ];
 
-/// In-memory fake only. No FirebaseAuth, Admin SDK, service account or QR.
+// Value-only carrier for the real parser. It never registers an SDK platform
+// mock, and therefore works in a release-compiled lab as well as unit tests.
+class FictionalParticipantDocument
+    implements DocumentSnapshot<Map<String, dynamic>> {
+  FictionalParticipantDocument(Map<String, dynamic> data)
+      : _data = _freezeFixture(data) as Map<String, dynamic>;
+  final Map<String, dynamic> _data;
+  @override
+  String get id => 'dev-member';
+  @override
+  bool get exists => true;
+  @override
+  Map<String, dynamic> data() => Map.of(_data);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+      'Fictional document only exposes id, exists and data.');
+}
+
+Object? _freezeFixture(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return Map<String, dynamic>.unmodifiable(
+        value.map((key, item) => MapEntry(key, _freezeFixture(item))));
+  }
+  if (value is List) return List.unmodifiable(value.map(_freezeFixture));
+  return value;
+}
+
+/// Immutable in-memory data only. No FirebaseAuth, Admin SDK, account or QR.
 Future<UserEventRegistration> fictionalPayment(
     String state, String? alias) async {
   if (!paymentStates.contains(state) ||
       (alias != null && !paymentAliases.contains(alias))) {
     throw ArgumentError('Unsupported fictional payment scenario');
   }
-  final db = FakeFirebaseFirestore();
-  final ref = db
-      .doc('clubs/dev-fictional/operations/dev-event/inscriptions/dev-member');
-  await ref.set({
+  final document = FictionalParticipantDocument({
     'operation_id': 'dev-event',
     'membre_id': 'dev-member',
     'prix': 8,
@@ -124,7 +154,7 @@ Future<UserEventRegistration> fictionalPayment(
         statut: 'ouvert',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026)),
-    participant: ParticipantOperation.fromFirestore(await ref.get()),
+    participant: ParticipantOperation.fromFirestore(document),
   );
 }
 
@@ -144,7 +174,8 @@ final registrationScenarios = <String, Object Function()>{
 };
 
 class IsolatedDevApp extends StatelessWidget {
-  const IsolatedDevApp({super.key});
+  const IsolatedDevApp({super.key, this.initialPage = 0});
+  final int initialPage;
   @override
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -154,18 +185,19 @@ class IsolatedDevApp extends StatelessWidget {
             colorSchemeSeed: Colors.blue,
             fontFamily: 'Roboto',
             fontFamilyFallback: const ['Noto Emoji']),
-        home: const _DevHome(),
+        home: _DevHome(initialPage: initialPage),
       );
 }
 
 class _DevHome extends StatefulWidget {
-  const _DevHome();
+  const _DevHome({required this.initialPage});
+  final int initialPage;
   @override
   State<_DevHome> createState() => _DevHomeState();
 }
 
 class _DevHomeState extends State<_DevHome> {
-  int page = 0;
+  late int page = widget.initialPage;
   int generation = 0;
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -309,7 +341,7 @@ class _Payments extends StatefulWidget {
 
 class _PaymentsState extends State<_Payments> {
   String state = 'unpaid';
-  String? alias;
+  String? alias = paymentAliases.first;
   late Future<UserEventRegistration> value = fictionalPayment(state, alias);
   void refresh() => value = fictionalPayment(state, alias);
   @override
@@ -350,6 +382,11 @@ class _PaymentsState extends State<_Payments> {
         FutureBuilder<UserEventRegistration>(
             future: value,
             builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Text(
+                    'Scénario DEV indisponible. Réinitialisez les scénarios.',
+                    key: Key('dev-scenario-error'));
+              }
               if (!snapshot.hasData) return const CircularProgressIndicator();
               final result = snapshot.data!;
               return Card(
@@ -380,7 +417,8 @@ class _Registration extends StatefulWidget {
 
 class _RegistrationState extends State<_Registration> {
   String scenario = registrationScenarios.keys.first;
-  String? feedback;
+  String? feedback =
+      eventRegistrationErrorMessage(registrationScenarios.values.first());
   @override
   Widget build(BuildContext context) =>
       ListView(padding: const EdgeInsets.all(16), children: [

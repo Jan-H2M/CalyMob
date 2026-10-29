@@ -47,5 +47,7 @@ jobs:
         run: flutter test --platform chrome test/dev/isolated_dev_test.dart
       - name: Build the separate isolated DEV target (never lib/main.dart)
         run: node scripts/isolated-dev/build.mjs
+      - name: Smoke the actual release artifact in a fresh offline Chrome profile
+        run: node scripts/isolated-dev/smoke.mjs
       - name: Lockfile unchanged
         run: git diff --exit-code -- pubspec.lock
