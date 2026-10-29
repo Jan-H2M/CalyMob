@@ -9,6 +9,8 @@ import 'package:calymob/screens/profile/who_is_who_screen.dart';
 import 'package:calymob/utils/event_registration_error.dart';
 import 'package:calymob/utils/permission_helper.dart';
 import 'package:calymob/widgets/operation_date_metadata.dart';
+import 'package:calymob/widgets/grouped_dive_locations.dart';
+import 'package:calymob/models/dive_location.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -44,7 +46,13 @@ Future<void> main() async {
   }
   // Keep readable DOM semantics for accessibility and release-artifact smoke QA.
   devSemanticsHandle = WidgetsBinding.instance.ensureSemantics();
-  const pages = {'students': 0, 'payments': 1, 'registration': 2, 'dates': 3};
+  const pages = {
+    'students': 0,
+    'payments': 1,
+    'registration': 2,
+    'dates': 3,
+    'environments': 4
+  };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
   runApp(IsolatedDevApp(initialPage: pages[scenario]!));
@@ -263,6 +271,7 @@ class _DevHomeState extends State<_DevHome> {
                         (1, 'MOB-044 · Paiements'),
                         (2, 'COM-147 · Inscriptions'),
                         (3, 'MOB-045 · Dates'),
+                        (4, 'MOB-046 · Milieux'),
                       ])
                         ChoiceChip(
                           label: Text(label),
@@ -279,7 +288,8 @@ class _DevHomeState extends State<_DevHome> {
                       0 => const _Students(),
                       1 => const _Payments(),
                       2 => const _Registration(),
-                      _ => const FictionalDates(),
+                      3 => const FictionalDates(),
+                      _ => const FictionalEnvironments(),
                     },
                   ),
                 ),
@@ -295,6 +305,61 @@ class _DevHomeState extends State<_DevHome> {
           ),
         ),
       );
+}
+
+class FictionalEnvironments extends StatefulWidget {
+  const FictionalEnvironments({super.key});
+  @override
+  State<FictionalEnvironments> createState() => _FictionalEnvironmentsState();
+}
+
+class _FictionalEnvironmentsState extends State<FictionalEnvironments> {
+  DiveEnvironment? filter;
+  static final locations = [
+    for (final (name, data) in <(String, Map<String, dynamic>)>[
+      ('Mer FICTIVE', {'location_type': 'Mer'}),
+      ('Lac FICTIF', {'location_type': 'Lac'}),
+      ('Carrière FICTIVE', {'location_type': 'Carrière'}),
+      ('Ancien lieu FICTIF', {'water_type': 'fresh'}),
+    ])
+      DiveLocation(
+          id: 'dev-$name',
+          name: name,
+          country: 'BE',
+          createdAt: DateTime(2027),
+          updatedAt: DateTime(2027),
+          environment: DiveEnvironment.fromFirestore(data)),
+  ];
+  @override
+  Widget build(BuildContext context) =>
+      ListView(padding: const EdgeInsets.all(16), children: [
+        const Text(
+            'Catalogue FICTIF — catégories du vrai sélecteur. Les anciennes eaux douces restent sans reclassement inventé. Aucun lieu créé ni modifié.'),
+        Wrap(spacing: 8, children: [
+          ChoiceChip(
+              label: const Text('Tous les milieux'),
+              selected: filter == null,
+              onSelected: (_) => setState(() => filter = null)),
+          for (final environment in [
+            DiveEnvironment.sea,
+            DiveEnvironment.lake,
+            DiveEnvironment.career
+          ])
+            ChoiceChip(
+                label: Text('Voir ${environment.label}'),
+                selected: filter == environment,
+                onSelected: (_) => setState(() => filter = environment)),
+        ]),
+        GroupedDiveLocations(
+            locations: locations
+                .where((v) => filter == null || v.environment == filter)
+                .toList(),
+            itemBuilder: (location) => Card(
+                child: ListTile(
+                    title: Text(location.name),
+                    subtitle:
+                        Text('Catégorie : ${location.environment.label}')))),
+      ]);
 }
 
 class FictionalDates extends StatefulWidget {

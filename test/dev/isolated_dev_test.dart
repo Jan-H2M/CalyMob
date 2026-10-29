@@ -116,6 +116,32 @@ void main() {
   );
 
   for (final width in [390.0, 1000.0]) {
+    testWidgets('MOB-046 real category layout preserves legacy at $width px',
+        (tester) async {
+      await open(tester, width: width);
+      await tester.tap(find.text('MOB-046 · Milieux'));
+      await tester.pumpAndSettle();
+      for (final name in [
+        'Mer FICTIVE',
+        'Lac FICTIF',
+        'Carrière FICTIVE',
+        'Ancien lieu FICTIF'
+      ]) {
+        expect(find.text(name), findsOneWidget);
+      }
+      expect(find.text('Catégorie : Eau douce'), findsOneWidget);
+      await tester.tap(find.text('Voir Mer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mer FICTIVE'), findsOneWidget);
+      expect(find.text('Lac FICTIF'), findsNothing);
+      expect(find.text('Carrière FICTIVE'), findsNothing);
+      expect(find.text('Ancien lieu FICTIF'), findsNothing);
+      await tester.tap(find.text('Tous les milieux'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ancien lieu FICTIF'), findsOneWidget);
+      expect(Firebase.apps, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
     testWidgets('MOB-045 shared header separates dates at $width px', (
       tester,
     ) async {
