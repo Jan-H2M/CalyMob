@@ -49,8 +49,9 @@ class _FictionalApneeState extends State<FictionalApnee> {
       'dev-boris': 'Boris FICTIF',
       'dev-celia': 'Célia FICTIVE'
     };
-    if (ids.any((id) => !names.containsKey(id)))
+    if (ids.any((id) => !names.containsKey(id))) {
       throw StateError('Unknown fictional identity');
+    }
     return {for (final id in ids) id: names[id]!};
   }
 

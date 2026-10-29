@@ -20,8 +20,9 @@ void main() {
             body: PoolApneeOverview(
                 lessons: Stream.value([lesson]),
                 resolveNames: (_) async {
-                  if (++calls == 1)
+                  if (++calls == 1) {
                     throw StateError('fictional-directory-failure');
+                  }
                   return {
                     'dev-instructor': 'Moniteur FICTIF',
                     'dev-learner': 'Élève FICTIF'
