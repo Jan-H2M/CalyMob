@@ -12,6 +12,7 @@ on:
       - 'lib/models/participant_operation.dart'
       - 'lib/models/user_event_registration.dart'
       - 'lib/utils/event_registration_error.dart'
+      - 'lib/widgets/operation_date_metadata.dart'
   push:
     branches: [dev]
     paths:
@@ -20,6 +21,7 @@ on:
       - 'tool/isolated_dev/**'
       - 'test/dev/**'
       - 'test/support/isolated_dev_app.dart'
+      - 'lib/widgets/operation_date_metadata.dart'
 permissions:
   contents: read
 concurrency:

@@ -56,6 +56,12 @@ serving. Do not host this lab on the existing production-backed Vercel project.
    appears without a technical stack. An ambiguous connection asks to check
    existing registrations before retrying. No registration request is sent.
 
+4. **MOB-045 · Dates**: the production date-header widget shows the fictional
+   8 November event separately from its default 7 November registration deadline.
+   Toggle an explicit 6 November deadline and a frozen post-deadline clock. The
+   event date stays unchanged and only the registration status becomes closed.
+   No registration or event is read or written.
+
 ## Automated verification
 
 ```sh
@@ -74,7 +80,7 @@ An existing trusted installation may be selected with
 The dedicated PR workflow also runs the existing three fixes' targeted tests and
 builds this exact standalone web target. The smoke command requires the built
 artifact and free port7375: it starts a temporary loopback server and renders all
-three release-compiled scenarios in fresh Chrome profiles with remote DNS/proxy
+all release-compiled scenarios in fresh Chrome profiles with remote DNS/proxy
 traffic disabled. It closes its server afterward. This catches release-only
 differences that debug widget tests cannot prove. Green CI and the independent exact-commit
 review precede DEV merge. The local lab is built again from the actual merged
