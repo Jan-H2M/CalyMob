@@ -26,6 +26,9 @@ test('reserves exactly the next Xcode Cloud build, including after failed cloud 
   assert.equal(assessBuildNumberSync(live({
     localVersion: '1.28.0', localBuild: '537', cloudBuild: '536',
   })).relation, 'reserved-next-cloud');
+  assert.throws(() => assessBuildNumberSync(live({
+    localBuild: '536', cloudBuild: '536',
+  })), /consumed build 536.*reserve build 537/);
 });
 
 test('rejects stale, skipped and version-regressing reservations with clear errors', () => {

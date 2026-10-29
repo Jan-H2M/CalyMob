@@ -8,7 +8,8 @@ flutter test
 npm --prefix functions ci --ignore-scripts
 npm --prefix functions test -- --runInBand
 node --test scripts/verify_store_release.test.cjs scripts/scaffold_release_manifest.test.cjs \
-  scripts/release_pipeline_security.test.cjs scripts/build_number_sync.test.cjs
+  scripts/release_pipeline_security.test.cjs scripts/build_number_sync.test.cjs \
+  scripts/xcode_cloud_environment.test.cjs
 git diff --exit-code -- pubspec.lock functions/package-lock.json
 echo "Payment release tests passed for working tree based on $(git rev-parse HEAD)."
 echo "This test run is not a clean-commit attestation. Upload requires separate reviewed provenance."

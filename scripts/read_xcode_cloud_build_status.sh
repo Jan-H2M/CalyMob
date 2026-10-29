@@ -49,6 +49,13 @@ linked_processing=$(optional_marker CALYMOB_XCC_ASC_PROCESSING '[A-Z][A-Z_]*')
 latest_version=$(marker CALYMOB_ASC_VERSION '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')
 latest_build=$(marker CALYMOB_ASC_BUILD '[0-9][0-9]*')
 
+[[ "$workflow_id" == 'D11B66EC-6E95-43A4-B345-727D1992D72A' \
+  && "$run_id" =~ ^[A-Fa-f0-9-]{36}$ \
+  && "$source_commit" =~ ^[a-f0-9]{40}$ ]] || {
+  echo 'Xcode Cloud returned invalid workflow/run/source identifiers.' >&2
+  exit 1
+}
+
 [[ "$execution" == COMPLETE ]] || {
   echo "Latest Xcode Cloud build $cloud_build is still $execution; wait for it to finish before reserving another build." >&2
   exit 1

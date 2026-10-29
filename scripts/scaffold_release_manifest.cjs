@@ -155,6 +155,8 @@ function main(argv = process.argv.slice(2)) {
         'latest Xcode Cloud build source commit does not match this checkout');
       requireThat(uploaded && uploaded.version === version && String(uploaded.build) === build,
         'latest Xcode Cloud run is not linked to the matching App Store build');
+      requireThat(uploaded.processingState === 'VALID',
+        'Xcode Cloud App Store build is not valid yet');
       return [platform, {
         workflowId: WORKFLOW_ID, runId: run.id, runNumber: run.number,
         executionProgress: run.executionProgress, completionStatus: run.completionStatus,

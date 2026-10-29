@@ -41,10 +41,10 @@ function assessBuildNumberSync({ localVersion, localBuild, cloudBuild, latestVer
     `Xcode Cloud latest build ${cloud} is behind App Store Connect build ${latest}; inspect the live counters`);
 
   if (local === cloud) {
-    if (latest === cloud) {
-      requireThat(localVersion === latestVersion,
-        `build ${local} already belongs to App Store version ${latestVersion}, not local version ${localVersion}`);
-    }
+    requireThat(latest === cloud,
+      `Xcode Cloud consumed build ${cloud} without a matching App Store upload; reserve build ${cloud + 1}`);
+    requireThat(localVersion === latestVersion,
+      `build ${local} already belongs to App Store version ${latestVersion}, not local version ${localVersion}`);
     return { relation: 'matches-latest-cloud', localVersion, localBuild: local, cloudBuild: cloud,
       latestVersion, latestBuild: latest };
   }

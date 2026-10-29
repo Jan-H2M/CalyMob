@@ -78,6 +78,7 @@ function validateManifest(manifest, context) {
       && String(artifact.runNumber) === build
       && artifact.executionProgress === 'COMPLETE' && artifact.completionStatus === 'SUCCEEDED'
       && /^[a-f0-9-]+$/i.test(artifact.appStoreBuildId)
+      && artifact.processingState === 'VALID'
       && artifact.sourceCommit === head && artifact.sourceTree === tree
       && artifact.version === version && String(artifact.build) === build,
     'Xcode Cloud build provenance does not match exact workflow/run/source/version');
