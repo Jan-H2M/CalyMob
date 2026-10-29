@@ -81,8 +81,17 @@ platform :ios do
       "v1/ciBuildRuns/#{cloud_run.fetch('id')}/builds",
       { limit: 1, include: 'preReleaseVersion' }
     )
-    linked_build = linked_response.body.fetch('data').first
-    linked_version = linked_response.body.fetch('included', []).find { |item| item['type'] == 'preReleaseVersions' }
+    linked_reference = linked_response.body.fetch('data').first
+    linked_build = nil
+    linked_version = nil
+    if linked_reference
+      linked_details = Spaceship::ConnectAPI.client.test_flight_request_client.get(
+        "v1/builds/#{linked_reference.fetch('id')}",
+        { include: 'preReleaseVersion' }
+      )
+      linked_build = linked_details.body.fetch('data')
+      linked_version = linked_details.body.fetch('included', []).find { |item| item['type'] == 'preReleaseVersions' }
+    end
 
     app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
     UI.user_error!('CalyMob app was not found in App Store Connect') unless app

@@ -16,7 +16,7 @@ function fixture(platform = 'ios') {
     ? { kind: 'local-aab', path: ARTIFACTS.android, sha256: hash,
       sourceCommit: head, sourceTree: tree, version: context.version, build: context.build }
     : { kind: 'xcode-cloud-build', workflowId: WORKFLOW_ID, runId, runNumber: 204,
-      executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED', appStoreBuildId,
+      executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED', appStoreBuildId, processingState: 'VALID',
       sourceCommit: head, sourceTree: tree, version: context.version, build: context.build };
   const nativeBinding = platform === 'android' ? { artifactSha256: hash } : { xcodeCloudRunId: runId, appStoreBuildId };
   const manifest = { schemaVersion: 2, draft: false, sourceCommit: head, sourceTree: tree,
