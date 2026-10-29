@@ -34,6 +34,21 @@ run(['build', 'web', '--release', '--csp', '--no-pub', '--no-wasm-dry-run',
   '--dart-define=ISOLATED_DEV=true', `--dart-define=ISOLATED_DEV_SOURCE=${source}`]);
 // Normal web/index.html contains external cropper resources. Do not serve it.
 await fs.copyFile(path.join(root, 'tool/isolated_dev/index.html'), path.join(output, 'index.html'));
+const resolvedFlutter = await fs.realpath(path.isAbsolute(flutter) ? flutter :
+  execFileSync('which', [flutter], {env, encoding:'utf8'}).trim());
+const sdkFonts = path.resolve(path.dirname(resolvedFlutter), 'cache/artifacts/material_fonts');
+const localFonts = path.join(output, 'assets/dev-fonts');
+await fs.mkdir(localFonts, {recursive:true});
+for (const name of ['Roboto-Regular.ttf','Roboto_LICENSE.txt']) {
+  await fs.copyFile(path.join(sdkFonts,name), path.join(localFonts,name));
+}
+const emojiFont = await fs.readFile(path.join(root,'tool/isolated_dev/fonts/NotoEmoji.ttf'));
+const {createHash} = await import('node:crypto');
+if (createHash('sha256').update(emojiFont).digest('hex') !== 'de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551') {
+  throw new Error('Unexpected offline emoji font.');
+}
+await fs.writeFile(path.join(localFonts,'NotoEmoji.ttf'), emojiFont);
+await fs.copyFile(path.join(root,'tool/isolated_dev/fonts/OFL.txt'), path.join(localFonts,'NotoEmoji-OFL.txt'));
 // No service worker or production web app manifest in this separate origin.
 for (const name of ['flutter_service_worker.js', 'manifest.json', '.last_build_id']) {
   await fs.rm(path.join(output, name), {force: true});

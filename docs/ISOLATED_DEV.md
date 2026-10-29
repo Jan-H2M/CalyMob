@@ -32,7 +32,8 @@ storage. After changing commits, rebuild: the server refuses stale/dirty builds.
 The build uses an allowlisted child environment and a fresh temporary HOME, not
 the user's cloud configuration. No `.env`, service account or production token
 is loaded. Local packages are reused, not a data export. A separate HTML shell
-replaces the normal external-CDN shell. Flutter resources are bundled locally;
+replaces the normal external-CDN shell. Flutter resources, Roboto and the
+OFL-licensed Noto Emoji font are bundled locally; no font-CDN exception is made;
 service workers are not served.
 
 The server binds only `127.0.0.1:7375`; there is no LAN/public listener, port

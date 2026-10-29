@@ -14,17 +14,27 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
 
 /// Separate entrypoint: never imports main.dart or initializes a Firebase app.
 /// This lab verifies three CLIENT fixes, not server rules or real settlement.
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   validateDevOrigin(Uri.base, enabled: devEnabled, isWeb: kIsWeb);
   if (Firebase.apps.isNotEmpty) {
     throw StateError('Isolated DEV refuses an initialized Firebase app.');
+  }
+  // Flutter's default web Roboto/emoji fallback otherwise asks an external CDN.
+  // The standalone build copies these fonts locally; missing fonts fail startup.
+  for (final (family, file) in const [
+    ('Roboto', 'Roboto-Regular.ttf'),
+    ('Noto Emoji', 'NotoEmoji.ttf'),
+  ]) {
+    await (FontLoader(family)..addFont(rootBundle.load('dev-fonts/$file')))
+        .load();
   }
   runApp(const IsolatedDevApp());
 }
@@ -139,7 +149,11 @@ class IsolatedDevApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'CalyMob — DEV isolé',
-        theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
+        theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: Colors.blue,
+            fontFamily: 'Roboto',
+            fontFamilyFallback: const ['Noto Emoji']),
         home: const _DevHome(),
       );
 }
