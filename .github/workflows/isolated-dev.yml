@@ -48,6 +48,8 @@ jobs:
       - name: Build the separate isolated DEV target (never lib/main.dart)
         run: node scripts/isolated-dev/build.mjs
       - name: Smoke the actual release artifact in a fresh offline Chrome profile
-        run: node scripts/isolated-dev/smoke.mjs
+        run: |
+          npm install --prefix .dart_tool/isolated-dev --no-save --ignore-scripts --package-lock=false --userconfig=/dev/null --globalconfig=/dev/null --registry=https://registry.npmjs.org playwright-core@1.62.1
+          node scripts/isolated-dev/smoke.mjs
       - name: Lockfile unchanged
         run: git diff --exit-code -- pubspec.lock

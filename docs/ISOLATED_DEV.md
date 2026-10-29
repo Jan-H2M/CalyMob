@@ -65,6 +65,12 @@ flutter test --platform chrome test/dev/isolated_dev_test.dart
 node scripts/isolated-dev/smoke.mjs
 ```
 
+The smoke command uses pinned `playwright-core@1.62.1` (no browser download).
+CI installs that test-only package with lifecycle scripts disabled into ignored
+`.dart_tool/isolated-dev`; no production/runtime dependencies or lockfiles change.
+An existing trusted installation may be selected with
+`ISOLATED_DEV_PLAYWRIGHT_ROOT=/absolute/path/to/playwright-core`.
+
 The dedicated PR workflow also runs the existing three fixes' targeted tests and
 builds this exact standalone web target. The smoke command requires the built
 artifact and free port7375: it starts a temporary loopback server and renders all
