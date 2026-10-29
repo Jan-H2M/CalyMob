@@ -60,11 +60,13 @@ await fs.writeFile(fontManifestPath, JSON.stringify(fonts));
 for (const name of ['flutter_service_worker.js', 'manifest.json', '.last_build_id']) {
   await fs.rm(path.join(output, name), {force: true});
 }
-const manifest = {schema: 1, workItem: 'DEV-ISOLATION-001', source, dirty,
+if (git('rev-parse','HEAD') !== source) throw new Error('Source changed during DEV build.');
+const finalDirty = dirty || git('status','--porcelain','--untracked-files=normal') !== '';
+const manifest = {schema: 1, workItem: 'DEV-ISOLATION-001', source, dirty: finalDirty,
   entrypoint: 'tool/isolated_dev/main.dart', data: 'fictional-in-memory',
   backend: 'none', origin: 'http://127.0.0.1:7375',
   network: 'same-origin-only', treeSha256: await fingerprint(output)};
 validateManifest(manifest);
 await fs.writeFile(path.join(output, 'isolated-dev.json'), JSON.stringify(manifest, null, 2), {mode: 0o600});
-console.log(`Isolated DEV built: ${source}. Dirty source: ${dirty}.`);
+console.log(`Isolated DEV built: ${source}. Dirty source: ${finalDirty}.`);
 console.log('Serve only with: node scripts/isolated-dev/server.mjs');

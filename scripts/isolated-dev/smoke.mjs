@@ -9,6 +9,9 @@ import {fileURLToPath} from 'node:url';
 import {createDevServer, HOST, PORT} from './server.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const source = execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+if (execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim()) {
+  throw new Error('DEV release smoke requires a clean worktree.');
+}
 const chrome = process.env.CHROME_EXECUTABLE || (process.platform === 'darwin'
   ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome');
 const runtime = await fs.mkdtemp(path.join(os.tmpdir(),'calymob-dev-smoke-'));

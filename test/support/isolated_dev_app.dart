@@ -98,6 +98,9 @@ const paymentAliases = [
 
 // Value-only carrier for the real parser. It never registers an SDK platform
 // mock, and therefore works in a release-compiled lab as well as unit tests.
+// SDK snapshots are sealed for normal clients. This test-only value carrier
+// deliberately implements only the parser's id/data contract; no SDK is started.
+// ignore: subtype_of_sealed_class
 class FictionalParticipantDocument
     implements DocumentSnapshot<Map<String, dynamic>> {
   FictionalParticipantDocument(Map<String, dynamic> data)
