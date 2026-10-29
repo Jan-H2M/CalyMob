@@ -21,7 +21,11 @@ export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
 case "$platform:$lane" in
-  android:deploy|android:submit|ios:deploy|ios:release|ios:submit|ios:update_notes)
+  ios:deploy|ios:release)
+    echo 'Local iOS build/upload is disabled; use Xcode Cloud workflow D11B66EC-6E95-43A4-B345-727D1992D72A.' >&2
+    exit 1
+    ;;
+  android:deploy|android:submit|ios:submit|ios:update_notes)
     sync_root="$repo_root"
     if [[ "$platform:$lane" == "android:submit" && -n "${CALYMOB_RELEASE_ROOT:-}" ]]; then
       sync_root="$CALYMOB_RELEASE_ROOT"

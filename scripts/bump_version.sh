@@ -36,10 +36,10 @@ case "${1:-patch}" in
     ;;
 esac
 
-# App Store Connect/Xcode Cloud owns the product-wide build counter. Reserve
-# exactly its next number; never increment a stale local counter in isolation.
-IFS=$'\t' read -r ASC_VERSION ASC_BUILD < <(scripts/read_app_store_build_number.sh tsv)
-BUILD_NUMBER=$((ASC_BUILD + 1))
+# Xcode Cloud owns the product-wide build counter, including failed/canceled
+# runs that never upload to App Store Connect. Reserve exactly its next number.
+IFS=$'\t' read -r XCC_BUILD ASC_VERSION ASC_BUILD < <(scripts/read_xcode_cloud_build_status.sh tsv)
+BUILD_NUMBER=$((XCC_BUILD + 1))
 
 NEW_VERSION="$MAJOR.$MINOR.$PATCH+$BUILD_NUMBER"
 NEW_VERSION_NAME="$MAJOR.$MINOR.$PATCH"
@@ -48,7 +48,7 @@ NEW_VERSION_NAME="$MAJOR.$MINOR.$PATCH"
 sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
 
 echo "Version bumped: $CURRENT_VERSION → $NEW_VERSION"
-echo "Build $BUILD_NUMBER reserved from App Store Connect latest $ASC_VERSION+$ASC_BUILD."
+echo "Build $BUILD_NUMBER reserved after Xcode Cloud build $XCC_BUILD (App Store latest $ASC_VERSION+$ASC_BUILD)."
 
 # ⚠️  Firestore version wordt NIET meer automatisch bijgewerkt!
 # De versie wordt pas gepubliceerd als je op "Publier" drukt in CalyMob > Mon Profil > Paramètres.
