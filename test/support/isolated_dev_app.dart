@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'formation_dev_scenarios.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
@@ -51,7 +52,8 @@ Future<void> main() async {
     'payments': 1,
     'registration': 2,
     'dates': 3,
-    'environments': 4
+    'environments': 4,
+    'formation': 5
   };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
@@ -262,23 +264,23 @@ class _DevHomeState extends State<_DevHome> {
                 ),
                 Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
+                  child: DropdownButtonFormField<int>(
+                    key: const Key('dev-scenario-picker'),
+                    initialValue: page,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Scénario de test fictif'),
+                    items: [
                       for (final (index, label) in const [
                         (0, 'MOB-048 · Élèves'),
                         (1, 'MOB-044 · Paiements'),
                         (2, 'COM-147 · Inscriptions'),
                         (3, 'MOB-045 · Dates'),
                         (4, 'MOB-046 · Milieux'),
+                        (5, 'MOB-033 · Formation'),
                       ])
-                        ChoiceChip(
-                          label: Text(label),
-                          selected: page == index,
-                          onSelected: (_) => setState(() => page = index),
-                        ),
+                        DropdownMenuItem(value: index, child: Text(label)),
                     ],
+                    onChanged: (value) { if (value != null) setState(() => page = value); },
                   ),
                 ),
                 Expanded(
@@ -289,7 +291,8 @@ class _DevHomeState extends State<_DevHome> {
                       1 => const _Payments(),
                       2 => const _Registration(),
                       3 => const FictionalDates(),
-                      _ => const FictionalEnvironments(),
+                      4 => const FictionalEnvironments(),
+                      _ => const FictionalFormation(),
                     },
                   ),
                 ),

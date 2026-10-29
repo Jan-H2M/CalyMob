@@ -43,6 +43,7 @@ try {
     ['registration',['Les tarifs de cette activité doivent être corrigés']],
     ['dates',['8 novembre 12:30','Clôture inscriptions :','7 nov. 12:30']],
     ['environments',['Mer FICTIVE','Lac FICTIF','Carrière FICTIVE','Catégorie : Eau douce']],
+    ['formation',['Ada FICTIVE','Boris FICTIF','Carrière 1/2','Piscine 1/2','Théorie 0/2']],
   ]) {
     const context = await browser.newContext({serviceWorkers:'block',acceptDownloads:false,
       viewport:{width:1100,height:900}});

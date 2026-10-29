@@ -1167,6 +1167,9 @@ class FormationListView extends StatefulWidget {
   final String searchQuery;
   final String? filterLevel;
   final FormationTrackingScope scope;
+  /// Embedders may render the list read-only without opening a dossier route.
+  /// This does not grant access; normal production navigation stays enabled.
+  final bool allowDossierNavigation;
   final Future<List<MemberProfile>> Function(String clubId)? profilesLoader;
   final Future<List<FormationSnapshotDoc>> Function(String clubId)?
       snapshotsLoader;
@@ -1178,6 +1181,7 @@ class FormationListView extends StatefulWidget {
     required this.clubId,
     required this.searchQuery,
     required this.scope,
+    this.allowDossierNavigation = true,
     this.filterLevel,
     this.profilesLoader,
     this.snapshotsLoader,
@@ -1394,7 +1398,7 @@ class _FormationListViewState extends State<FormationListView> {
             : full.currentCode;
 
     return GestureDetector(
-      onTap: () {
+      onTap: widget.allowDossierNavigation ? () {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => Student360Screen(
@@ -1405,7 +1409,7 @@ class _FormationListViewState extends State<FormationListView> {
             ),
           ),
         );
-      },
+      } : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),

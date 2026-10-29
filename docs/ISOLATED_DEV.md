@@ -64,6 +64,12 @@ serving. Do not host this lab on the existing production-backed Vercel project.
 5. **MOB-046 · Milieux**: the production grouped-location layout separates Mer,
    Lac and Carrière. Filtering Mer hides the other fictitious sites. The legacy
    fresh-water fixture stays Eau douce; no historical site is recategorized.
+6. **MOB-033 · Formation**: real instructor rows show done/pending/remaining
+   progress by career/pool/theory from two fictional snapshots. A goal is not a
+   validation. Simulated read error uses the real Retry button. Pool-only uses
+   the restricted DTO reader with an in-memory invoker; no full profile/snapshot
+   reader or actual callable is used. Row navigation is disabled, not scrolling
+   or retries. This is not a server-role authorization test.
 
 ## Automated verification
 
