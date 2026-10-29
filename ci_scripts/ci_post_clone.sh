@@ -28,13 +28,7 @@ flutter pub get --enforce-lockfile
 
 # Keep the reviewed marketing version; use Apple's product-wide build counter.
 BUILD_NAME="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)"
-case "${CI_BUILD_NUMBER:-}" in
-  ''|*[!0-9]*) echo 'CI_BUILD_NUMBER must be supplied by Xcode Cloud.' >&2; exit 1 ;;
-esac
-[ "$CI_BUILD_NUMBER" -gt 226 ] || {
-  echo 'Cloud build number must exceed existing App Store Connect build 226.' >&2
-  exit 1
-}
+"$REPO_ROOT/scripts/check_xcode_cloud_environment.sh" "$REPO_ROOT/pubspec.yaml"
 
 # Flutter's config-only path also prepares Pods: pin pod before invoking it.
 # Apple's system Ruby 2.6 cannot resolve current native gem dependencies.

@@ -60,12 +60,33 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 4. **Upload to Play Store** - `fastlane supply` uploads AAB via Google Play Developer API
 5. **Submit for Review** - the manifest-gated `android submit` Fastlane lane
 
-### iOS Workflow (fully automated)
-1. **Environment Check** - Verify Xcode, Flutter, CocoaPods are ready
-2. **Version Bump** (shared with Android) - Same `bump_version.sh` script
-3. **Build IPA** - Run the hardened `scripts/build_release_ipa.sh`
-4. **Upload to App Store Connect** - the gated Fastlane lane uploads the IPA
-5. **Submit for Review** - the manifest-gated `ios submit` Fastlane lane
+### iOS Workflow (Xcode Cloud only)
+1. **Read App Store Connect** - confirm the latest marketing version/build through the canonical API key
+2. **Reserve the next build** - use `bump_version.sh`; never hand-increment a stale local counter
+3. **Commit the exact reservation** - `pubspec.yaml` is the build number Xcode Cloud must consume
+4. **Build in Xcode Cloud** - workflow `D11B66EC-6E95-43A4-B345-727D1992D72A`; never archive/upload locally
+5. **Submit separately** - only after the Xcode Cloud build is valid and Jan explicitly approves submission
+
+## Shared build-number source of truth
+
+Xcode Cloud is authoritative for the product-wide build counter used by Android and iOS;
+failed, canceled and skipped cloud runs consume numbers even when nothing is uploaded.
+`scripts/bump_version.sh` reads the latest live cloud run and reserves exactly `latest + 1`;
+it must fail if the API cannot be read. `ci_post_clone.sh` requires
+`CI_BUILD_NUMBER` to equal the committed `pubspec.yaml` reservation exactly.
+
+Before any mutating Fastlane lane, `scripts/run_fastlane.sh` and the platform Fastfiles
+re-read Xcode Cloud and App Store Connect, preventing direct-Fastlane bypass.
+It allows only (a) the exact latest build with the same marketing version, or (b) the
+exact next reserved build with a non-regressing marketing version. A stale number, a
+gap, a reused build under another version, or an unreadable API is a hard stop with a
+clear error. Read-only `status`, `validate`, and `build_number_status` remain available.
+
+New schema-v2 manifests include `buildNumberSource`. iOS manifests bind the exact successful
+Xcode Cloud run ID, workflow, source commit and linked App Store build; a local IPA cannot
+satisfy the iOS release gate. The local iOS upload lanes are disabled. Missing or
+inconsistent evidence fails closed.
+`ci_scripts/xcode-cloud-workflow.json` is a read-only snapshot, never configuration to apply.
 
 ## Prerequisites
 
@@ -168,7 +189,8 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 
 This script:
 - Reads current version from `pubspec.yaml` (format: `MAJOR.MINOR.PATCH+BUILD`)
-- Increments the specified part + always increments build number
+- Increments the specified marketing-version part
+- Reads the latest Xcode Cloud run and reserves exactly its next product-wide build number
 - Updates `pubspec.yaml`
 - Leaves Firestore publication for Jan's separate post-store action
 
@@ -602,7 +624,14 @@ pod --version
 
 Same as Android - use the shared bump script (see Phase 2 above). Both platforms share the same version from `pubspec.yaml`.
 
-## iOS Phase 3: Build IPA
+## iOS Phase 3: Build in Xcode Cloud
+
+The local IPA procedure below is historical reference only. Do **not** execute it for a
+current CalyMob release. All iOS/TestFlight/App Store builds use Xcode Cloud workflow
+`D11B66EC-6E95-43A4-B345-727D1992D72A`; the committed build reservation must equal the
+worker's `CI_BUILD_NUMBER`. Starting the cloud build remains a separate approved action.
+
+### Historical local IPA procedure — superseded
 
 The iOS build takes several minutes. Use a background script approach to avoid timeouts:
 
@@ -755,15 +784,24 @@ test -s /Users/jan/Dev/GitHub/Calypso/CalyMob/build/ios/ipa/calymob.ipa
 tail -10 /tmp/build_ios.log
 ```
 
-## iOS Phase 4: Upload to App Store Connect (Fully Automated)
+## iOS Phase 4: Xcode Cloud delivery and App Store Connect verification
 
-Every iOS upload must use the repository Fastlane lane. The lane runs
+Xcode Cloud performs the archive/sign/upload. Do not run local `ios deploy` or
+`ios release` lanes for a new build. Use read-only status/API checks to confirm the
+cloud build, then obtain separate approval before any submission mutation.
+
+### Historical local upload procedure — superseded
+
+> Do not execute this section. The local `ios deploy` and `ios release` lanes now
+> fail immediately; it is retained only to explain the retired gate.
+
+Historically, every iOS upload used the repository Fastlane lane. The lane ran
 `verify_store_release.cjs` before it reads the canonical `RH75BJ54V4`
 credential from `ios/fastlane/Fastfile`; direct `xcrun altool`, Xcode Organizer,
 and Transporter uploads bypass the approval gate and are not allowed for this
 release workflow.
 
-### Step 1: Verify API Key Setup
+### Historical Step 1: Verify API Key Setup
 
 ```bash
 cd /Users/jan/Dev/GitHub/Calypso/CalyMob
@@ -773,11 +811,10 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 This read-only lane validates the single Fastfile credential source. Do not
 print, copy, or substitute the key.
 
-### Step 2: Gated upload
+### Historical Step 2: Gated upload
 
-Complete and export the schema-v2 manifest described in the Android upload
-section first. Use `ios deploy` for TestFlight or `ios release` for the editable
-App Store version. Both call the same verifier before any network mutation.
+The retired flow used `ios deploy` for TestFlight or `ios release` for the editable
+App Store version. These lanes are now technically disabled.
 
 ```bash
 cat > /tmp/upload_ios.sh << 'SCRIPT'
@@ -920,13 +957,10 @@ cd /Users/jan/Dev/GitHub/Calypso/CalyMob
 # 4. Upload the Android draft
 ./scripts/run_fastlane.sh android deploy
 
-# 5. Build the iOS IPA with scripts/build_release_ipa.sh as documented above.
-#    Because Flutter clean removes the other platform's build directory, use a
-#    separate clean worktree or finish the Android upload first. Scaffold and
-#    genuinely complete an iOS-only schema-v2 manifest, then export its path.
+# 5. Commit the live next build reservation, then start the approved Xcode Cloud
+#    workflow separately. Never build/archive/upload iOS locally.
 
-# 6. Upload iOS to App Store Connect
-./scripts/run_fastlane.sh ios release
+# 6. Verify the Xcode Cloud build read-only in App Store Connect.
 
 # 7. For each platform, select its matching manifest, record real
 #    uploaded-build evidence, obtain exact submit approval and only then use the
@@ -939,4 +973,4 @@ BUILD_NUMBER="${VERSION_LINE##*+}"
 ```
 
 **Android**: Build, upload and review submission are automated via Fastlane.
-**iOS**: Build, upload and review submission are automated via Fastlane.
+**iOS**: Build/sign/upload use Xcode Cloud only; submission remains separately approved.

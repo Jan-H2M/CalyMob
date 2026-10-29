@@ -7,6 +7,11 @@ _Last updated: 2026-10-29. When this file and older release notes disagree, this
 - **In flight:** 1.27.1, App Store build **535** built with **Xcode Cloud** from
   `codex/joint-bug-build-20261028` (the current DEV content, already tested as 534).
   Build 534 was an internal-only TestFlight build and cannot be submitted.
+- **Next build reservation:** local `dev` records **1.27.1+536**. Xcode Cloud must
+  consume build 536 exactly. This reservation comes from the live Xcode Cloud run
+  counter (latest run 535), not merely the latest uploaded App Store build. Failed,
+  canceled and skipped runs consume numbers too; stale reservations are blocked by
+  `ci_post_clone.sh`.
 - **Next:** 1.28.0 = PR #166 (`codex/release-1.28.0`, draft, do not merge) once the
   COM-147/MOB-044 backend (Functions + rules) is live.
 - **Security:** runtime dependency patch (handlebars, proxy-addr, body-parser, qs)
@@ -20,6 +25,19 @@ _Last updated: 2026-10-29. When this file and older release notes disagree, this
 3. Create the App Store version in App Store Connect, attach the build, answer the
    age-rating questions, then submit for review. Release notes are French only.
 4. Store submission, backend deploys and rules deploys each need Jan's explicit approval.
+
+## Build-number source of truth
+
+- Xcode Cloud is the live product-wide counter; run 535 was observed read-only on
+  2026-10-29. `scripts/bump_version.sh` reads it and reserves exactly the next number.
+- `scripts/run_fastlane.sh` and both platform Fastfiles re-read the live counters before every store mutation and
+  fails clearly if local source is neither the matching latest build nor its exact next
+  reservation.
+- External schema-v2 release manifests record the live counter and, for iOS, the exact
+  successful cloud run ID, source commit, linked App Store build ID, status, version,
+  build and workflow. No local IPA can satisfy the iOS gate.
+- `ci_scripts/xcode-cloud-workflow.json` is documentation-only snapshot data, never an
+  applyable workflow definition.
 
 ## Historical documents
 `APP_STORE_PUBLICATIE.md`, `docs/MOBILE_RELEASE_QUEUE.md`, `docs/RELEASE_GATE.md`

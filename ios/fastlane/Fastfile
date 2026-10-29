@@ -1,6 +1,8 @@
 default_platform(:ios)
 skip_docs
 
+CALYMOB_XCODE_CLOUD_WORKFLOW_ID = 'D11B66EC-6E95-43A4-B345-727D1992D72A'
+
 def calymob_app_store_connect_config
   # Single reviewed CalyMob credential source. Do not duplicate/override these
   # identifiers in release skills or bypass this Fastfile with xcrun altool.
@@ -42,6 +44,8 @@ end
 
 def verify_ios_store_release(action, options = {})
   require 'json'
+  repo_root = File.realpath(File.expand_path('../..', __dir__))
+  sh(File.join(repo_root, 'scripts', 'check_build_number_sync.sh'), repo_root, log: false)
   script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
   args = ['node', script, '--platform', 'ios', '--action', action]
   args += ['--channel', 'internal'] if options[:channel] == 'internal'
@@ -53,34 +57,78 @@ def verify_ios_store_release(action, options = {})
 end
 
 platform :ios do
+  desc "Print the latest Xcode Cloud run and App Store Connect build (read-only)"
+  lane :build_number_status do
+    require "spaceship"
+    Spaceship::ConnectAPI.token = calymob_connect_api_token
+    cloud_response = Spaceship::ConnectAPI.client.test_flight_request_client.get(
+      "v1/ciWorkflows/#{CALYMOB_XCODE_CLOUD_WORKFLOW_ID}/buildRuns",
+      {
+        limit: 1,
+        sort: '-number',
+        'fields[ciBuildRuns]' => 'number,createdDate,startedDate,finishedDate,sourceCommit,executionProgress,completionStatus'
+      }
+    )
+    cloud_run = cloud_response.body.fetch('data').first
+    UI.user_error!('No CalyMob Xcode Cloud build run was found') unless cloud_run
+    cloud_attributes = cloud_run.fetch('attributes')
+    cloud_number = cloud_attributes.fetch('number')
+    source_commit = cloud_attributes.dig('sourceCommit', 'commitSha')
+    UI.user_error!('Latest Xcode Cloud run has no numeric build number') unless cloud_number.to_s.match?(/\A\d+\z/)
+    UI.user_error!('Latest Xcode Cloud run has no source commit') unless source_commit.to_s.match?(/\A[a-f0-9]{40}\z/i)
+
+    linked_response = Spaceship::ConnectAPI.client.test_flight_request_client.get(
+      "v1/ciBuildRuns/#{cloud_run.fetch('id')}/builds",
+      { limit: 1, include: 'preReleaseVersion' }
+    )
+    linked_reference = linked_response.body.fetch('data').first
+    linked_build = nil
+    linked_version = nil
+    if linked_reference
+      linked_details = Spaceship::ConnectAPI.client.test_flight_request_client.get(
+        "v1/builds/#{linked_reference.fetch('id')}",
+        { include: 'preReleaseVersion' }
+      )
+      linked_build = linked_details.body.fetch('data')
+      linked_version = linked_details.body.fetch('included', []).find { |item| item['type'] == 'preReleaseVersions' }
+    end
+
+    app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
+    UI.user_error!('CalyMob app was not found in App Store Connect') unless app
+    builds = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id,
+      platform: Spaceship::ConnectAPI::Platform::IOS,
+      sort: '-uploadedDate',
+      limit: 200
+    )
+    numeric_builds = builds.select { |build| build.version.to_s.match?(/\A\d+\z/) }
+    latest = numeric_builds.max_by { |build| build.version.to_i }
+    UI.user_error!('No numeric CalyMob iOS build was found in App Store Connect') unless latest
+    UI.message("CALYMOB_XCC_WORKFLOW_ID=#{CALYMOB_XCODE_CLOUD_WORKFLOW_ID}")
+    UI.message("CALYMOB_XCC_RUN_ID=#{cloud_run.fetch('id')}")
+    UI.message("CALYMOB_XCC_BUILD=#{cloud_number}")
+    UI.message("CALYMOB_XCC_CREATED_AT=#{cloud_attributes.fetch('createdDate')}")
+    UI.message("CALYMOB_XCC_STARTED_AT=#{cloud_attributes['startedDate']}")
+    UI.message("CALYMOB_XCC_FINISHED_AT=#{cloud_attributes['finishedDate']}")
+    UI.message("CALYMOB_XCC_EXECUTION=#{cloud_attributes.fetch('executionProgress')}")
+    UI.message("CALYMOB_XCC_COMPLETION=#{cloud_attributes['completionStatus']}")
+    UI.message("CALYMOB_XCC_SOURCE_COMMIT=#{source_commit.downcase}")
+    UI.message("CALYMOB_XCC_ASC_BUILD_ID=#{linked_build && linked_build['id']}")
+    UI.message("CALYMOB_XCC_ASC_BUILD=#{linked_build && linked_build.dig('attributes', 'version')}")
+    UI.message("CALYMOB_XCC_ASC_VERSION=#{linked_version && linked_version.dig('attributes', 'version')}")
+    UI.message("CALYMOB_XCC_ASC_PROCESSING=#{linked_build && linked_build.dig('attributes', 'processingState')}")
+    UI.message("CALYMOB_ASC_VERSION=#{latest.app_version}")
+    UI.message("CALYMOB_ASC_BUILD=#{latest.version}")
+  end
+
   desc "Upload IPA to App Store Connect (TestFlight)"
   lane :deploy do
-    release = verify_ios_store_release('upload', channel: 'internal')
-    api_key = calymob_app_store_connect_api_key
-
-    upload_to_testflight(
-      api_key: api_key,
-      ipa: "../build/ios/ipa/calymob.ipa",
-      changelog: release['notes'],
-      skip_waiting_for_build_processing: true,
-      skip_submission: true
-    )
+    UI.user_error!('Local iOS upload is disabled. Build, sign, and distribute only with the reviewed Xcode Cloud workflow.')
   end
 
   desc "Upload IPA to the editable App Store version without submitting"
   lane :release do
-    verify_ios_store_release('upload')
-    api_key = calymob_app_store_connect_api_key
-
-    upload_to_app_store(
-      api_key: api_key,
-      ipa: "../build/ios/ipa/calymob.ipa",
-      skip_metadata: true,
-      skip_screenshots: true,
-      submit_for_review: false,
-      automatic_release: true,
-      precheck_include_in_app_purchases: false
-    )
+    UI.user_error!('Local iOS upload is disabled. Build, sign, and distribute only with the reviewed Xcode Cloud workflow.')
   end
 
   desc "Submit uploaded build to App Store Review (uses existing build, no binary upload)"
