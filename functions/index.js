@@ -288,6 +288,7 @@ exports.createBoutiqueOrder = createBoutiqueOrder;
 
 const { sendBoutiqueOrderPaymentEmail } = require('./src/boutique/createOrder');
 exports.sendBoutiqueOrderPaymentEmail = sendBoutiqueOrderPaymentEmail;
+exports.getBoutiqueOrderPayment = require('./src/boutique/getOrderPayment').getBoutiqueOrderPayment;
 
 const { listBoutiqueOrders } = require('./src/boutique/listOrders');
 exports.listBoutiqueOrders = listBoutiqueOrders;

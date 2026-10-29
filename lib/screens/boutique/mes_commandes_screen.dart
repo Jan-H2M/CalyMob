@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_current_payment_panel.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/payment_communication_copy_button.dart';
 
@@ -216,11 +217,13 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                               order: order,
                               paymentCommunication: paymentCommunication,
                               amount: total,
-                              onCancel: status == 'awaiting_payment' &&
+                              onCancel: order['paymentPlan'] == null &&
+                                      status == 'awaiting_payment' &&
                                       payment['status'] == 'pending'
                                   ? () => _cancelOrder(order)
                                   : null,
-                              onResendEmail: status == 'awaiting_payment' &&
+                              onResendEmail: order['paymentPlan'] == null &&
+                                      status == 'awaiting_payment' &&
                                       payment['status'] == 'pending'
                                   ? () => _resendPaymentEmail(order)
                                   : null,
@@ -358,7 +361,8 @@ class _OrderDetailScreen extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    if (paymentCommunication.isNotEmpty) ...[
+                    if (paymentCommunication.isNotEmpty &&
+                        order['paymentPlan'] == null) ...[
                       const SizedBox(height: 12),
                       Text(
                         paymentCommunication,
@@ -399,10 +403,13 @@ class _OrderDetailScreen extends StatelessWidget {
               if (isPaid || isAwaitingPayment) ...[
                 const SizedBox(height: 12),
                 _DetailPanel(
-                  child: _PaymentStatusPanel(
-                    isPaid: isPaid,
-                    emailSent: emailSent,
-                  ),
+                  child: order['paymentPlan'] != null
+                      ? BoutiqueCurrentPaymentPanel(
+                          orderId: order['id'].toString())
+                      : _PaymentStatusPanel(
+                          isPaid: isPaid,
+                          emailSent: emailSent,
+                        ),
                 ),
               ],
               if (onResendEmail != null) ...[
