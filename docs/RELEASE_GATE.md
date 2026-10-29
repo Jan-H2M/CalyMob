@@ -1,3 +1,5 @@
+> **Note (2026-10-29):** historical. Current status and iOS flow (Xcode Cloud): see `docs/RELEASE_STATUS.md`.
+
 # Store release gate
 
 The store release gate is a local safety interlock.  It does not create a

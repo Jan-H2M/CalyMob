@@ -1,3 +1,5 @@
+> **Note (2026-10-29):** historical. Current status and iOS flow (Xcode Cloud): see `docs/RELEASE_STATUS.md`.
+
 # CalyMob — geconsolideerde releasekandidaat
 
 ## DEV-wijziging in afwachting van een afzonderlijk goedgekeurde app-release — 26 oktober 2026
