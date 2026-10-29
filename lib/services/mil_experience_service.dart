@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/formation_snapshot_doc.dart';
 import '../models/mil_experience_overview.dart';
+import '../utils/dive_depth.dart';
 
 /// Leest de actuele, door de club gevalideerde MIL-matrix en berekent de
 /// cumulatieve stand op basis van het volledige carnet.
@@ -157,7 +158,7 @@ Map<String, int> computeMilExperienceCounts(
   for (final entry in entries) {
     if (entry['source']?.toString() == 'piscine') continue;
     final counters = _map(entry['counters']);
-    final depth = _number(entry['depth_max_meters']);
+    final depth = parseDiveDepth(entry['depth_max_meters']);
     final isSea = counters['mer'] == true || entry['water_type'] == 'sea';
     final isZelande = entry['zone']?.toString() == 'zelande';
     final isDeco = counters['deco'] == true;
@@ -166,10 +167,14 @@ Map<String, int> computeMilExperienceCounts(
     if (counters['nuit'] == true) increment('nuit');
     if (counters['surveillance'] == true) increment('surveillance_ciel');
 
-    if (!isSea && depth != null) {
-      if (depth >= 20 * toleranceFactor) increment('prof_20m');
-      if (depth >= 30 * toleranceFactor) increment('prof_30m');
-      if (depth >= 40 * toleranceFactor) increment('prof_40m');
+    // MIL §7.4.2: general depth experience includes sea dives cumulatively.
+    // « Nos Eaux » (including Zélande) only changes the allowed tolerance;
+    // it is not an exclusion of open-sea dives from these general counters.
+    if (depth != null) {
+      final generalFactor = !isSea || isZelande ? toleranceFactor : 1;
+      if (depth >= 20 * generalFactor) increment('prof_20m');
+      if (depth >= 30 * generalFactor) increment('prof_30m');
+      if (depth >= 40 * generalFactor) increment('prof_40m');
     }
 
     if (!isSea) continue;

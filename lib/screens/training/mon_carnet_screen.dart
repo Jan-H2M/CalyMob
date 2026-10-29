@@ -3,7 +3,9 @@
 /// Opened from the Parcours hub.
 /// Lists `student_logbook_entries` for the signed-in member, filterable by
 /// year, with cards that summarise date / lieu / profondeur / durée / counters
-/// and indicate the entry's source (piscine / sortie Calypso / manuel).
+/// and indicate the dive's source (sortie Calypso / manuel).
+/// Pool attendance and lesson history live only in Mes exercices → Piscine.
+/// Existing source=piscine records remain stored; this screen does not delete them.
 ///
 /// Visual language mirrors `stats_screen.dart` exactly so the carnet,
 /// stats and other training surfaces feel like one consistent product:
@@ -15,6 +17,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../../utils/live_qa_session_resume.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -25,6 +29,9 @@ import 'logbook_dive_confirmation_screen.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
 
+/// Source filtering is presentation-only: no pool records are removed.
+bool isCarnetDiveSource(String source) => source != 'piscine';
+
 class MonCarnetScreen extends StatefulWidget {
   const MonCarnetScreen({super.key});
 
@@ -32,14 +39,8 @@ class MonCarnetScreen extends StatefulWidget {
   State<MonCarnetScreen> createState() => _MonCarnetScreenState();
 }
 
-/// Two distinct lists, never mixed — pool sessions are conceptually a
-/// different artefact from sea/lake/quarry dives and have a different
-/// detail layout.
-enum _CarnetMode { dives, pool }
-
 class _MonCarnetScreenState extends State<MonCarnetScreen> {
   int? _year;
-  _CarnetMode _mode = _CarnetMode.dives;
 
   /// Set once per app run — avoids re-firing the lazy backfill every time the
   /// user re-opens Mon Carnet. The Cloud Function is idempotent and cheap
@@ -54,7 +55,11 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     // app often get the newest N° while carrying an old dive date; a current
     // year filter made those entries look like they had not synced to mobile.
     _year = null;
-    _maybeTriggerDiveNumberBackfill();
+    // The local review preview must never run a production backfill.
+    if (!isLiveQaPreviewOrigin(
+        enabled: liveQaAutostart, isWeb: kIsWeb, uri: Uri.base)) {
+      _maybeTriggerDiveNumberBackfill();
+    }
   }
 
   /// Fire-and-forget call into `backfillMyDiveNumbers` — assigns dive_number
@@ -91,14 +96,10 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
       final rows = snap.docs
           .map((d) => _LogbookEntryRow.fromMap(d.id, d.data()))
           .toList();
-      // Mode-based partition — pool entries (source=piscine) are isolated
-      // from dive entries (everything else). We don't ship the count back
-      // up the tree, so the badge counts above re-listen via the same
-      // stream when the mode flips.
+      // Keep pool records in storage; Mes exercices owns their presentation.
       final filtered = rows.where((r) {
         if (_year != null && r.date?.year != _year) return false;
-        final isPool = r.source == 'piscine';
-        return _mode == _CarnetMode.pool ? isPool : !isPool;
+        return isCarnetDiveSource(r.source);
       }).toList();
       filtered.sort(_compareRows);
       return filtered;
@@ -106,7 +107,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
   }
 
   int _compareRows(_LogbookEntryRow a, _LogbookEntryRow b) {
-    if (_mode == _CarnetMode.dives) {
+    {
       final aNumber = a.diveNumber;
       final bNumber = b.diveNumber;
       if (aNumber != null && bNumber != null && aNumber != bNumber) {
@@ -155,7 +156,6 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           child: Column(
             children: [
               _header(context),
-              _modeSegmented(),
               _yearPills(),
               if (userId != null) _pendingConfirmationsBanner(userId),
               const SizedBox(height: 12),
@@ -199,41 +199,6 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     );
   }
 
-  Widget _modeSegmented() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-        ),
-        padding: const EdgeInsets.all(4),
-        child: Row(
-          children: [
-            Expanded(
-              child: _modeChip(
-                label: 'Plongées',
-                icon: Icons.scuba_diving_outlined,
-                active: _mode == _CarnetMode.dives,
-                onTap: () => setState(() => _mode = _CarnetMode.dives),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: _modeChip(
-                label: 'Piscine',
-                icon: Icons.pool_outlined,
-                active: _mode == _CarnetMode.pool,
-                onTap: () => setState(() => _mode = _CarnetMode.pool),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _openAddDive(BuildContext context) async {
     final result = await Navigator.push<LogbookEntrySaveResult>(
       context,
@@ -243,7 +208,6 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     );
     if (!mounted || !context.mounted || result == null) return;
     setState(() {
-      _mode = _CarnetMode.dives;
       // Keep the full logbook visible after saving. New manual entries can
       // briefly arrive without their server-assigned dive number; narrowing
       // the list to a year makes that feel like the entry disappeared.
@@ -256,50 +220,6 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           '${result.locationName.isEmpty ? 'sans lieu' : result.locationName}',
         ),
         behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Widget _modeChip({
-    required String label,
-    required IconData icon,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(9),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: active ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 17,
-                color: active ? AppColors.donkerblauw : Colors.white,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: active ? AppColors.donkerblauw : Colors.white,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -330,29 +250,28 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
               ),
             ),
           ),
-          if (_mode == _CarnetMode.dives)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Material(
-                color: Colors.white,
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              shadowColor: AppColors.donkerblauw.withValues(alpha: 0.25),
+              elevation: 4,
+              child: InkWell(
                 borderRadius: BorderRadius.circular(14),
-                shadowColor: AppColors.donkerblauw.withValues(alpha: 0.25),
-                elevation: 4,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () => _openAddDive(context),
-                  child: const SizedBox(
-                    width: 40,
-                    height: 36,
-                    child: Icon(
-                      Icons.add,
-                      color: AppColors.donkerblauw,
-                      size: 24,
-                    ),
+                onTap: () => _openAddDive(context),
+                child: const SizedBox(
+                  width: 40,
+                  height: 36,
+                  child: Icon(
+                    Icons.add,
+                    color: AppColors.donkerblauw,
+                    size: 24,
                   ),
                 ),
               ),
             ),
+          ),
         ],
       ),
     );
@@ -525,7 +444,6 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
   }
 
   Widget _emptyState() {
-    final isPool = _mode == _CarnetMode.pool;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -533,14 +451,14 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isPool ? Icons.pool_outlined : Icons.menu_book_outlined,
+              Icons.menu_book_outlined,
               size: 64,
               color: Colors.white.withValues(alpha: 0.7),
             ),
             const SizedBox(height: 14),
-            Text(
-              isPool ? 'Pas encore de piscine' : 'Pas encore de plongées',
-              style: const TextStyle(
+            const Text(
+              'Pas encore de plongées',
+              style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -548,13 +466,9 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              isPool
-                  ? 'Tes séances de piscine apparaîtront ici dès que tu '
-                      'auras scanné ton badge à l\'entrée et confirmé '
-                      'le check-in dans Communication.'
-                  : 'Tes plongées Calypso apparaîtront automatiquement ici '
-                      'dès que tu auras complété un carnet après une sortie. '
-                      'Tu peux aussi ajouter une plongée hors club en bas à droite.',
+              'Tes plongées Calypso apparaîtront automatiquement ici '
+              'dès que tu auras complété un carnet après une sortie. '
+              'Tu peux aussi ajouter une plongée hors club en bas à droite.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.85),
@@ -583,13 +497,6 @@ class _LogbookEntryRow {
   final List<String> buddyNames;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-  // Pool-only metadata, snapshotted on the logbook entry by
-  // onPoolSessionClosed. Empty/null for dive entries.
-  final String? themeSnapshot;
-  final String? groupLevel;
-  final int? groupNumber;
-
-  /// Full raw map for the detail screen — keeps us from having to refetch.
   final Map<String, dynamic> raw;
 
   const _LogbookEntryRow({
@@ -606,9 +513,6 @@ class _LogbookEntryRow {
     this.buddyNames = const [],
     this.createdAt,
     this.updatedAt,
-    this.themeSnapshot,
-    this.groupLevel,
-    this.groupNumber,
     this.raw = const {},
   });
 
@@ -645,7 +549,6 @@ class _LogbookEntryRow {
       }
     }
 
-    final groupNumberRaw = map['group_number'];
     final diveN = map['dive_number'];
     return _LogbookEntryRow(
       id: id,
@@ -653,9 +556,6 @@ class _LogbookEntryRow {
       date: date,
       createdAt: (map['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (map['updated_at'] as Timestamp?)?.toDate(),
-      themeSnapshot: map['theme_snapshot'] as String?,
-      groupLevel: map['group_level'] as String?,
-      groupNumber: groupNumberRaw is num ? groupNumberRaw.toInt() : null,
       locationName:
           (map['location_name'] as String?) ?? (map['lieu'] as String?) ?? '—',
       country: map['country'] as String?,
@@ -681,7 +581,6 @@ class _EntryCard extends StatelessWidget {
             '${entry.date!.month.toString().padLeft(2, '0')}/'
             '${entry.date!.year}'
         : '—';
-    final isPool = entry.source == 'piscine';
 
     return Container(
       decoration: BoxDecoration(
@@ -711,7 +610,7 @@ class _EntryCard extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-            child: isPool ? _poolBody(dateLabel) : _diveBody(dateLabel),
+            child: _diveBody(dateLabel),
           ),
         ),
       ),
@@ -857,81 +756,6 @@ class _EntryCard extends StatelessWidget {
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),
               fontSize: 12,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _poolBody(String dateLabel) {
-    final groupParts = <String>[];
-    if (entry.groupLevel != null && entry.groupLevel!.isNotEmpty) {
-      groupParts.add('Formation ${entry.groupLevel}');
-    }
-    if (entry.groupNumber != null) {
-      groupParts.add('Groupe ${entry.groupNumber}');
-    }
-    final groupLabel = groupParts.join(' · ');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const _SourceBadge(source: 'piscine'),
-            const SizedBox(width: 8),
-            Text(
-              dateLabel,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          entry.locationName,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        if (groupLabel.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            groupLabel,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-        if (entry.themeSnapshot != null && entry.themeSnapshot!.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            entry.themeSnapshot!,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.78),
-              fontSize: 12.5,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-        if (entry.notes != null && entry.notes!.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            entry.notes!,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 12.5,
               fontStyle: FontStyle.italic,
             ),
           ),

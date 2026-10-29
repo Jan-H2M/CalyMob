@@ -35,7 +35,6 @@ are refreshed only by a separately authorised projection rebuild.
 **Explicit owner choice:** members without a `share_email` or `share_phone`
 preference are shown in Who is Who. An explicit opt-out remains hidden.
 Reviewers treat this legacy-default contact policy as accepted.
-
 ## Event participant phone display (MOB-039, 2026-10-16)
 
 > **SUPERSEDED UI ASSUMPTION:** directory readability alone is not sufficient

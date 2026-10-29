@@ -4,6 +4,7 @@ import '../../config/app_colors.dart';
 import '../../models/supplement.dart';
 import '../../models/tariff.dart';
 import '../../services/operation_service.dart';
+import '../../widgets/guest_diving_level_field.dart';
 
 /// Dialog to add a guest (non-member) to an operation.
 ///
@@ -22,7 +23,8 @@ import '../../services/operation_service.dart';
 ///
 /// Returns a Map with keys: `prenom`, `nom`, `prix`, `tariffId` (nullable
 /// when in legacy free-price mode), `selectedSupplements`
-/// (List<SelectedSupplement>) and `supplementTotal` (double).
+/// (List<SelectedSupplement>), `divingLevel` (nullable canonical LIFRAS code)
+/// and `supplementTotal` (double).
 class AddGuestDialog extends StatefulWidget {
   final List<Tariff> availableGuestTariffs;
   final List<Supplement> availableSupplements;
@@ -49,6 +51,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
   final _prixFocusNode = FocusNode();
 
   Tariff? _selectedTariff;
+  String? _selectedDivingLevel;
 
   /// IDs des suppléments sélectionnés pour cet invité.
   final Set<String> _selectedSupplementIds = {};
@@ -115,6 +118,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
       'nom': canonicalRegistrationGuestName(_nomController.text),
       'prix': prix,
       'tariffId': tariffId,
+      'divingLevel': _selectedDivingLevel,
       'selectedSupplements': selectedSupplements,
       'supplementTotal': _supplementTotal,
     });
@@ -424,23 +428,23 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                       ),
                       decoration: _buildInputDecoration('Nom'),
                       maxLength: registrationGuestNameMaxLength,
-                      textInputAction:
-                          _hasGuestTariffs || widget.serverPricedFreeGuest
-                              ? TextInputAction.done
-                              : TextInputAction.next,
+                      textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
-                      onFieldSubmitted: (_) {
-                        if (_hasGuestTariffs || widget.serverPricedFreeGuest) {
-                          _submit();
-                        } else {
-                          FocusScope.of(context).requestFocus(_prixFocusNode);
-                        }
-                      },
+                      onFieldSubmitted: (_) =>
+                          FocusScope.of(context).nextFocus(),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Veuillez saisir le nom';
                         }
                         return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    GuestDivingLevelField(
+                      value: _selectedDivingLevel,
+                      onChanged: (value) {
+                        setState(() => _selectedDivingLevel = value);
                       },
                     ),
                     const SizedBox(height: 16),

@@ -1,0 +1,15 @@
+[
+  {"name":"open sea 50m satisfies all general depths", "entry":{"depth_max_meters":50,"water_type":"sea"}, "expected":{"prof_20m":1,"prof_30m":1,"prof_40m":1,"mer_30m":1,"mer_40m":1}},
+  {"name":"open sea 27m has no general tolerance", "entry":{"depth_max_meters":27,"water_type":"sea"}, "expected":{"prof_20m":1,"prof_30m":0,"prof_40m":0}},
+  {"name":"Nos Eaux 27m qualifies for general 30m", "entry":{"depth_max_meters":27}, "expected":{"prof_30m":1,"prof_40m":0}},
+  {"name":"Zelande is also Nos Eaux", "entry":{"depth_max_meters":27,"water_type":"sea","zone":"zelande"}, "expected":{"prof_30m":1,"prof_40m":0,"mer_30m":1}},
+  {"name":"Zelande deco excludes sea criteria not general depths", "entry":{"depth_max_meters":36,"water_type":"sea","zone":"zelande","counters":{"deco":true}}, "expected":{"prof_30m":1,"prof_40m":1,"mer_30m":0,"mer_40m":0}},
+  {"name":"Zelande beyond40 remains general40", "entry":{"depth_max_meters":45,"water_type":"sea","zone":"zelande"}, "expected":{"prof_40m":1,"mer_30m":0,"mer_40m":0}},
+  {"name":"open sea 39.99 does not qualify for40", "entry":{"depth_max_meters":39.99,"water_type":"sea"}, "expected":{"prof_30m":1,"prof_40m":0,"mer_40m":0}},
+  {"name":"exactly40 qualifies", "entry":{"depth_max_meters":40,"water_type":"sea"}, "expected":{"prof_40m":1,"mer_40m":1}},
+  {"name":"Nos Eaux 35.99 is below tolerance boundary", "entry":{"depth_max_meters":35.99}, "expected":{"prof_40m":0}},
+  {"name":"Nos Eaux 36 is tolerance boundary", "entry":{"depth_max_meters":36}, "expected":{"prof_40m":1}},
+  {"name":"comma decimal import", "entry":{"depth_max_meters":"40,5","water_type":"sea"}, "expected":{"prof_40m":1,"mer_40m":1}},
+  {"name":"unknown is not depth zero", "entry":{"water_type":"sea"}, "expected":{"prof_30m":0,"prof_40m":0,"mer":1,"total_milieu_naturel":1}},
+  {"name":"pool does not count", "entry":{"depth_max_meters":50,"source":"piscine","water_type":"sea"}, "expected":{"prof_30m":0,"prof_40m":0,"total_milieu_naturel":0}}
+]

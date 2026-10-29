@@ -23,7 +23,9 @@ const snapshot = PalanqueeParticipant(
 
 void main() {
   // Install the fake FieldValue delegate before any serialization uses it.
-  setUpAll(() { FakeFirebaseFirestore(); });
+  setUpAll(() {
+    FakeFirebaseFirestore();
+  });
   test('complete unassigned roster roundtrips with zero groups', () {
     const saved = PalanqueeAssignments(simulationParticipants: [snapshot]);
     final data = saved.toFirestore()..remove('updated_at');
@@ -202,7 +204,9 @@ class _Members extends Mock implements MemberService {
 
 class _Lifras extends Mock implements LifrasService {
   @override
-  Future<List<ExerciceLIFRAS>> getAllExercices(String clubId) async => [];
+  Future<List<ExerciceLIFRAS>> getAllExercices(String clubId,
+          {bool strict = false}) async =>
+      [];
 }
 
 class _Observations extends Mock implements MemberObservationService {

@@ -4,6 +4,7 @@ import '../../models/boutique/boutique_physical_unit.dart';
 import '../../services/boutique/boutique_operations_service.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
 import 'boutique_order_selection_screen.dart';
+import 'boutique_receipt_selection_screen.dart';
 import 'boutique_qr_scan_screen.dart';
 
 /// Guarded action-first workflow. Existing server transitions remain authoritative.
@@ -264,7 +265,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     });
   }
 
-  Future<void> _chooseOrder() async {
+  Future<void> _chooseOrder({bool receipt = false}) async {
     if (_locked || _step != 2) return;
     final generation = _generation;
     final units = await Navigator.push<List<BoutiquePhysicalUnit>>(
@@ -272,10 +273,17 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         boutiqueAccessGuardedRoute<List<BoutiquePhysicalUnit>>(
             sourceContext: context,
             requiredSection: 'gestion',
-            builder: (_) => BoutiqueOrderSelectionScreen(
-                clubId: widget.clubId,
-                location: _source!,
-                service: widget.service)));
+            builder: (_) => receipt
+                ? BoutiqueReceiptSelectionScreen(
+                    clubId: widget.clubId,
+                    location: _source!,
+                    service: widget.service,
+                    selectionOnly: true,
+                    maximum: _maxPieces)
+                : BoutiqueOrderSelectionScreen(
+                    clubId: widget.clubId,
+                    location: _source!,
+                    service: widget.service)));
     if (!mounted ||
         units == null ||
         _locked ||
@@ -702,9 +710,13 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       if (groups.isEmpty)
         const Text('Aucun paquet correspondant dans la liste chargée.'),
       OutlinedButton.icon(
-          onPressed: _locked ? null : _chooseOrder,
+          onPressed: _locked ? null : () => _chooseOrder(),
           icon: const Icon(Icons.inventory_2_outlined),
           label: const Text('Ajouter une commande complète')),
+      OutlinedButton.icon(
+          onPressed: _locked ? null : () => _chooseOrder(receipt: true),
+          icon: const Icon(Icons.checklist),
+          label: const Text('Ajouter une réception fournisseur')),
       OutlinedButton.icon(
           onPressed: _locked
               ? null
@@ -880,21 +892,22 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                               if (_step == 2) _packages(),
                               if (_step == 3) _control(),
                             ],
-                            if (_error != null)
-                              Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  child: Text(_error!,
-                                      key: const Key('wizard-error'),
-                                      style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .error))),
                             if (_error != null && _step < 2 && !_locked)
                               TextButton(
                                   onPressed: _load,
                                   child: const Text('Recharger les données')),
                           ])),
+                      if (_error != null)
+                        Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            child: Text(_error!,
+                                key: const Key('wizard-error'),
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.error))),
                       if (_result == null && _step > 0)
                         Padding(
                             padding: const EdgeInsets.all(16),

@@ -203,12 +203,26 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
   }
 
+  bool _canAccessParticipantContact(Operation operation) {
+    final currentUserId = context.read<AuthProvider>().currentUser?.uid;
+    if (currentUserId == null) return false;
+    if (_isCurrentUserCreator(operation) ||
+        _isCurrentUserResponsable(operation)) {
+      return true;
+    }
+    // Cached roles belong to a specific account and club. Do not reuse a
+    // previous encadrant's authority while the current profile is loading.
+    final memberProvider = context.read<MemberProvider>();
+    return memberProvider.isLoadedFor(widget.clubId, currentUserId) &&
+        _canManagePalanquees(operation);
+  }
+
   Future<void> _showParticipantContact({
     required String memberId,
     required String memberName,
   }) async {
     final operation = context.read<OperationProvider>().selectedOperation;
-    if (operation == null || !_canManagePalanquees(operation)) return;
+    if (operation == null || !_canAccessParticipantContact(operation)) return;
 
     // Only the consent-filtered directory may supply contact details. The
     // private members collection used for avatars must never be a fallback.
@@ -220,7 +234,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final currentOperation =
         context.read<OperationProvider>().selectedOperation;
     if (currentOperation?.id != operation.id ||
-        !_canManagePalanquees(currentOperation!)) {
+        !_canAccessParticipantContact(currentOperation!)) {
       return;
     }
 
@@ -284,7 +298,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     super.initState();
     _operationService = widget.operationService ?? OperationService();
     _profileService = widget.profileService ?? ProfileService();
-    _observationService = widget.observationService ?? MemberObservationService();
+    _observationService =
+        widget.observationService ?? MemberObservationService();
     _registrationRequestIdentity = RegistrationRequestIdentity(
       requestIdFactory: _operationService.newRegistrationRequestId,
     );
@@ -356,10 +371,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     final operationLoaded =
         await context.read<OperationProvider>().selectOperation(
-          widget.clubId,
-          widget.operationId,
-          userId,
-        );
+              widget.clubId,
+              widget.operationId,
+              userId,
+            );
 
     // Fix Sentry CALYMOB-1S/19/Q (2026-07-19): na de await kan het scherm al
     // gesloten zijn — State.context gooit dan een null-check TypeError.
@@ -1021,6 +1036,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         firstName: guest['prenom'] as String,
         lastName: guest['nom'] as String,
         tariffId: guest['tariffId'] as String?,
+        divingLevel: guest['divingLevel'] as String?,
         selectedSupplements: supplements,
       );
     }).toList();
@@ -1661,9 +1677,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       } else {
         aggregatedAmount =
             (participant.isPaymentSettled ? 0 : participant.totalPrix) +
-            linkedGuests
-                .where((g) => !g.isPaymentSettled)
-                .fold<double>(0.0, (sum, g) => sum + g.totalPrix);
+                linkedGuests
+                    .where((g) => !g.isPaymentSettled)
+                    .fold<double>(0.0, (sum, g) => sum + g.totalPrix);
         if (aggregatedAmount <= 0) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -2170,7 +2186,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (operationProvider.selectedOperation == null) return;
       if (operationProvider.selectedOperation!.allowGuests != true) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Les invités ne sont pas autorisés pour cette activité.'),
+          content:
+              Text('Les invités ne sont pas autorisés pour cette activité.'),
         ));
         return;
       }
@@ -2182,6 +2199,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       final parentInscriptionId =
           isMemberDrivenFlow ? _userInscription!.id : null;
       final tariffId = result['tariffId'] as String?;
+      final divingLevel = result['divingLevel'] as String?;
       final selectedSupplements = (result['selectedSupplements'] as List?)
               ?.whereType<SelectedSupplement>()
               .toList() ??
@@ -2194,6 +2212,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         guestPrenom: result['prenom'] as String,
         guestNom: result['nom'] as String,
         tariffId: tariffId,
+        divingLevel: divingLevel,
         selectedSupplements: selectedSupplements,
       );
       final requestId = _guestRequestIdentity.requestIdFor(payloadFingerprint);
@@ -2210,6 +2229,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           addedByUserName: authProvider.displayName ?? 'Admin',
           parentInscriptionId: parentInscriptionId,
           tariffId: tariffId,
+          divingLevel: divingLevel,
           selectedSupplements: selectedSupplements,
           supplementTotal: result['supplementTotal'] as double?,
           requestId: requestId,
@@ -2265,6 +2285,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Refresh authority-dependent actions when the account or profile changes.
+    context.watch<AuthProvider>();
+    context.watch<MemberProvider>();
     final operationProvider = context.watch<OperationProvider>();
     final operation = operationProvider.selectedOperation;
 
@@ -2430,10 +2453,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                     ),
                                     if (_organisateurProfile != null &&
                                         canDisplayOrganizerPhone(
-                                          sharePhone: _organisateurProfile!
-                                              .sharePhone,
-                                          phoneNumber: _organisateurProfile!
-                                              .phoneNumber,
+                                          sharePhone:
+                                              _organisateurProfile!.sharePhone,
+                                          phoneNumber:
+                                              _organisateurProfile!.phoneNumber,
                                         )) ...[
                                       const SizedBox(width: 12),
                                       GestureDetector(
@@ -3414,7 +3437,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         final isGuest = participant.isGuest;
                         final canContact = !isGuest &&
                             participant.membreId.isNotEmpty &&
-                            _canManagePalanquees(
+                            _canAccessParticipantContact(
                               operationProvider.selectedOperation!,
                             );
 
@@ -4632,8 +4655,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     String? installmentId,
     String? installmentLabel,
   }) async {
-    if (inscription.isPaymentInManualReview ||
-        inscription.isPaymentSettled) {
+    if (inscription.isPaymentInManualReview || inscription.isPaymentSettled) {
       return;
     }
 
@@ -5645,9 +5667,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                     memberId: memberId,
                                     memberName: memberName,
                                     memberNiveau: '',
-                                    contextType: operation.categorie == 'plongee'
-                                        ? 'plongee'
-                                        : 'piscine',
+                                    contextType:
+                                        operation.categorie == 'plongee'
+                                            ? 'plongee'
+                                            : 'piscine',
                                     contextId: operation.id,
                                     contextDate:
                                         operation.dateDebut ?? DateTime.now(),

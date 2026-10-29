@@ -337,7 +337,9 @@ class _Snapshots extends Mock implements FormationSnapshotReader {
 
 class _Lifras extends Mock implements LifrasService {
   @override
-  Future<List<ExerciceLIFRAS>> getAllExercices(String clubId) async => [];
+  Future<List<ExerciceLIFRAS>> getAllExercices(String clubId,
+          {bool strict = false}) async =>
+      [];
 }
 
 class _Palanquees extends Mock implements PalanqueeService {

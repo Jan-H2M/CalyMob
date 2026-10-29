@@ -14,6 +14,7 @@ class MemberProfile {
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
   final String? targetFormationLevel;
   final bool formationActive;
+  final int formationRevision;
   final String? plongeurNiveau; // Niveau complet en texte
   final String?
       fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
@@ -86,6 +87,7 @@ class MemberProfile {
     this.plongeurCode,
     this.targetFormationLevel,
     this.formationActive = false,
+    this.formationRevision = 0,
     this.plongeurNiveau,
     this.fonctionDefaut,
     this.clubStatuten = const [],
@@ -140,6 +142,7 @@ class MemberProfile {
       plongeurCode: data['plongeur_code'],
       targetFormationLevel: _stringOrNull(data['target_formation_level']),
       formationActive: data['formation_active'] == true,
+      formationRevision: _intOrNull(data['formation_revision']) ?? 0,
       plongeurNiveau: data['plongeur_niveau'],
       fonctionDefaut: data['fonction_defaut'],
       clubStatuten:
@@ -209,6 +212,7 @@ class MemberProfile {
       plongeurCode: _stringOrNull(data['plongeur_code']),
       targetFormationLevel: _stringOrNull(data['target_formation_level']),
       formationActive: data['formation_active'] == true,
+      formationRevision: _intOrNull(data['formation_revision']) ?? 0,
       plongeurNiveau: _stringOrNull(data['plongeur_niveau']),
       fonctionDefaut: _stringOrNull(data['fonction_defaut']),
       clubStatuten:
@@ -326,6 +330,7 @@ class MemberProfile {
     String? plongeurCode,
     String? targetFormationLevel,
     bool? formationActive,
+    int? formationRevision,
     String? plongeurNiveau,
     String? fonctionDefaut,
     List<String>? clubStatuten,
@@ -362,6 +367,7 @@ class MemberProfile {
       plongeurCode: plongeurCode ?? this.plongeurCode,
       targetFormationLevel: targetFormationLevel ?? this.targetFormationLevel,
       formationActive: formationActive ?? this.formationActive,
+      formationRevision: formationRevision ?? this.formationRevision,
       plongeurNiveau: plongeurNiveau ?? this.plongeurNiveau,
       fonctionDefaut: fonctionDefaut ?? this.fonctionDefaut,
       clubStatuten: clubStatuten ?? this.clubStatuten,

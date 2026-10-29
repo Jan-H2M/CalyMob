@@ -11,6 +11,7 @@ import '../services/profile_service.dart';
 import '../services/biometric_service.dart';
 import '../services/crashlytics_service.dart';
 import '../services/local_read_tracker.dart';
+import '../services/member_email_login_audit_service.dart';
 import '../config/firebase_config.dart';
 import '../utils/member_name.dart';
 
@@ -21,6 +22,7 @@ class AuthProvider with ChangeNotifier {
   final NotificationService _notificationService = NotificationService();
   final ProfileService _profileService = ProfileService();
   final BiometricService _biometricService = BiometricService();
+  final MemberEmailLoginAuditService _emailLoginAuditService = MemberEmailLoginAuditService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Stream subscription for memory management
@@ -50,6 +52,15 @@ class AuthProvider with ChangeNotifier {
       final authGeneration = ++_authGeneration;
       _currentUser = user;
       if (user != null) {
+        // A restored session retries a missed confirmation. The server only
+        // records a new sign-in after an email correction, using auth_time.
+        unawaited(
+          _emailLoginAuditService
+              .confirm(user: user, clubId: FirebaseConfig.defaultClubId)
+              .catchError((Object error) {
+            debugPrint('⚠️ Email login audit unavailable: $error');
+          }),
+        );
         _loadUserDisplayName(user.uid, authGeneration);
         // Enregistrer/mettre à jour le token FCM et les infos appareil à chaque ouverture
         _notificationService.saveTokenToFirestore(

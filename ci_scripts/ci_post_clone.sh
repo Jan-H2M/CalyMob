@@ -101,6 +101,28 @@ flutter test --no-pub \
   test/services/suunto_dive_log_adapter_test.dart \
   test/services/suunto_share_inbox_test.dart \
   test/services/uddf_dive_log_adapter_test.dart \
-  test/services/subsurface_dive_log_adapter_test.dart
+  test/services/subsurface_dive_log_adapter_test.dart \
+  test/models/boutique \
+  test/screens/boutique_receipt_selection_test.dart \
+  test/services/boutique_operations_service_test.dart \
+  test/screens/boutique_qr_access_test.dart \
+  test/services/notification_navigation_service_test.dart \
+  test/screens/boutique_action_wizard_test.dart \
+  test/screens/boutique_action_route_test.dart \
+  test/services/mil_depth_cumulative_test.dart \
+  test/services/mil_experience_service_test.dart \
+  test/screens/compact_stats_test.dart \
+  test/screens/student_360_scope_test.dart \
+  test/screens/apnee_dossier_screen_test.dart \
+  test/screens/apnee_formation_navigation_test.dart \
+  test/screens/pool_formation_tabs_test.dart \
+  test/services/piscine_session_service_test.dart \
+  test/services/pool_student_history_test.dart \
+  test/services/pool_group_correction_service_test.dart \
+  test/services/personal_exercise_progress_service_test.dart \
+  test/services/profile_service_test_visibility_test.dart \
+  test/screens/formation_list_error_state_test.dart \
+  test/screens/edit_my_inscription_dialog_test.dart \
+  test/services/inscription_edit_refund_test.dart
 
 echo "CalyMob $BUILD_NAME ($CI_BUILD_NUMBER): dependencies and Flutter tests ready."

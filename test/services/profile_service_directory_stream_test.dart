@@ -39,6 +39,16 @@ void main() {
     final revoked = (await next())!;
     expect(revoked.email, isEmpty);
     expect(revoked.phoneNumber, isNull);
+    for (final flag in [
+      'is_test_account',
+      'isTestUser',
+      'exclude_from_directory'
+    ]) {
+      await directory.update({flag: true});
+      expect(await next(), isNull);
+      await directory.update({flag: false});
+      expect(await next(), isNotNull);
+    }
     await directory.delete();
     expect(await next(), isNull);
     expect((await private.get()).data()!['share_email'], isTrue);

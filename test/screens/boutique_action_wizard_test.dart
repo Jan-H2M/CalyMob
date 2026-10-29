@@ -233,6 +233,31 @@ void main() {
     expect(calls, hasLength(2));
     expect(jsonEncode(calls[0]), jsonEncode(calls[1]));
   });
+  testWidgets(
+      'supplier receipt returns a subset to the same action before review',
+      (tester) async {
+    for (final unit in store.units.values) {
+      unit['supplierBatchId'] = 'synthetic-receipt';
+      unit['supplierOrderReference'] = 'Réception fictive';
+    }
+    await open(tester);
+    await startMove(tester);
+    await tap(tester, find.text('Ajouter une réception fournisseur'));
+    await select(tester, 'Réception fournisseur', 'Réception fictive');
+    await tap(tester, find.text('Tout sélectionner'));
+    await tap(tester, find.text('Ajouter la sélection (3)'));
+    expect(find.text('Choisissez les paquets'), findsOneWidget);
+    expect(find.textContaining('3 pièce(s) sélectionnée(s)'), findsOneWidget);
+    expect(store.applied, 0);
+    await review(tester);
+    expect(find.text('Vérifiez avant de confirmer'), findsOneWidget);
+    expect(store.applied, 0);
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    expect(store.applied, 1);
+    expect(store.units['polo-a']!['location'], 'Piscine');
+    expect(store.units['polo-a']!['finish'], 'at_jim');
+    expect(store.units['transit-b']!['location'], 'Jim');
+  });
   testWidgets('a changed physical unit is rejected on review, without an apply',
       (tester) async {
     await open(tester);

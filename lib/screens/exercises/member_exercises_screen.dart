@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/exercice_valide.dart';
 import '../../models/exercice_lifras.dart';
@@ -13,10 +14,18 @@ import '../../services/lifras_service.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/mil_experience_service.dart';
 import '../../utils/date_formatter.dart';
-import '../../utils/plongeur_utils.dart';
+import '../../models/member_formation_dossier.dart';
+import '../../models/personal_exercise_progress.dart';
+import '../../services/personal_exercise_progress_service.dart';
+import '../../models/member_profile.dart';
+import '../../utils/permission_helper.dart';
+import '../formation/student_360_screen.dart';
+import '../formation/apnee_dossier_screen.dart';
+import '../../widgets/formation/active_formation_panel.dart';
+import '../../widgets/formation/pool_formation_tabs.dart';
+import '../../widgets/formation/pool_brevet_protocols.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/formation/mil_requirements_card.dart';
-import '../training/historical_claims_screen.dart';
 import '../training/external_proof_capture_screen.dart';
 import '../training/evaluation_request_screen.dart';
 import 'validate_exercise_screen.dart';
@@ -38,6 +47,7 @@ class MemberExercisesScreen extends StatefulWidget {
   final String memberName;
   final bool isMonitor; // L'utilisateur actuel est moniteur (peut éditer)
   final bool isOwnProfile; // C'est le profil de l'utilisateur lui-même
+  final bool comparisonReadOnly;
 
   const MemberExercisesScreen({
     super.key,
@@ -45,6 +55,7 @@ class MemberExercisesScreen extends StatefulWidget {
     required this.memberName,
     this.isMonitor = false,
     this.isOwnProfile = false,
+    this.comparisonReadOnly = false,
   });
 
   @override
@@ -80,16 +91,51 @@ class MemberFormationExperienceSection extends StatelessWidget {
 }
 
 class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
+  Widget _selfUnavailable(Widget scuba) => Scaffold(
+      appBar: AppBar(title: const Text('Mes exercices')),
+      body: OceanGradientBackground(
+          creatures: CreatureSet.fish,
+          child: ActiveFormationPanel(
+            clubId: _clubId,
+            memberId: widget.memberId,
+            fallbackScubaActive: context.read<MemberProvider>().formationActive,
+            embedApneeInPool: true,
+            apnee: (_) => ApneeDossierScreen(
+                embedded: true,
+                clubId: _clubId,
+                memberId: widget.memberId,
+                memberName: widget.memberName,
+                viewerId: FirebaseAuth.instance.currentUser?.uid,
+                readOnly: widget.comparisonReadOnly),
+            scuba: (context) => PoolFormationTabs(
+              sessions: scuba,
+              exercises: PoolBrevetProtocols(
+                  clubId: _clubId,
+                  target: context.read<MemberProvider>().targetFormationLevel),
+              apnee: FormationPoolContext.maybeOf(context)?.apnee,
+            ),
+          )));
   final ExerciceValideService _service = ExerciceValideService();
   final LifrasService _lifrasService = LifrasService();
   final FormationSnapshotReader _formationReader = FormationSnapshotReader();
   final MilExperienceService _milExperienceService = MilExperienceService();
   final String _clubId = FirebaseConfig.defaultClubId;
+  final PersonalExerciseProgressService _personalService =
+      PersonalExerciseProgressService();
+  StreamSubscription<List<PersonalExerciseProgress>>? _personalSubscription;
+  List<PersonalExerciseProgress> _personalProgress = [];
+  bool _personalLoading = true;
+  bool _personalFailed = false;
+  bool get _mayTrackOwn =>
+      widget.isOwnProfile &&
+      !widget.comparisonReadOnly &&
+      FirebaseAuth.instance.currentUser?.uid == widget.memberId;
 
   // Catalog for self-declaration view
   List<ExerciceLIFRAS> _catalog = [];
   NiveauLIFRAS? _targetNiveau;
   bool _isLoadingCatalog = false;
+  bool _catalogFailed = false;
   FormationSnapshotDoc? _formationSnapshot;
   MilExperienceOverview? _milOverview;
   bool _isLoadingFormationSnapshot = false;
@@ -104,6 +150,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   void initState() {
     super.initState();
     if (widget.isOwnProfile) {
+      _watchPersonal();
       // For self: listen to the stream of exercices_valides + load catalog
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final provider = context.read<ExerciceValideProvider>();
@@ -116,13 +163,147 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     }
   }
 
+  void _watchPersonal() {
+    _personalSubscription?.cancel();
+    _personalSubscription =
+        _personalService.watch(_clubId, widget.memberId).listen((rows) {
+      if (mounted) {
+        setState(() {
+          _personalProgress = rows;
+          _personalLoading = false;
+          _personalFailed = false;
+        });
+      }
+    }, onError: (Object error) {
+      if (mounted) {
+        setState(() {
+          _personalLoading = false;
+          _personalFailed = true;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _personalSubscription?.cancel();
+    super.dispose();
+  }
+
+  PersonalExerciseProgress? _personalFor(ExerciceLIFRAS exercise) {
+    final rows = _personalProgress.where((p) => p.exerciseId == exercise.id);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> _editPersonal(ExerciceLIFRAS exercise) async {
+    if (!_mayTrackOwn ||
+        _personalFailed ||
+        formationModalityForExercise(exercise.code, exercise.description) !=
+            FormationModality.career) {
+      return;
+    }
+    final row = _personalFor(exercise);
+    var done = row?.done ?? false;
+    var date = row?.date ?? DateTime.now();
+    var saving = false;
+    String? error;
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+            builder: (context, update) => SafeArea(
+                  child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(exercise.code,
+                                style: Theme.of(context).textTheme.titleLarge),
+                            Text(exercise.description),
+                            const SizedBox(height: 8),
+                            const Text(
+                                'Suivi personnel · la carte LIFRAS reste la référence officielle.'),
+                            SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Épreuve réalisée'),
+                                value: done,
+                                onChanged: saving
+                                    ? null
+                                    : (value) => update(() => done = value)),
+                            if (done)
+                              TextButton.icon(
+                                  icon: const Icon(Icons.calendar_today),
+                                  label: Text(DateFormatter.formatLong(date)),
+                                  onPressed: saving
+                                      ? null
+                                      : () async {
+                                          final picked = await showDatePicker(
+                                              context: context,
+                                              initialDate: date,
+                                              firstDate: DateTime(1900),
+                                              lastDate: DateTime.now());
+                                          if (picked != null &&
+                                              context.mounted) {
+                                            update(() => date = picked);
+                                          }
+                                        }),
+                            if (error != null)
+                              Text(error!,
+                                  style: const TextStyle(color: Colors.red)),
+                            Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton(
+                                      onPressed: saving
+                                          ? null
+                                          : () => Navigator.pop(sheetContext),
+                                      child: const Text('Annuler')),
+                                  FilledButton(
+                                      onPressed: saving
+                                          ? null
+                                          : () async {
+                                              update(() {
+                                                saving = true;
+                                                error = null;
+                                              });
+                                              try {
+                                                await _personalService.save(
+                                                    clubId: _clubId,
+                                                    memberId: widget.memberId,
+                                                    exerciseId: exercise.id,
+                                                    done: done,
+                                                    date: date,
+                                                    revision:
+                                                        row?.revision ?? 0);
+                                                if (sheetContext.mounted) {
+                                                  Navigator.pop(sheetContext);
+                                                }
+                                              } catch (_) {
+                                                if (context.mounted) {
+                                                  update(() {
+                                                    saving = false;
+                                                    error =
+                                                        'Enregistrement impossible. Réessayez ou rechargez votre suivi.';
+                                                  });
+                                                }
+                                              }
+                                            },
+                                      child: Text(saving
+                                          ? 'Enregistrement…'
+                                          : 'Enregistrer')),
+                                ]),
+                          ])),
+                )));
+  }
+
   Future<void> _loadCatalog() async {
     final memberProvider = context.read<MemberProvider>();
 
-    // Determine target niveau: formation_active → next brevet, else current
-    final target = PlongeurUtils.getTargetNiveau(
-      plongeurCode: memberProvider.plongeurCode,
-      formationActive: memberProvider.formationActive,
+    final target = dossierTargetNiveau(
+      memberTarget: memberProvider.targetFormationLevel,
+      currentCode: memberProvider.plongeurCode,
+      snapshotTarget: _formationSnapshot?.targetLevel,
     );
 
     if (target == null) {
@@ -139,12 +320,14 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
     setState(() {
       _isLoadingCatalog = true;
+      _catalogFailed = false;
+      _catalog = [];
       _targetNiveau = target;
     });
 
     try {
-      final exercices =
-          await _lifrasService.getExercicesByNiveau(_clubId, target);
+      final exercices = await _lifrasService
+          .getExercicesByNiveau(_clubId, target, strict: true);
       if (!mounted) return;
       setState(() {
         _catalog = exercices;
@@ -155,6 +338,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       if (!mounted) return;
       setState(() {
         _isLoadingCatalog = false;
+        _catalogFailed = true;
       });
     }
   }
@@ -182,10 +366,17 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     if (!mounted) return;
     setState(() {
       _formationSnapshot = snapshot;
+      final preferred = resolvePreferredMilBrevet(
+        targetFormationLevel: member.targetFormationLevel,
+        currentCode: member.plongeurCode,
+        snapshotTargetLevel: snapshot?.targetLevel,
+      );
       _milOverview = overview ??
-          (snapshot == null
-              ? null
-              : MilExperienceOverview.fromSnapshot(snapshot));
+          (snapshot != null &&
+                  milBrevetCodeForTarget(snapshot.targetLevel) == preferred
+              ? MilExperienceOverview.fromSnapshot(snapshot)
+              : MilExperienceOverview(
+                  preferredBrevet: preferred, byBrevet: const {}));
       _isLoadingFormationSnapshot = false;
     });
   }
@@ -277,6 +468,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isOwnProfile) return _buildSelfView();
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -350,136 +542,94 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   Widget _buildSelfView() {
     return Consumer<ExerciceValideProvider>(
       builder: (context, provider, _) {
-        if (_isLoadingCatalog || provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
+        final member = context.watch<MemberProvider>();
+        final desiredTarget = dossierTargetNiveau(
+          memberTarget: member.targetFormationLevel,
+          currentCode: member.plongeurCode,
+          snapshotTarget: _formationSnapshot?.targetLevel,
+        );
+        if (!_isLoadingCatalog && desiredTarget != _targetNiveau) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _loadCatalog();
+              _loadFormationSnapshot();
+            }
+          });
+          return _selfUnavailable(
+              const Center(child: CircularProgressIndicator()));
+        }
+        if (_isLoadingCatalog ||
+            _isLoadingFormationSnapshot ||
+            _personalLoading ||
+            provider.isLoading) {
+          return _selfUnavailable(
+              const Center(child: CircularProgressIndicator()));
         }
 
         if (_targetNiveau == null) {
-          return _buildNoNiveauState();
+          return _selfUnavailable(_buildNoNiveauState());
+        }
+        if (_catalogFailed ||
+            _personalFailed ||
+            provider.errorMessage != null) {
+          return _selfUnavailable(Center(
+              child: TextButton.icon(
+                  onPressed: () {
+                    _loadCatalog();
+                    _watchPersonal();
+                    provider.listenToMemberExercices(_clubId, widget.memberId);
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Suivi indisponible · Réessayer'))));
         }
 
-        // Split catalog three ways:
-        //   - target exercises that are still TODO (priority — top of list)
-        //   - target exercises already validated
-        //   - "Tous Niveaux" specialties (Etanche / Nitrox / …) — bottom,
-        //     less central to brevet progression but useful to surface
-        // Pending declarations (legacy self-declare flow) get a discreet
-        // "demande envoyée" tag in TODO.
-        final targetTodo = <ExerciceLIFRAS>[];
-        final targetValidated = <ExerciceLIFRAS>[];
-        final tnAll = <ExerciceLIFRAS>[];
-        final pendingIds = <String>{};
-
-        for (final ex in _catalog) {
-          final isTN = ex.niveau == NiveauLIFRAS.tn;
-          final match = _matchingValidations(provider.exercicesValides, ex);
-          final isValid = match.any((e) => e.isValidated);
-          final isPending = match.any((e) => e.isPending);
-
-          if (isTN) {
-            tnAll.add(ex);
-            if (isPending) pendingIds.add(ex.id);
-            continue;
-          }
-          if (isValid) {
-            targetValidated.add(ex);
-          } else {
-            targetTodo.add(ex);
-            if (isPending) pendingIds.add(ex.id);
-          }
-        }
-
-        // Progress counts only target-level — TN are cross-level and don't
-        // gate the next brevet, so we keep them out of the headline metric.
-        final targetTotal = targetTodo.length + targetValidated.length;
-        final progressFraction =
-            targetTotal == 0 ? 0.0 : targetValidated.length / targetTotal;
-
-        return RefreshIndicator(
-          onRefresh: () async {
-            await Future.wait([
-              _loadCatalog(),
-              _loadFormationSnapshot(),
-            ]);
-          },
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // Progress header
-              _buildProgressHeader(
-                niveau: _targetNiveau!,
-                validated: targetValidated.length,
-                total: targetTotal,
-                progress: progressFraction,
-              ),
-              const SizedBox(height: 12),
-              MemberFormationExperienceSection(
-                snapshot: _formationSnapshot,
-                overview: _milOverview,
-                loading: _isLoadingFormationSnapshot,
-              ),
-              const SizedBox(height: 12),
-              _buildEvaluationRequestCard(),
-              const SizedBox(height: 12),
-              _buildHistoricalRepriseCard(),
-              const SizedBox(height: 20),
-
-              // Section 1: À faire (target-level, priority)
-              _buildSection(
-                title: 'À faire',
-                icon: Icons.radio_button_unchecked,
-                iconColor: Colors.blueGrey,
-                emptyText: 'Tous les exercices de ${_targetNiveau!.code} '
-                    'sont validés 🎉',
-                children: targetTodo
-                    .map((ex) => _buildTodoRow(
-                          ex,
-                          isPending: pendingIds.contains(ex.id),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // Section 2: Validés (target-level)
-              _buildSection(
-                title: 'Validés',
-                icon: Icons.check_circle,
-                iconColor: Colors.green,
-                emptyText: 'Aucun exercice validé pour le moment',
-                children: targetValidated.map((ex) {
-                  final matches =
-                      _matchingValidations(provider.exercicesValides, ex);
-                  final match = matches.firstWhere(
-                    (e) => e.isValidated,
-                    orElse: () => matches.first,
-                  );
-                  return _buildValidatedRow(ex, match);
-                }).toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // Section 3: Spécialités — cross-level, lower priority.
-              if (tnAll.isNotEmpty)
-                _buildSection(
-                  title: 'Spécialités (Tous niveaux)',
-                  icon: Icons.workspace_premium_outlined,
-                  iconColor: Colors.teal,
-                  emptyText: null,
-                  children: tnAll.map((ex) {
-                    final match =
-                        _matchingValidations(provider.exercicesValides, ex);
-                    final isValid = match.any((e) => e.isValidated);
-                    if (isValid) {
-                      final v = match.firstWhere((e) => e.isValidated);
-                      return _buildValidatedRow(ex, v);
-                    }
-                    return _buildTodoRow(ex,
-                        isPending: pendingIds.contains(ex.id));
-                  }).toList(),
-                ),
-              const SizedBox(height: 40),
-            ],
+        final snapshot = memberDossierSnapshot(
+          memberId: widget.memberId,
+          currentCode: member.plongeurCode ?? '',
+          target: _targetNiveau!,
+          catalog: _catalog,
+          validations: provider.exercicesValides,
+          personalProgress: _personalProgress,
+          source: _formationSnapshot,
+        );
+        return Student360Screen(
+          clubId: _clubId,
+          member: MemberProfile(
+            id: widget.memberId,
+            nom: member.nom ?? '',
+            prenom: member.prenom ?? '',
+            email: member.email ?? '',
+            photoUrl: member.photoUrl,
+            consentInternalPhoto: member.consentInternalPhoto,
+            plongeurCode: member.plongeurCode,
+            targetFormationLevel: member.targetFormationLevel,
+            formationActive: member.formationActive,
           ),
+          scope: FormationTrackingScope.full,
+          isOwnProfile: true,
+          readOnlyProfile: widget.comparisonReadOnly,
+          ownProfileCaption: widget.comparisonReadOnly
+              ? '${widget.memberName} · comparaison en lecture seule'
+              : null,
+          providedSnapshot: snapshot,
+          providedMilOverview: _milOverview,
+          exerciseAction: _openDossierExercise,
+          providedSpecialties: memberDossierSnapshot(
+            memberId: widget.memberId,
+            currentCode: member.plongeurCode ?? '',
+            target: NiveauLIFRAS.tn,
+            catalog: _catalog,
+            validations: provider.exercicesValides,
+          ),
+          appBarActions: [
+            IconButton(
+              tooltip: 'Rafraîchir',
+              icon: const Icon(Icons.refresh),
+              onPressed: () async {
+                await Future.wait([_loadCatalog(), _loadFormationSnapshot()]);
+              },
+            ),
+          ],
         );
       },
     );
@@ -489,449 +639,39 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     List<ExerciceValide> validations,
     ExerciceLIFRAS exercice,
   ) {
-    return validations.where(
-      (validation) =>
-          validation.exerciceId == exercice.id ||
-          validation.exerciceCode == exercice.code,
-    );
+    return dossierExerciseResults(validations, exercice);
   }
 
-  Widget _buildProgressHeader({
-    required NiveauLIFRAS niveau,
-    required int validated,
-    required int total,
-    required double progress,
-  }) {
-    final niveauColor = _getNiveauColor(niveau);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: niveauColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Center(
-                  child: Text(
-                    niveau.code,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Objectif: ${niveau.label}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    Text(
-                      '$validated / $total exercices validés',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-              backgroundColor: Colors.grey[200],
-              color: niveauColor,
-              minHeight: 8,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoricalRepriseCard() {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.96),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const HistoricalClaimsScreen()),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.middenblauw.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.history_edu_outlined,
-                  color: AppColors.middenblauw,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'J’ai déjà des exercices sur papier',
-                      style: TextStyle(
-                        color: AppColors.donkerblauw,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Prépare la liste; un moniteur validera après contrôle de ta carte.',
-                      style: TextStyle(
-                        color: AppColors.donkerblauw.withValues(alpha: 0.65),
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade500),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEvaluationRequestCard() {
-    return Material(
-      color: AppColors.oranje,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _openEvaluationRequest(),
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Row(children: [
-            Icon(Icons.fact_check_outlined, color: Colors.white, size: 30),
-            SizedBox(width: 12),
-            Expanded(
-                child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Demander une évaluation',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16)),
-                SizedBox(height: 3),
-                Text('Choisis l’exercice, le contexte et le moniteur.',
-                    style: TextStyle(color: Colors.white)),
-              ],
-            )),
-            Icon(Icons.chevron_right, color: Colors.white),
-          ]),
-        ),
-      ),
-    );
+  Future<void> _openDossierExercise(String code) async {
+    final rows = _catalog.where((e) => e.code == code);
+    if (rows.isEmpty) return;
+    final exercice = rows.first;
+    final matches = _matchingValidations(
+        context.read<ExerciceValideProvider>().exercicesValides, exercice);
+    final validated = matches.where((v) => v.isValidated);
+    if (validated.isNotEmpty) {
+      _showValidatedDetails(exercice, validated.first);
+      return;
+    }
+    if (exercice.niveau != NiveauLIFRAS.tn &&
+        formationModalityForExercise(exercice.code, exercice.description) ==
+            FormationModality.career) {
+      if (_mayTrackOwn) await _editPersonal(exercice);
+      return;
+    }
+    if (!widget.comparisonReadOnly && !matches.any((v) => v.isPending)) {
+      await _openEvaluationRequest(exercice);
+    }
   }
 
   Future<void> _openEvaluationRequest([ExerciceLIFRAS? selected]) async {
+    if (widget.comparisonReadOnly) return;
     await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => EvaluationRequestScreen(
         exercises: _catalog.map(EvaluationExerciseOption.fromExercise).toList(),
         initialExerciseId: selected?.id,
       ),
     ));
-  }
-
-  Widget _buildSection({
-    required String title,
-    required IconData icon,
-    required Color iconColor,
-    required String? emptyText,
-    required List<Widget> children,
-  }) {
-    if (children.isEmpty && emptyText == null) {
-      // Skip empty 'En attente' section entirely
-      return const SizedBox.shrink();
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section header — white text on the blue ocean gradient.
-        Row(
-          children: [
-            Icon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
-                    color: Colors.black26,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 6),
-            if (children.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Text(
-                  children.length.toString(),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (children.isEmpty && emptyText != null)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              emptyText,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[700],
-              ),
-            ),
-          )
-        else
-          // Wrap all rows in one white card so dark text reads cleanly
-          // on the blue ocean gradient backdrop.
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.96),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Column(
-              children: [
-                for (int i = 0; i < children.length; i++) ...[
-                  if (i > 0)
-                    Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: Colors.grey.shade200,
-                    ),
-                  children[i],
-                ],
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// Compact one-line row used for both 'À faire' and 'Validés'.
-  /// Tap on a validated row → bottom sheet with full details.
-  Widget _buildExerciceRow({
-    required ExerciceLIFRAS exercice,
-    required bool isValidated,
-    String? trailingText,
-    String? hintTag,
-    String? sourceTag,
-    VoidCallback? onTap,
-  }) {
-    final niveauColor = _getNiveauColor(exercice.niveau);
-    final muted = !isValidated;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Niveau badge / status indicator
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: isValidated
-                    ? Colors.green
-                    : niveauColor.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(6),
-                border: isValidated
-                    ? null
-                    : Border.all(color: niveauColor.withValues(alpha: 0.4)),
-              ),
-              child: Center(
-                child: isValidated
-                    ? const Icon(Icons.check, size: 16, color: Colors.white)
-                    : Text(
-                        exercice.niveau.code,
-                        style: TextStyle(
-                          color: niveauColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Code (bold) + description (one line, ellipsis)
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        exercice.code,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: muted ? Colors.grey[800] : Colors.grey[900],
-                        ),
-                      ),
-                      if (hintTag != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.orange[50],
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            hintTag,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.orange[800],
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (sourceTag != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.green[50],
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            sourceTag,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.green[800],
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  Text(
-                    exercice.description,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (trailingText != null) ...[
-              const SizedBox(width: 8),
-              Text(
-                trailingText,
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTodoRow(ExerciceLIFRAS exercice, {bool isPending = false}) {
-    return _buildExerciceRow(
-      exercice: exercice,
-      isValidated: false,
-      hintTag: isPending ? 'demande envoyée' : null,
-      onTap: isPending ? null : () => _openEvaluationRequest(exercice),
-    );
-  }
-
-  Widget _buildValidatedRow(
-      ExerciceLIFRAS exercice, ExerciceValide validation) {
-    return _buildExerciceRow(
-      exercice: exercice,
-      isValidated: true,
-      sourceTag: validation.isFromCarnetFormation ? 'QR moniteur' : null,
-      trailingText: DateFormatter.formatShort(validation.dateValidation),
-      onTap: () => _showValidatedDetails(exercice, validation),
-    );
   }
 
   void _showValidatedDetails(

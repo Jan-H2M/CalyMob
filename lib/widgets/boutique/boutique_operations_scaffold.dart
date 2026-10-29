@@ -10,12 +10,14 @@ class BoutiqueOperationsScaffold extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
+  final Widget? bottomNavigationBar;
 
   const BoutiqueOperationsScaffold({
     super.key,
     required this.title,
     required this.body,
     this.actions,
+    this.bottomNavigationBar,
   });
 
   @override
@@ -32,5 +34,6 @@ class BoutiqueOperationsScaffold extends StatelessWidget {
           actions: actions,
         ),
         body: body,
+        bottomNavigationBar: bottomNavigationBar,
       );
 }

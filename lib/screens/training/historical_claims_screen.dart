@@ -9,7 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/historical_exercise_claim_service.dart';
 import '../../services/lifras_service.dart';
-import '../../utils/plongeur_utils.dart';
+import '../../models/member_formation_dossier.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'historical_validation_screen.dart';
 
@@ -44,9 +44,9 @@ class _HistoricalClaimsScreenState extends State<HistoricalClaimsScreen> {
 
   Future<void> _loadCatalog() async {
     final member = context.read<MemberProvider>();
-    final target = PlongeurUtils.getTargetNiveau(
-      plongeurCode: member.plongeurCode,
-      formationActive: member.formationActive,
+    final target = dossierTargetNiveau(
+      currentCode: member.plongeurCode,
+      memberTarget: member.targetFormationLevel,
     );
 
     setState(() {
@@ -250,7 +250,8 @@ class _HistoricalClaimsScreenState extends State<HistoricalClaimsScreen> {
       child: Column(
         children: [
           _exerciseSectionHeader(
-            title: 'Brevet ${_targetNiveau?.code ?? ''}',
+            title:
+                'Brevet ${_targetNiveau == null ? 'non renseigné' : dossierTargetLabel(_targetNiveau!)}',
             subtitle: 'Exercices propres au brevet en cours',
             showSelectionCount: true,
           ),

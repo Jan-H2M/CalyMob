@@ -63,13 +63,6 @@ const parcoursHubEntryDefinitions = <ParcoursHubEntryDefinition>[
     color: AppColors.oranje,
   ),
   ParcoursHubEntryDefinition(
-    key: 'declarations',
-    title: 'Mes demandes',
-    subtitle: 'Retrouver vos demandes de rôles et d’évaluation.',
-    icon: Icons.assignment_outlined,
-    color: Colors.purple,
-  ),
-  ParcoursHubEntryDefinition(
     key: 'actions',
     title: 'Actions & évaluations',
     subtitle: 'Répondre aux tâches, décisions et validations en attente.',
@@ -83,13 +76,6 @@ const parcoursHubEntryDefinitions = <ParcoursHubEntryDefinition>[
     subtitle: 'Visualiser l’évolution de vos plongées et paramètres.',
     icon: Icons.insights_outlined,
     color: AppColors.info,
-  ),
-  ParcoursHubEntryDefinition(
-    key: 'paper-card',
-    title: 'Reprendre ma carte papier',
-    subtitle: 'Encoder votre historique papier dans le carnet numérique.',
-    icon: Icons.drive_file_rename_outline,
-    color: AppColors.warning,
   ),
 ];
 
@@ -144,40 +130,34 @@ class ParcoursHubScreen extends StatelessWidget {
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[1]),
                     ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[2],
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[2]),
-                    ),
                     if (formationScope != null)
                       _ParcoursCard(
                         definition: parcoursFormationOverviewEntry,
+                        badge: userId == null
+                            ? null
+                            : _ActionsEvaluationsBadge(userId: userId),
                         onTap: () => _open(
                           context,
                           parcoursFormationOverviewEntry,
                           formationScope: formationScope,
                         ),
                       ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[3],
-                      badge: userId == null
-                          ? null
-                          : _ActionsEvaluationsBadge(userId: userId),
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[3]),
-                    ),
+                    if (formationScope == null)
+                      _ParcoursCard(
+                        definition: parcoursHubEntryDefinitions[2],
+                        badge: userId == null
+                            ? null
+                            : _ActionsEvaluationsBadge(userId: userId),
+                        onTap: () =>
+                            _open(context, parcoursHubEntryDefinitions[2]),
+                      ),
                     const SizedBox(height: 12),
                     const _SectionTitle('Historique'),
                     const SizedBox(height: 12),
                     _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[4],
+                      definition: parcoursHubEntryDefinitions[3],
                       onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[4]),
-                    ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[5],
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[5]),
+                          _open(context, parcoursHubEntryDefinitions[3]),
                     ),
                   ],
                 ),

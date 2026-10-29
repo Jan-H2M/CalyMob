@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/member_provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../profile/who_is_who_screen.dart';
+import '../training/actions_evaluations_screen.dart';
+import 'apnee_formation_list.dart';
+import '../../widgets/formation/formation_navigation.dart';
 
 /// Direct instructor entry point for the existing formation overview.
 ///
@@ -24,6 +29,7 @@ class _InstructorFormationOverviewScreenState
     extends State<InstructorFormationOverviewScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _apnee = false;
 
   @override
   void dispose() {
@@ -41,12 +47,29 @@ class _InstructorFormationOverviewScreenState
           child: Column(
             children: [
               _buildHeader(context),
+              FormationDisciplineSelector(
+                apnee: _apnee,
+                onChanged: (value) => setState(() => _apnee = value),
+              ),
               Expanded(
-                child: FormationListView(
-                  clubId: FirebaseConfig.defaultClubId,
-                  searchQuery: _searchQuery,
-                  scope: widget.scope,
-                ),
+                child: _apnee
+                    ? ApneeFormationList(
+                        clubId: FirebaseConfig.defaultClubId,
+                        search: _searchQuery,
+                        canEnroll: PermissionHelper.isAppAdmin(
+                          context.watch<MemberProvider>().appRole,
+                        ),
+                        poolOnly:
+                            widget.scope == FormationTrackingScope.piscineOnly,
+                      )
+                    : FormationListView(
+                        clubId: FirebaseConfig.defaultClubId,
+                        searchQuery: _searchQuery,
+                        scope: widget.scope,
+                        showTargetLevels: true,
+                        canEnroll: PermissionHelper.isAppAdmin(
+                            context.watch<MemberProvider>().appRole),
+                      ),
               ),
             ],
           ),
@@ -98,6 +121,15 @@ class _InstructorFormationOverviewScreenState
                       ),
                     ),
                   ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Actions en attente',
+                icon: const Icon(Icons.task_alt, color: Colors.white),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ActionsEvaluationsScreen(),
+                  ),
                 ),
               ),
             ],

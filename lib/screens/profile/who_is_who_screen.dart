@@ -22,7 +22,10 @@ import '../../services/formation_snapshot_reader.dart';
 import '../../services/pool_formation_overview_reader.dart';
 import '../exercises/member_exercises_screen.dart';
 import '../formation/student_360_screen.dart';
-
+import '../../widgets/formation/formation_navigation.dart';
+import '../../services/scuba_enrollment_service.dart';
+import '../../widgets/formation/formation_student_tile.dart';
+import '../../models/member_formation_dossier.dart';
 export '../../utils/directory_birthday.dart' show formatDirectoryBirthday;
 
 @visibleForTesting
@@ -1163,6 +1166,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
 /// Lit les snapshots matérialisés (collectionGroup) + joint les profils.
 /// Triée « attention d'abord ». Tap → fiche 360°.
 class FormationListView extends StatefulWidget {
+  final bool showTargetLevels;
+  final bool canEnroll;
   final String clubId;
   final String searchQuery;
   final String? filterLevel;
@@ -1182,6 +1187,8 @@ class FormationListView extends StatefulWidget {
     this.profilesLoader,
     this.snapshotsLoader,
     this.poolStudentsLoader,
+    this.showTargetLevels = false,
+    this.canEnroll = false,
   });
 
   @override
@@ -1223,6 +1230,45 @@ int _compareFormationRows(_FormationRow a, _FormationRow b) {
 }
 
 class _FormationListViewState extends State<FormationListView> {
+  String? _targetFor(_FormationRow row) {
+    final target = dossierTargetNiveau(
+        memberTarget: row.profile.targetFormationLevel,
+        currentCode: row.profile.plongeurCode,
+        snapshotTarget: row.fullSnapshot?.targetLevel);
+    final label = target == null
+        ? null
+        : normalizedFormationLevel(dossierTargetLabel(target));
+    return scubaFormationLevels.containsKey(label) ? label : null;
+  }
+
+  String _targetLevel = 'all';
+  bool _savingEnrollment = false;
+  Future<void> _enroll(_FormationRow row, {String? target}) async {
+    if (!widget.canEnroll || _savingEnrollment) return;
+    final selectedTarget = target ??
+        _targetFor(row) ??
+        (_targetLevel == 'all' ? null : _targetLevel);
+    if (selectedTarget == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Choisissez d’abord le brevet visé.')));
+      return;
+    }
+    setState(() => _savingEnrollment = true);
+    try {
+      await ScubaEnrollmentService().save(widget.clubId, row.profile,
+          active: target != null || !row.profile.formationActive,
+          target: selectedTarget);
+      if (mounted) _retry();
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Modification non confirmée. Rechargez avant de réessayer.')));
+    } finally {
+      if (mounted) setState(() => _savingEnrollment = false);
+    }
+  }
+
   ProfileService? _profileService;
   FormationSnapshotReader? _reader;
   PoolFormationOverviewReader? _poolReader;
@@ -1267,8 +1313,13 @@ class _FormationListViewState extends State<FormationListView> {
       if (p == null) continue;
       rows.add(_FormationRow.full(profile: p, fullSnapshot: s));
     }
-    // Existing attention/pending/goal badges first, alphabetical within each
-    // group. This is not an unread count and does not mark anything as read.
+    if (widget.showTargetLevels) {
+      final included = rows.map((row) => row.profile.id).toSet();
+      rows.addAll(profiles
+          .where((p) => p.isActive && !included.contains(p.id))
+          .map((p) => _FormationRow.full(profile: p, fullSnapshot: null)));
+      rows.removeWhere((row) => !row.profile.isActive);
+    }
     rows.sort(_compareFormationRows);
     return rows;
   }
@@ -1302,98 +1353,148 @@ class _FormationListViewState extends State<FormationListView> {
           )
           .toList();
     }
+    if (widget.showTargetLevels && _targetLevel != 'all') {
+      out = out
+          .where(
+            (row) => _targetFor(row) == _targetLevel,
+          )
+          .toList();
+    }
     return out;
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<_FormationRow>>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          );
-        }
-        if (snap.hasError) {
-          return Center(
-            key: const Key('formation-load-error'),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.cloud_off_outlined,
-                    color: Colors.white,
-                    size: 38,
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Suivi temporairement indisponible',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
+    return Column(
+      children: [
+        if (widget.showTargetLevels)
+          FormationLevelSelector(
+            selected: _targetLevel,
+            levels: const {'all': 'Tous', ...scubaFormationLevels},
+            onChanged: (value) => setState(() => _targetLevel = value),
+          ),
+        Expanded(
+          child: FutureBuilder<List<_FormationRow>>(
+            future: _future,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                );
+              }
+              if (snap.hasError) {
+                return Center(
+                  key: const Key('formation-load-error'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.cloud_off_outlined,
+                          color: Colors.white,
+                          size: 38,
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Suivi temporairement indisponible',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Impossible de charger l’avancement des élèves. '
+                          'Veuillez réessayer.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        FilledButton.icon(
+                          key: const Key('formation-load-retry'),
+                          onPressed: _retry,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Réessayer'),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Impossible de charger l’avancement des élèves. '
-                    'Veuillez réessayer.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
+                );
+              }
+              final rows = _filter(snap.data ?? const []);
+              if (rows.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      widget.searchQuery.isNotEmpty ||
+                              widget.filterLevel != null
+                          ? 'Aucun élève ne correspond aux filtres.'
+                          : 'Aucun élève en formation pour le moment.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                    key: const Key('formation-load-retry'),
-                    onPressed: _retry,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Réessayer'),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        final rows = _filter(snap.data ?? const []);
-        if (rows.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                widget.searchQuery.isNotEmpty || widget.filterLevel != null
-                    ? 'Aucun élève ne correspond aux filtres.'
-                    : 'Aucun élève en formation pour le moment.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-              ),
-            ),
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
-          itemCount: rows.length,
-          itemBuilder: (context, i) => _buildRow(context, rows[i]),
-        );
-      },
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
+                itemCount: rows.length,
+                itemBuilder: (context, i) => _buildRow(context, rows[i]),
+              );
+            },
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _formationSignals(_FormationRow row) {
+    final full = row.fullSnapshot;
+    final pending = full?.pendingCount ?? row.poolSnapshot?.pending ?? 0;
+    return Wrap(spacing: 6, children: [
+      if ((full?.attentionCount ?? 0) > 0)
+        Text('⚠ ${full!.attentionCount}',
+            style: const TextStyle(color: Colors.redAccent)),
+      if (pending > 0)
+        Text('⏳ $pending', style: const TextStyle(color: Colors.amberAccent)),
+      if ((full?.goalCount ?? 0) > 0)
+        Text('🎯 ${full!.goalCount}',
+            style: const TextStyle(color: Colors.tealAccent)),
+    ]);
   }
 
   Widget _buildRow(BuildContext context, _FormationRow row) {
     final m = row.profile;
-    final full = row.fullSnapshot;
+    final target = _targetFor(row);
     final pool = row.poolSnapshot;
-    final trajet = full == null
-        ? ''
-        : full.targetLevel != null && full.targetLevel!.isNotEmpty
-            ? '${full.currentCode.isEmpty ? '—' : full.currentCode} → ${full.targetLevel}'
-            : full.currentCode;
-
-    return GestureDetector(
+    final current = m.plongeurCode ?? row.fullSnapshot?.currentCode ?? '—';
+    final trajet =
+        target == null || !m.formationActive ? current : '$current → $target';
+    return FormationStudentTile(
+      name: m.fullName,
+      subtitle: trajet,
+      avatar: FormationStudentAvatar(member: m),
+      active: m.formationActive,
+      showEnrollment: widget.showTargetLevels,
+      onToggle:
+          widget.canEnroll && !_savingEnrollment ? () => _enroll(row) : null,
+      goal: widget.showTargetLevels && m.formationActive
+          ? FormationGoalSelector(
+              value: target,
+              levels: scubaFormationLevels,
+              canEdit: widget.canEnroll,
+              busy: _savingEnrollment,
+              onChanged: (value) => _enroll(row, target: value))
+          : null,
+      signals: _formationSignals(row),
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -1406,239 +1507,6 @@ class _FormationListViewState extends State<FormationListView> {
           ),
         );
       },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _photo(m, 48),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          m.fullName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      if (full != null && full.attentionCount > 0)
-                        _badge('⚠ ${full.attentionCount}', Colors.redAccent),
-                      if (full != null && full.pendingCount > 0)
-                        _badge('⏳ ${full.pendingCount}', Colors.amberAccent),
-                      if (full != null && full.goalCount > 0)
-                        _badge('🎯 ${full.goalCount}', Colors.tealAccent),
-                    ],
-                  ),
-                  if (trajet.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(
-                        trajet,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 6),
-                  if (pool != null)
-                    _poolProgress(pool)
-                  else if (full != null)
-                    _modalityProgress(full),
-                  if (full != null) ...[
-                    const SizedBox(height: 6),
-                    _miniBar(
-                      'Exercices',
-                      full.exercisePct,
-                      AppColors.lichtblauw,
-                    ),
-                    if (full.hasMil) ...[
-                      const SizedBox(height: 4),
-                      _miniBar('Exp. MIL', full.milPct, Colors.amberAccent),
-                    ],
-                    const SizedBox(height: 6),
-                    Text(
-                      full.pedagogicalLine,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _badge(String text, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(left: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _modalityProgress(FormationSnapshotDoc snapshot) {
-    final progress = snapshot.modalityProgress;
-    final modalities = formationListModalities(widget.scope);
-    return Wrap(
-      spacing: 5,
-      runSpacing: 5,
-      children: modalities.map((modality) {
-        final value = progress[modality]!;
-        final detail = value.total == 0
-            ? '—'
-            : '${value.validated}/${value.total}'
-                '${value.pending > 0 ? ' · ${value.pending}⏳' : ''}';
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          ),
-          child: Text(
-            '${modality.label} $detail',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.92),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _poolProgress(PoolFormationSnapshotDoc snapshot) {
-    final detail = snapshot.total == 0
-        ? '—'
-        : '${snapshot.validated}/${snapshot.total}'
-            '${snapshot.pending > 0 ? ' · ${snapshot.pending}⏳' : ''}';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      child: Text(
-        'Piscine $detail',
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.92),
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _miniBar(String label, int pct, Color color) {
-    final p = (pct.clamp(0, 100)) / 100.0;
-    return Row(
-      children: [
-        SizedBox(
-          width: 64,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 11,
-            ),
-          ),
-        ),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: LinearProgressIndicator(
-              value: p,
-              minHeight: 6,
-              backgroundColor: Colors.white.withValues(alpha: 0.16),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '$pct %',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _photo(MemberProfile m, double size) {
-    final hasPhoto = m.hasPhoto && m.consentInternalPhoto && m.photoUrl != null;
-    if (hasPhoto) {
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: m.photoUrl!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => _initials(m, size),
-        ),
-      );
-    }
-    return _initials(m, size);
-  }
-
-  Widget _initials(MemberProfile m, double size) {
-    final initials =
-        '${m.prenom.isNotEmpty ? m.prenom[0] : ''}${m.nom.isNotEmpty ? m.nom[0] : ''}'
-            .toUpperCase();
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: 0.2),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * 0.36,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
     );
   }
 }
