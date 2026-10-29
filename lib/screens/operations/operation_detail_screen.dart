@@ -39,6 +39,7 @@ import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import '../../widgets/operation_unregister_button.dart';
+import '../../widgets/operation_date_metadata.dart';
 import 'add_guest_dialog.dart';
 import 'edit_my_inscription_dialog.dart';
 import 'register_with_guests_dialog.dart';
@@ -2582,70 +2583,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   /// Compact header: Date + Lieu on same line
-  Widget _buildCompactHeader(operation) {
-    final deadline = operation.effectiveDeadline as DateTime?;
-    final deadlinePassed = deadline != null && DateTime.now().isAfter(deadline);
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        Widget metaItem({
-          required IconData icon,
-          required String text,
-          required TextStyle style,
-          Color iconColor = Colors.white70,
-        }) {
-          return ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 18, color: iconColor),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    text,
-                    style: style,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Wrap(
-          spacing: 18,
-          runSpacing: 6,
-          children: [
-            if (operation.dateDebut != null)
-              metaItem(
-                icon: Icons.calendar_today,
-                text: '${DateFormatter.formatDayMonth(operation.dateDebut!)} '
-                    '${DateFormatter.formatTime(operation.dateDebut!)}',
-                style: const TextStyle(fontSize: 14, color: Colors.white),
-              ),
-            if (deadline != null)
-              metaItem(
-                icon: Icons.lock_clock,
-                iconColor:
-                    deadlinePassed ? Colors.orangeAccent : Colors.white70,
-                text: deadlinePassed
-                    ? 'Inscriptions closes'
-                    : 'Clôture inscriptions : '
-                        '${DateFormatter.formatDayMonthShort(deadline)} '
-                        '${DateFormatter.formatTime(deadline)}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: deadlinePassed ? Colors.orangeAccent : Colors.white,
-                  fontWeight:
-                      deadlinePassed ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
+  Widget _buildCompactHeader(Operation operation) =>
+      OperationDateMetadata(operation: operation);
 
   /// Price + user's function. The 'Niveau' marker was removed from the
   /// header — it was visually unreadable on the light gradient and

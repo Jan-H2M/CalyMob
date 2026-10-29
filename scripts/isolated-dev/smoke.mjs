@@ -41,6 +41,8 @@ try {
     ['students',['Bert FICTIF','Yves FICTIF','Aaron FICTIF']],
     ['payments',['À payer','Paiement confirmé : non']],
     ['registration',['Les tarifs de cette activité doivent être corrigés']],
+    ['dates',['8 novembre 12:30','Clôture inscriptions :','7 nov. 12:30']],
+    ['environments',['Mer FICTIVE','Lac FICTIF','Carrière FICTIVE','Catégorie : Eau douce']],
   ]) {
     const context = await browser.newContext({serviceWorkers:'block',acceptDownloads:false,
       viewport:{width:1100,height:900}});

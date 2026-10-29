@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/dive_location.dart';
+import '../../widgets/grouped_dive_locations.dart';
 import '../../models/tariff.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
@@ -787,32 +788,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     );
   }
 
-  Widget _buildGroupedLocationList(List<DiveLocation> locations) {
-    final groups = groupDiveLocationsByEnvironment(locations);
-    return Column(
-      children: [
-        for (final environment in DiveEnvironment.values)
-          if (groups[environment]?.isNotEmpty == true) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '${environment.icon} ${environment.label}',
-                  style: const TextStyle(
-                    color: AppColors.donkerblauw,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-            for (final location in groups[environment]!)
-              _buildLocationCard(location),
-          ],
-      ],
-    );
-  }
+  Widget _buildGroupedLocationList(List<DiveLocation> locations) =>
+      GroupedDiveLocations(locations: locations, itemBuilder: _buildLocationCard);
 
   Widget _buildManualCreateButton() {
     return Container(
