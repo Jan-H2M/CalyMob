@@ -1,8 +1,13 @@
 {
   "_snapshot": {
-    "notice": "Read-only documentation snapshot only. App Store Connect workflow D11B66EC is authoritative; do not apply this JSON as configuration.",
+    "notice": "Read-only documentation snapshot only. The live App Store Connect API is authoritative; never apply this JSON as configuration.",
     "observedAt": "2026-10-29",
-    "latestObservedAppStoreBuild": 535
+    "latestObservedXcodeCloudRun": {
+      "number": 535,
+      "completionStatus": "SUCCEEDED"
+    },
+    "latestObservedAppStoreBuild": 535,
+    "reservationRule": "Reserve max live Xcode Cloud run number + 1; failed, errored, canceled, and skipped runs consume numbers too."
   },
   "data": {
     "type": "ciWorkflows",

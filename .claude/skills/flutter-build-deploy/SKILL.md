@@ -69,20 +69,23 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 
 ## Shared build-number source of truth
 
-App Store Connect is authoritative for the product-wide build counter used by Android
-and Xcode Cloud. `scripts/bump_version.sh` reads the latest live CalyMob build and reserves
-exactly `latest + 1`; it must fail if the API cannot be read. `ci_post_clone.sh` requires
+Xcode Cloud is authoritative for the product-wide build counter used by Android and iOS;
+failed, canceled and skipped cloud runs consume numbers even when nothing is uploaded.
+`scripts/bump_version.sh` reads the latest live cloud run and reserves exactly `latest + 1`;
+it must fail if the API cannot be read. `ci_post_clone.sh` requires
 `CI_BUILD_NUMBER` to equal the committed `pubspec.yaml` reservation exactly.
 
-Before any mutating Fastlane lane, `scripts/run_fastlane.sh` re-reads App Store Connect.
+Before any mutating Fastlane lane, `scripts/run_fastlane.sh` and the platform Fastfiles
+re-read Xcode Cloud and App Store Connect, preventing direct-Fastlane bypass.
 It allows only (a) the exact latest build with the same marketing version, or (b) the
 exact next reserved build with a non-regressing marketing version. A stale number, a
 gap, a reused build under another version, or an unreadable API is a hard stop with a
 clear error. Read-only `status`, `validate`, and `build_number_status` remain available.
 
-New schema-v2 manifests include `buildNumberSource`: workflow ID, observation timestamp,
-observed App Store version/build, reserved local version/build, and whether it matches
-the latest build or reserves the next one. Missing or inconsistent evidence fails closed.
+New schema-v2 manifests include `buildNumberSource`. iOS manifests bind the exact successful
+Xcode Cloud run ID, workflow, source commit and linked App Store build; a local IPA cannot
+satisfy the iOS release gate. The local iOS upload lanes are disabled. Missing or
+inconsistent evidence fails closed.
 `ci_scripts/xcode-cloud-workflow.json` is a read-only snapshot, never configuration to apply.
 
 ## Prerequisites
