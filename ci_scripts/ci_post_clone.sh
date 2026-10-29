@@ -28,11 +28,17 @@ flutter pub get --enforce-lockfile
 
 # Keep the reviewed marketing version; use Apple's product-wide build counter.
 BUILD_NAME="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)"
+RESERVED_BUILD_NUMBER="$(sed -n 's/^version: *[^+ ]*+\([0-9][0-9]*\).*/\1/p' pubspec.yaml)"
 case "${CI_BUILD_NUMBER:-}" in
   ''|*[!0-9]*) echo 'CI_BUILD_NUMBER must be supplied by Xcode Cloud.' >&2; exit 1 ;;
 esac
-[ "$CI_BUILD_NUMBER" -gt 226 ] || {
-  echo 'Cloud build number must exceed existing App Store Connect build 226.' >&2
+[ -n "$RESERVED_BUILD_NUMBER" ] || {
+  echo 'pubspec.yaml must reserve a numeric Xcode Cloud build number.' >&2
+  exit 1
+}
+[ "$CI_BUILD_NUMBER" -eq "$RESERVED_BUILD_NUMBER" ] || {
+  echo "Xcode Cloud build $CI_BUILD_NUMBER does not match pubspec reservation $RESERVED_BUILD_NUMBER." >&2
+  echo 'Refresh the reservation with scripts/bump_version.sh before starting another cloud build.' >&2
   exit 1
 }
 

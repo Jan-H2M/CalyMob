@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const { validateBuildNumberRecord } = require('./build_number_sync.cjs');
 const ARTIFACTS = {
   android: 'build/app/outputs/bundle/release/app-release.aab',
   ios: 'build/ios/ipa/calymob.ipa',
@@ -32,6 +33,7 @@ function validateManifest(manifest, context) {
   requireThat(/^[a-f0-9]{40}$/.test(head) && manifest.sourceCommit === head, 'source commit mismatch');
   requireThat(/^[a-f0-9]{40}$/.test(tree) && manifest.sourceTree === tree, 'source tree mismatch');
   requireThat(manifest.version === version && String(manifest.build) === build, 'version/build mismatch');
+  validateBuildNumberRecord(manifest.buildNumberSource, version, build);
   requireThat(Array.isArray(manifest.platforms) && manifest.platforms.includes(platform), 'platform not approved');
   requireThat(Array.isArray(manifest.allowedActions?.[platform])
     && requiredActions.every((entry) => manifest.allowedActions[platform].includes(entry)), 'action not approved');

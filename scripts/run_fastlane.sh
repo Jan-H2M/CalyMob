@@ -20,6 +20,16 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
+case "$platform:$lane" in
+  android:deploy|android:submit|ios:deploy|ios:release|ios:submit|ios:update_notes)
+    sync_root="$repo_root"
+    if [[ "$platform:$lane" == "android:submit" && -n "${CALYMOB_RELEASE_ROOT:-}" ]]; then
+      sync_root="$CALYMOB_RELEASE_ROOT"
+    fi
+    "$repo_root/scripts/check_build_number_sync.sh" "$sync_root"
+    ;;
+esac
+
 cd "$repo_root/$platform"
 
 # Prefer the repository lock only when a known Bundler installation can
