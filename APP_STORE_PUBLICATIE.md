@@ -1,3 +1,5 @@
+> **Note (2026-10-29):** historical. Current status and iOS flow (Xcode Cloud): see `docs/RELEASE_STATUS.md`.
+
 # CalyMob App Store Publicatie Plan
 
 ## Overzicht
