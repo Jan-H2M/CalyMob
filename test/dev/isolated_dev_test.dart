@@ -5,6 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 void main() {
+  Future<void> selectScenario(WidgetTester tester, String label) async {
+    await tester.tap(find.byKey(const Key('dev-scenario-picker')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label).last);
+    await tester.pumpAndSettle();
+  }
   setUpAll(() => initializeDateFormatting('fr_FR'));
   test('DEV only accepts the explicit credentialless loopback target', () {
     validateDevOrigin(
@@ -119,7 +125,7 @@ void main() {
     testWidgets('MOB-046 real category layout preserves legacy at $width px',
         (tester) async {
       await open(tester, width: width);
-      await tester.tap(find.text('MOB-046 · Milieux'));
+      await selectScenario(tester, 'MOB-046 · Milieux');
       await tester.pumpAndSettle();
       for (final name in [
         'Mer FICTIVE',
@@ -146,7 +152,7 @@ void main() {
       tester,
     ) async {
       await open(tester, width: width);
-      await tester.tap(find.text('MOB-045 · Dates'));
+      await selectScenario(tester, 'MOB-045 · Dates');
       await tester.pumpAndSettle();
       expect(find.textContaining('8 novembre 12:30'), findsOneWidget);
       expect(find.textContaining('Clôture inscriptions :'), findsOneWidget);
@@ -165,7 +171,7 @@ void main() {
       tester,
     ) async {
       await open(tester, width: width);
-      await tester.tap(find.text('MOB-044 · Paiements'));
+      await selectScenario(tester, 'MOB-044 · Paiements');
       await tester.pumpAndSettle();
       expect(find.text('À payer'), findsOneWidget);
       for (final alias in paymentAliases) {
@@ -177,7 +183,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('dev-payment-label')), findsOneWidget);
       expect(find.text('Vérification bancaire'), findsOneWidget);
-      await tester.tap(find.text('COM-147 · Inscriptions'));
+      await selectScenario(tester, 'COM-147 · Inscriptions');
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('dev-simulate-error')));
       await tester.pumpAndSettle();
