@@ -69,6 +69,37 @@ function buildLoggingDb() {
 }
 
 describe('communicationTemplates Cloud Functions helper', () => {
+  it.each(['subject', 'htmlContent'])('rejects AST-like objects in %s before compilation', (field) => {
+    const Handlebars = require('handlebars');
+    const compile = jest.spyOn(Handlebars, 'compile');
+    try {
+      const template = { subject: 'Valid subject', htmlContent: '<p>Valid</p>' };
+      template[field] = { type: 'Program', body: [] };
+      expect(() => renderCommunicationTemplate(template, {})).toThrow(`${field} doit être du texte`);
+      expect(compile).not.toHaveBeenCalled();
+    } finally {
+      compile.mockRestore();
+    }
+  });
+
+  it.each([false, 0, 42, [], ['text']])('rejects non-string template values (%j)', (value) => {
+    for (const field of ['subject', 'htmlContent']) {
+      expect(() => renderCommunicationTemplate({ [field]: value }, {})).toThrow(TypeError);
+    }
+  });
+
+  it.each([null, undefined, [], 'text'])('rejects an invalid template container (%j)', (template) => {
+    expect(() => renderCommunicationTemplate(template, {})).toThrow(TypeError);
+  });
+
+  it('preserves absent fields and renders normal strings with HTML escaping', () => {
+    expect(renderCommunicationTemplate({}, {})).toEqual({ subject: '', html: '' });
+    expect(renderCommunicationTemplate({ subject: null, htmlContent: undefined }, {}))
+      .toEqual({ subject: '', html: '' });
+    expect(renderCommunicationTemplate({ subject: 'Bonjour {{name}}', htmlContent: '<p>{{name}}</p>' }, { name: '<Jan>' }))
+      .toEqual({ subject: 'Bonjour &lt;Jan&gt;', html: '<p>&lt;Jan&gt;</p>' });
+  });
+
   it('prefers a default active Firestore template', async () => {
     const db = buildTemplateDb([
       {
