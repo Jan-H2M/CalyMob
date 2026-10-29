@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { validateManifest, sha256, ARTIFACTS } = require('./verify_store_release.cjs');
+const { WORKFLOW_ID } = require('./build_number_sync.cjs');
 
 function fixture(platform = 'ios') {
   const head = 'a'.repeat(40);
@@ -10,6 +11,11 @@ function fixture(platform = 'ios') {
     artifactPath: ARTIFACTS[platform], artifactHash: hash, notes: 'Texte approuvé.' };
   const manifest = { schemaVersion: 2, draft: false, sourceCommit: head, sourceTree: tree,
     version: context.version, build: context.build,
+    buildNumberSource: {
+      provider: 'app-store-connect', workflowId: WORKFLOW_ID,
+      observedAt: '2026-08-31T09:55:00Z', observedVersion: context.version, observedBuild: 203,
+      reservedVersion: context.version, reservedBuild: 204, relation: 'reserved-next',
+    },
     platforms: [platform], allowedActions: { [platform]: ['upload', 'submit', 'notes'] },
     notes: { 'fr-FR': context.notes },
     janApproval: { approvedBy: 'Jan Andriessens', approvedAt: '2026-08-31T10:00:00Z', evidence: 'synthetic approval fixture',
@@ -73,6 +79,19 @@ test('missing manifest and stale source/artifact/notes/version/platform fail clo
   }
   manifest.schemaVersion = 1;
   assert.throws(() => validateManifest(manifest, context));
+});
+
+test('missing or inconsistent App Store/Xcode Cloud build evidence fails closed', () => {
+  for (const mutate of [
+    (m) => { delete m.buildNumberSource; },
+    (m) => { m.buildNumberSource.workflowId = 'wrong'; },
+    (m) => { m.buildNumberSource.observedBuild = 204; },
+    (m) => { m.buildNumberSource.reservedBuild = 205; },
+  ]) {
+    const { manifest, context } = fixture();
+    mutate(manifest);
+    assert.throws(() => validateManifest(manifest, context));
+  }
 });
 
 test('approval and both review records are mandatory and bound to release', () => {

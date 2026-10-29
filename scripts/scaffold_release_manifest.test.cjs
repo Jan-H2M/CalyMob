@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createDraft, parseArgs } = require('./scaffold_release_manifest.cjs');
 const { validateManifest, sha256, ARTIFACTS } = require('./verify_store_release.cjs');
+const { WORKFLOW_ID } = require('./build_number_sync.cjs');
 
 function fixture() {
   const sourceCommit = 'a'.repeat(40);
@@ -11,6 +12,11 @@ function fixture() {
   const artifactHash = 'b'.repeat(64);
   const notes = 'Texte approuvé.';
   const platform = 'ios';
+  const buildNumberSource = {
+    provider: 'app-store-connect', workflowId: WORKFLOW_ID,
+    observedAt: '2026-10-29T16:32:00Z', observedVersion: '1.22.4', observedBuild: 213,
+    reservedVersion: '1.23.0', reservedBuild: 214, relation: 'reserved-next',
+  };
   const draft = createDraft({
     sourceCommit,
     sourceTree,
@@ -19,6 +25,7 @@ function fixture() {
     platforms: [platform],
     notes,
     artifacts: { [platform]: { path: ARTIFACTS[platform], sha256: artifactHash } },
+    buildNumberSource,
   });
   const context = {
     platform,
@@ -32,7 +39,7 @@ function fixture() {
     artifactHash,
     notes,
   };
-  return { draft, context };
+  return { draft, context, buildNumberSource };
 }
 
 test('CLI requires an external output and explicit supported platforms', () => {
@@ -44,8 +51,9 @@ test('CLI requires an external output and explicit supported platforms', () => {
 });
 
 test('scaffold never fabricates approval, review, test, or artifact provenance', () => {
-  const { draft, context } = fixture();
+  const { draft, context, buildNumberSource } = fixture();
   assert.equal(draft.schemaVersion, 2);
+  assert.deepEqual(draft.buildNumberSource, buildNumberSource);
   assert.equal(draft.draft, true);
   assert.deepEqual(draft.allowedActions.ios, []);
   assert.equal(draft.janApproval.approvedBy, null);

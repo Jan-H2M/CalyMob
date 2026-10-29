@@ -53,6 +53,25 @@ def verify_ios_store_release(action, options = {})
 end
 
 platform :ios do
+  desc "Print the latest CalyMob App Store Connect marketing version and build number (read-only)"
+  lane :build_number_status do
+    require "spaceship"
+    Spaceship::ConnectAPI.token = calymob_connect_api_token
+    app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
+    UI.user_error!('CalyMob app was not found in App Store Connect') unless app
+    builds = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id,
+      platform: Spaceship::ConnectAPI::Platform::IOS,
+      sort: '-uploadedDate',
+      limit: 200
+    )
+    numeric_builds = builds.select { |build| build.version.to_s.match?(/\A\d+\z/) }
+    latest = numeric_builds.max_by { |build| build.version.to_i }
+    UI.user_error!('No numeric CalyMob iOS build was found in App Store Connect') unless latest
+    UI.message("CALYMOB_ASC_VERSION=#{latest.app_version}")
+    UI.message("CALYMOB_ASC_BUILD=#{latest.version}")
+  end
+
   desc "Upload IPA to App Store Connect (TestFlight)"
   lane :deploy do
     release = verify_ios_store_release('upload', channel: 'internal')

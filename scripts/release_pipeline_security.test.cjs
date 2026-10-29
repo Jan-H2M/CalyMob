@@ -109,6 +109,18 @@ test('Fastlane wrapper resolves a working locked bundle or supported Homebrew la
   assert.doesNotMatch(wrapper, /command -v fastlane/);
 });
 
+test('store mutations fail closed on the shared App Store/Xcode Cloud build counter', () => {
+  const wrapper = read('scripts/run_fastlane.sh');
+  const cloud = read('ci_scripts/ci_post_clone.sh');
+  const scaffold = read('scripts/scaffold_release_manifest.cjs');
+  assert.match(wrapper, /check_build_number_sync\.sh/);
+  assert.match(wrapper, /android:deploy\|android:submit\|ios:deploy\|ios:release\|ios:submit\|ios:update_notes/);
+  assert.match(cloud, /CI_BUILD_NUMBER.*RESERVED_BUILD_NUMBER/);
+  assert.doesNotMatch(cloud, /> 226|exceed existing App Store Connect build 226/);
+  assert.match(scaffold, /buildNumberSource/);
+  assert.match(scaffold, /read_app_store_build_number\.sh/);
+});
+
 test('secret scan limits a newly created branch to its tip commit', () => {
   const workflow = read('.github/workflows/secret-scan.yml');
   assert.match(workflow, /BASE_SHA.*github\.event\.before/);

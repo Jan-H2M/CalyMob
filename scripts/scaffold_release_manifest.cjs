@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { ARTIFACTS } = require('./verify_store_release.cjs');
+const { WORKFLOW_ID, assessBuildNumberSync } = require('./build_number_sync.cjs');
 
 const NOTES = {
   android: ({ build }) => `android/fastlane/metadata/android/fr-FR/changelogs/${build}.txt`,
@@ -40,7 +41,8 @@ function pendingRecord(extra = {}) {
   return { ...extra, sourceCommit: null, sourceTree: null, evidence: null };
 }
 
-function createDraft({ sourceCommit, sourceTree, version, build, platforms, notes, artifacts }) {
+function createDraft({ sourceCommit, sourceTree, version, build, platforms, notes, artifacts,
+  buildNumberSource }) {
   const emptyActions = Object.fromEntries(platforms.map((platform) => [platform, []]));
   const nativeReview = Object.fromEntries(platforms.map((platform) => [platform, pendingRecord({
     reviewer: null,
@@ -64,6 +66,7 @@ function createDraft({ sourceCommit, sourceTree, version, build, platforms, note
     sourceTree,
     version,
     build,
+    buildNumberSource,
     platforms,
     allowedActions: emptyActions,
     notes: { 'fr-FR': notes },
@@ -108,6 +111,28 @@ function main(argv = process.argv.slice(2)) {
   requireThat(versionMatch, 'invalid pubspec version');
   const [, version, build] = versionMatch;
 
+  const liveBuild = JSON.parse(execFileSync(
+    path.join(root, 'scripts', 'read_app_store_build_number.sh'),
+    ['json'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+  ));
+  const buildNumberRelation = assessBuildNumberSync({
+    localVersion: version,
+    localBuild: build,
+    latestVersion: liveBuild.version,
+    latestBuild: liveBuild.build,
+  });
+  const buildNumberSource = {
+    provider: 'app-store-connect',
+    workflowId: WORKFLOW_ID,
+    observedAt: new Date().toISOString(),
+    observedVersion: liveBuild.version,
+    observedBuild: liveBuild.build,
+    reservedVersion: version,
+    reservedBuild: Number(build),
+    relation: buildNumberRelation.relation,
+  };
+
   const notesByPlatform = platforms.map((platform) => fs.readFileSync(
     path.join(root, NOTES[platform]({ build })), 'utf8'
   ).trim());
@@ -130,6 +155,7 @@ function main(argv = process.argv.slice(2)) {
 
   const draft = createDraft({
     sourceCommit, sourceTree, version, build, platforms, notes: notesByPlatform[0], artifacts,
+    buildNumberSource,
   });
   const descriptor = fs.openSync(resolvedOutput, 'wx', 0o600);
   try {
@@ -140,7 +166,7 @@ function main(argv = process.argv.slice(2)) {
   }
   process.stdout.write(`${JSON.stringify({
     output: resolvedOutput, sourceCommit, sourceTree, version, build, platforms,
-    draft: true, uploadAuthorized: false,
+    draft: true, uploadAuthorized: false, buildNumberSource,
   })}\n`);
 }
 

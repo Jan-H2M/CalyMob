@@ -1,4 +1,9 @@
 {
+  "_snapshot": {
+    "notice": "Read-only documentation snapshot only. App Store Connect workflow D11B66EC is authoritative; do not apply this JSON as configuration.",
+    "observedAt": "2026-10-29",
+    "latestObservedAppStoreBuild": 535
+  },
   "data": {
     "type": "ciWorkflows",
     "id": "D11B66EC-6E95-43A4-B345-727D1992D72A",

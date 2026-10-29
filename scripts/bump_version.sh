@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Bump version number in pubspec.yaml
 # Usage: ./bump_version.sh [major|minor|patch]
 # Default: patch
@@ -6,13 +7,14 @@
 cd "$(dirname "$0")/.."
 
 # Read current version
-CURRENT_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
-VERSION_NAME=$(echo $CURRENT_VERSION | cut -d'+' -f1)
-BUILD_NUMBER=$(echo $CURRENT_VERSION | cut -d'+' -f2)
-
-MAJOR=$(echo $VERSION_NAME | cut -d'.' -f1)
-MINOR=$(echo $VERSION_NAME | cut -d'.' -f2)
-PATCH=$(echo $VERSION_NAME | cut -d'.' -f3)
+CURRENT_VERSION=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+if [[ ! "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+  echo "Invalid pubspec version: $CURRENT_VERSION" >&2
+  exit 1
+fi
+MAJOR=${BASH_REMATCH[1]}
+MINOR=${BASH_REMATCH[2]}
+PATCH=${BASH_REMATCH[3]}
 
 # Bump version based on argument
 case "${1:-patch}" in
@@ -34,8 +36,10 @@ case "${1:-patch}" in
     ;;
 esac
 
-# Always increment build number
-BUILD_NUMBER=$((BUILD_NUMBER + 1))
+# App Store Connect/Xcode Cloud owns the product-wide build counter. Reserve
+# exactly its next number; never increment a stale local counter in isolation.
+IFS=$'\t' read -r ASC_VERSION ASC_BUILD < <(scripts/read_app_store_build_number.sh tsv)
+BUILD_NUMBER=$((ASC_BUILD + 1))
 
 NEW_VERSION="$MAJOR.$MINOR.$PATCH+$BUILD_NUMBER"
 NEW_VERSION_NAME="$MAJOR.$MINOR.$PATCH"
@@ -44,6 +48,7 @@ NEW_VERSION_NAME="$MAJOR.$MINOR.$PATCH"
 sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
 
 echo "Version bumped: $CURRENT_VERSION → $NEW_VERSION"
+echo "Build $BUILD_NUMBER reserved from App Store Connect latest $ASC_VERSION+$ASC_BUILD."
 
 # ⚠️  Firestore version wordt NIET meer automatisch bijgewerkt!
 # De versie wordt pas gepubliceerd als je op "Publier" drukt in CalyMob > Mon Profil > Paramètres.
