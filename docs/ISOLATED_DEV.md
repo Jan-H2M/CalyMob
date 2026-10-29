@@ -70,6 +70,12 @@ serving. Do not host this lab on the existing production-backed Vercel project.
    the restricted DTO reader with an in-memory invoker; no full profile/snapshot
    reader or actual callable is used. Row navigation is disabled, not scrolling
    or retries. This is not a server-role authorization test.
+7. **MOB-036 · Apnée**: the actual pool widget renders two fictional planned
+   A1/A2 rosters. Try directory failure/retry, changed identities, an empty plan,
+   an eight-second name timeout and a planning error/reload. These are local
+   streams only, never real sessions, attendance, QR checks or validation.
+   The scenario chooser is compact so adding cases does not hide the controls
+   on narrow screens. This menu exists only in the standalone test target.
 
 ## Automated verification
 

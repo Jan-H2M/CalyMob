@@ -37,6 +37,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final SessionMessageService _messageService = SessionMessageService();
   late Stream<PiscineSession?> _sessionStream;
   late Stream<List<PoolApneeLesson>> _apneeLessonsStream;
+  late final Future<Map<String, String>> Function(Set<String>)
+      _resolveApneeNames;
   List<SessionChatGroup> _chatGroups = [];
 
   @override
@@ -60,6 +62,21 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               .map((doc) => PoolApneeLesson.fromMap(doc.data()))
               .toList(),
         );
+    _resolveApneeNames = (ids) async {
+      final names = <String, String>{};
+      await Future.wait(
+        ids.map((id) async {
+          final directory = await FirebaseFirestore.instance
+              .doc('clubs/$clubId/member_directory/$id')
+              .get();
+          final data = directory.data();
+          if (directory.exists && data != null) {
+            names[id] = memberDisplayName(data);
+          }
+        }),
+      );
+      return names;
+    };
 
     // Get available chat groups for this user
     if (userId != null) {
@@ -210,21 +227,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       const SizedBox(height: 16),
                       PoolApneeOverview(
                         lessons: _apneeLessonsStream,
-                        resolveNames: (ids) async {
-                          final names = <String, String>{};
-                          await Future.wait(
-                            ids.map((id) async {
-                              final directory = await FirebaseFirestore.instance
-                                  .doc('clubs/$clubId/member_directory/$id')
-                                  .get();
-                              final data = directory.data();
-                              if (directory.exists && data != null) {
-                                names[id] = memberDisplayName(data);
-                              }
-                            }),
-                          );
-                          return names;
-                        },
+                        resolveNames: _resolveApneeNames,
                       ),
                     ],
 

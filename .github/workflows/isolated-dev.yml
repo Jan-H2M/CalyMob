@@ -9,6 +9,9 @@ on:
       - 'test/dev/**'
       - 'test/support/isolated_dev_app.dart'
       - 'test/support/formation_dev_scenarios.dart'
+      - 'test/support/apnee_dev_scenario.dart'
+      - 'lib/widgets/piscine/pool_apnee_overview.dart'
+      - 'lib/screens/piscine/session_detail_screen.dart'
       - 'lib/screens/profile/who_is_who_screen.dart'
       - 'lib/models/participant_operation.dart'
       - 'lib/models/user_event_registration.dart'
@@ -25,6 +28,9 @@ on:
       - 'test/dev/**'
       - 'test/support/isolated_dev_app.dart'
       - 'test/support/formation_dev_scenarios.dart'
+      - 'test/support/apnee_dev_scenario.dart'
+      - 'lib/widgets/piscine/pool_apnee_overview.dart'
+      - 'lib/screens/piscine/session_detail_screen.dart'
       - 'lib/widgets/operation_date_metadata.dart'
       - 'lib/widgets/grouped_dive_locations.dart'
       - 'lib/models/dive_location.dart'
@@ -53,6 +59,8 @@ jobs:
         run: flutter test test/dev/isolated_dev_test.dart test/screens/formation_list_attention_order_test.dart test/screens/formation_list_error_state_test.dart test/services/pool_formation_overview_reader_test.dart test/models/formation_modality_progress_test.dart test/models/participant_operation_untrusted_payment_aliases_test.dart test/models/participant_operation_payment_status_test.dart test/services/operation_payment_status_integrity_test.dart test/utils/event_registration_error_test.dart test/screens/operation_detail_unregister_test.dart test/models/dive_environment_test.dart test/utils/dive_location_search_test.dart test/services/dive_location_sync_contract_test.dart
       - name: Real Chrome widget execution (fictional data only)
         run: flutter test --platform chrome test/dev
+      - name: Formation and apnea recovery regression contracts
+        run: flutter test test/dev/formation_dev_test.dart test/dev/apnee_dev_test.dart test/widgets/pool_apnee_overview_test.dart test/widgets/pool_apnee_retry_dev_test.dart test/services/pool_formation_overview_reader_test.dart test/models/formation_modality_progress_test.dart
       - name: Build the separate isolated DEV target (never lib/main.dart)
         run: node scripts/isolated-dev/build.mjs
       - name: Smoke the actual release artifact in a fresh offline Chrome profile

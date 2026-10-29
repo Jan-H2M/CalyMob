@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'formation_dev_scenarios.dart';
+import 'apnee_dev_scenario.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
@@ -53,7 +54,8 @@ Future<void> main() async {
     'registration': 2,
     'dates': 3,
     'environments': 4,
-    'formation': 5
+    'formation': 5,
+    'apnee': 6
   };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
@@ -268,7 +270,8 @@ class _DevHomeState extends State<_DevHome> {
                     key: const Key('dev-scenario-picker'),
                     initialValue: page,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Scénario de test fictif'),
+                    decoration: const InputDecoration(
+                        labelText: 'Scénario de test fictif'),
                     items: [
                       for (final (index, label) in const [
                         (0, 'MOB-048 · Élèves'),
@@ -277,10 +280,13 @@ class _DevHomeState extends State<_DevHome> {
                         (3, 'MOB-045 · Dates'),
                         (4, 'MOB-046 · Milieux'),
                         (5, 'MOB-033 · Formation'),
+                        (6, 'MOB-036 · Apnée'),
                       ])
                         DropdownMenuItem(value: index, child: Text(label)),
                     ],
-                    onChanged: (value) { if (value != null) setState(() => page = value); },
+                    onChanged: (value) {
+                      if (value != null) setState(() => page = value);
+                    },
                   ),
                 ),
                 Expanded(
@@ -292,7 +298,8 @@ class _DevHomeState extends State<_DevHome> {
                       2 => const _Registration(),
                       3 => const FictionalDates(),
                       4 => const FictionalEnvironments(),
-                      _ => const FictionalFormation(),
+                      5 => const FictionalFormation(),
+                      _ => const FictionalApnee(),
                     },
                   ),
                 ),

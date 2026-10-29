@@ -155,14 +155,16 @@ class _FictionalFormationState extends State<FictionalFormation> {
                       : FormationTrackingScope.full,
                   allowDossierNavigation: false,
                   profilesLoader: (_) async {
-                    if (pool)
+                    if (pool) {
                       throw StateError('Pool must never read full profiles');
+                    }
                     checkFailure();
                     return devFormationProfiles;
                   },
                   snapshotsLoader: (_) async {
-                    if (pool)
+                    if (pool) {
                       throw StateError('Pool must never read full snapshots');
+                    }
                     return devFormationSnapshots(extraGoal: extraGoal);
                   },
                   poolStudentsLoader: (_) => PoolFormationOverviewReader(
