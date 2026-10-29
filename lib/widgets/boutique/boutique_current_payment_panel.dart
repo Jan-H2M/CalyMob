@@ -98,7 +98,8 @@ class _BoutiqueCurrentPaymentPanelState
       if (!mounted || widget.orderId != startingOrderId) return;
       if (current['requestId'] != shown['requestId'] ||
           current['revision'] != shown['revision'] ||
-          current['amount'] != shown['amount']) {
+          current['amount'] != shown['amount'] ||
+          current['communication'] != shown['communication']) {
         if (mounted) {
           setState(() => _payment = Future.value(current));
         }
@@ -115,6 +116,7 @@ class _BoutiqueCurrentPaymentPanelState
           'requestId': current['requestId'],
           'revision': current['revision'],
           'amount': current['amount'],
+          'communication': current['communication'],
         });
       }
       if (mounted) {
@@ -156,8 +158,9 @@ class _BoutiqueCurrentPaymentPanelState
               request.isNotEmpty &&
               amount > 0 &&
               epc is String &&
-              epc.split('\n').length >= 8 &&
-              epc.split('\n')[7] == 'EUR${amount.toStringAsFixed(2)}';
+              epc.split('\n').length >= 11 &&
+              epc.split('\n')[7] == 'EUR${amount.toStringAsFixed(2)}' &&
+              epc.split('\n')[10] == data['communication'];
           return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -184,6 +187,8 @@ class _BoutiqueCurrentPaymentPanelState
                       backgroundColor: Colors.white),
                   Text('Bénéficiaire : ${data['beneficiary']}'),
                   Text('IBAN : ${data['iban']}'),
+                  SelectableText(
+                      'Communication libre : ${data['communication']}'),
                   PaymentCopyButton(
                       value: data['iban']?.toString() ?? '',
                       label: 'Copier l’IBAN',

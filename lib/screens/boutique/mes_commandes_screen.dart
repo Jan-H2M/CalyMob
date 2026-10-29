@@ -361,7 +361,8 @@ class _OrderDetailScreen extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    if (paymentCommunication.isNotEmpty) ...[
+                    if (paymentCommunication.isNotEmpty &&
+                        order['paymentPlan'] == null) ...[
                       const SizedBox(height: 12),
                       Text(
                         paymentCommunication,

@@ -410,7 +410,7 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const rendered = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const subject = currentPayment?.kind === 'supplement' ? `Complément de paiement — ${rendered.subject}` : rendered.subject;
-  const html = currentPayment ? `<p><strong>Demande actuelle : ${formatAmount(currentPayment.amount)} uniquement.</strong> Total de la commande : ${formatAmount(currentPayment.orderTotal)}. Déjà reçu en banque : ${formatAmount(currentPayment.receivedAmount)}. Virement déclaré en cours, non reçu : ${formatAmount(currentPayment.reportedAmount)}.</p><p>Ne payez pas à nouveau le total. Les anciens e-mails et QR ne peuvent pas être rappelés. Avant de payer, consultez toujours la demande actuelle dans CalyMob → Mes commandes.</p>${rendered.html}` : rendered.html;
+  const html = currentPayment ? `<p><strong>Demande actuelle : ${formatAmount(currentPayment.amount)} uniquement.</strong> Total de la commande : ${formatAmount(currentPayment.orderTotal)}. Déjà reçu en banque : ${formatAmount(currentPayment.receivedAmount)}. Virement déclaré en cours, non reçu : ${formatAmount(currentPayment.reportedAmount)}.</p><p>Communication libre : <strong>${currentPayment.communication}</strong></p><p>${currentPayment.receivedAmount > 0 || currentPayment.reportedAmount > 0 ? 'Ne payez pas à nouveau le total. ' : ''}Les anciens e-mails et QR ne peuvent pas être rappelés. Avant de payer, consultez toujours la demande actuelle dans CalyMob → Mes commandes.</p>${rendered.html}` : rendered.html;
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
   const entityLabel = `Commande ${order.orderNumber}`;
   const recipientName = buyer.displayName || recipientEmail;
@@ -971,7 +971,7 @@ exports.sendBoutiqueOrderPaymentEmail = onCall(
       }
       if (order.paymentPlan) {
         const context = currentBoutiquePayment(order);
-        assertCurrentPayment({ requestId: request.data?.requestId, revision: request.data?.revision, amount: request.data?.amount }, context);
+        assertCurrentPayment({ requestId: request.data?.requestId, revision: request.data?.revision, amount: request.data?.amount, communication: request.data?.communication }, context);
       }
       if (!order.paymentPlan && (order.status !== 'awaiting_payment' || order.payment?.status !== 'pending')) {
         throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Cette commande n’est plus en attente de paiement.');

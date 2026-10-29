@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:calymob/widgets/boutique/boutique_current_payment_panel.dart';
+import 'package:calymob/widgets/payment_communication_copy_button.dart';
+
+const supplementReference = '+++BTQ-2026-9001-SABCDEF0123456789ABCDEF01+++';
 
 Map<String, dynamic> payment(
-        {double amount = 6.62, String revision = 'qa-r1'}) =>
+        {double amount = 6.62,
+        String revision = 'qa-r1',
+        String communication = supplementReference}) =>
     {
       'orderTotal': 78.62,
       'receivedAmount': 0,
@@ -15,11 +20,11 @@ Map<String, dynamic> payment(
       'requestId': 'supplement-qa',
       'kind': 'supplement',
       'revision': revision,
-      'communication': '+++BTQ-2026-9001+++',
+      'communication': communication,
       'iban': 'BE68539007547034',
       'beneficiary': 'Club QA',
       'epcPayload':
-          'BCD\n002\n1\nSCT\n\nClub QA\nBE68539007547034\nEUR${amount.toStringAsFixed(2)}\n\n\n+++BTQ-2026-9001+++',
+          'BCD\n002\n1\nSCT\n\nClub QA\nBE68539007547034\nEUR${amount.toStringAsFixed(2)}\n\n\n$communication',
       'oldInstructionsObsolete': true,
     };
 
@@ -40,6 +45,14 @@ void main() {
     expect(find.textContaining('Complément uniquement'), findsOneWidget);
     final qr = tester.widget<QrImageView>(find.byType(QrImageView));
     expect((qr.key as ValueKey<String>).value.split('\n')[7], 'EUR6.62');
+    expect((qr.key as ValueKey<String>).value.split('\n')[10],
+        supplementReference);
+    expect(
+        tester
+            .widget<PaymentCommunicationCopyButton>(
+                find.byType(PaymentCommunicationCopyButton))
+            .communication,
+        supplementReference);
     expect(find.textContaining('Ne payez pas de nouveau le total'),
         findsOneWidget);
     expect(find.textContaining('Déclaré en cours, non reçu'), findsOneWidget);
@@ -119,5 +132,46 @@ void main() {
             .value
             .split('\n')[7],
         'EUR12.00');
+  });
+  testWidgets(
+      'a same-amount reference change blocks stale email and updates QR and copy together',
+      (tester) async {
+    int calls = 0;
+    int sent = 0;
+    const changed = '+++BTQ-2026-9001-S0123456789ABCDEF01234567+++';
+    await tester.pumpWidget(panel(
+        () async => payment(
+            communication: calls++ == 0 ? supplementReference : changed),
+        email: (_) async => sent++));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Envoyer cette demande par e-mail'));
+    await tester.tap(find.text('Envoyer cette demande par e-mail'));
+    await tester.pumpAndSettle();
+    expect(sent, 0);
+    expect(find.textContaining('demande modifiée'), findsOneWidget);
+    expect(
+        (tester.widget<QrImageView>(find.byType(QrImageView)).key
+                as ValueKey<String>)
+            .value
+            .split('\n')[10],
+        changed);
+    expect(
+        tester
+            .widget<PaymentCommunicationCopyButton>(
+                find.byType(PaymentCommunicationCopyButton))
+            .communication,
+        changed);
+  });
+  testWidgets(
+      'a QR for a different reference never becomes the current payable action',
+      (tester) async {
+    await tester.pumpWidget(panel(() async => {
+          ...payment(),
+          'epcPayload':
+              payment(communication: '+++BTQ-2026-9001+++')['epcPayload']
+        }));
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsNothing);
+    expect(find.byType(PaymentCommunicationCopyButton), findsNothing);
   });
 }

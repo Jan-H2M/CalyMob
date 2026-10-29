@@ -1,5 +1,5 @@
 const { buildEpcQrPayload, buildDomainError } = require('./shared');
-const { currentPaymentRequest, receivedCents, validatePlan } = require('./paymentPlan');
+const { currentPaymentRequest, receivedCents, validatePlan, requestPaymentReference } = require('./paymentPlan');
 
 function currentBoutiquePayment(order) {
   if (!['awaiting_payment', 'paid'].includes(order.status)) {
@@ -19,7 +19,8 @@ function currentBoutiquePayment(order) {
   }
   const amount = request?.amount || 0;
   if (!Number.isFinite(amount) || amount < 0) throw buildDomainError('INVALID_INPUT', 'Montant invalide.');
-  const communication = order.structuredCommunication || payment.communication || order.orderNumber;
+  const communication = request && order.paymentPlan ? requestPaymentReference(order, request)
+    : order.structuredCommunication || payment.communication || order.orderNumber;
   const iban = String(payment.iban || '').replace(/\s/g, '').toUpperCase();
   const beneficiary = String(payment.beneficiary || '');
   if (request && (!iban || !beneficiary || !communication)) {
@@ -40,7 +41,8 @@ function currentBoutiquePayment(order) {
   };
 }
 function assertCurrentPayment(expected, actual) {
-  if (expected.requestId !== actual.requestId || expected.revision !== actual.revision || expected.amount !== actual.amount) {
+  if (expected.requestId !== actual.requestId || expected.revision !== actual.revision || expected.amount !== actual.amount
+      || expected.communication !== actual.communication) {
     throw buildDomainError('INVALID_INPUT', 'La demande de paiement a changé. Ouvrez à nouveau le paiement actuel.');
   }
 }
