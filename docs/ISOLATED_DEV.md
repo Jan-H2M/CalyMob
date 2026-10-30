@@ -79,8 +79,9 @@ serving. Do not host this lab on the existing production-backed Vercel project.
 
 8. **MOB-051 · Virement bancaire**: open the real registration payment choices
    for an email-only transfer, then the actual member transfer card. Copy the
-   fictional IBAN, 6.62 amount and installment communication. The intentionally
-   invalid account `FICTIF-NON-PAYABLE` prevents any payable EPC QR. There is no
+   fictional account, 6.62 amount and installment communication. The fixture
+   `FICTIF-NON-PAYABLE` is not an IBAN and must never be used for payment;
+   local QR rendering alone is not validation by a bank. There is no
    email handler, bank-app launcher or confirmation action in this scenario.
    These clipboard actions never mark a registration/order paid.
 
