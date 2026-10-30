@@ -135,11 +135,14 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       final assignments = futures[1] as PalanqueeAssignments?;
 
       if (assignments != null) {
+        // Restore planning-only levels before the same level map rehydrates
+        // assigned groups. Real inscriptions are excluded by the restore helper
+        // and retain their authoritative live/member or guest snapshot levels.
+        _restoreSimulationParticipantsFromAssignments(assignments);
         _palanquees = rehydratePalanqueeParticipantLevels(
           assignments.palanquees,
           _memberLevels,
         );
-        _restoreSimulationParticipantsFromAssignments(assignments);
       }
 
       // Load exercise catalog
