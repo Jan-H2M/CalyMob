@@ -36,6 +36,7 @@ import '../../models/tariff.dart';
 import '../../models/event_message.dart';
 import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
+import '../../widgets/event_payment_options_dialog.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import '../../widgets/operation_unregister_button.dart';
@@ -1120,154 +1121,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final choice = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green, size: 28),
-            const SizedBox(width: 12),
-            const Expanded(child: Text('Inscription réussie !')),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.lichtblauw.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.euro, color: AppColors.middenblauw, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      installmentLabel == null
-                          ? 'Montant à payer: ${amount.toStringAsFixed(2)} €'
-                          : '$installmentLabel: ${amount.toStringAsFixed(2)} €',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.middenblauw,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (allowed.contains('qr_immediate'))
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context, 'qr_immediate'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.all(16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.qr_code_2, size: 22),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Payer maintenant',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Affichez le QR et payez avec votre application bancaire',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            if (allowed.contains('qr_email')) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context, 'qr_email'),
-                  icon: const Icon(Icons.email_outlined),
-                  label: const Text('Recevoir le QR par email'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.all(16),
-                  ),
-                ),
-              ),
-            ],
-            if (allowed.contains('on_site')) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context, 'on_site'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey.shade100,
-                    foregroundColor: Colors.blueGrey.shade800,
-                    padding: const EdgeInsets.all(16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.schedule,
-                              size: 22, color: Colors.blueGrey.shade700),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Payer plus tard',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.blueGrey.shade800,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Payez sur place lors de l\'événement',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blueGrey.shade600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+      builder: (context) => EventPaymentOptionsDialog(
+        amount: amount,
+        allowedPaymentMethods: allowed,
+        installmentLabel: installmentLabel,
       ),
     );
 
+    if (!mounted || choice == null) return;
     final operationProvider = context.read<OperationProvider>();
 
-    if (choice == 'qr_immediate' && mounted) {
+    if ((choice == 'qr_immediate' || choice == 'bank_transfer') && mounted) {
       await _showPaymentQrOnDevice(
         operation: operation,
         amount: amount,
@@ -1558,7 +1422,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       bic: bic,
       showConfirmButton: false,
       instructionText:
-          'L’email n’a pas pu être envoyé. Scannez ce QR code avec votre app bancaire pour payer maintenant.',
+          'Scannez ce QR avec un autre appareil ou copiez les coordonnées, '
+          'puis ouvrez votre application bancaire pour effectuer le virement. '
+          'Copier ne confirme aucun paiement.',
       onMarkAsPaid: () async {},
       installmentLabel: installmentLabel,
     );

@@ -7,6 +7,10 @@ on:
       - 'lib/screens/operations/operation_detail_screen.dart'
       - 'lib/models/operation.dart'
       - 'lib/models/participant_operation.dart'
+      - 'lib/widgets/event_payment_options_dialog.dart'
+      - 'lib/widgets/participant_payment_card.dart'
+      - 'test/widgets/event_payment_options_dialog_test.dart'
+      - 'test/widgets/participant_payment_card_test.dart'
       - 'test/screens/operation_detail_unregister_test.dart'
       - 'test/services/operation_payment_status_integrity_test.dart'
       - 'test/providers/operation_provider_selection_test.dart'
@@ -28,5 +32,5 @@ jobs:
           cache: true
       - run: flutter pub get --enforce-lockfile
       - name: Dates, registration actions, live selection and payment boundaries
-        run: flutter test test/screens/operation_detail_unregister_test.dart test/services/operation_payment_status_integrity_test.dart test/providers/operation_provider_selection_test.dart
+        run: flutter test test/screens/operation_detail_unregister_test.dart test/services/operation_payment_status_integrity_test.dart test/providers/operation_provider_selection_test.dart test/widgets/event_payment_options_dialog_test.dart test/widgets/participant_payment_card_test.dart test/widgets/payment_communication_copy_button_test.dart
       - run: git diff --exit-code -- pubspec.lock

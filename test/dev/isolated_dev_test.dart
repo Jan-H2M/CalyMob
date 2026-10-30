@@ -1,4 +1,6 @@
 import '../support/isolated_dev_app.dart';
+import 'package:calymob/widgets/event_payment_options_dialog.dart';
+import 'package:calymob/widgets/participant_payment_card.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +13,7 @@ void main() {
     await tester.tap(find.text(label).last);
     await tester.pumpAndSettle();
   }
+
   setUpAll(() => initializeDateFormatting('fr_FR'));
   test('DEV only accepts the explicit credentialless loopback target', () {
     validateDevOrigin(
@@ -90,6 +93,27 @@ void main() {
     await tester.pumpWidget(const IsolatedDevApp());
     await tester.pumpAndSettle();
   }
+
+  testWidgets('MOB-051 uses real payment widgets with non-payable fixture only',
+      (tester) async {
+    await open(tester);
+    await selectScenario(tester, 'MOB-051 · Virement bancaire');
+    await tester.tap(find.text('Tester les choix de paiement fictifs'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EventPaymentOptionsDialog), findsOneWidget);
+    expect(find.text('Recevoir le QR par email'), findsOneWidget);
+    await tester.tap(find.text('Virement dans mon app bancaire'));
+    await tester.pumpAndSettle();
+    final card = tester
+        .widget<ParticipantPaymentCard>(find.byType(ParticipantPaymentCard));
+    expect(card.clubIban, 'FICTIF-NON-PAYABLE');
+    expect(card.showConfirmButton, isFalse);
+    expect(card.amount, 6.62);
+    expect(find.text('Copier l’IBAN'), findsOneWidget);
+    expect(find.text('Copier le montant'), findsOneWidget);
+    expect(Firebase.apps, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'actual priority list uses fictional loaders and filters without dossier navigation',
