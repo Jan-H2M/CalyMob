@@ -23,7 +23,9 @@ const snapshot = PalanqueeParticipant(
 
 void main() {
   // Install the fake FieldValue delegate before any serialization uses it.
-  setUpAll(() { FakeFirebaseFirestore(); });
+  setUpAll(() {
+    FakeFirebaseFirestore();
+  });
   test('complete unassigned roster roundtrips with zero groups', () {
     const saved = PalanqueeAssignments(simulationParticipants: [snapshot]);
     final data = saved.toFirestore()..remove('updated_at');
@@ -148,6 +150,38 @@ void main() {
     final output = Platform.environment['MOB043_QA_PDF'];
     if (output != null) await File(output).writeAsBytes(bytes);
   });
+
+  testWidgets('saved two-star simulations keep group validation on reopen',
+      (tester) async {
+    const second = PalanqueeParticipant(
+        membreId: 'synthetic-second',
+        membreNom: 'Second example',
+        membrePrenom: 'Planning',
+        niveau: '2');
+    final service = _Assignments()
+      ..saved = const PalanqueeAssignments(
+        simulationParticipants: [snapshot, second],
+        palanquees: [
+          Palanquee(numero: 1, participants: [snapshot, second])
+        ],
+      );
+    await tester.pumpWidget(_host(service));
+    await tester.pumpAndSettle();
+    expect(find.text('2★'), findsNWidgets(2));
+    expect(find.text('20m'), findsOneWidget,
+        reason: 'Stored simulation levels must drive real group validation.');
+    await tester.tap(find.byTooltip('Sauvegarder'));
+    await tester.pumpAndSettle();
+    expect(
+        service.saved!.palanquees.single.participants
+            .every((participant) => participant.niveau == '2'),
+        isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(_host(service));
+    await tester.pumpAndSettle();
+    expect(find.text('20m'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Operation _operation() => Operation(
@@ -202,7 +236,9 @@ class _Members extends Mock implements MemberService {
 
 class _Lifras extends Mock implements LifrasService {
   @override
-  Future<List<ExerciceLIFRAS>> getAllExercices(String clubId) async => [];
+  Future<List<ExerciceLIFRAS>> getAllExercices(String clubId,
+          {bool strict = false}) async =>
+      [];
 }
 
 class _Observations extends Mock implements MemberObservationService {

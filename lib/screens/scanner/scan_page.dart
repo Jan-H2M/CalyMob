@@ -95,7 +95,8 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _lookupMember(String memberId) async {
     debugPrint('🔍 Looking up member: $memberId');
     try {
-      final member = await _memberService.getMemberById(widget.clubId, memberId);
+      final member =
+          await _memberService.getMemberById(widget.clubId, memberId);
 
       if (member == null) {
         debugPrint('❌ Membre non trouvé: $memberId');
@@ -134,7 +135,8 @@ class _ScanPageState extends State<ScanPage> {
       // Note: We no longer check attendance collection - if they're not inscribed,
       // we want to create an inscription for them
 
-      debugPrint('📋 alreadyPresent: $alreadyPresent, inscription: ${inscription != null}');
+      debugPrint(
+          '📋 alreadyPresent: $alreadyPresent, inscription: ${inscription != null}');
 
       // Check if cotisation, certificat AND assurance are valid for auto-registration
       final cotisationValid = member.cotisationStatus == ValidationStatus.valid;
@@ -143,7 +145,8 @@ class _ScanPageState extends State<ScanPage> {
           member.assuranceStatus == ValidationStatus.valid;
       final allValid = cotisationValid && certificatValid && assuranceValid;
 
-      debugPrint('🟢 Auto-register check: cotisation=$cotisationValid, certificat=$certificatValid, assurance=$assuranceValid, allValid=$allValid, alreadyPresent=$alreadyPresent');
+      debugPrint(
+          '🟢 Auto-register check: cotisation=$cotisationValid, certificat=$certificatValid, assurance=$assuranceValid, allValid=$allValid, alreadyPresent=$alreadyPresent');
 
       if (allValid) {
         if (alreadyPresent) {
@@ -170,7 +173,8 @@ class _ScanPageState extends State<ScanPage> {
                           ),
                           const Text(
                             'Déjà enregistré',
-                            style: TextStyle(fontSize: 14, color: Colors.white70),
+                            style:
+                                TextStyle(fontSize: 14, color: Colors.white70),
                           ),
                         ],
                       ),
@@ -181,8 +185,10 @@ class _ScanPageState extends State<ScanPage> {
                 duration: const Duration(seconds: 2),
                 behavior: SnackBarBehavior.floating,
                 margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             );
             _resetScanner();
@@ -272,7 +278,8 @@ class _ScanPageState extends State<ScanPage> {
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
         _resetScanner();
@@ -288,6 +295,7 @@ class _ScanPageState extends State<ScanPage> {
         memberId: member.id,
         memberName: member.fullName,
         scannedBy: currentUser.uid,
+        qrScan: true,
       );
 
       if (mounted) {
@@ -324,7 +332,8 @@ class _ScanPageState extends State<ScanPage> {
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
         _resetScanner();
@@ -338,7 +347,8 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   /// Auto-register member when both cotisation and certificat are valid
-  Future<void> _autoRegisterMember(MemberProfile member, ParticipantOperation? inscription) async {
+  Future<void> _autoRegisterMember(
+      MemberProfile member, ParticipantOperation? inscription) async {
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
     final displayName = authProvider.displayName ?? 'Inconnu';
@@ -361,7 +371,8 @@ class _ScanPageState extends State<ScanPage> {
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: Colors.white, size: 32),
+                  const Icon(Icons.error_outline,
+                      color: Colors.white, size: 32),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -370,7 +381,10 @@ class _ScanPageState extends State<ScanPage> {
                       children: [
                         Text(
                           member.fullName,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white),
                         ),
                         const Text(
                           'Pas inscrit·e — doit d\'abord s\'inscrire dans l\'app',
@@ -432,7 +446,8 @@ class _ScanPageState extends State<ScanPage> {
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
 
@@ -875,9 +890,8 @@ class _ScanPageState extends State<ScanPage> {
                     final torchOn = state.torchState == TorchState.on;
                     return Icon(
                       torchOn ? Icons.flash_on : Icons.flash_off,
-                      color: torchOn
-                          ? AppColors.oranje
-                          : AppColors.textSecondary,
+                      color:
+                          torchOn ? AppColors.oranje : AppColors.textSecondary,
                     );
                   },
                 ),

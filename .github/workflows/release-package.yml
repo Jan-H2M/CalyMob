@@ -1,0 +1,24 @@
+name: Release package (no distribution)
+on:
+  pull_request:
+    branches: [dev]
+permissions:
+  contents: read
+jobs:
+  source-package:
+    if: startsWith(github.head_ref, 'codex/release-next-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Retain both published source lines
+        run: |
+          git merge-base --is-ancestor fe38fe96b7e51146005d30bc8be4b8ff3168ef23 HEAD
+          git merge-base --is-ancestor eb33add9ddf3d36f36218102b8291eb88d49ae1c HEAD
+      - name: Package, metadata, source preservation and fail-closed tooling
+        run: node --test scripts/release_package.test.cjs scripts/build_number_sync.test.cjs scripts/xcode_cloud_environment.test.cjs scripts/verify_store_release.test.cjs scripts/scaffold_release_manifest.test.cjs scripts/release_pipeline_security.test.cjs
+      - name: Shell syntax only (never execute Cloud or distribution scripts)
+        run: bash -n scripts/bump_version.sh scripts/run_fastlane.sh scripts/read_xcode_cloud_build_status.sh scripts/check_build_number_sync.sh && sh -n ci_scripts/ci_post_clone.sh scripts/check_xcode_cloud_environment.sh

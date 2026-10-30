@@ -35,6 +35,25 @@ void main() {
     },
   );
 
+  testWidgets(
+      'inline dossier follows a changed goal even when both remain available',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+            body: MilRequirementsCard(
+                overview: overview, inlineExpanded: true))));
+    expect(find.text('Expériences LIFRAS — Brevet 2*'), findsOneWidget);
+    final changed = MilExperienceOverview(
+        preferredBrevet: '1',
+        sourceVersion: overview.sourceVersion,
+        byBrevet: overview.byBrevet);
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body:
+                MilRequirementsCard(overview: changed, inlineExpanded: true))));
+    expect(find.text('Expériences LIFRAS — Brevet 1*'), findsOneWidget);
+    expect(find.text('Expériences LIFRAS — Brevet 2*'), findsNothing);
+  });
   testWidgets('compact summary opens details, switches brevet and dismisses', (
     tester,
   ) async {
@@ -94,7 +113,7 @@ void main() {
 
     expect(find.text('Cumul carrière • v2026-test'), findsOneWidget);
     expect(find.text('8/20'), findsOneWidget);
-    expect(find.text('Voir les détails LIFRAS'), findsOneWidget);
+    expect(find.text('Voir les détails LIFRAS'), findsNothing);
   });
 
   testWidgets(
@@ -250,7 +269,6 @@ void main() {
     expect(find.text('7/10'), findsNothing);
     expect(find.byKey(const Key('mil-show-details')), findsNothing);
   });
-
   testWidgets('missing legacy data is unavailable, never zero requirements', (
     tester,
   ) async {

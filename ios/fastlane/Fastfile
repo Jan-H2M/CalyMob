@@ -214,6 +214,22 @@ platform :ios do
     UI.important("Live: #{live ? live.version_string + " — " + live.app_store_state : "none"}")
   end
 
+  desc "Read recent build numbers without uploading or submitting"
+  lane :build_status do
+    require 'spaceship'
+    require 'json'
+    Spaceship::ConnectAPI.token = calymob_connect_api_token
+    app = Spaceship::ConnectAPI::App.find('be.calypsodc.calymob')
+    UI.user_error!('Wrong App Store app') unless app && app.id == '6755293289'
+    builds = Spaceship::ConnectAPI.get_builds(
+      filter: {app: app.id}, includes: 'preReleaseVersion',
+      sort: '-uploadedDate', limit: 10).to_models
+    UI.message("CALYMOB_APPLE_BUILDS=#{JSON.generate(builds.map { |b|
+      {version: b.pre_release_version&.version, build: b.version,
+       processing: b.processing_state, uploaded: b.uploaded_date}
+    })}")
+  end
+
   desc "Validate API key connection"
   lane :validate do
     api_key = calymob_app_store_connect_api_key

@@ -44,6 +44,7 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { memberDisplayName } = require('../utils/memberName');
+const { enrollmentId } = require('./apnee/training');
 
 const FUNCTION_NAME = 'onPiscineAttendeeCreated';
 const FUNCTION_REGION = 'europe-west1';
@@ -316,6 +317,12 @@ const onPiscineAttendeeCreated = onDocumentCreated(
     }
 
     // ---- 6. Determine target Formation group ----
+    // Do not implicitly route an active apnée enrollment into SCUBA.
+    // Conflicting legacy enrollments need an explicit administrative choice.
+    for (const track of ['apnee.a1', 'apnee.a2']) {
+      const enrolled = await db.doc(`clubs/${clubId}/apnee_enrollments/${enrollmentId(memberId, track)}`).get();
+      if (enrolled.data()?.status === 'active') return;
+    }
     // Pass the full member object so the override `target_formation_level`
     // is respected (useful for moniteurs in pilot/refresh mode).
     const targetLevel = computeTargetLevel(member);

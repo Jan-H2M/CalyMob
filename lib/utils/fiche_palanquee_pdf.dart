@@ -55,6 +55,13 @@ class FichePalanqueePdf {
     required List<ParticipantOperation> participants,
     required Map<String, String> memberLevels,
   }) async {
+    final effectiveLevels = Map<String, String>.of(memberLevels);
+    for (final participant in participants) {
+      final code = participant.plongeurCode;
+      if (participant.isGuest && code != null && code.trim().isNotEmpty) {
+        effectiveLevels[participant.membreId] = _formatDivingLevel(code, null);
+      }
+    }
     // Préparer les données
     final sortedParticipants = List<ParticipantOperation>.from(participants)
       ..sort((a, b) => (a.membreNom ?? '').compareTo(b.membreNom ?? ''));
@@ -116,7 +123,7 @@ class FichePalanqueePdf {
                   pw.Expanded(
                     flex: 5,
                     child: _buildParticipantsTable(
-                        sortedParticipants, memberLevels),
+                        sortedParticipants, effectiveLevels),
                   ),
                   pw.SizedBox(width: 10),
                   pw.Expanded(

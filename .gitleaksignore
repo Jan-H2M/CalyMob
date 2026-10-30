@@ -1,2 +1,37 @@
 cd03eb4d39bd56dd8dc9fe6f5d8152724c2bf3f4:ios/Podfile.lock:generic-api-key:1843
 cd03eb4d39bd56dd8dc9fe6f5d8152724c2bf3f4:ios/Podfile.lock:generic-api-key:1883
+# Reviewed false positives: generated CocoaPods SHA-1 podspec checksums only.
+# Both Apple Xcode Cloud workers produced these identical lock entries.
+# Fingerprints are restricted to this exact commit, file, rule and line;
+# future checksum changes and all credential/path rules remain scanned.
+# firebase_auth
+fd68bb52ba7371c86426bf7f4c9f1d42910c1030:ios/Podfile.lock:generic-api-key:1843
+# local_auth_darwin
+fd68bb52ba7371c86426bf7f4c9f1d42910c1030:ios/Podfile.lock:generic-api-key:1883
+# 1030U independently reviewable exact historical false positives only.
+# c37e7e09: apnee.a1/a2 domain exercise identifiers, not credentials; both
+# catalogue copies are byte-identical to the inspected historical source.
+# 91065758: read-only QA builtApp.includes guard for the same public Firebase
+# client API identifier already present in lib/firebase_options.dart.
+# No file/rule wildcard: all future credential changes remain scanned.
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:130
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:430
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:610
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:790
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:802
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:862
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:874
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:886
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:898
+c37e7e09ce6f1001921afcaac0da570082799c8a:assets/apnee/lifras-preparation-cards-2025-08.json:generic-api-key:910
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:130
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:430
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:610
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:790
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:802
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:862
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:874
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:886
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:898
+c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:910
+91065758d92817da8b0698e0688ce28f50003e2c:scripts/qa/live-preview-login.cjs:gcp-api-key:157

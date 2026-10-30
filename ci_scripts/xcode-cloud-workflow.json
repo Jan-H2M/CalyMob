@@ -1,34 +1,48 @@
 {
   "_snapshot": {
     "notice": "Read-only documentation snapshot only. The live App Store Connect API is authoritative; never apply this JSON as configuration.",
-    "observedAt": "2026-10-29",
+    "observedAt": "2026-10-30T15:18:27Z",
     "latestObservedXcodeCloudRun": {
       "number": 535,
       "completionStatus": "SUCCEEDED"
     },
     "latestObservedAppStoreBuild": 535,
-    "reservationRule": "Reserve max live Xcode Cloud run number + 1; failed, errored, canceled, and skipped runs consume numbers too."
+    "reservationRule": "Reserve max live Xcode Cloud run number + 1; failed, errored, canceled, and skipped runs consume numbers too.",
+    "releaseBranchNotice": "codex/release-next-1030U is not in the live manual source patterns. No workflow settings were changed; later change/start requires separate authorization."
   },
   "data": {
     "type": "ciWorkflows",
     "id": "D11B66EC-6E95-43A4-B345-727D1992D72A",
     "attributes": {
-      "name": "CalyMob iOS — App Store & TestFlight",
-      "description": "Manual reviewed CalyMob internal TestFlight build: Flutter checks, native iOS tests and Release archive. Public submission is a separately approved action. No backend deployment.",
-      "isEnabled": true,
+      "manualTagStartCondition": null,
       "isLockedForEditing": true,
-      "clean": true,
-      "containerFilePath": "ios/Runner.xcworkspace",
-      "branchStartCondition": null,
       "tagStartCondition": null,
+      "lastModifiedDate": "2026-10-29T14:58:07.74Z",
+      "manualPullRequestStartCondition": null,
+      "description": "Manual reviewed CalyMob TestFlight release: Flutter checks, native iOS tests, Release archive and INTERNAL_ONLY TestFlight distribution. No App Store submission or backend deployment.",
+      "clean": true,
+      "branchStartCondition": null,
+      "containerFilePath": "ios/Runner.xcworkspace",
       "pullRequestStartCondition": null,
       "scheduledStartCondition": null,
+      "isEnabled": true,
+      "name": "CalyMob iOS — TestFlight",
       "manualBranchStartCondition": {
         "source": {
           "isAllMatch": false,
           "patterns": [
-            {"pattern": "dev", "isPrefix": false},
-            {"pattern": "codex/mob-xcode-cloud-20261016", "isPrefix": false}
+            {
+              "pattern": "dev",
+              "isPrefix": false
+            },
+            {
+              "pattern": "codex/mob-xcode-cloud-20261016",
+              "isPrefix": false
+            },
+            {
+              "pattern": "codex/joint-bug-build-20261028",
+              "isPrefix": false
+            }
           ]
         }
       },
@@ -36,35 +50,63 @@
         {
           "name": "Test - iOS",
           "actionType": "TEST",
-          "platform": "IOS",
           "destination": "ANY_IOS_SIMULATOR",
-          "scheme": "Runner",
-          "isRequiredToPass": true,
+          "buildDistributionAudience": null,
           "testConfiguration": {
             "kind": "USE_SCHEME_SETTINGS",
-            "testDestinations": [{
-              "kind": "SIMULATOR",
-              "deviceTypeName": "iPhone 15",
-              "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
-              "runtimeName": "iOS 17.5",
-              "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-5"
-            }]
-          }
+            "testPlanName": "",
+            "testDestinations": [
+              {
+                "deviceTypeName": "iPhone 15",
+                "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
+                "runtimeName": "iOS 17.5",
+                "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-5",
+                "kind": "SIMULATOR"
+              }
+            ]
+          },
+          "scheme": "Runner",
+          "platform": "IOS",
+          "isRequiredToPass": true
         },
         {
-          "name": "Archive - iOS Internal TestFlight",
+          "name": "Archive - iOS",
           "actionType": "ARCHIVE",
-          "platform": "IOS",
           "destination": "ANY_IOS_DEVICE",
+          "buildDistributionAudience": "APP_STORE_ELIGIBLE",
+          "testConfiguration": null,
           "scheme": "Runner",
-          "isRequiredToPass": true,
-          "buildDistributionAudience": "INTERNAL_ONLY"
+          "platform": "IOS",
+          "isRequiredToPass": true
         }
       ]
     },
     "relationships": {
-      "xcodeVersion": {"data": {"type": "ciXcodeVersions", "id": "42533094-17d3-46b2-ada5-1f94ceb94b61"}},
-      "macOsVersion": {"data": {"type": "ciMacOsVersions", "id": "c538a952-ac84-4277-bea4-b9dab48bb96c"}}
+      "macOsVersion": {
+        "data": {
+          "type": "ciMacOsVersions",
+          "id": "c538a952-ac84-4277-bea4-b9dab48bb96c"
+        }
+      },
+      "product": {
+        "data": {
+          "type": "ciProducts",
+          "id": "E3154008-9EFD-4FC5-864B-808B1CEC4CD3"
+        }
+      },
+      "buildRuns": {},
+      "repository": {
+        "data": {
+          "type": "scmRepositories",
+          "id": "32830fd8-765c-44b8-a324-99f9c0d6b3f3"
+        }
+      },
+      "xcodeVersion": {
+        "data": {
+          "type": "ciXcodeVersions",
+          "id": "42533094-17d3-46b2-ada5-1f94ceb94b61"
+        }
+      }
     }
   }
 }

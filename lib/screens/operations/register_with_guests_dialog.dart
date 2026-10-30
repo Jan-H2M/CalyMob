@@ -4,6 +4,7 @@ import '../../models/tariff.dart';
 import '../../models/operation.dart';
 import '../../models/supplement.dart';
 import '../../services/operation_service.dart';
+import '../../widgets/guest_diving_level_field.dart';
 
 /// Dialog that lets a member register themselves AND add guests in one
 /// go, with a single aggregated total. Used when the event has
@@ -44,6 +45,7 @@ class _GuestEntry {
   String prenom;
   String nom;
   Tariff tariff;
+  String? divingLevel;
 
   /// Per-guest supplement selections. Same supplements list as the
   /// inviting member sees, but each guest picks independently.
@@ -152,6 +154,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
               'nom': canonicalRegistrationGuestName(g.nom),
               'prix': g.tariff.price,
               'tariffId': widget.guestTariffs.isEmpty ? null : g.tariff.id,
+              'divingLevel': g.divingLevel,
               'supplements': g.selectedSupplements.values.toList(),
               'supplementTotal': g.supplementTotal,
             })
@@ -491,6 +494,16 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
                 visualDensity: VisualDensity.compact,
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          GuestDivingLevelField(
+            key: ObjectKey(guest),
+            value: guest.divingLevel,
+            compact: true,
+            fillColor: Colors.white.withValues(alpha: 0.85),
+            onChanged: (value) {
+              setState(() => guest.divingLevel = value);
+            },
           ),
           const SizedBox(height: 6),
           if (hasMultipleTariffs)

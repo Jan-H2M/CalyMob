@@ -7,6 +7,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+      'live canonical target suppresses old snapshot trajectory and counters',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: FormationListView(
+      clubId: 'qa',
+      searchQuery: '',
+      scope: FormationTrackingScope.full,
+      showTargetLevels: true,
+      profilesLoader: (_) async => [
+        MemberProfile(
+            id: 'student',
+            nom: 'Synthétique',
+            prenom: 'Élève',
+            email: '',
+            memberStatus: 'active',
+            plongeurCode: '1',
+            targetFormationLevel: '3*',
+            formationActive: true)
+      ],
+      snapshotsLoader: (_) async => [
+        FormationSnapshotDoc.fromMap('student', {
+          'target_level': '2*',
+          'current_code': '1',
+          'formation_pct': 88,
+          'mil_experience': {'module_pct': 75},
+          'attention_points': ['old target'],
+        })
+      ],
+    ))));
+    await tester.pumpAndSettle();
+    expect(find.text('1 → 3*'), findsOneWidget);
+    expect(find.textContaining('→ 2*'), findsNothing);
+    expect(find.text('Progression en cours de recalcul'), findsNothing);
+    expect(find.textContaining('88%'), findsNothing);
+  });
   Widget subject({
     required FormationTrackingScope scope,
     Future<List<PoolFormationStudent>> Function(String)? poolStudentsLoader,

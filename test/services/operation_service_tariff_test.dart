@@ -398,6 +398,83 @@ void main() {
     );
   });
 
+  test('guest diving levels are canonical and optional', () {
+    expect(canonicalRegistrationGuestDivingLevel(' 2 * '), '2');
+    expect(canonicalRegistrationGuestDivingLevel('P3'), '3');
+    expect(canonicalRegistrationGuestDivingLevel('mn'), 'MN');
+    expect(canonicalRegistrationGuestDivingLevel(null), isNull);
+    expect(
+      () => canonicalRegistrationGuestDivingLevel('inconnu'),
+      throwsFormatException,
+    );
+
+    expect(
+      const RegistrationGuestRequest(
+        firstName: 'Vinciane',
+        lastName: 'Invitée',
+        divingLevel: '2★',
+      ).toCallablePayload(),
+      {
+        'firstName': 'Vinciane',
+        'lastName': 'Invitée',
+        'divingLevel': '2',
+        'selectedSupplementIds': <String>[],
+      },
+    );
+    expect(
+      const RegistrationGuestRequest(
+        firstName: 'Ancienne',
+        lastName: 'Invitée',
+      ).toCallablePayload(),
+      isNot(contains('divingLevel')),
+    );
+
+    final fingerprint = OperationService.registrationRequestPayloadFingerprint(
+      clubId: 'club-1',
+      operationId: 'event-1',
+      selectedSupplements: [
+        SelectedSupplement(id: 'tank', name: 'Bloc', price: 5),
+        SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+      ],
+      guests: [
+        RegistrationGuestRequest(
+          firstName: 'Bob',
+          lastName: 'Guest',
+          tariffId: 'adult',
+          divingLevel: '2★',
+          selectedSupplements: [
+            SelectedSupplement(id: 'air', name: 'Air', price: 1),
+            SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+          ],
+        ),
+        const RegistrationGuestRequest(
+          firstName: 'Eve',
+          lastName: 'Guest',
+        ),
+      ],
+    );
+    expect(
+      fingerprint,
+      'f241b9eafa86f9917d7ad7db3be72a2ba390314c2d1e22044cd51ecca42776fe',
+    );
+    expect(
+      OperationService.guestRequestPayloadFingerprint(
+        clubId: 'club-1',
+        operationId: 'event-1',
+        parentInscriptionId: 'parent-1',
+        guestPrenom: 'Bob',
+        guestNom: 'Guest',
+        tariffId: 'guest-adult',
+        divingLevel: '2 *',
+        selectedSupplements: [
+          SelectedSupplement(id: 'tank', name: 'Bloc', price: 5),
+          SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+        ],
+      ),
+      '7d1f9b36323e42e3dc26091bd98398fe80574bb1ba66d4b23394f8c8d9be41c8',
+    );
+  });
+
   test('Unicode and whitespace use the server canonical fingerprint', () {
     final fingerprint = OperationService.registrationRequestPayloadFingerprint(
       clubId: 'club-1',
@@ -518,6 +595,7 @@ void main() {
       addedByUserId: 'member-1',
       addedByUserName: 'Alice Member',
       parentInscriptionId: 'parent-1',
+      divingLevel: '2 *',
       selectedSupplements: [
         SelectedSupplement(id: 'meal', name: 'Repas', price: 999),
       ],
@@ -531,6 +609,7 @@ void main() {
     expect(request!['guest'], {
       'firstName': 'Bob',
       'lastName': 'Guest',
+      'divingLevel': '2',
       'selectedSupplementIds': ['meal'],
     });
     expect(request, isNot(contains('prix')));

@@ -7,6 +7,7 @@ import 'package:calymob/services/boutique/boutique_operations_service.dart';
 import 'package:calymob/widgets/boutique/boutique_access_guard.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 final pieces = List.generate(
     3,
@@ -34,7 +35,8 @@ final mission = <String, dynamic>{
   'destination': 'Piscine',
   'sourceLocation': 'Jim',
   'pickupWindow': 'Vendredi de 19h à 21h · accueil',
-  'expiresAt': '2026-10-23T19:00:00Z',
+  'expiresAt':
+      DateTime.now().toUtc().add(const Duration(days: 7)).toIso8601String(),
   'total': 3,
   'arrived': 3,
   'delivered': 0,
@@ -72,6 +74,10 @@ final service = BoutiqueOperationsService(transport: (request) async {
     case 'lookup':
       return {'unit': pieces.firstWhere((u) => u['id'] == request['unitId'])};
     case 'orders':
+      if (Uri.base.queryParameters['ordersError'] == '1') {
+        throw FirebaseFunctionsException(
+            code: 'invalid-argument', message: 'Demande Boutique invalide.');
+      }
       return {
         'orders': [
           {
@@ -118,34 +124,65 @@ class QaAccess extends BoutiqueAccessService {
 }
 
 void main() => runApp(MaterialApp(
+    title: 'CalyMob · Boutique QA locale',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff153868)),
+        // Match the real app's global theme: do not hide transparent/white
+        // AppBar regressions behind Flutter's default preview theme.
+        appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            iconTheme: IconThemeData(color: Colors.white)),
         useMaterial3: true),
-    home: BoutiqueAccessGuard(
-        clubId: 'fixture',
-        testUserIdOverride: 'qa-rb',
-        accessService: QaAccess(),
-        requiredSection: 'gestion',
-        builder: (context, access) {
-          final page = Uri.base.queryParameters['qa'];
-          final Widget child = page == 'session'
-              ? BoutiqueStockSessionScreen(
-                  clubId: 'fixture',
-                  location: 'Piscine',
-                  assignees: helpers,
-                  service: service)
-              : page == 'handover'
-                  ? BoutiqueHandoverScreen(
-                      clubId: 'fixture',
-                      missionId: 'qa-mission',
-                      packet: packet(),
-                      manager: true,
-                      service: service)
-                  : BoutiqueManagementScreen(
-                      manager: page != 'accueil', service: service);
-          return Banner(
-              message: 'DONNÉES FICTIVES',
-              location: BannerLocation.topEnd,
-              child: child);
-        })));
+    home: const QaLanding()));
+
+class QaLanding extends StatelessWidget {
+  const QaLanding({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(
+          backgroundColor: const Color(0xff183868),
+          title: const Text('Boutique · test local')),
+      body: ListView(padding: const EdgeInsets.all(24), children: [
+        const Text('DONNÉES FICTIVES — aucune connexion à Firebase'),
+        const Text(
+            'Les confirmations éventuelles restent dans cette simulation.'),
+        FilledButton(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute<void>(builder: (_) => const QaFlow())),
+            child: const Text('Ouvrir Gestion Boutique')),
+      ]));
+}
+
+class QaFlow extends StatelessWidget {
+  const QaFlow({super.key});
+  @override
+  Widget build(BuildContext context) => BoutiqueAccessGuard(
+      clubId: 'fixture',
+      testUserIdOverride: 'qa-rb',
+      accessService: QaAccess(),
+      requiredSection: 'gestion',
+      builder: (context, access) {
+        final page = Uri.base.queryParameters['qa'];
+        final Widget child = page == 'session'
+            ? BoutiqueStockSessionScreen(
+                clubId: 'fixture',
+                location: 'Piscine',
+                assignees: helpers,
+                service: service)
+            : page == 'handover'
+                ? BoutiqueHandoverScreen(
+                    clubId: 'fixture',
+                    missionId: 'qa-mission',
+                    packet: packet(),
+                    manager: true,
+                    service: service)
+                : BoutiqueManagementScreen(
+                    manager: page != 'accueil', service: service);
+        return Banner(
+            message: 'DONNÉES FICTIVES',
+            location: BannerLocation.topEnd,
+            child: child);
+      });
+}

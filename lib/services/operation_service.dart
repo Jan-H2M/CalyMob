@@ -24,8 +24,47 @@ typedef RegisterForEventInvoker = Future<Map<String, dynamic>> Function(
     Map<String, dynamic> payload);
 typedef AddGuestToEventInvoker = Future<void> Function(
     Map<String, dynamic> payload);
+typedef UpdateEventRegistrationInvoker = Future<Map<String, dynamic>> Function(
+    Map<String, dynamic> payload);
 
 const int registrationGuestNameMaxLength = 80;
+
+/// Canonical LIFRAS levels accepted for guests. `null` deliberately means
+/// "not provided": existing guest registrations predate this field and must
+/// remain editable.
+const Map<String, String> registrationGuestDivingLevelLabels = {
+  'NB': 'Non breveté',
+  '1': '1★',
+  '2': '2★',
+  '3': '3★',
+  '4': '4★',
+  'AM': 'Assistant Moniteur',
+  'MC': 'Moniteur Club',
+  'MF': 'Moniteur Fédéral',
+  'MN': 'Moniteur National',
+};
+
+String? canonicalRegistrationGuestDivingLevel(String? value) {
+  final raw = value?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final normalized = raw.toUpperCase().replaceAll('★', '*').replaceAll(' ', '');
+  final aliases = <String, String>{
+    'N/B': 'NB',
+    'P1': '1',
+    '1*': '1',
+    'P2': '2',
+    '2*': '2',
+    'P3': '3',
+    '3*': '3',
+    'P4': '4',
+    '4*': '4',
+  };
+  final canonical = aliases[normalized] ?? normalized;
+  if (!registrationGuestDivingLevelLabels.containsKey(canonical)) {
+    throw const FormatException('Niveau de plongée invité invalide.');
+  }
+  return canonical;
+}
 
 @visibleForTesting
 bool isOperationVisibleInCalyMob(Operation operation) {
@@ -49,21 +88,27 @@ class RegistrationGuestRequest {
     required this.firstName,
     required this.lastName,
     this.tariffId,
+    this.divingLevel,
     this.selectedSupplements = const <SelectedSupplement>[],
   });
 
   final String firstName;
   final String lastName;
   final String? tariffId;
+  final String? divingLevel;
   final List<SelectedSupplement> selectedSupplements;
 
-  Map<String, dynamic> toCallablePayload() => {
-        'firstName': canonicalRegistrationGuestName(firstName),
-        'lastName': canonicalRegistrationGuestName(lastName),
-        if (tariffId != null) 'tariffId': tariffId,
-        'selectedSupplementIds':
-            selectedSupplements.map((supplement) => supplement.id).toList(),
-      };
+  Map<String, dynamic> toCallablePayload() {
+    final canonicalLevel = canonicalRegistrationGuestDivingLevel(divingLevel);
+    return {
+      'firstName': canonicalRegistrationGuestName(firstName),
+      'lastName': canonicalRegistrationGuestName(lastName),
+      if (tariffId != null) 'tariffId': tariffId,
+      if (canonicalLevel != null) 'divingLevel': canonicalLevel,
+      'selectedSupplementIds':
+          selectedSupplements.map((supplement) => supplement.id).toList(),
+    };
+  }
 }
 
 class RegistrationAmountBreakdown {
@@ -213,6 +258,69 @@ class EventRegistrationResult {
   }
 }
 
+class EventRegistrationEditResult {
+  const EventRegistrationEditResult({
+    required this.inscriptionId,
+    required this.oldTotal,
+    required this.newTotal,
+    required this.delta,
+    required this.isPaid,
+    required this.operationTitle,
+    required this.addedGuestIds,
+    required this.removedGuestIds,
+    required this.idempotent,
+  });
+
+  final String inscriptionId;
+  final double oldTotal;
+  final double newTotal;
+
+  /// Positive when the price decreased, negative when it increased.
+  final double delta;
+  final bool isPaid;
+  final String operationTitle;
+  final List<String> addedGuestIds;
+  final List<String> removedGuestIds;
+  final bool idempotent;
+
+  factory EventRegistrationEditResult.fromCallable(Object? value) {
+    if (value is! Map) {
+      throw const FormatException('Reçu de modification absent.');
+    }
+    final data = Map<String, dynamic>.from(value);
+    List<String> ids(String key) {
+      final raw = data[key];
+      if (raw is! List || raw.any((item) => item is! String)) {
+        throw const FormatException('Reçu de modification invalide.');
+      }
+      return List<String>.unmodifiable(raw.cast<String>());
+    }
+
+    final oldTotal = data['oldTotal'];
+    final newTotal = data['newTotal'];
+    final delta = data['delta'];
+    if (data['version'] != 1 ||
+        oldTotal is! num ||
+        newTotal is! num ||
+        delta is! num ||
+        data['isPaid'] is! bool ||
+        data['idempotent'] is! bool) {
+      throw const FormatException('Reçu de modification invalide.');
+    }
+    return EventRegistrationEditResult(
+      inscriptionId: _requiredReceiptString(data, 'inscriptionId'),
+      oldTotal: oldTotal.toDouble(),
+      newTotal: newTotal.toDouble(),
+      delta: delta.toDouble(),
+      isPaid: data['isPaid'] as bool,
+      operationTitle: _requiredReceiptString(data, 'operationTitle'),
+      addedGuestIds: ids('addedGuestIds'),
+      removedGuestIds: ids('removedGuestIds'),
+      idempotent: data['idempotent'] as bool,
+    );
+  }
+}
+
 Map<String, dynamic> _requiredReceiptMap(
   Map<String, dynamic> data,
   String key,
@@ -276,16 +384,19 @@ class OperationService {
   final FirebaseFunctions? _injectedFunctions;
   final RegisterForEventInvoker? _registerForEventInvoker;
   final AddGuestToEventInvoker? _addGuestToEventInvoker;
+  final UpdateEventRegistrationInvoker? _updateEventRegistrationInvoker;
 
   OperationService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     RegisterForEventInvoker? registerForEventInvoker,
     AddGuestToEventInvoker? addGuestToEventInvoker,
+    UpdateEventRegistrationInvoker? updateEventRegistrationInvoker,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _injectedFunctions = functions,
         _registerForEventInvoker = registerForEventInvoker,
-        _addGuestToEventInvoker = addGuestToEventInvoker;
+        _addGuestToEventInvoker = addGuestToEventInvoker,
+        _updateEventRegistrationInvoker = updateEventRegistrationInvoker;
 
   FirebaseFunctions get _functions =>
       _injectedFunctions ??
@@ -583,6 +694,9 @@ class OperationService {
         'firstName': canonicalRegistrationGuestName(guest.firstName),
         'lastName': canonicalRegistrationGuestName(guest.lastName),
         'tariffId': guest.tariffId,
+        if (canonicalRegistrationGuestDivingLevel(guest.divingLevel) != null)
+          'divingLevel':
+              canonicalRegistrationGuestDivingLevel(guest.divingLevel),
         'selectedSupplementIds': guestSupplementIds,
       };
     }).toList(growable: false);
@@ -616,10 +730,12 @@ class OperationService {
     required String guestPrenom,
     required String guestNom,
     String? tariffId,
+    String? divingLevel,
     List<SelectedSupplement> selectedSupplements = const <SelectedSupplement>[],
   }) {
     final supplementIds =
         selectedSupplements.map((supplement) => supplement.id).toList()..sort();
+    final canonicalLevel = canonicalRegistrationGuestDivingLevel(divingLevel);
     final canonical = jsonEncode(<String, dynamic>{
       'version': 1,
       'clubId': clubId,
@@ -628,6 +744,7 @@ class OperationService {
       'firstName': canonicalRegistrationGuestName(guestPrenom),
       'lastName': canonicalRegistrationGuestName(guestNom),
       'tariffId': tariffId,
+      if (canonicalLevel != null) 'divingLevel': canonicalLevel,
       'selectedSupplementIds': supplementIds,
     });
     return sha256.convert(utf8.encode(canonical)).toString();
@@ -1494,6 +1611,7 @@ class OperationService {
     /// ID of the Tariff entry from operation.event_tariffs[] used to compute
     /// this guest's price ("Invité adulte" / "Invité enfant" / etc.).
     String? tariffId,
+    String? divingLevel,
 
     /// Optional supplements selected for this guest (same supplements list
     /// the inviting member sees). Stored exactly like a member's supplements
@@ -1515,6 +1633,7 @@ class OperationService {
             guestPrenom: guestPrenom,
             guestNom: guestNom,
             tariffId: tariffId,
+            divingLevel: divingLevel,
             selectedSupplements: supplements,
           );
       final payload = <String, dynamic>{
@@ -1528,6 +1647,8 @@ class OperationService {
           'firstName': canonicalRegistrationGuestName(guestPrenom),
           'lastName': canonicalRegistrationGuestName(guestNom),
           if (tariffId != null) 'tariffId': tariffId,
+          if (canonicalRegistrationGuestDivingLevel(divingLevel) != null)
+            'divingLevel': canonicalRegistrationGuestDivingLevel(divingLevel),
           'selectedSupplementIds':
               supplements.map((supplement) => supplement.id).toList(),
         },
@@ -1937,15 +2058,14 @@ class OperationService {
 
   /// Update the user's own inscription (supplements, guests, delivery address).
   ///
-  /// Uses a Firestore batch for atomic writes:
-  /// 1. Update parent inscription doc (supplements, total, delivery address)
-  /// 2. Upsert new guest inscriptions (GuestUpdate without inscriptionId)
-  /// 3. Update existing guest inscriptions (GuestUpdate with inscriptionId)
-  /// 4. Delete guest inscriptions (guestIdsToRemove)
-  /// 5. Write edit_history entries
+  /// Delegates the complete edit to updateEventRegistration. The callable
+  /// validates ownership, deadline, capacity and server-side prices before it
+  /// atomically updates the parent, guests and edit history. The client sends
+  /// identifiers and selections only; [supplementTotal] and guest prices are
+  /// retained for backwards-compatible callers but are never trusted.
   ///
   /// If the price decreases AND the inscription was paid, calls
-  /// [RefundService.createInscriptionRefund] after batch commit with an
+  /// [RefundService.createInscriptionRefund] after the transaction with an
   /// idempotency key to prevent duplicate refund requests.
   ///
   /// Returns the delta (oldTotal - newTotal). Positive means price decreased
@@ -1968,244 +2088,100 @@ class OperationService {
     List<String>? guestIdsToRemove,
     String? deliveryAddress,
     bool forceRefundClaim = false,
+    String? requestId,
   }) async {
-    // Read operation to check deadline
-    final operationRef =
-        _firestore.collection('clubs/$clubId/operations').doc(operationId);
-    final operationSnap = await operationRef.get();
-    if (!operationSnap.exists) {
-      throw Exception('Opération introuvable');
-    }
-    final operation = Operation.fromFirestore(operationSnap);
-    if (operation.effectiveDeadline != null &&
-        DateTime.now().isAfter(operation.effectiveDeadline!)) {
-      throw Exception('Le délai de modification est dépassé');
-    }
-
-    // Read existing guests BEFORE batch writes
-    final existingGuestsSnap = await _firestore
-        .collection('clubs/$clubId/operations/$operationId/inscriptions')
-        .where('parent_inscription_id', isEqualTo: inscriptionId)
-        .get();
-    double oldGuestsTotal = 0;
-    for (final guestDoc in existingGuestsSnap.docs) {
-      final g = guestDoc.data();
-      if (g['registration_status'] == 'canceled') continue;
-      oldGuestsTotal +=
-          (g['prix'] ?? 0).toDouble() + (g['supplement_total'] ?? 0).toDouble();
-    }
-
-    double newGuestsTotal = 0;
-    if (guests != null) {
-      for (final guest in guests) {
-        newGuestsTotal += guest.prix + guest.supplementTotal;
-      }
-    }
-
-    final batch = _firestore.batch();
-
     try {
-      // 1. Read existing inscription
-      final inscriptionRef = _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .doc(inscriptionId);
-      final inscriptionSnap = await inscriptionRef.get();
-
-      if (!inscriptionSnap.exists) {
-        throw Exception('Inscription non trouvée');
-      }
-
-      final existingData = inscriptionSnap.data()!;
-      final actorId = existingData['membre_id'] as String? ?? 'unknown-member';
-      final actorName =
-          '${existingData['membre_prenom'] ?? ''} ${existingData['membre_nom'] ?? ''}'
-              .trim();
       final appVersion = await _appVersion();
-      final existingSupplements = existingData['selected_supplements'] ?? [];
-      final existingSupplementTotal =
-          (existingData['supplement_total'] ?? 0.0).toDouble();
-      final oldTotal = (existingData['prix'] ?? 0.0).toDouble() +
-          existingSupplementTotal +
-          oldGuestsTotal;
-      final newTotal = (existingData['prix'] ?? 0.0).toDouble() +
-          supplementTotal +
-          newGuestsTotal;
-      final isPaid = existingData['paye'] ?? false;
-
-      // 2. Update parent inscription
-      final updateData = <String, dynamic>{
-        'selected_supplements':
-            selectedSupplements.map((s) => s.toMap()).toList(),
-        'supplement_total': supplementTotal,
-        'updated_at': FieldValue.serverTimestamp(),
-        ..._actionMetadata(
-          action: 'updated',
-          actorId: actorId,
-          actorName: actorName.isEmpty ? actorId : actorName,
-          source: 'calymob',
-          reason: 'registration_details_updated',
-          appVersion: appVersion,
-        ),
-      };
-      if (deliveryAddress != null) {
-        updateData['delivery_address'] = deliveryAddress;
-      }
-      batch.update(inscriptionRef, updateData);
-
-      // 3. Handle guest updates (upsert new + update existing)
-      final addedGuestIds = <String>[];
-      if (guests != null && guests.isNotEmpty) {
-        final inscriptionsRef = _firestore.collection(
-          'clubs/$clubId/operations/$operationId/inscriptions',
-        );
-
-        for (final guest in guests) {
-          final now = DateTime.now();
-          final guestId = guest.inscriptionId ??
-              'guest_${now.millisecondsSinceEpoch}_${Random().nextInt(99999).toString().padLeft(5, '0')}';
-
-          if (guest.inscriptionId == null) {
-            // New guest — create document
-            final guestData = {
-              'operation_id': operationId,
-              'membre_id': guestId,
-              'membre_nom': guest.nom,
-              'membre_prenom': guest.prenom,
-              'prix': guest.prix,
-              'paye': false,
-              'date_inscription': FieldValue.serverTimestamp(),
-              'is_guest': true,
-              'selected_supplements':
-                  guest.selectedSupplements.map((s) => s.toMap()).toList(),
-              'supplement_total': guest.supplementTotal,
-              'parent_inscription_id': inscriptionId,
-              'added_by': existingData['membre_id'],
-              'added_by_name':
-                  '${existingData['membre_prenom'] ?? ''} ${existingData['membre_nom'] ?? ''}'
-                      .trim(),
-              if (guest.tariffId != null) 'tariff_id': guest.tariffId,
-              'created_at': FieldValue.serverTimestamp(),
-              'updated_at': FieldValue.serverTimestamp(),
-              'created_by': actorId,
-              'created_by_name': actorName.isEmpty ? actorId : actorName,
-              'created_source': 'calymob',
-              if (appVersion != null) 'created_app_version': appVersion,
-              ..._actionMetadata(
-                action: 'registered',
-                actorId: actorId,
-                actorName: actorName.isEmpty ? actorId : actorName,
-                source: 'calymob',
-                reason: 'guest_added_during_registration_edit',
-                appVersion: appVersion,
-              ),
+      final payload = <String, dynamic>{
+        'clubId': clubId,
+        'operationId': operationId,
+        'inscriptionId': inscriptionId,
+        'requestId': requestId ?? _newRegistrationRequestId(),
+        'selectedSupplementIds': selectedSupplements
+            .map((supplement) => supplement.id)
+            .toList(),
+        'guests': (guests ?? const <GuestUpdate>[]).map((guest) {
+          if (guest.inscriptionId != null) {
+            return <String, dynamic>{
+              'inscriptionId': guest.inscriptionId,
+              if (guest.updateDivingLevel)
+                'divingLevel': canonicalRegistrationGuestDivingLevel(
+                  guest.divingLevel,
+                ),
+              'selectedSupplementIds': guest.selectedSupplements
+                  .map((supplement) => supplement.id)
+                  .toList(),
             };
-            final newGuestRef = inscriptionsRef.doc(guestId);
-            batch.set(newGuestRef, guestData);
-            addedGuestIds.add(guestId);
-          } else {
-            // Existing guest — update
-            batch.update(inscriptionsRef.doc(guest.inscriptionId!), {
-              'membre_nom': guest.nom,
-              'membre_prenom': guest.prenom,
-              'prix': guest.prix,
-              'selected_supplements':
-                  guest.selectedSupplements.map((s) => s.toMap()).toList(),
-              'supplement_total': guest.supplementTotal,
-              if (guest.tariffId != null) 'tariff_id': guest.tariffId,
-              'updated_at': FieldValue.serverTimestamp(),
-              ..._actionMetadata(
-                action: 'updated',
-                actorId: actorId,
-                actorName: actorName.isEmpty ? actorId : actorName,
-                source: 'calymob',
-                reason: 'guest_details_updated',
-                appVersion: appVersion,
-              ),
-            });
           }
-        }
-      }
-
-      // 4. Handle guest removals
-      if (guestIdsToRemove != null && guestIdsToRemove.isNotEmpty) {
-        final inscriptionsRef = _firestore.collection(
-          'clubs/$clubId/operations/$operationId/inscriptions',
-        );
-        for (final guestId in guestIdsToRemove) {
-          batch.update(
-            inscriptionsRef.doc(guestId),
-            _cancellationMetadata(
-              actorId: actorId,
-              actorName: actorName.isEmpty ? actorId : actorName,
-              source: 'calymob',
-              reason: 'guest_removed_during_registration_edit',
-              appVersion: appVersion,
-            ),
+          final canonicalLevel = canonicalRegistrationGuestDivingLevel(
+            guest.divingLevel,
           );
-        }
+          return <String, dynamic>{
+            'firstName': canonicalRegistrationGuestName(guest.prenom),
+            'lastName': canonicalRegistrationGuestName(guest.nom),
+            if (guest.tariffId != null) 'tariffId': guest.tariffId,
+            if (canonicalLevel != null) 'divingLevel': canonicalLevel,
+            'selectedSupplementIds': guest.selectedSupplements
+                .map((supplement) => supplement.id)
+                .toList(),
+          };
+        }).toList(),
+        'guestIdsToRemove': guestIdsToRemove ?? const <String>[],
+        if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
+        'source': 'calymob',
+        if (appVersion != null) 'appVersion': appVersion,
+      };
+      final invoker = _updateEventRegistrationInvoker;
+      final Object? response;
+      if (invoker != null) {
+        response = await invoker(payload);
+      } else {
+        response =
+            (await _functions
+                    .httpsCallable('updateEventRegistration')
+                    .call(payload))
+                .data;
       }
+      final result = EventRegistrationEditResult.fromCallable(response);
 
-      // 5. Write edit_history entry
-      final editHistoryRef = inscriptionRef.collection('edit_history').doc();
-      batch.set(editHistoryRef, {
-        'action': 'inscription_updated',
-        'inscription_id': inscriptionId,
-        'timestamp': FieldValue.serverTimestamp(),
-        'previous_supplements': existingSupplements,
-        'new_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
-        'previous_total': existingSupplementTotal,
-        'new_total': supplementTotal,
-        'guests_added': addedGuestIds,
-        'guests_removed': guestIdsToRemove ?? [],
-      });
-
-      // Commit batch
-      await batch.commit();
-
-      // 6. Handle refund if price decreased.
-      //    Trigger condition: delta > 0 AND (parent already paid OR the
-      //    user explicitly claimed an already-paid-but-not-yet-imported
-      //    payment via [forceRefundClaim]). In the latter case the CF
-      //    sets statut='a_verifier_paiement' so the admin can validate.
-      final delta = oldTotal - newTotal;
-      final unverifiedPayment = !isPaid && forceRefundClaim;
-      if (delta > 0 && (isPaid || forceRefundClaim)) {
-        // Fire-and-forget: log but don't block the UI on refund creation
+      final unverifiedPayment = !result.isPaid && forceRefundClaim;
+      if (result.delta > 0 && (result.isPaid || forceRefundClaim)) {
         try {
           final refundService = RefundService();
-          final editSessionId = 'edit_${inscriptionId}_$newTotal';
-          // The Cloud Function REQUIRES description + eventTitre — without
-          // them the call is rejected with `invalid-argument` and the
-          // refund demande is silently dropped.
+          final editSessionId =
+              'edit_${result.inscriptionId}_${result.newTotal}';
           final descriptionPrefix = unverifiedPayment
               ? 'Modification inscription (paiement déclaré, en attente de validation) — '
               : 'Modification inscription — ';
           await refundService.createInscriptionRefund(
             clubId: clubId,
             operationId: operationId,
-            inscriptionId: inscriptionId,
-            oldAmount: oldTotal,
-            newAmount: newTotal,
+            inscriptionId: result.inscriptionId,
+            oldAmount: result.oldTotal,
+            newAmount: result.newTotal,
             editSessionId: editSessionId,
-            eventTitre: operation.titre,
-            description: '${descriptionPrefix}diminution de '
-                '${delta.toStringAsFixed(2)} € '
-                '(de ${oldTotal.toStringAsFixed(2)} € à '
-                '${newTotal.toStringAsFixed(2)} €).',
+            eventTitre: result.operationTitle,
+            description:
+                '${descriptionPrefix}diminution de '
+                '${result.delta.toStringAsFixed(2)} € '
+                '(de ${result.oldTotal.toStringAsFixed(2)} € à '
+                '${result.newTotal.toStringAsFixed(2)} €).',
             unverifiedPayment: unverifiedPayment,
           );
           debugPrint(
-            '✅ Refund requested for inscription $inscriptionId '
-            '(delta=$delta, unverified=$unverifiedPayment)',
+            '✅ Refund requested for inscription ${result.inscriptionId} '
+            '(delta=${result.delta}, unverified=$unverifiedPayment)',
           );
         } catch (refundError) {
-          // Log refund failure — the inscription update already succeeded
           debugPrint('⚠️ Refund creation failed (non-blocking): $refundError');
         }
       }
 
-      debugPrint('✅ Inscription $inscriptionId updated (delta=$delta)');
-      return delta;
+      debugPrint(
+        '✅ Inscription ${result.inscriptionId} updated transactionally '
+        '(delta=${result.delta}, idempotent=${result.idempotent})',
+      );
+      return result.delta;
     } catch (e) {
       debugPrint('❌ Erreur updateMyInscription: $e');
       rethrow;
@@ -2325,6 +2301,12 @@ class GuestUpdate {
   final String nom;
   final double prix;
   final String? tariffId;
+  final String? divingLevel;
+
+  /// Existing guest updates omit the level unless explicitly requested.
+  /// This preserves data for older callers while allowing the edit dialog to
+  /// intentionally set or clear the new optional field.
+  final bool updateDivingLevel;
   final List<SelectedSupplement> selectedSupplements;
   final double supplementTotal;
 
@@ -2334,6 +2316,8 @@ class GuestUpdate {
     required this.nom,
     required this.prix,
     this.tariffId,
+    this.divingLevel,
+    this.updateDivingLevel = false,
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
   });
