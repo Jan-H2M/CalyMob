@@ -1,9 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:calymob/models/bug_report_screenshot.dart';
+import 'package:calymob/providers/auth_provider.dart';
+import 'package:calymob/providers/member_provider.dart';
+import 'package:calymob/services/bug_report_service.dart';
 import 'package:calymob/widgets/bug_report_widget.dart';
+import 'package:firebase_auth/firebase_auth.dart' show User;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:provider/provider.dart';
 
 final _pixel = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
@@ -22,6 +29,45 @@ class _RouteProbe extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     current = route;
+  }
+}
+
+class _User extends Mock implements User {
+  @override
+  String get uid => 'synthetic-reporter';
+
+  @override
+  String? get email => 'reporter@example.test';
+}
+
+class _Auth extends Mock implements AuthProvider {
+  @override
+  User? get currentUser => _User();
+}
+
+class _Member extends Mock implements MemberProvider {
+  @override
+  String get displayName => 'Synthetic Reporter';
+}
+
+class _PendingReportService extends Mock implements BugReportService {
+  var completion = Completer<String>();
+  final submissions = <List<BugReportScreenshot>>[];
+
+  @override
+  Future<String> submitBugReport({
+    required String clubId,
+    required String userId,
+    required String userName,
+    required String userEmail,
+    required String title,
+    String? description,
+    required String priority,
+    List<BugReportScreenshot> screenshots = const [],
+    String? currentRoute,
+  }) {
+    submissions.add(screenshots);
+    return completion.future;
   }
 }
 
@@ -203,5 +249,90 @@ void main() {
 
     expect(result?.action, BugReportFormAction.cancelled);
     expect(result?.draft.title, 'Draft');
+  });
+
+  testWidgets('rapid send taps create only one report with ordered captures',
+      (tester) async {
+    final service = _PendingReportService();
+    BugReportFormResult? result;
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: _Auth()),
+        ChangeNotifierProvider<MemberProvider>.value(value: _Member()),
+      ],
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: ElevatedButton(
+              onPressed: () async {
+                result = await showModalBottomSheet<BugReportFormResult>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => BugReportForm(
+                    draft: const BugReportDraft(title: 'Synthetic issue'),
+                    screenshots: [capture('/a', 1), capture('/b', 2)],
+                    bugReportService: service,
+                  ),
+                );
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Envoyer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Envoyer'));
+    // The old enabled callback can still receive another tap before a frame.
+    await tester.tap(find.text('Envoyer'));
+    expect(service.submissions, hasLength(1));
+    expect(service.submissions.single.map((item) => item.page), ['/a', '/b']);
+    service.completion.complete('synthetic-report');
+    await tester.pumpAndSettle();
+    expect(result?.action, BugReportFormAction.submitted);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed send preserves the draft and permits one retry',
+      (tester) async {
+    final service = _PendingReportService();
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: _Auth()),
+        ChangeNotifierProvider<MemberProvider>.value(value: _Member()),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: BugReportForm(
+            draft: const BugReportDraft(title: 'Synthetic issue'),
+            screenshots: [capture('/a', 1), capture('/b', 2)],
+            bugReportService: service,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Envoyer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Envoyer'));
+    service.completion.completeError(StateError('synthetic send failure'));
+    await tester.pumpAndSettle();
+    expect(
+        find.widgetWithText(TextFormField, 'Synthetic issue'), findsOneWidget);
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(find.text('Envoyer'), findsOneWidget);
+
+    service.completion = Completer<String>();
+    await tester.tap(find.text('Envoyer'));
+    await tester.tap(find.text('Envoyer'));
+    expect(service.submissions, hasLength(2));
+    expect(service.submissions.last.map((item) => item.page), ['/a', '/b']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    service.completion.complete('synthetic-report');
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 }

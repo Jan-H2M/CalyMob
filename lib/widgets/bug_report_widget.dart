@@ -406,12 +406,14 @@ class BugReportForm extends StatefulWidget {
   final BugReportDraft draft;
   final List<BugReportScreenshot> screenshots;
   final String? currentRoute;
+  final BugReportService? bugReportService;
 
   const BugReportForm({
     super.key,
     required this.draft,
     required this.screenshots,
     this.currentRoute,
+    this.bugReportService,
   });
 
   @override
@@ -435,6 +437,7 @@ class _BugReportFormState extends State<BugReportForm> {
     _descriptionController.text = widget.draft.description;
     _priority = widget.draft.priority;
     _screenshots = List.of(widget.screenshots);
+    _bugReportService = widget.bugReportService;
   }
 
   @override
@@ -827,6 +830,7 @@ class _BugReportFormState extends State<BugReportForm> {
   }
 
   Future<void> _submit() async {
+    if (_isSending) return;
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSending = true);
