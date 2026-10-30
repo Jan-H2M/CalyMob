@@ -29,7 +29,7 @@ void main() {
         isFalse);
   });
 
-  test('event staff guest permission is independent of scanner permission', () {
+  test('guest prohibition also hides the action for event staff', () {
     expect(
       canAddGuestFromOperationDetail(
         staff: true,
@@ -37,6 +37,19 @@ void main() {
         hasActiveRegistration: false,
         currentCount: 99,
         capacity: 1,
+      ),
+      isFalse,
+    );
+  });
+
+  test('allowed staff guest flow does not require their own registration', () {
+    expect(
+      canAddGuestFromOperationDetail(
+        staff: true,
+        allowGuests: true,
+        hasActiveRegistration: false,
+        currentCount: 0,
+        capacity: 3,
       ),
       isTrue,
     );

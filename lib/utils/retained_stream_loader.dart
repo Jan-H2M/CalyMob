@@ -29,8 +29,20 @@ class RetainedStreamLoader<T> extends ChangeNotifier {
   bool get isStalled => _isStalled;
   Object? get error => _error;
 
+  /// Changes the source and clears its previous scope. Call [start] to subscribe;
+  /// use [retry] for same-source recovery that retains the last complete value.
   void replaceFactory(Stream<T> Function() streamFactory) {
+    // A different query can represent another identity or authorization scope.
+    // Only retries of the same source may retain its previously visible rows.
+    _generation++;
+    _timer?.cancel();
     _streamFactory = streamFactory;
+    _value = null;
+    _hasValue = false;
+    _isLoading = true;
+    _isStalled = false;
+    _error = null;
+    notifyListeners();
   }
 
   Future<void> start() async {
