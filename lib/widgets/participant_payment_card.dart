@@ -171,8 +171,9 @@ class ParticipantPaymentCard extends StatelessWidget {
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Icon(Icons.event, size: 16, color: Colors.grey.shade600),
                   const SizedBox(width: 6),
@@ -185,10 +186,7 @@ class ParticipantPaymentCard extends StatelessWidget {
                     ),
                   ),
                   if (eventDate != null) ...[
-                    Text(
-                      ' · ',
-                      style: TextStyle(color: Colors.grey.shade400),
-                    ),
+                    Text(' · ', style: TextStyle(color: Colors.grey.shade400)),
                     Text(
                       _formatDate(eventDate!),
                       style: TextStyle(
@@ -222,8 +220,9 @@ class ParticipantPaymentCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.lichtblauw.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border:
-                    Border.all(color: AppColors.lichtblauw.withOpacity(0.3)),
+                border: Border.all(
+                  color: AppColors.lichtblauw.withOpacity(0.3),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,19 +248,35 @@ class ParticipantPaymentCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     paymentCommunication,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade800,
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
                 ],
               ),
             ),
 
             const SizedBox(height: 10),
-            PaymentCommunicationCopyButton(
-              communication: paymentCommunication,
+            SelectableText('Bénéficiaire : $beneficiaryName'),
+            SelectableText('IBAN : ${formatIbanDisplay(clubIban)}'),
+            Text('Montant : ${amount.toStringAsFixed(2)} €'),
+            const SizedBox(height: 8),
+            PaymentCopyButton(
+              value: clubIban.replaceAll(RegExp(r'\s+'), ''),
+              label: 'Copier l’IBAN',
+              successMessage: 'IBAN copié. Collez-le dans votre app bancaire.',
+              icon: Icons.account_balance_outlined,
+              buttonKey: const Key('copy-payment-iban'),
             ),
+            const SizedBox(height: 8),
+            PaymentCopyButton(
+              value: amount.toStringAsFixed(2),
+              label: 'Copier le montant',
+              successMessage:
+                  'Montant copié. Collez-le dans votre app bancaire.',
+              icon: Icons.euro_outlined,
+              buttonKey: const Key('copy-payment-amount'),
+            ),
+            const SizedBox(height: 8),
+            PaymentCommunicationCopyButton(communication: paymentCommunication),
 
             const SizedBox(height: 16),
 
@@ -275,8 +290,11 @@ class ParticipantPaymentCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.phone_android,
-                      size: 20, color: Colors.orange.shade700),
+                  Icon(
+                    Icons.phone_android,
+                    size: 20,
+                    color: Colors.orange.shade700,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -307,11 +325,15 @@ class ParticipantPaymentCard extends StatelessWidget {
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.green.shade600),
+                              Colors.green.shade600,
+                            ),
                           ),
                         )
-                      : Icon(Icons.check,
-                          size: 20, color: Colors.green.shade600),
+                      : Icon(
+                          Icons.check,
+                          size: 20,
+                          color: Colors.green.shade600,
+                        ),
                   label: Text(
                     isProcessing
                         ? 'Enregistrement...'
@@ -335,18 +357,16 @@ class ParticipantPaymentCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed:
-                    isProcessing ? null : () => Navigator.of(context).pop(),
+                onPressed: isProcessing
+                    ? null
+                    : () => Navigator.of(context).pop(),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.grey.shade600,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 child: Text(
                   'Fermer',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                 ),
               ),
             ),
@@ -360,8 +380,9 @@ class ParticipantPaymentCard extends StatelessWidget {
   }
 
   String _getInitials() {
-    final first =
-        participantFirstName.isNotEmpty ? participantFirstName[0] : '';
+    final first = participantFirstName.isNotEmpty
+        ? participantFirstName[0]
+        : '';
     final last = participantLastName.isNotEmpty ? participantLastName[0] : '';
     return '$first$last'.toUpperCase();
   }

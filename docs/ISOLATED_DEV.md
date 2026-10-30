@@ -77,6 +77,13 @@ serving. Do not host this lab on the existing production-backed Vercel project.
    The scenario chooser is compact so adding cases does not hide the controls
    on narrow screens. This menu exists only in the standalone test target.
 
+8. **MOB-051 · Virement bancaire**: open the real registration payment choices
+   for an email-only transfer, then the actual member transfer card. Copy the
+   fictional IBAN, 6.62 amount and installment communication. The intentionally
+   invalid account `FICTIF-NON-PAYABLE` prevents any payable EPC QR. There is no
+   email handler, bank-app launcher or confirmation action in this scenario.
+   These clipboard actions never mark a registration/order paid.
+
 ## Automated verification
 
 ```sh

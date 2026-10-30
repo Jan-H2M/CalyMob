@@ -21,6 +21,7 @@ import 'package:flutter/semantics.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'formation_dev_scenarios.dart';
 import 'apnee_dev_scenario.dart';
+import 'bank_transfer_dev_scenario.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
@@ -55,7 +56,8 @@ Future<void> main() async {
     'dates': 3,
     'environments': 4,
     'formation': 5,
-    'apnee': 6
+    'apnee': 6,
+    'bank-transfer': 7,
   };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
@@ -281,6 +283,7 @@ class _DevHomeState extends State<_DevHome> {
                         (4, 'MOB-046 · Milieux'),
                         (5, 'MOB-033 · Formation'),
                         (6, 'MOB-036 · Apnée'),
+                        (7, 'MOB-051 · Virement bancaire'),
                       ])
                         DropdownMenuItem(value: index, child: Text(label)),
                     ],
@@ -299,7 +302,8 @@ class _DevHomeState extends State<_DevHome> {
                       3 => const FictionalDates(),
                       4 => const FictionalEnvironments(),
                       5 => const FictionalFormation(),
-                      _ => const FictionalApnee(),
+                      6 => const FictionalApnee(),
+                      _ => const FictionalBankTransfer(),
                     },
                   ),
                 ),

@@ -45,6 +45,7 @@ try {
     ['environments',['Mer FICTIVE','Lac FICTIF','Carrière FICTIVE','Catégorie : Eau douce']],
     ['formation',['Ada FICTIVE','Boris FICTIF','Carrière 1/2','Piscine 1/2','Théorie 0/2']],
     ['apnee',['1★ apnée · A1 / Discovery · 20h15','2★ apnée · A2 · 21h15','Élèves : Ada FICTIVE','présence à vérifier séparément']],
+    ['bank-transfer',['MOB-051 · Virement FICTIF','Tester les choix de paiement fictifs']],
   ]) {
     const context = await browser.newContext({serviceWorkers:'block',acceptDownloads:false,
       viewport:{width:1100,height:900}});
