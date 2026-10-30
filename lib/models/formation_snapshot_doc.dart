@@ -22,6 +22,7 @@ class FormationSnapshotDoc {
   final SnapshotDiveStats diveStats;
   final Map<String, SnapshotMilRequirement> milPerRequirement;
   final int? milModulePct;
+  final String? milCountingVersion;
 
   final Map<String, int> brevetPct;
   final int formationPct;
@@ -44,6 +45,7 @@ class FormationSnapshotDoc {
     required this.diveStats,
     required this.milPerRequirement,
     required this.milModulePct,
+    this.milCountingVersion,
     required this.brevetPct,
     required this.formationPct,
     required this.goalCodes,
@@ -83,7 +85,11 @@ class FormationSnapshotDoc {
   }) {
     final entries = <String, _ModalityExerciseState>{};
 
-    void add(String code, String description, _FormationExerciseState state) {
+    void add(
+      String code,
+      String description,
+      _FormationExerciseState state,
+    ) {
       final key = code.trim().toUpperCase();
       if (key.isEmpty) return;
       if (examsOnly && !formationExerciseIsExam(code, description)) return;
@@ -97,11 +103,8 @@ class FormationSnapshotDoc {
 
     for (final exercise in validated) {
       if (!includesCurrentTargetExercise(exercise)) continue;
-      add(
-        exercise.code,
-        exercise.description,
-        _FormationExerciseState.validated,
-      );
+      add(exercise.code, exercise.description,
+          _FormationExerciseState.validated);
     }
     for (final exercise in pending) {
       if (!includesCurrentTargetExercise(exercise)) continue;
@@ -113,12 +116,11 @@ class FormationSnapshotDoc {
     }
     for (final exercise in remaining) {
       add(
-        exercise.code,
-        exercise.description,
-        exercise.status == 'refused'
-            ? _FormationExerciseState.refused
-            : _FormationExerciseState.remaining,
-      );
+          exercise.code,
+          exercise.description,
+          exercise.status == 'refused'
+              ? _FormationExerciseState.refused
+              : _FormationExerciseState.remaining);
     }
 
     return {
@@ -185,9 +187,7 @@ class FormationSnapshotDoc {
   }
 
   factory FormationSnapshotDoc.fromMap(
-    String memberId,
-    Map<String, dynamic> data,
-  ) {
+      String memberId, Map<String, dynamic> data) {
     final exercises = _asMap(data['exercises']);
     final diveStats = _asMap(data['dive_stats']);
     final mil = _asMap(data['mil_experience']);
@@ -227,36 +227,31 @@ class FormationSnapshotDoc {
       memberId: memberId,
       targetLevel: data['target_level']?.toString(),
       currentCode: data['current_code']?.toString() ?? '',
-      validated: listOf(
-        exercises['validated'],
-      ).map(SnapshotExercise.fromMap).toList(),
-      pending: listOf(
-        exercises['pending'],
-      ).map(SnapshotExercise.fromMap).toList(),
-      pendingClaims: listOf(
-        exercises['pending_claims'],
-      ).map(SnapshotClaim.fromMap).toList(),
-      remaining: listOf(
-        exercises['remaining'],
-      ).map(SnapshotExercise.fromMap).toList(),
+      validated:
+          listOf(exercises['validated']).map(SnapshotExercise.fromMap).toList(),
+      pending:
+          listOf(exercises['pending']).map(SnapshotExercise.fromMap).toList(),
+      pendingClaims: listOf(exercises['pending_claims'])
+          .map(SnapshotClaim.fromMap)
+          .toList(),
+      remaining:
+          listOf(exercises['remaining']).map(SnapshotExercise.fromMap).toList(),
       perCode: perCode,
-      attentionPoints:
-          (data['attention_points'] as List?)
+      attentionPoints: (data['attention_points'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
       diveStats: SnapshotDiveStats.fromMap(diveStats),
       milPerRequirement: milReqs,
       milModulePct: mil.isEmpty ? null : _intOrNull(mil['module_pct']),
+      milCountingVersion: mil['counting_version'] as String?,
       brevetPct: brevet,
       formationPct: _int(data['formation_pct']),
-      goalCodes:
-          (goals['codes'] as List?)?.map((e) => e.toString()).toList() ??
+      goalCodes: (goals['codes'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
       goalNote: goals['note']?.toString() ?? '',
-      recentDives: listOf(
-        data['recent_dives'],
-      ).map(SnapshotRecentDive.fromMap).toList(),
+      recentDives:
+          listOf(data['recent_dives']).map(SnapshotRecentDive.fromMap).toList(),
     );
   }
 }
@@ -418,11 +413,8 @@ class SnapshotClaim {
   final String code;
   final String label;
   final String status;
-  const SnapshotClaim({
-    required this.code,
-    required this.label,
-    required this.status,
-  });
+  const SnapshotClaim(
+      {required this.code, required this.label, required this.status});
   factory SnapshotClaim.fromMap(Map<String, dynamic> m) => SnapshotClaim(
     code: m['code']?.toString() ?? '',
     label: m['label']?.toString() ?? '',
@@ -434,22 +426,16 @@ class SnapshotPerCode {
   final int attempts;
   final String? lastResult;
   final DateTime? lastDate;
-  const SnapshotPerCode({
-    required this.attempts,
-    this.lastResult,
-    this.lastDate,
-  });
+  const SnapshotPerCode(
+      {required this.attempts, this.lastResult, this.lastDate});
 }
 
 class SnapshotMilRequirement {
   final int have;
   final int need;
   final bool dataMissing;
-  const SnapshotMilRequirement({
-    required this.have,
-    required this.need,
-    required this.dataMissing,
-  });
+  const SnapshotMilRequirement(
+      {required this.have, required this.need, required this.dataMissing});
   double get ratio => need > 0 ? (have / need).clamp(0.0, 1.0) : 0.0;
 }
 

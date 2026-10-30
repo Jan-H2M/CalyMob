@@ -11,6 +11,14 @@ const admin = require('firebase-admin');
 // Initialize Firebase Admin
 admin.initializeApp();
 
+exports.correctPoolStudentGroup = require('./src/training/correctPoolStudentGroup').correctPoolStudentGroup;
+exports.setPersonalExerciseProgress = require('./src/training/personalExerciseProgress').setPersonalExerciseProgress;
+exports.recordOfficialFormationResult = require('./src/training/officialFormationResults').recordOfficialFormationResult;
+exports.manageApneeTraining = require('./src/training/apnee/training').manageApneeTraining;
+exports.manageFormationEnrollment = require('./src/training/formationEnrollment').manageFormationEnrollment;
+exports.onQrTrainingGroupCreated = require('./src/training/assignQrTrainingGroup').onQrTrainingGroupCreated;
+exports.assignApneePoolCourse = require('./src/training/assignApneePoolCourse').assignApneePoolCourse;
+
 // Compatibility shim for the firebase-admin v13 modular API: when running
 // the local emulator on Node 25 the legacy `admin.firestore.FieldValue`
 // accessor isn't auto-attached, breaking every `serverTimestamp()` call.
@@ -275,6 +283,7 @@ const eventWaitlist = require('./src/inscription/eventWaitlist');
 exports.joinEventWaitlist = eventWaitlist.joinEventWaitlist;
 exports.registerForEvent = eventWaitlist.registerForEvent;
 exports.addGuestToEvent = eventWaitlist.addGuestToEvent;
+exports.updateEventRegistration = eventWaitlist.updateEventRegistration;
 exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
 exports.unregisterFromEvent = eventWaitlist.unregisterFromEvent;
 exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;
@@ -478,6 +487,7 @@ const {
   analyzeLogbookDictation,
 } = require('./src/logbookDictation/analyzeLogbookDictation');
 exports.analyzeLogbookDictation = analyzeLogbookDictation;
+exports.recordPoolQrAttendance = require('./src/training/poolQrAttendance').recordPoolQrAttendance;
 
 // MOB-BTQ-QR-20261016 — feature remains off until its explicit rollout.
 exports.boutiquePhysicalOperations = require('./src/boutique/physicalOperations').boutiquePhysicalOperations;

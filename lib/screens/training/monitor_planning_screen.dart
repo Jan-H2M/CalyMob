@@ -31,11 +31,17 @@ import '../../utils/member_name.dart';
 class MonitorPlanningScreen extends StatefulWidget {
   final String operationId;
   final String? palanqueeId; // if editing an existing palanquée
+  final FirebaseFirestore? firestore;
+  final LifrasService? lifrasService;
+  final FormationSnapshotService? formationService;
 
   const MonitorPlanningScreen({
     super.key,
     required this.operationId,
     this.palanqueeId,
+    this.firestore,
+    this.lifrasService,
+    this.formationService,
   });
 
   @override
@@ -44,6 +50,8 @@ class MonitorPlanningScreen extends StatefulWidget {
 
 class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
   bool _loading = true;
+  bool _loadFailed = false;
+  bool _loadInFlight = false;
   bool _saving = false;
   bool _showAllParticipants = false;
   Map<String, dynamic>? _operation;
@@ -60,8 +68,29 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
   }
 
   Future<void> _load() async {
+    if (_loadInFlight) return;
+    _loadInFlight = true;
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
+    try {
+      await _loadData();
+    } catch (error) {
+      debugPrint('⚠️ Préparation sortie indisponible: $error');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadFailed = true;
+      });
+    } finally {
+      _loadInFlight = false;
+    }
+  }
+
+  Future<void> _loadData() async {
     const clubId = FirebaseConfig.defaultClubId;
-    final fs = FirebaseFirestore.instance;
+    final fs = widget.firestore ?? FirebaseFirestore.instance;
     final userId = context.read<AuthProvider>().currentUser?.uid;
 
     final op = await fs
@@ -70,6 +99,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         .collection('operations')
         .doc(widget.operationId)
         .get();
+    if (!op.exists) throw StateError('Operation not found');
 
     final participants = <Map<String, dynamic>>[];
     final rawParticipants = <Map<String, dynamic>>[];
@@ -130,7 +160,8 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         .expand((p) => (p['requested_exercises'] as List<String>))
         .toSet()
         .toList();
-    final catalog = await LifrasService().getExercicesByIds(clubId, requested);
+    final catalog = await (widget.lifrasService ?? LifrasService())
+        .getExercicesByIds(clubId, requested);
     final codesById = {
       for (final exercise in catalog) exercise.id: exercise.code,
     };
@@ -146,7 +177,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
 
     final snapshots = <String, FormationSnapshot>{};
     try {
-      final service = FormationSnapshotService();
+      final service = widget.formationService ?? FormationSnapshotService();
       snapshots.addAll(
         await service.getFormationSnapshots(
           clubId,
@@ -185,6 +216,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
 
     final existingPalanqueeId = widget.palanqueeId ??
         (userId == null ? null : 'monitor_planning_$userId');
+    final assignments = <String, Map<String, dynamic>>{};
     if (existingPalanqueeId != null) {
       final pSnap = await fs
           .collection('clubs')
@@ -203,7 +235,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
             (data['planned_exercises'] as Map?)?.cast<String, dynamic>() ?? {};
         for (final p in participants) {
           final mid = p['member_id'] as String;
-          _assignments[mid] = {
+          assignments[mid] = {
             'role': plannedRole[mid] ?? '',
             'exercises':
                 (plannedExercises[mid] as List?)?.cast<String>() ?? <String>[],
@@ -222,6 +254,9 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
       _participants = participants;
       _snapshots = snapshots;
       _progressDocs = progressDocs;
+      _assignments
+        ..clear()
+        ..addAll(assignments);
       _loading = false;
     });
   }
@@ -240,51 +275,74 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
                     ? const Center(
                         child: CircularProgressIndicator(color: Colors.white),
                       )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                        children: [
-                          _operationCard(),
-                          const SizedBox(height: 10),
-                          _filterCard(),
-                          const SizedBox(height: 14),
-                          if (_visibleParticipants.isEmpty)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.96),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Text(
-                                'Aucun participant avec statut formation. Affiche tous les participants pour les voir.',
-                                style: TextStyle(
-                                  color: AppColors.donkerblauw,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                    : _loadFailed
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'Impossible de charger la préparation de la sortie.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  TextButton(
+                                    onPressed: _load,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Réessayer'),
+                                  ),
+                                ],
                               ),
                             ),
-                          ..._visibleParticipants.map(
-                            (p) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _ParticipantTile(
-                                participant: p,
-                                snapshot: _snapshots[p['member_id']],
-                                progressDoc: _progressDocs[p['member_id']],
-                                assignment: _assignments[p['member_id']] ??
-                                    {
-                                      'role': '',
-                                      'exercises': <String>[],
-                                      'note': '',
-                                    },
-                                onChange: (a) => setState(
-                                  () => _assignments[p['member_id']] = a,
+                          )
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                            children: [
+                              _operationCard(),
+                              const SizedBox(height: 10),
+                              _filterCard(),
+                              const SizedBox(height: 14),
+                              if (_visibleParticipants.isEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.96),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Text(
+                                    'Aucun participant avec statut formation. Affiche tous les participants pour les voir.',
+                                    style: TextStyle(
+                                      color: AppColors.donkerblauw,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ..._visibleParticipants.map(
+                                (p) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _ParticipantTile(
+                                    participant: p,
+                                    snapshot: _snapshots[p['member_id']],
+                                    progressDoc: _progressDocs[p['member_id']],
+                                    assignment: _assignments[p['member_id']] ??
+                                        {
+                                          'role': '',
+                                          'exercises': <String>[],
+                                          'note': '',
+                                        },
+                                    onChange: (a) => setState(
+                                      () => _assignments[p['member_id']] = a,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
               ),
             ],
           ),
@@ -294,7 +352,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: ElevatedButton(
-            onPressed: _saving || _loading ? null : _save,
+            onPressed: _saving || _loading || _loadFailed ? null : _save,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.middenblauw,
               foregroundColor: Colors.white,
@@ -483,7 +541,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         }
       }
 
-      final fs = FirebaseFirestore.instance;
+      final fs = widget.firestore ?? FirebaseFirestore.instance;
       final palCol = fs
           .collection('clubs')
           .doc(clubId)

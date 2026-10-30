@@ -43,7 +43,18 @@ class MilExperienceOverview {
       byBrevet: {
         code: MilBrevetExperience(
           brevetCode: code,
-          requirements: snapshot.milPerRequirement,
+          // Old snapshots used non-sea-only general depths. Never present
+          // those stale counts as corrected when the live read is unavailable.
+          requirements: {
+            for (final entry in snapshot.milPerRequirement.entries)
+              entry.key: snapshot.milCountingVersion !=
+                          'cumulative-general-depths-v2' &&
+                      const {'prof_20m', 'prof_30m', 'prof_40m'}
+                          .contains(entry.key)
+                  ? SnapshotMilRequirement(
+                      have: 0, need: entry.value.need, dataMissing: true)
+                  : entry.value,
+          },
           modulePct: snapshot.milModulePct ?? 0,
         ),
       },
@@ -61,6 +72,16 @@ class MilBrevetExperience {
     required this.requirements,
     required this.modulePct,
   });
+
+  int get requiredCount => requirements.values.where((r) => r.need > 0).length;
+  int get attainedCount => requirements.values
+      .where((r) => r.need > 0 && !r.dataMissing && r.have >= r.need)
+      .length;
+  bool get hasMissingData =>
+      requirements.values.any((r) => r.need > 0 && r.dataMissing);
+
+  /// An aggregate percentage is not proof of meeting every requirement.
+  bool get isSufficient => requiredCount > 0 && attainedCount == requiredCount;
 }
 
 String? milBrevetCodeForTarget(String? value) {

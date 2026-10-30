@@ -357,6 +357,7 @@ class OperationProvider with ChangeNotifier {
 
     /// Selected guest tariff ID (when event has multiple guest tariffs).
     String? tariffId,
+    String? divingLevel,
 
     /// Optional supplements selected by/for this guest.
     List<SelectedSupplement>? selectedSupplements,
@@ -379,6 +380,7 @@ class OperationProvider with ChangeNotifier {
         addedByUserName: addedByUserName,
         parentInscriptionId: parentInscriptionId,
         tariffId: tariffId,
+        divingLevel: divingLevel,
         selectedSupplements: selectedSupplements,
         supplementTotal: supplementTotal,
         requestId: requestId,

@@ -182,7 +182,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     });
 
     try {
-      await _processScannedMember(code);
+      await _processScannedMember(code, qrScan: true);
     } catch (e) {
       _showErrorToast(e.toString());
     } finally {
@@ -197,7 +197,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     }
   }
 
-  Future<void> _processScannedMember(String memberId) async {
+  Future<void> _processScannedMember(String memberId,
+      {bool qrScan = false}) async {
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
     final displayName = authProvider.displayName ?? 'Inconnu';
@@ -286,6 +287,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
         memberId: memberId,
         memberName: member.fullName,
         scannedBy: currentUser.uid,
+        qrScan: qrScan,
       );
     } else {
       // Check if member has inscription

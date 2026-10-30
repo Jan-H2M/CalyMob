@@ -63,11 +63,61 @@ flutter test --no-pub \
   test/screens/boutique_screen_access_test.dart \
   test/services/boutique_access_service_test.dart \
   test/widgets/boutique_access_guard_test.dart \
+  test/screens/boutique_management_navigation_test.dart \
+  test/screens/boutique_stock_selection_flow_test.dart \
+  test/screens/boutique_qr_confirmation_lifecycle_test.dart \
+  test/widgets/boutique_current_payment_panel_test.dart \
+  test/widgets/event_payment_options_dialog_test.dart \
+  test/services/pool_formation_overview_reader_test.dart \
+  test/services/formation_task_roster_service_test.dart \
+  test/models/formation_task_roster_test.dart \
+  test/widgets/pool_apnee_overview_test.dart \
+  test/providers/activity_provider_retry_test.dart \
+  test/providers/unread_count_provider_cursor_test.dart \
+  test/screens/operations_filter_bar_test.dart \
+  test/screens/operations_list_filter_test.dart \
+  test/utils/retained_stream_loader_test.dart \
+  test/screens/communication_identity_gate_test.dart \
+  test/widgets/bug_report_form_test.dart \
+  test/services/bug_report_screenshot_upload_test.dart \
+  test/models/participant_operation_payment_status_test.dart \
+  test/models/participant_operation_untrusted_payment_aliases_test.dart \
+  test/screens/operation_detail_unregister_test.dart \
+  test/models/dive_environment_test.dart \
+  test/screens/formation_list_attention_order_test.dart \
+  test/screens/palanquee_simulation_persistence_test.dart \
+  test/screens/free_guest_registration_flow_test.dart \
+  test/utils/event_registration_error_test.dart \
+  test/widgets/directory_contact_actions_test.dart \
+  test/services/profile_service_directory_stream_test.dart \
+  test/models/member_profile_contact_privacy_test.dart \
   test/services/dive_computer_import_service_test.dart \
   test/services/dive_log_import_registry_test.dart \
   test/services/suunto_dive_log_adapter_test.dart \
   test/services/suunto_share_inbox_test.dart \
   test/services/uddf_dive_log_adapter_test.dart \
-  test/services/subsurface_dive_log_adapter_test.dart
+  test/services/subsurface_dive_log_adapter_test.dart \
+  test/models/boutique \
+  test/screens/boutique_receipt_selection_test.dart \
+  test/services/boutique_operations_service_test.dart \
+  test/screens/boutique_qr_access_test.dart \
+  test/services/notification_navigation_service_test.dart \
+  test/screens/boutique_action_wizard_test.dart \
+  test/screens/boutique_action_route_test.dart \
+  test/services/mil_depth_cumulative_test.dart \
+  test/services/mil_experience_service_test.dart \
+  test/screens/compact_stats_test.dart \
+  test/screens/student_360_scope_test.dart \
+  test/screens/apnee_dossier_screen_test.dart \
+  test/screens/apnee_formation_navigation_test.dart \
+  test/screens/pool_formation_tabs_test.dart \
+  test/services/piscine_session_service_test.dart \
+  test/services/pool_student_history_test.dart \
+  test/services/pool_group_correction_service_test.dart \
+  test/services/personal_exercise_progress_service_test.dart \
+  test/services/profile_service_test_visibility_test.dart \
+  test/screens/formation_list_error_state_test.dart \
+  test/screens/edit_my_inscription_dialog_test.dart \
+  test/services/inscription_edit_refund_test.dart
 
 echo "CalyMob $BUILD_NAME ($CI_BUILD_NUMBER): dependencies and Flutter tests ready."

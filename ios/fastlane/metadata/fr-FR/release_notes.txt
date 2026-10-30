@@ -1,1 +1,1 @@
-Variantes plus claires, gestion boutique via CalyCompta, coordonnées Who is Who restaurées et import de plongées Suunto, UDDF, Garmin FIT et Subsurface dans le carnet.
+Gestion Boutique simplifiée : choisissez l’action, précisez les valeurs, sélectionnez les paquets et confirmez. Corrections des inscriptions, des paiements, de la navigation, du suivi des formations et des coordonnées.

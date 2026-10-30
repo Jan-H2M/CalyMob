@@ -1,2 +1,10 @@
 cd03eb4d39bd56dd8dc9fe6f5d8152724c2bf3f4:ios/Podfile.lock:generic-api-key:1843
 cd03eb4d39bd56dd8dc9fe6f5d8152724c2bf3f4:ios/Podfile.lock:generic-api-key:1883
+# Reviewed false positives: generated CocoaPods SHA-1 podspec checksums only.
+# Both Apple Xcode Cloud workers produced these identical lock entries.
+# Fingerprints are restricted to this exact commit, file, rule and line;
+# future checksum changes and all credential/path rules remain scanned.
+# firebase_auth
+fd68bb52ba7371c86426bf7f4c9f1d42910c1030:ios/Podfile.lock:generic-api-key:1843
+# local_auth_darwin
+fd68bb52ba7371c86426bf7f4c9f1d42910c1030:ios/Podfile.lock:generic-api-key:1883

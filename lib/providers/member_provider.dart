@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/member_name.dart';
 import '../utils/club_role_utils.dart';
+import '../utils/member_directory_visibility.dart';
 
 /// Provider voor member data caching
 /// Laadt en cached member data na login voor snelle toegang
@@ -13,6 +14,22 @@ class MemberProvider with ChangeNotifier {
         memberLoader,
   })  : _firestore = firestore,
         _memberLoader = memberLoader;
+
+  /// Scoped read-only profile source for a monitor's local pupil comparison.
+  /// Does not read another member's private document or change authentication.
+  factory MemberProvider.forDirectoryReads() {
+    return MemberProvider(memberLoader: (clubId, memberId) async {
+      final doc = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(clubId)
+          .collection('member_directory')
+          .doc(memberId)
+          .get();
+      return doc.exists && !excludedFromMemberDirectory(doc.data() ?? {})
+          ? doc.data()
+          : null;
+    });
+  }
 
   final FirebaseFirestore? _firestore;
   final Future<Map<String, dynamic>?> Function(String clubId, String userId)?

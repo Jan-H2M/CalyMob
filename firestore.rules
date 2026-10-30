@@ -655,6 +655,33 @@ service cloud.firestore {
       }
 
       // LIFRAS exercises - can be read by club members (mobile + web), written by admins only
+      // MOB-035: independent apnée enrolment, lessons and signed-card results.
+      // Clients can never fabricate official results, attendance or audit.
+      match /apnee_enrollments/{enrollmentId} {
+        allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+          || isPiscineFormationEditor(clubId));
+        allow write: if false;
+        match /requirements/{requirementId} {
+          allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+            || canValidateLifras(clubId)
+            || (isPiscineFormationEditor(clubId) && resource.data.setting == 'pool'));
+          allow write: if false;
+        }
+        match /awards/{awardId} {
+          allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+            || canValidateLifras(clubId));
+          allow write: if false;
+        }
+      }
+      match /apnee_participations/{participationId} {
+        allow read: if isMember(clubId) && (resource.data.member_id == request.auth.uid
+          || isPiscineFormationEditor(clubId));
+        allow write: if false;
+      }
+      match /apnee_audit/{operationId} {
+        allow read: if isAdmin(clubId);
+        allow write: if false;
+      }
       match /exercices_lifras/{exerciceId} {
         allow read: if isMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
@@ -1162,7 +1189,10 @@ service cloud.firestore {
           ]);
 
         // Admins can create new members (for user management UI)
-        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create: if isAdmin(clubId) && hasValidSession(clubId)
+          && request.resource.data.get('formation_active', false) == false
+          && request.resource.data.get('formation_revision', 0) == 0
+          && request.resource.data.get('formation_track', null) == null;
 
         // Admin clients may edit ordinary member fields, but share_birthday is
         // callable-only for every role. The callable atomically updates the
@@ -1171,7 +1201,7 @@ service cloud.firestore {
         allow update: if isAdmin(clubId)
           && hasValidSession(clubId)
           && !request.resource.data.diff(resource.data).affectedKeys()
-               .hasAny(['share_birthday']);
+               .hasAny(['share_birthday', 'formation_active', 'target_formation_level', 'formation_revision', 'formation_track']);
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Unread cursor v1. These documents are intentionally self-owned only:
@@ -1332,6 +1362,11 @@ service cloud.firestore {
         // écrit les 'plongeur_code_change' via l'Admin SDK (bypass rules). Le
         // membre peut ajouter ses propres dates d'homologation passées
         // (from='self_service') mais jamais modifier/supprimer ; admin corrige.
+        match /formation_admin_audit/{operationId} {
+          allow read: if isAdmin(clubId);
+          allow write: if false;
+        }
+
         match /brevet_history/{historyId} {
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
@@ -1453,9 +1488,14 @@ service cloud.firestore {
 
       // Boutique access audits are server-only. Even an admin client cannot
       // forge the actor or detach the record from its settings transaction.
+      match /formation_enrollment_audit/{auditId} {
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow write: if false;
+      }
       match /audit_logs/{auditId} {
         allow read: if isAdmin(clubId) && hasValidSession(clubId);
         allow create: if isMember(clubId)
+          && request.resource.data.get('action', '') != 'formation_enrollment'
           && !isBoutiqueAccessAudit(request.resource.data);
         allow update, delete: if false; // Audit logs are immutable
       }
@@ -1776,7 +1816,23 @@ service cloud.firestore {
           allow read: if isMember(clubId);
           allow write: if false;
         }
-
+        match /qr_scan_receipts/{memberId} {
+          allow read: if isMember(clubId);
+          allow write: if false;
+        }
+        // Server-authoritative, immutable historical group correction audit.
+        match /qr_training_assignments/{memberId} {
+          allow read: if isAdmin(clubId);
+          allow write: if false;
+        }
+        match /apnee_group_corrections/{correctionId} {
+          allow read: if isAdmin(clubId);
+          allow write: if false;
+        }
+        match /group_corrections/{correctionId} {
+          allow read: if canValidateLifras(clubId);
+          allow write: if false;
+        }
         // Read: All authenticated club members (mobile app - no session required)
         allow read: if isAuthenticated() &&
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
@@ -1796,6 +1852,7 @@ service cloud.firestore {
           allow read: if isMember(clubId) || isAdmin(clubId);
           // Create: Any authenticated club member can scan (mobile app scanner)
           allow create: if isMember(clubId)
+            && (!request.resource.data.keys().hasAny(['qrVerified']) || isAdmin(clubId))
             && request.resource.data.scannedAt is timestamp
             && request.resource.data.scannedBy is string
             && request.resource.data.scannedBy.size() > 0
@@ -2124,13 +2181,20 @@ service cloud.firestore {
           request.resource.data.memberId is string &&
           exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.memberId)) &&
           request.resource.data.contextType == 'piscine' &&
-          request.resource.data.contextId == 'formation_overview' &&
-          request.resource.data.contextTitle == 'Suivi formation piscine' &&
+          (
+            (request.resource.data.contextId == 'formation_overview' &&
+             request.resource.data.contextTitle == 'Suivi formation piscine' &&
+             request.resource.data.contextDate == request.time) ||
+            (request.resource.data.contextId is string &&
+             exists(/databases/$(database)/documents/clubs/$(clubId)/piscine_sessions/$(request.resource.data.contextId)) &&
+             request.resource.data.contextTitle == 'Séance piscine' &&
+             request.resource.data.contextDate == get(/databases/$(database)/documents/clubs/$(clubId)/piscine_sessions/$(request.resource.data.contextId)).data.date)
+          ) &&
           request.resource.data.category == 'general' &&
           request.resource.data.note is string &&
           request.resource.data.note.size() > 0 &&
           request.resource.data.note.size() <= 2000 &&
-          request.resource.data.contextDate == request.time &&
+
           request.resource.data.createdAt == request.time &&
           request.resource.data.updatedAt == request.time &&
           request.resource.data.keys().hasOnly([

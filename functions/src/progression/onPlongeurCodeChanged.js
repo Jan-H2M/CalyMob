@@ -31,6 +31,18 @@ async function handlePlongeurCodeChanged(event) {
   if (!newCode) return; // clearing the code is not a brevet acquisition
 
   const db = admin.firestore();
+  // The official member-interface transaction already writes the matching
+  // dated history atomically. Verify its server-only audit before skipping
+  // the legacy trigger; a client-supplied marker is never sufficient.
+  const operation = after.formation_official_operation;
+  if (operation && operation !== before.formation_official_operation &&
+      /^[A-Za-z0-9_-]{1,128}$/.test(operation)) {
+    const audit = await db.collection('clubs').doc(clubId).collection('members').doc(memberId)
+      .collection('formation_admin_audit').doc(operation).get();
+    const row = audit.exists ? audit.data() : null;
+    if (row?.source === 'calycompta_member_formation' && row.memberId === memberId &&
+        row.requested?.kind === 'brevet' && row.before?.level === (oldCode || '') && row.after?.level === newCode) return;
+  }
   const historyRef = db
     .collection('clubs')
     .doc(clubId)
