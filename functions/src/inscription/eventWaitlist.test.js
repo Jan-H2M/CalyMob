@@ -1067,7 +1067,7 @@ describe('addGuestToEvent callable', () => {
         prenom: 'Eva', nom: 'Staff', app_role: 'membre',
         clubStatuten: ['Encadrants'],
       },
-      operationOverrides: { allow_guests: false },
+      operationOverrides: { allow_guests: true },
     });
     const result = await addGuestToEvent({
       auth: { uid: 'member-1' },
@@ -1081,6 +1081,38 @@ describe('addGuestToEvent callable', () => {
       parent_inscription_id: null,
       is_guest: true,
     }));
+  });
+
+  test.each([
+    ['encadrant', { app_role: 'membre', clubStatuten: ['Encadrants'] }, {}],
+    ['organizer', { app_role: 'membre' }, { organisateur_id: 'member-1' }],
+    ['creator', { app_role: 'membre' }, { creator_user_id: 'member-1' }],
+    ['admin', { app_role: 'admin' }, {}],
+    ['superadmin', { app_role: 'superadmin' }, {}],
+    ['validator', { app_role: 'validateur' }, {}],
+  ])('guest prohibition applies to standalone %s with no writes', async (_, memberData, operationOverrides) => {
+    const { transaction } = setupAppend({
+      memberData,
+      operationOverrides: { ...operationOverrides, allow_guests: false },
+    });
+    await expect(addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId,
+        guest: { firstName: 'Synthetic', lastName: 'Guest' } },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test.each([false, null, undefined, 'true'])('linked guests require explicit allow_guests=true (%s)', async (allowGuests) => {
+    const { transaction } = setupAppend({ operationOverrides: { allow_guests: allowGuests } });
+    await expect(addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent-1', requestId,
+        guest: { firstName: 'Synthetic', lastName: 'Guest' } },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
   });
 
   test('rejects a standalone guest from ordinary members', async () => {
