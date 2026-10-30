@@ -60,6 +60,10 @@ git diff --exit-code -- pubspec.lock ios/Podfile.lock
 flutter test --no-pub \
   test/config/firebase_options_test.dart \
   test/models/boutique_product_personalization_test.dart \
+  test/models/boutique_thread_colors_test.dart \
+  test/providers/boutique_cart_provider_test.dart \
+  test/screens/boutique_product_detail_screen_test.dart \
+  test/dev/thread_colors_dev_test.dart \
   test/screens/boutique_screen_access_test.dart \
   test/services/boutique_access_service_test.dart \
   test/widgets/boutique_access_guard_test.dart \
