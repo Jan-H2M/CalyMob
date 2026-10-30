@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 import '../../models/boutique/boutique_physical_unit.dart';
 import '../../models/boutique/boutique_unit_qr.dart';
 import '../../services/boutique/boutique_operations_service.dart';
@@ -129,8 +130,8 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
     final remaining = (widget.packet['units'] as List).length - _scanned.length;
     final enoughArticles = _scanned.isNotEmpty &&
         (widget.packet['allowPartial'] == true || remaining == 0);
-    return Scaffold(
-        appBar: AppBar(title: const Text('Remettre au membre')),
+    return BoutiqueOperationsScaffold(
+        title: 'Remettre au membre',
         body: ListView(padding: const EdgeInsets.all(16), children: [
           Text('${widget.packet['buyerName']}',
               style: Theme.of(context).textTheme.headlineSmall),

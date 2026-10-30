@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/boutique/boutique_operations_service.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
 /// Dedicated scanner: article codes can never enter attendance/member flows.
 class BoutiqueQrScanScreen extends StatefulWidget {
@@ -88,13 +89,14 @@ class _BoutiqueQrScanScreenState extends State<BoutiqueQrScanScreen>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(widget.title), actions: [
+  Widget build(BuildContext context) => BoutiqueOperationsScaffold(
+        title: widget.title,
+        actions: [
           IconButton(
               tooltip: 'Lampe',
               onPressed: () => _camera.toggleTorch(),
               icon: const Icon(Icons.flashlight_on_outlined))
-        ]),
+        ],
         body: SafeArea(
             child: Column(children: [
           Padding(

@@ -2,15 +2,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/boutique/boutique_operations_service.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 import 'boutique_stock_session_screen.dart';
+import 'boutique_receipt_selection_screen.dart';
 import 'boutique_pickup_mission_screen.dart';
 
 class BoutiqueManagementScreen extends StatefulWidget {
   final bool manager;
+  final bool showStockPreparation;
   final BoutiqueOperationsService service;
   const BoutiqueManagementScreen(
       {super.key,
       required this.manager,
+      this.showStockPreparation = true,
       this.service = const BoutiqueOperationsService()});
   @override
   State<BoutiqueManagementScreen> createState() =>
@@ -52,7 +56,8 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
     try {
       final results = await Future.wait([
         widget.service.call(_club, 'missions'),
-        if (widget.manager) widget.service.call(_club, 'list')
+        if (widget.manager && widget.showStockPreparation)
+          widget.service.call(_club, 'list')
       ]);
       final missionPage = results[0];
       for (var page = 1;
@@ -74,7 +79,7 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
         _missions = (missionPage['missions'] as List)
             .map((m) => Map<String, dynamic>.from(m as Map))
             .toList();
-        if (widget.manager) {
+        if (widget.manager && widget.showStockPreparation) {
           _units = (results[1]['units'] as List)
               .map((m) => Map<String, dynamic>.from(m as Map))
               .toList();
@@ -131,18 +136,23 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
     }
   }
 
-  Future<void> _start() async {
+  Future<void> _start({bool receipt = false}) async {
     if (_location.text.trim().isEmpty) return;
     await Navigator.push(
         context,
         boutiqueAccessGuardedRoute(
             sourceContext: context,
             requiredSection: 'gestion',
-            builder: (_) => BoutiqueStockSessionScreen(
-                clubId: _club,
-                location: _location.text.trim(),
-                assignees: _assignees,
-                service: widget.service)));
+            builder: (_) => receipt
+                ? BoutiqueReceiptSelectionScreen(
+                    clubId: _club,
+                    location: _location.text.trim(),
+                    service: widget.service)
+                : BoutiqueStockSessionScreen(
+                    clubId: _club,
+                    location: _location.text.trim(),
+                    assignees: _assignees,
+                    service: widget.service)));
     if (mounted) _load();
   }
 
@@ -153,15 +163,14 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
       final place = u['location'] as String? ?? 'Lieu inconnu';
       locations.update(place, (v) => v + 1, ifAbsent: () => 1);
     }
-    return Scaffold(
-        appBar: AppBar(
-            title: Text(widget.manager ? 'Gestion Boutique' : 'Mes remises'),
-            actions: [
-              IconButton(
-                  tooltip: 'Actualiser',
-                  onPressed: _loading ? null : () => _load(),
-                  icon: const Icon(Icons.refresh))
-            ]),
+    return BoutiqueOperationsScaffold(
+        title: widget.manager ? 'Gestion Boutique' : 'Mes remises',
+        actions: [
+          IconButton(
+              tooltip: 'Actualiser',
+              onPressed: _loading ? null : () => _load(),
+              icon: const Icon(Icons.refresh))
+        ],
         body: RefreshIndicator(
             onRefresh: _load,
             child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -173,11 +182,13 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
                 TextButton(
                     onPressed: () => _load(), child: const Text('Réessayer'))
               ],
-              if (widget.manager && _error == null) ...[
+              if (widget.manager &&
+                  widget.showStockPreparation &&
+                  _error == null) ...[
                 Text('Un lot, une action',
                     style: Theme.of(context).textTheme.headlineSmall),
                 const Text(
-                    'Choisissez le lieu où vous travaillez, puis scannez plusieurs fiches articles. Toutes les pièces seront traitées ensemble.'),
+                    'Choisissez le lieu actuel, puis sélectionnez les pièces par commande ou par scan. Vous pourrez changer leur lieu ou suivre leur finition et leur broderie.'),
                 const SizedBox(height: 12),
                 Wrap(
                     spacing: 8,
@@ -201,9 +212,16 @@ class _BoutiqueManagementScreenState extends State<BoutiqueManagementScreen> {
                 FilledButton.icon(
                     onPressed: _loading || _location.text.trim().isEmpty
                         ? null
-                        : _start,
+                        : () => _start(),
                     icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('Scanner un lot')),
+                    label: const Text('Sélectionner un lot')),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                    onPressed: _loading || _location.text.trim().isEmpty
+                        ? null
+                        : () => _start(receipt: true),
+                    icon: const Icon(Icons.checklist),
+                    label: const Text('Choisir une réception · sans scanner')),
                 const SizedBox(height: 28),
               ],
               Text(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 import 'package:intl/intl.dart';
 import '../../models/boutique/boutique_physical_unit.dart';
 import '../../models/boutique/boutique_unit_qr.dart';
@@ -189,13 +190,14 @@ class _BoutiquePickupMissionScreenState
     final units = (_data?['units'] as List? ?? []);
     final inTransit =
         units.where((u) => u['transportMissionId'] == widget.missionId).length;
-    return Scaffold(
-        appBar: AppBar(title: const Text('Transport et remises'), actions: [
+    return BoutiqueOperationsScaffold(
+        title: 'Transport et remises',
+        actions: [
           IconButton(
               tooltip: 'Actualiser',
               onPressed: _busy ? null : () => _load(),
               icon: const Icon(Icons.refresh))
-        ]),
+        ],
         body: RefreshIndicator(
             onRefresh: _load,
             child: ListView(padding: const EdgeInsets.all(16), children: [
