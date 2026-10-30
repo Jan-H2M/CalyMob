@@ -1,0 +1,78 @@
+name: Boutique action flow
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/boutique-action-flow.yml'
+      - 'firebase.boutique-flow-qa.json'
+      - 'lib/models/boutique/**'
+      - 'lib/services/boutique/**'
+      - 'lib/widgets/boutique/**'
+      - 'lib/screens/boutique/**'
+      - 'functions/src/boutique/physicalOperations.js'
+      - 'functions/test/boutique/**'
+      - 'test/qa/boutique_action_first_preview.dart'
+      - 'test/screens/boutique*_test.dart'
+      - 'test/services/boutique_operations_service_test.dart'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'functions/package*.json'
+permissions:
+  contents: read
+concurrency:
+  group: boutique-action-flow-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  boutique-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Action, values, packages, access and back navigation
+        run: >-
+          flutter test --no-pub
+          test/screens/boutique_action_wizard_test.dart
+          test/screens/boutique_action_route_test.dart
+          test/screens/boutique_management_navigation_test.dart
+          test/screens/boutique_receipt_selection_test.dart
+          test/screens/boutique_screen_access_test.dart
+          test/screens/boutique_stock_selection_flow_test.dart
+          test/services/boutique_operations_service_test.dart
+      - name: Real Chrome execution with fictional packages
+        run: >-
+          flutter test --no-pub --platform chrome
+          test/screens/boutique_action_wizard_test.dart
+          test/screens/boutique_action_route_test.dart
+          test/screens/boutique_receipt_selection_test.dart
+          test/screens/boutique_management_navigation_test.dart
+      - run: git diff --exit-code -- pubspec.lock
+  boutique-handler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm --prefix functions ci --ignore-scripts --no-audit --no-fund
+      - name: Atomic transitions, complete listings and read-only selection
+        env:
+          NODE_PATH: ./functions/node_modules
+        run: >-
+          npx --yes firebase-tools@15.12.0 emulators:exec
+          --only firestore --project demo-boutique-qr
+          --config firebase.boutique-flow-qa.json
+          'node --test --test-concurrency=1 functions/test/boutique/physicalOperations.emulator.cjs functions/test/boutique/orderSelection.emulator.cjs'
+      - run: git diff --exit-code -- functions/package-lock.json

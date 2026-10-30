@@ -100,10 +100,10 @@ void main() {
       );
       await tester.scrollUntilVisible(find.text('Produits'), 120);
       expectSections(visible: true);
-      expect(find.text('Beheer via CalyCompta'), findsOneWidget);
+      expect(find.text('Ouvrir CalyCompta'), findsOneWidget);
       expect(
         find.text(
-          'Als Responsable boutique kun je hier alleen testen. Beheer catalogus, bestellingen en voorraad in CalyCompta.',
+          'Gérer le catalogue, les commandes et le stock dans CalyCompta.',
         ),
         findsOneWidget,
       );
@@ -118,12 +118,12 @@ void main() {
         findsOneWidget,
       );
       expectSections(visible: false);
-      expect(find.text('Beheer via CalyCompta'), findsNothing);
+      expect(find.text('Ouvrir CalyCompta'), findsNothing);
 
       await memberRef.update({'member_status': 'active'});
       await pumpAccessEvent(tester);
       expectSections(visible: true);
-      expect(find.text('Beheer via CalyCompta'), findsOneWidget);
+      expect(find.text('Ouvrir CalyCompta'), findsOneWidget);
 
       // Removing the responsibility immediately hides every card.
       await memberRef.update({'clubStatuten': <String>[]});
@@ -133,7 +133,7 @@ void main() {
         findsOneWidget,
       );
       expectSections(visible: false);
-      expect(find.text('Beheer via CalyCompta'), findsNothing);
+      expect(find.text('Ouvrir CalyCompta'), findsNothing);
 
       // Going online grants every active member all five fallback sections.
       await memberRef.update({

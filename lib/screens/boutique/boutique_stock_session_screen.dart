@@ -4,17 +4,22 @@ import '../../services/boutique/boutique_operations_service.dart';
 import 'boutique_qr_scan_screen.dart';
 import 'boutique_order_selection_screen.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
 class BoutiqueStockSessionScreen extends StatefulWidget {
   final String clubId;
   final String location;
   final List<Map<String, dynamic>> assignees;
   final BoutiqueOperationsService service;
+  final List<BoutiquePhysicalUnit> initialUnits;
+  final bool moveOnly;
   const BoutiqueStockSessionScreen(
       {super.key,
       required this.clubId,
       required this.location,
       required this.assignees,
+      this.initialUnits = const [],
+      this.moveOnly = false,
       this.service = const BoutiqueOperationsService()});
   @override
   State<BoutiqueStockSessionScreen> createState() =>
@@ -57,8 +62,14 @@ class _BoutiqueStockSessionScreenState
   @override
   void initState() {
     super.initState();
-    _selection =
-        BoutiqueScanSelection(clubId: widget.clubId, location: widget.location);
+    if (widget.moveOnly) _action = 'move';
+    _selection = BoutiqueScanSelection(
+        clubId: widget.clubId,
+        location: widget.location,
+        maximum: widget.moveOnly ? 100 : 50);
+    for (final unit in widget.initialUnits) {
+      _selection.add(unit);
+    }
   }
 
   @override
@@ -78,7 +89,7 @@ class _BoutiqueStockSessionScreenState
     if (!mounted) throw const FormatException('Session fermée.');
     setState(() {
       _selection.add(unit);
-      _action = null;
+      _action = widget.moveOnly ? 'move' : null;
       _error = null;
     });
     return '${_selection.units.length} pièce(s) · ${unit.name} ajoutée';
@@ -98,7 +109,7 @@ class _BoutiqueStockSessionScreenState
     try {
       setState(() {
         _selection.addOrder(units);
-        _action = null;
+        _action = widget.moveOnly ? 'move' : null;
         _error = null;
       });
     } catch (e) {
@@ -168,7 +179,9 @@ class _BoutiqueStockSessionScreenState
     setState(() => _busy = true);
     try {
       final next = BoutiqueScanSelection(
-          clubId: widget.clubId, location: widget.location);
+          clubId: widget.clubId,
+          location: widget.location,
+          maximum: widget.moveOnly ? 100 : 50);
       for (final unit in _selection.units) {
         next.add(await widget.service.lookup(widget.clubId, unit.id));
       }
@@ -246,8 +259,9 @@ class _BoutiqueStockSessionScreenState
                             Text(
                                 'Tâche partagée avec ${_helpers.length} personne(s), valable 7 jours. Le départ seul n’envoie aucun message.'),
                           const SizedBox(height: 12),
-                          const Text(
-                              'Confirmez uniquement les pièces physiquement présentes dans ce lot.'),
+                          Text(_action == 'move'
+                              ? 'Confirmez uniquement lorsque ces pièces sont physiquement au lieu de destination. La finition et les réservations sont conservées.'
+                              : 'Confirmez uniquement les pièces physiquement présentes dans ce lot.'),
                         ])),
                     actions: [
                       TextButton(
@@ -284,36 +298,42 @@ class _BoutiqueStockSessionScreenState
   @override
   Widget build(BuildContext context) {
     final locked = _busy || _pending != null;
-    return Scaffold(
-        appBar: AppBar(title: const Text('Scanner un lot')),
+    return BoutiqueOperationsScaffold(
+        title: 'Lieu et état du lot',
         body: SafeArea(
             child: ListView(padding: const EdgeInsets.all(16), children: [
           Text('Lieu de cette session : ${widget.location}',
               style: Theme.of(context).textTheme.titleMedium),
           const Text(
               'Sélectionnez d’abord les pièces, puis choisissez une action commune. Rien ne change avant votre confirmation.'),
+          const SizedBox(height: 8),
+          const Text(
+              'Le lieu et la finition sont distincts : déplacer les pièces ne les marque pas comme brodées. Les étapes chez Jim et le contrôle restent à confirmer séparément.'),
           const SizedBox(height: 16),
-          Text('1 · Sélection · ${_selection.units.length}/50 pièce(s)',
+          Text(
+              '1 · Sélection · ${_selection.units.length}/${widget.moveOnly ? 100 : 50} pièce(s)',
               style: Theme.of(context).textTheme.titleMedium),
-          FilledButton.icon(
-              onPressed: locked
-                  ? null
-                  : () => Navigator.push(
-                      context,
-                      boutiqueAccessGuardedRoute(
-                          sourceContext: context,
-                          requiredSection: 'gestion',
-                          builder: (_) => BoutiqueQrScanScreen(
-                              title: 'Scanner les fiches articles',
-                              instruction:
-                                  'Scannez les pièces présentes à ${widget.location}. Une pièce déjà scannée ne sera pas ajoutée deux fois.',
-                              onScan: _scan))),
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scanner une ou plusieurs pièces')),
-          OutlinedButton.icon(
-              onPressed: locked ? null : _chooseOrder,
-              icon: const Icon(Icons.inventory_2_outlined),
-              label: const Text('Sélectionner une commande complète')),
+          if (!widget.moveOnly)
+            FilledButton.icon(
+                onPressed: locked
+                    ? null
+                    : () => Navigator.push(
+                        context,
+                        boutiqueAccessGuardedRoute(
+                            sourceContext: context,
+                            requiredSection: 'gestion',
+                            builder: (_) => BoutiqueQrScanScreen(
+                                title: 'Scanner les fiches articles',
+                                instruction:
+                                    'Scannez les pièces présentes à ${widget.location}. Une pièce déjà scannée ne sera pas ajoutée deux fois.',
+                                onScan: _scan))),
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scanner une ou plusieurs pièces')),
+          if (!widget.moveOnly)
+            OutlinedButton.icon(
+                onPressed: locked ? null : _chooseOrder,
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: const Text('Sélectionner une commande complète')),
           ..._selection.units.map((u) => ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(u.name),
@@ -324,7 +344,7 @@ class _BoutiqueStockSessionScreenState
                       ? null
                       : () => setState(() {
                             _selection.remove(u.id);
-                            _action = null;
+                            _action = widget.moveOnly ? 'move' : null;
                           }),
                   icon: const Icon(Icons.close)))),
           if (_pending == null)
@@ -335,20 +355,23 @@ class _BoutiqueStockSessionScreenState
             const SizedBox(height: 16),
             Text('2 · Action commune',
                 style: Theme.of(context).textTheme.titleMedium),
-            DropdownButtonFormField<String>(
-                key: ValueKey(_action),
-                initialValue: _action,
-                hint: const Text('Choisir une action'),
-                isExpanded: true,
-                decoration: const InputDecoration(
-                    labelText: 'Action pour tout le lot',
-                    border: OutlineInputBorder()),
-                items: _actions.entries
-                    .map((e) => DropdownMenuItem(
-                        value: e.key,
-                        child: Text(e.value, overflow: TextOverflow.ellipsis)))
-                    .toList(),
-                onChanged: locked ? null : (v) => setState(() => _action = v!)),
+            if (!widget.moveOnly)
+              DropdownButtonFormField<String>(
+                  key: ValueKey(_action),
+                  initialValue: _action,
+                  hint: const Text('Choisir une action'),
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                      labelText: 'Action pour tout le lot',
+                      border: OutlineInputBorder()),
+                  items: _actions.entries
+                      .map((e) => DropdownMenuItem(
+                          value: e.key,
+                          child:
+                              Text(e.value, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged:
+                      locked ? null : (v) => setState(() => _action = v!)),
             if (_action != null)
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),

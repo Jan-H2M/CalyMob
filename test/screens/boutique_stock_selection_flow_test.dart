@@ -80,6 +80,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Contrôler les articles sans broderie').last);
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+        find.text('Contrôle effectué · obligatoire'), 120,
+        scrollable: find.byType(Scrollable).first);
     await tester.enterText(find.byType(TextField).last, 'Contrôle fictif');
   }
 

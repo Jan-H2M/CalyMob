@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/boutique/boutique_access_service.dart';
+import 'boutique_operations_scaffold.dart';
 
 typedef BoutiqueAccessGuardBuilder = Widget Function(
   BuildContext context,
@@ -184,9 +185,9 @@ class BoutiqueAccessUnavailable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Boutique')),
-      body: const Center(
+    return const BoutiqueOperationsScaffold(
+      title: 'Boutique',
+      body: Center(
         key: Key('boutique-access-unavailable'),
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -205,7 +206,8 @@ class _BoutiqueAccessLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return const BoutiqueOperationsScaffold(
+      title: 'Boutique',
       body: Center(
         child: CircularProgressIndicator(
           key: Key('boutique-access-loading'),
