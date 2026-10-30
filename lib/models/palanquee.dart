@@ -70,7 +70,8 @@ class Palanquee {
     return Palanquee(
       numero: map['numero'] ?? 1,
       participants: (map['participants'] as List<dynamic>?)
-              ?.map((p) => PalanqueeParticipant.fromMap(p as Map<String, dynamic>))
+              ?.map((p) =>
+                  PalanqueeParticipant.fromMap(p as Map<String, dynamic>))
               .toList() ??
           [],
     );
@@ -99,11 +100,16 @@ class Palanquee {
 /// Firestore path: clubs/{clubId}/operations/{operationId}/palanquees/assignments
 class PalanqueeAssignments {
   final List<Palanquee> palanquees;
+
+  /// Complete planning-only roster, including members not assigned to a group.
+  /// Never an event inscription or an attendance/payment declaration.
+  final List<PalanqueeParticipant> simulationParticipants;
   final DateTime? updatedAt;
   final String? updatedBy;
 
   const PalanqueeAssignments({
     this.palanquees = const [],
+    this.simulationParticipants = const [],
     this.updatedAt,
     this.updatedBy,
   });
@@ -114,6 +120,12 @@ class PalanqueeAssignments {
               ?.map((p) => Palanquee.fromMap(p as Map<String, dynamic>))
               .toList() ??
           [],
+      simulationParticipants:
+          (data['simulation_participants'] as List<dynamic>?)
+                  ?.map((p) =>
+                      PalanqueeParticipant.fromMap(p as Map<String, dynamic>))
+                  .toList() ??
+              [],
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
       updatedBy: data['updated_by'] as String?,
     );
@@ -122,6 +134,8 @@ class PalanqueeAssignments {
   Map<String, dynamic> toFirestore() {
     return {
       'palanquees': palanquees.map((p) => p.toMap()).toList(),
+      'simulation_participants':
+          simulationParticipants.map((p) => p.toMap()).toList(),
       'updated_at': FieldValue.serverTimestamp(),
       'updated_by': updatedBy,
     };
@@ -129,11 +143,14 @@ class PalanqueeAssignments {
 
   PalanqueeAssignments copyWith({
     List<Palanquee>? palanquees,
+    List<PalanqueeParticipant>? simulationParticipants,
     DateTime? updatedAt,
     String? updatedBy,
   }) {
     return PalanqueeAssignments(
       palanquees: palanquees ?? this.palanquees,
+      simulationParticipants:
+          simulationParticipants ?? this.simulationParticipants,
       updatedAt: updatedAt ?? this.updatedAt,
       updatedBy: updatedBy ?? this.updatedBy,
     );
