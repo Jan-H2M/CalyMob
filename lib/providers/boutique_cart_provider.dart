@@ -480,9 +480,14 @@ Map<String, dynamic> normalizeBoutiqueCartPersonalization(
         : config.name.zones.first;
     final nameSurcharge =
         config.name.surcharge + config.name.priceForText(nameText);
+    final nameColor = _normalizeCartThreadColor(
+      config.name.threadColors,
+      storedName is Map ? storedName['color'] : null,
+    );
     result['name'] = {
       'text': nameText,
       'zone': zone,
+      if (nameColor != null) 'color': nameColor,
       'pricingMode': config.name.pricingMode == BoutiqueNamePricingMode.fixed
           ? 'fixed'
           : 'per_character',
@@ -504,9 +509,14 @@ Map<String, dynamic> normalizeBoutiqueCartPersonalization(
     final zone = config.certification.zones.contains(storedZone)
         ? storedZone!
         : config.certification.zones.first;
+    final certificationColor = _normalizeCartThreadColor(
+      config.certification.threadColors,
+      storedCertification is Map ? storedCertification['color'] : null,
+    );
     result['certification'] = {
       'value': certification,
       'zone': zone,
+      if (certificationColor != null) 'color': certificationColor,
       'surcharge': config.certification.surcharge,
     };
     surcharge += config.certification.surcharge;
@@ -515,6 +525,16 @@ Map<String, dynamic> normalizeBoutiqueCartPersonalization(
   if (result.length == 2) return const {};
   result['surcharge'] = surcharge;
   return result;
+}
+
+/// Preserve an unavailable explicit selection rather than silently replacing
+/// it. The product editor requires a new choice and the server rejects it if
+/// submitted unchanged. Missing legacy selections alone may use the default.
+Object? _normalizeCartThreadColor(BoutiqueThreadColors colors, Object? raw) {
+  if (raw != null && raw is! String) return raw;
+  final selected = raw as String?;
+  if (!colors.accepts(selected)) return raw;
+  return colors.resolve(selected);
 }
 
 bool _sameJson(Object? left, Object? right) =>

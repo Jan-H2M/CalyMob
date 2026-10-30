@@ -281,6 +281,7 @@ class BoutiquePersonalizationOption {
 }
 
 class BoutiqueNameOption extends BoutiquePersonalizationOption {
+  final BoutiqueThreadColors threadColors;
   final BoutiqueNamePricingMode pricingMode;
   final double pricePerCharacter;
   final double fixedPrice;
@@ -294,6 +295,7 @@ class BoutiqueNameOption extends BoutiquePersonalizationOption {
     required this.pricePerCharacter,
     required this.fixedPrice,
     this.maxLength,
+    this.threadColors = const BoutiqueThreadColors(),
   });
 
   factory BoutiqueNameOption.fromMap(dynamic value) {
@@ -310,6 +312,8 @@ class BoutiqueNameOption extends BoutiquePersonalizationOption {
       ),
       fixedPrice: _asDouble(data['fixedPrice']),
       maxLength: _nullableInt(data['maxLength']),
+      threadColors:
+          BoutiqueThreadColors.fromMap(Map<String, dynamic>.from(data)),
     );
   }
 
@@ -323,12 +327,14 @@ enum BoutiqueNamePricingMode { perCharacter, fixed }
 
 class BoutiqueCertificationOption extends BoutiquePersonalizationOption {
   final List<String> allowedValues;
+  final BoutiqueThreadColors threadColors;
 
   const BoutiqueCertificationOption({
     required super.enabled,
     required super.zones,
     required super.surcharge,
     required this.allowedValues,
+    this.threadColors = const BoutiqueThreadColors(),
   });
 
   factory BoutiqueCertificationOption.fromMap(dynamic value) {
@@ -338,7 +344,76 @@ class BoutiqueCertificationOption extends BoutiquePersonalizationOption {
       zones: _stringList(data['zones']),
       surcharge: _asDouble(data['surcharge']),
       allowedValues: _stringList(data['allowedValues']),
+      threadColors:
+          BoutiqueThreadColors.fromMap(Map<String, dynamic>.from(data)),
     );
+  }
+}
+
+/// Product-scoped text colours. Malformed configuration cannot become a choice.
+class BoutiqueThreadColors {
+  final String? fixedColor;
+  final List<String> choices;
+  final bool valid;
+  const BoutiqueThreadColors({
+    this.fixedColor,
+    this.choices = const [],
+    this.valid = true,
+  });
+
+  factory BoutiqueThreadColors.fromMap(Map<String, dynamic> data) {
+    bool label(dynamic value) =>
+        value is String &&
+        value.trim().isNotEmpty &&
+        value.trim().length <= 40 &&
+        !RegExp(r'[\x00-\x1f\x7f<>]').hasMatch(value.trim());
+    final raw = data['allowedColors'];
+    final fixed =
+        data['color'] is String ? (data['color'] as String).trim() : '';
+    if ((fixed.isNotEmpty && !label(fixed)) ||
+        (data.containsKey('allowedColors') &&
+            (raw is! List || raw.length > 16 || !raw.every(label)))) {
+      return const BoutiqueThreadColors(valid: false);
+    }
+    final colors = <String, String>{};
+    for (final value in (raw as List? ?? const [])) {
+      colors[(value as String).trim().toLowerCase()] = value.trim();
+    }
+    return BoutiqueThreadColors(
+      fixedColor: fixed.isEmpty ? null : fixed,
+      choices: List.unmodifiable(colors.values),
+    );
+  }
+
+  String? get defaultColor => choices.isEmpty
+      ? fixedColor
+      : choices
+              .where(
+                (value) => value.toLowerCase() == fixedColor?.toLowerCase(),
+              )
+              .firstOrNull ??
+          choices.first;
+
+  bool accepts(String? value) =>
+      valid &&
+      (value == null ||
+          value.isEmpty ||
+          (choices.isEmpty
+              ? fixedColor?.toLowerCase() == value.trim().toLowerCase()
+              : choices.any(
+                  (color) => color.toLowerCase() == value.trim().toLowerCase(),
+                )));
+
+  String? resolve(String? value) {
+    if (!accepts(value)) {
+      throw ArgumentError('Couleur de personnalisation indisponible.');
+    }
+    if (value == null || value.isEmpty) return defaultColor;
+    return choices.isEmpty
+        ? fixedColor
+        : choices.firstWhere(
+            (color) => color.toLowerCase() == value.trim().toLowerCase(),
+          );
   }
 }
 
@@ -348,9 +423,11 @@ class BoutiquePersonalizationSelection {
   final bool nameEnabled;
   final String? nameText;
   final String? nameZone;
+  final String? nameColor;
   final bool certificationEnabled;
   final String? certification;
   final String? certificationZone;
+  final String? certificationColor;
 
   const BoutiquePersonalizationSelection({
     this.clubLogo = false,
@@ -358,9 +435,11 @@ class BoutiquePersonalizationSelection {
     this.nameEnabled = false,
     this.nameText,
     this.nameZone,
+    this.nameColor,
     this.certificationEnabled = false,
     this.certification,
     this.certificationZone,
+    this.certificationColor,
   });
 
   bool get hasName => nameEnabled && (nameText ?? '').trim().isNotEmpty;
@@ -377,11 +456,15 @@ class BoutiquePersonalizationSelection {
     bool clearNameText = false,
     String? nameZone,
     bool clearNameZone = false,
+    String? nameColor,
+    bool clearNameColor = false,
     bool? certificationEnabled,
     String? certification,
     bool clearCertification = false,
     String? certificationZone,
     bool clearCertificationZone = false,
+    String? certificationColor,
+    bool clearCertificationColor = false,
   }) {
     return BoutiquePersonalizationSelection(
       clubLogo: clubLogo ?? this.clubLogo,
@@ -390,12 +473,16 @@ class BoutiquePersonalizationSelection {
       nameEnabled: nameEnabled ?? this.nameEnabled,
       nameText: clearNameText ? null : nameText ?? this.nameText,
       nameZone: clearNameZone ? null : nameZone ?? this.nameZone,
+      nameColor: clearNameColor ? null : nameColor ?? this.nameColor,
       certificationEnabled: certificationEnabled ?? this.certificationEnabled,
       certification:
           clearCertification ? null : certification ?? this.certification,
       certificationZone: clearCertificationZone
           ? null
           : certificationZone ?? this.certificationZone,
+      certificationColor: clearCertificationColor
+          ? null
+          : certificationColor ?? this.certificationColor,
     );
   }
 
@@ -439,9 +526,11 @@ class BoutiquePersonalizationSelection {
       };
     }
     if (hasNamePayload) {
+      final color = config.name.threadColors.resolve(nameColor);
       payload['name'] = {
         'text': cleanName,
         'zone': nameZone,
+        if (color != null) 'color': color,
         'pricingMode': config.name.pricingMode == BoutiqueNamePricingMode.fixed
             ? 'fixed'
             : 'per_character',
@@ -452,14 +541,39 @@ class BoutiquePersonalizationSelection {
       };
     }
     if (hasCertificationPayload) {
+      final color = config.certification.threadColors.resolve(
+        certificationColor,
+      );
       payload['certification'] = {
         'value': certification,
         'zone': certificationZone,
+        if (color != null) 'color': color,
         'surcharge': config.certification.surcharge,
       };
     }
     return payload;
   }
+}
+
+/// Describes the saved order snapshot, never the current catalogue palette.
+List<String> boutiquePersonalizationLines(Map<String, dynamic> data) {
+  String color(dynamic option) => option is Map &&
+          option['color'] is String &&
+          (option['color'] as String).trim().isNotEmpty
+      ? ' — couleur : ${(option['color'] as String).trim()}'
+      : '';
+  final name = data['name'];
+  final certification = data['certification'];
+  final logo = data['clubLogo'];
+  return [
+    if (logo is Map && logo['enabled'] == true)
+      'Logo club — ${boutiqueZoneLabel(logo['zone']?.toString() ?? '')}',
+    if (name is Map && (name['text']?.toString().trim().isNotEmpty ?? false))
+      'Nom : ${name['text']} — ${boutiqueZoneLabel(name['zone']?.toString() ?? '')}${color(name)}',
+    if (certification is Map &&
+        (certification['value']?.toString().trim().isNotEmpty ?? false))
+      'Brevet : ${certification['value']} — ${boutiqueZoneLabel(certification['zone']?.toString() ?? '')}${color(certification)}',
+  ];
 }
 
 BoutiqueDeliveryMode _deliveryModeFromString(String? value) {

@@ -27,10 +27,7 @@ class BoutiqueCartScreen extends StatelessWidget {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
-          'Panier',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Panier', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -73,11 +70,8 @@ class BoutiqueCartScreen extends StatelessWidget {
                           item: item,
                           formatter: formatter,
                           onQtyChanged: (qty) => cart.updateQty(item.key, qty),
-                          onDelete: () => _confirmRemoveItem(
-                            context,
-                            cart,
-                            item,
-                          ),
+                          onDelete: () =>
+                              _confirmRemoveItem(context, cart, item),
                           onEdit: () => _editItem(context, item),
                         );
                       },
@@ -154,10 +148,7 @@ class BoutiqueCartScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _editItem(
-    BuildContext context,
-    BoutiqueCartItem item,
-  ) async {
+  Future<void> _editItem(BuildContext context, BoutiqueCartItem item) async {
     final messenger = ScaffoldMessenger.of(context);
     final products = await BoutiqueService()
         .watchPublishedProducts(FirebaseConfig.defaultClubId)
@@ -182,10 +173,8 @@ class BoutiqueCartScreen extends StatelessWidget {
       boutiqueAccessGuardedRoute(
         sourceContext: context,
         requiredSection: 'produits',
-        builder: (_) => BoutiqueProductDetailScreen(
-          product: product!,
-          editingItem: item,
-        ),
+        builder: (_) =>
+            BoutiqueProductDetailScreen(product: product!, editingItem: item),
       ),
     );
   }
@@ -388,18 +377,7 @@ class _PersonalizationSummary extends StatelessWidget {
     if (technique != null) {
       lines.add(technique == 'print' ? 'Impression' : 'Broderie');
     }
-    final logo = personalization['clubLogo'];
-    if (logo is Map && logo['zone'] != null) {
-      lines.add('Logo: ${logo['zone']}');
-    }
-    final name = personalization['name'];
-    if (name is Map && name['text'] != null) {
-      lines.add('Nom: ${name['text']} (${name['zone']})');
-    }
-    final certification = personalization['certification'];
-    if (certification is Map && certification['value'] != null) {
-      lines.add('Brevet: ${certification['value']} (${certification['zone']})');
-    }
+    lines.addAll(boutiquePersonalizationLines(personalization));
 
     return Text(
       lines.join('\n'),

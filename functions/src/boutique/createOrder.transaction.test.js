@@ -215,6 +215,18 @@ function run(db, input = request(), overrides = {}) {
 }
 
 describe('createBoutiqueOrder callable transaction', () => {
+  test('MOB-052 persists canonical colour in both immutable order snapshots and payment description', async () => {
+    const state=seed();
+    state[productPath].embroidery={enabled:true,technique:'embroidery',name:{enabled:true,zones:['back'],pricingMode:'fixed',fixedPrice:4,color:'Rouge',allowedColors:['Rouge','Bleu']}};
+    const db=new MemoryFirestore(state);
+    await run(db,request({items:[{productId:'product-1',variantId:'size-m',qty:1,customizations:{name:{text:'FICTIF',zone:'back',color:'Bleu'}}}]}));
+    const saved=[...db.docs.entries()].find(([path])=>/\/orders\//.test(path))[1];
+    expect(saved.items[0].customizations.name.color).toBe('Bleu');
+    expect(saved.items[0].productSnapshot.customizations.name.color).toBe('Bleu');
+    expect(saved.items[0].unitPrice).toBe(29);
+    const description=buildBoutiqueOrderTemplateData(saved,{clubName:'Club FICTIF',logoUrl:''});
+    expect(description.items[0].name).toContain('couleur : Bleu');
+  });
   test('uses the immutable product snapshot name in payment emails', () => {
     const templateData = buildBoutiqueOrderTemplateData({
       orderNumber: 'BTQ-2026-0039',

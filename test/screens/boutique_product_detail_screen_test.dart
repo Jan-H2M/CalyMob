@@ -207,6 +207,49 @@ void main() {
   }
 
   testWidgets(
+      'MOB-052 chooses and stores a thread colour, independently of clothing colour',
+      (tester) async {
+    tester.view.physicalSize = const Size(1100, 1300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpHost(tester, cart: cart, product: _product(threadColors: true));
+    await tester.tap(find.text('Ouvrir le produit'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    final toggle = find.descendant(
+        of: find.byKey(const Key('boutique-name-toggle')),
+        matching: find.byType(Switch));
+    await tester.ensureVisible(toggle);
+    await tester.pump();
+    await tester.tap(toggle);
+    await tester.pump(const Duration(milliseconds: 350));
+    final name = find.byKey(const Key('boutique-name-field'));
+    await tester.ensureVisible(name);
+    await tester.enterText(name, 'FICTIF');
+    await tester.pump(const Duration(milliseconds: 350));
+    final colors = find.byKey(const Key('boutique-name-color'));
+    await tester.ensureVisible(colors);
+    await tester.pump();
+    await tester.tap(find.descendant(
+        of: colors, matching: find.byType(DropdownButtonFormField<String>)));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tap(find.text('Bleu').last);
+    await tester.pump(const Duration(milliseconds: 350));
+    final add = find.textContaining('Ajouter au panier');
+    await tester.ensureVisible(add);
+    await tester.pump();
+    await tester.tap(add);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(cart.addedItems.single.personalization['name']['color'], 'Bleu');
+    expect(cart.addedItems.single.unitPrice, 32);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
     'add flow returns without SnackBar and leaves host action clickable',
     (tester) async {
       final hostKey = GlobalKey<_ProductHostState>();
@@ -315,7 +358,8 @@ class _ProductHostState extends State<_ProductHost> {
   }
 }
 
-BoutiqueProduct _product({bool personalization = true}) {
+BoutiqueProduct _product(
+    {bool personalization = true, bool threadColors = false}) {
   return BoutiqueProduct(
     id: 'polo',
     name: 'Polo Calypso',
@@ -338,7 +382,7 @@ BoutiqueProduct _product({bool personalization = true}) {
     deliverySurcharges: const {},
     visibility: 'published',
     personalization: personalization
-        ? const BoutiquePersonalizationConfig(
+        ? BoutiquePersonalizationConfig(
             enabled: true,
             baseType: 'polo',
             technique: BoutiqueCustomizationTechnique.embroidery,
@@ -360,6 +404,10 @@ BoutiqueProduct _product({bool personalization = true}) {
               pricePerCharacter: 0.5,
               fixedPrice: 4,
               maxLength: 12,
+              threadColors: threadColors
+                  ? const BoutiqueThreadColors(
+                      fixedColor: 'Rouge', choices: ['Rouge', 'Bleu'])
+                  : const BoutiqueThreadColors(),
             ),
             certification: BoutiqueCertificationOption(
               enabled: true,

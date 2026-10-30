@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
+import '../../widgets/boutique/boutique_thread_color_picker.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
@@ -299,6 +300,16 @@ class _BoutiqueProductDetailScreenState
     if (_personalization.hasName && _personalization.nameZone == null) {
       return false;
     }
+    if (_personalization.hasName &&
+        !config.name.threadColors.accepts(_personalization.nameColor)) {
+      return false;
+    }
+    if (_personalization.hasCertification &&
+        !config.certification.threadColors.accepts(
+          _personalization.certificationColor,
+        )) {
+      return false;
+    }
     if (_personalization.hasCertification &&
         _personalization.certificationZone == null) {
       return false;
@@ -396,12 +407,15 @@ class _BoutiqueProductDetailScreenState
           name is Map && (name['text']?.toString().trim().isNotEmpty ?? false),
       nameText: name is Map ? name['text']?.toString() : null,
       nameZone: name is Map ? name['zone']?.toString() : null,
+      nameColor: name is Map ? name['color']?.toString() : null,
       certificationEnabled: certification is Map &&
           (certification['value']?.toString().trim().isNotEmpty ?? false),
       certification:
           certification is Map ? certification['value']?.toString() : null,
       certificationZone:
           certification is Map ? certification['zone']?.toString() : null,
+      certificationColor:
+          certification is Map ? certification['color']?.toString() : null,
     );
   }
 
@@ -592,6 +606,7 @@ class _PersonalizationSection extends StatelessWidget {
                     nameEnabled: enabled,
                     clearNameText: !enabled,
                     clearNameZone: !enabled,
+                    clearNameColor: !enabled,
                   ),
                 );
               },
@@ -642,6 +657,19 @@ class _PersonalizationSection extends StatelessWidget {
                 onChanged: (zone) =>
                     onChanged(selection.copyWith(nameZone: zone)),
               ),
+              const SizedBox(height: 10),
+              BoutiqueThreadColorPicker(
+                key: const Key('boutique-name-color'),
+                label: 'Couleur du nom',
+                colors: config.name.threadColors,
+                selected: selection.nameColor,
+                onChanged: (color) => onChanged(
+                  selection.copyWith(
+                    nameColor: color,
+                    clearNameColor: color == null,
+                  ),
+                ),
+              ),
             ],
           ],
           if (config.certification.canChoose) ...[
@@ -659,6 +687,7 @@ class _PersonalizationSection extends StatelessWidget {
                   certificationEnabled: enabled,
                   clearCertification: !enabled,
                   clearCertificationZone: !enabled,
+                  clearCertificationColor: !enabled,
                 ),
               ),
             ),
@@ -698,6 +727,19 @@ class _PersonalizationSection extends StatelessWidget {
                   value: selection.certificationZone,
                   onChanged: (zone) =>
                       onChanged(selection.copyWith(certificationZone: zone)),
+                ),
+                const SizedBox(height: 10),
+                BoutiqueThreadColorPicker(
+                  key: const Key('boutique-certification-color'),
+                  label: 'Couleur du brevet',
+                  colors: config.certification.threadColors,
+                  selected: selection.certificationColor,
+                  onChanged: (color) => onChanged(
+                    selection.copyWith(
+                      certificationColor: color,
+                      clearCertificationColor: color == null,
+                    ),
+                  ),
                 ),
               ],
             ],

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../models/boutique/boutique_product.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
 import '../../widgets/boutique/boutique_current_payment_panel.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -42,14 +43,11 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     return order['paymentCommunication']?.toString().trim().isNotEmpty == true
         ? order['paymentCommunication'].toString()
         : payment['paymentCommunication']?.toString().trim().isNotEmpty == true
-            ? payment['paymentCommunication'].toString()
-            : payment['structuredCommunication']
-                        ?.toString()
-                        .trim()
-                        .isNotEmpty ==
-                    true
-                ? payment['structuredCommunication'].toString()
-                : payment['ogm_display']?.toString() ?? '';
+        ? payment['paymentCommunication'].toString()
+        : payment['structuredCommunication']?.toString().trim().isNotEmpty ==
+              true
+        ? payment['structuredCommunication'].toString()
+        : payment['ogm_display']?.toString() ?? '';
   }
 
   Future<void> _cancelOrder(Map<String, dynamic> order) async {
@@ -78,9 +76,9 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     // Fix audit 2026-07-19 (H13): foutafhandeling — voordien kreeg de
     // gebruiker bij een mislukte annulatie geen enkele feedback.
     try {
-      await FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('cancelBoutiqueOrder')
-          .call({
+      await FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('cancelBoutiqueOrder').call({
         'clubId': FirebaseConfig.defaultClubId,
         'orderId': order['id'],
       });
@@ -98,16 +96,16 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     setState(() {
       _ordersFuture = _loadOrders();
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Commande supprimée')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Commande supprimée')));
   }
 
   Future<void> _resendPaymentEmail(Map<String, dynamic> order) async {
     try {
-      await FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('sendBoutiqueOrderPaymentEmail')
-          .call({
+      await FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('sendBoutiqueOrderPaymentEmail').call({
         'clubId': FirebaseConfig.defaultClubId,
         'orderId': order['id'],
       });
@@ -125,9 +123,9 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     setState(() {
       _ordersFuture = _loadOrders();
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Email de paiement envoyé')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Email de paiement envoyé')));
   }
 
   @override
@@ -217,12 +215,14 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                               order: order,
                               paymentCommunication: paymentCommunication,
                               amount: total,
-                              onCancel: order['paymentPlan'] == null &&
+                              onCancel:
+                                  order['paymentPlan'] == null &&
                                       status == 'awaiting_payment' &&
                                       payment['status'] == 'pending'
                                   ? () => _cancelOrder(order)
                                   : null,
-                              onResendEmail: order['paymentPlan'] == null &&
+                              onResendEmail:
+                                  order['paymentPlan'] == null &&
                                       status == 'awaiting_payment' &&
                                       payment['status'] == 'pending'
                                   ? () => _resendPaymentEmail(order)
@@ -247,9 +247,7 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                                       ),
                                     ),
                                   ),
-                                  _StatusBadge(
-                                    status: status,
-                                  ),
+                                  _StatusBadge(status: status),
                                 ],
                               ),
                               const SizedBox(height: 8),
@@ -319,7 +317,8 @@ class _OrderDetailScreen extends StatelessWidget {
         .toList();
     final isAwaitingPayment = order['status'] == 'awaiting_payment';
     final isPaid = order['status'] == 'paid' || payment['status'] == 'paid';
-    final emailSent = payment['email_status'] == 'sent' ||
+    final emailSent =
+        payment['email_status'] == 'sent' ||
         payment['emailStatus'] == 'sent' ||
         payment['email_sent_at'] != null;
 
@@ -405,7 +404,8 @@ class _OrderDetailScreen extends StatelessWidget {
                 _DetailPanel(
                   child: order['paymentPlan'] != null
                       ? BoutiqueCurrentPaymentPanel(
-                          orderId: order['id'].toString())
+                          orderId: order['id'].toString(),
+                        )
                       : _PaymentStatusPanel(
                           isPaid: isPaid,
                           emailSent: emailSent,
@@ -476,10 +476,7 @@ class _DetailPanel extends StatelessWidget {
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }
 }
@@ -488,18 +485,15 @@ class _PaymentStatusPanel extends StatelessWidget {
   final bool isPaid;
   final bool emailSent;
 
-  const _PaymentStatusPanel({
-    required this.isPaid,
-    required this.emailSent,
-  });
+  const _PaymentStatusPanel({required this.isPaid, required this.emailSent});
 
   @override
   Widget build(BuildContext context) {
     final title = isPaid
         ? 'Commande payée'
         : emailSent
-            ? 'Email de paiement envoyé'
-            : 'Email de paiement à envoyer';
+        ? 'Email de paiement envoyé'
+        : 'Email de paiement à envoyer';
     final text = isPaid
         ? 'Le paiement est enregistré.'
         : 'Le QR code de paiement est envoyé par email. Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.';
@@ -544,10 +538,7 @@ class _OrderItemRow extends StatelessWidget {
   final Map<String, dynamic> item;
   final NumberFormat formatter;
 
-  const _OrderItemRow({
-    required this.item,
-    required this.formatter,
-  });
+  const _OrderItemRow({required this.item, required this.formatter});
 
   @override
   Widget build(BuildContext context) {
@@ -556,7 +547,8 @@ class _OrderItemRow extends StatelessWidget {
     );
     final name =
         snapshot['name']?.toString() ?? item['productId']?.toString() ?? '';
-    final variant = snapshot['variantLabel']?.toString() ??
+    final variant =
+        snapshot['variantLabel']?.toString() ??
         item['variantId']?.toString() ??
         '';
     final customizations = Map<String, dynamic>.from(
@@ -581,10 +573,7 @@ class _OrderItemRow extends StatelessWidget {
         if (customizations.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
-            customizations.entries
-                .where((entry) => entry.key != 'surcharge')
-                .map((entry) => '${entry.key}: ${entry.value}')
-                .join(' · '),
+            boutiquePersonalizationLines(customizations).join('\n'),
             style: TextStyle(color: Colors.grey.shade700),
           ),
         ],

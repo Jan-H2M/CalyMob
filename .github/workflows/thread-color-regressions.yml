@@ -1,0 +1,51 @@
+name: MOB-052 thread colour regressions
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/thread-color-regressions.yml'
+      - 'lib/models/boutique/**'
+      - 'lib/widgets/boutique/**'
+      - 'lib/screens/boutique/**'
+      - 'lib/providers/boutique_cart_provider.dart'
+      - 'functions/src/boutique/**'
+      - 'test/models/boutique*'
+      - 'test/providers/boutique_cart_provider_test.dart'
+      - 'test/screens/boutique_product_detail_screen_test.dart'
+      - 'test/dev/thread_colors_dev_test.dart'
+      - 'test/support/thread_colors_dev_scenario.dart'
+permissions:
+  contents: read
+jobs:
+  thread-colour-client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test --no-pub test/models/boutique_thread_colors_test.dart test/models/boutique_product_personalization_test.dart test/providers/boutique_cart_provider_test.dart test/screens/boutique_product_detail_screen_test.dart test/dev/thread_colors_dev_test.dart
+      - name: Real Chrome, fictional basket only
+        run: flutter test --no-pub --platform chrome test/dev/thread_colors_dev_test.dart test/providers/boutique_cart_provider_test.dart
+      - run: git diff --exit-code -- pubspec.lock
+  thread-colour-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm --prefix functions ci --ignore-scripts --no-audit --no-fund
+      - run: npm --prefix functions test -- --runInBand --runTestsByPath src/boutique/createOrder.test.js src/boutique/createOrder.transaction.test.js src/boutique/paymentContext.test.js
+      - run: git diff --exit-code -- functions/package-lock.json
