@@ -1,4 +1,30 @@
 import '../models/participant_operation.dart';
+import '../models/palanquee.dart';
+
+bool isPalanqueeSimulation(ParticipantOperation participant) =>
+    participant.registrationStatus == 'simulation';
+
+/// New complete roster first; older documents can still restore group snapshots.
+/// A real registration always takes precedence over a planning snapshot.
+List<PalanqueeParticipant> savedPalanqueeSimulationRoster(
+  PalanqueeAssignments assignments,
+  Iterable<String> registeredMemberIds,
+) {
+  final seen = registeredMemberIds.toSet();
+  return [
+    ...assignments.simulationParticipants,
+    ...assignments.palanquees.expand((group) => group.participants),
+  ].where((p) => p.membreId.isNotEmpty && seen.add(p.membreId)).toList();
+}
+
+String palanqueeRosterSummary(Iterable<ParticipantOperation> participants) {
+  final rows = participants.toList();
+  final simulations = rows.where(isPalanqueeSimulation).length;
+  final registered = rows.length - simulations;
+  return simulations == 0
+      ? '$registered plongeurs inscrits'
+      : '$registered inscrits / $simulations en simulation';
+}
 
 /// Club-directory members deliberately added to a palanquée are simulation
 /// participants only.  They are stored with the palanquée assignment and are

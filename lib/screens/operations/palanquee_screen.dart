@@ -100,9 +100,9 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       _memberLevels = futures[0] as Map<String, String>;
       final assignments = futures[1] as PalanqueeAssignments?;
 
-      if (assignments != null && assignments.palanquees.isNotEmpty) {
-        _palanquees = assignments.palanquees;
-        _restoreSimulationParticipantsFromAssignments();
+      if (assignments != null) {
+        _palanquees = List.of(assignments.palanquees);
+        _restoreSimulationParticipantsFromAssignments(assignments);
       }
 
       // Load exercise catalog
@@ -181,31 +181,26 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   /// They exist only as snapshots inside the saved palanquée assignment (not
   /// as operation inscriptions). Keeping them in the local roster also means
   /// that removing one from a group returns them to the unassigned panel.
-  void _restoreSimulationParticipantsFromAssignments() {
+  void _restoreSimulationParticipantsFromAssignments(
+      PalanqueeAssignments assignments) {
     final registeredIds = widget.participants.map((p) => p.membreId).toSet();
-    final restoredIds = <String>{};
-    for (final palanquee in _palanquees) {
-      for (final participant in palanquee.participants) {
-        if (participant.membreId.isEmpty ||
-            registeredIds.contains(participant.membreId) ||
-            !restoredIds.add(participant.membreId)) {
-          continue;
-        }
-        _simulationParticipants.add(
-          ParticipantOperation(
-            id: 'palanquee-simulation:${participant.membreId}',
-            operationId: widget.operation.id,
-            membreId: participant.membreId,
-            membreNom: participant.membreNom,
-            membrePrenom: participant.membrePrenom,
-            prix: 0,
-            dateInscription: DateTime.now(),
-            registrationStatus: 'simulation',
-          ),
-        );
-        if (participant.niveau.isNotEmpty) {
-          _memberLevels[participant.membreId] = participant.niveau;
-        }
+    _simulationParticipants.clear();
+    for (final participant
+        in savedPalanqueeSimulationRoster(assignments, registeredIds)) {
+      _simulationParticipants.add(
+        ParticipantOperation(
+          id: 'palanquee-simulation:${participant.membreId}',
+          operationId: widget.operation.id,
+          membreId: participant.membreId,
+          membreNom: participant.membreNom,
+          membrePrenom: participant.membrePrenom,
+          prix: 0,
+          dateInscription: DateTime.now(),
+          registrationStatus: 'simulation',
+        ),
+      );
+      if (participant.niveau.isNotEmpty) {
+        _memberLevels[participant.membreId] = participant.niveau;
       }
     }
   }
@@ -314,6 +309,14 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     try {
       final assignments = PalanqueeAssignments(
         palanquees: _palanquees,
+        simulationParticipants: _simulationParticipants
+            .map((p) => PalanqueeParticipant(
+                  membreId: p.membreId,
+                  membreNom: p.membreNom ?? '',
+                  membrePrenom: p.membrePrenom ?? '',
+                  niveau: _getLevelForMember(p.membreId),
+                ))
+            .toList(),
         updatedBy: widget.userId,
       );
       await _service.saveAssignments(
