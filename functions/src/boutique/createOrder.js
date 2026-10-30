@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { randomUUID } = require('crypto');
 const QRCode = require('qrcode');
+const { resolvePersonalizationColor } = require('./personalizationColors');
 const {
   REGION,
   assertBoutiqueAccess,
@@ -194,6 +195,9 @@ function computeCustomizations(product, rawValue) {
       fixedPrice,
       surcharge: nameSurcharge,
     };
+    const color = resolvePersonalizationColor(nameOption, rawName.color,
+      () => buildInvalidInputError('INVALID_INPUT', { customization: 'name.color' }));
+    if (color) result.name.color = color;
   }
 
   const certOption = config.certification;
@@ -216,6 +220,9 @@ function computeCustomizations(product, rawValue) {
     const certSurcharge = asNumber(certOption.surcharge);
     surcharge += certSurcharge;
     result.certification = { value: certValue, zone, surcharge: certSurcharge };
+    const color = resolvePersonalizationColor(certOption, rawCert.color,
+      () => buildInvalidInputError('INVALID_INPUT', { customization: 'certification.color' }));
+    if (color) result.certification.color = color;
   }
 
   if (!result.clubLogo && !result.name && !result.certification) {
@@ -345,10 +352,10 @@ function formatBoutiqueOrderItem(item) {
     customizationParts.push(`logo club${customizations.clubLogo.zone ? ` (${customizations.clubLogo.zone})` : ''}`);
   }
   if (customizations.name?.text) {
-    customizationParts.push(`nom « ${customizations.name.text} »${customizations.name.zone ? ` (${customizations.name.zone})` : ''}`);
+    customizationParts.push(`nom « ${customizations.name.text} »${customizations.name.zone ? ` (${customizations.name.zone})` : ''}${customizations.name.color ? ` — couleur : ${customizations.name.color}` : ''}`);
   }
   if (customizations.certification?.value) {
-    customizationParts.push(`brevet ${customizations.certification.value}${customizations.certification.zone ? ` (${customizations.certification.zone})` : ''}`);
+    customizationParts.push(`brevet ${customizations.certification.value}${customizations.certification.zone ? ` (${customizations.certification.zone})` : ''}${customizations.certification.color ? ` — couleur : ${customizations.certification.color}` : ''}`);
   }
   if (customizationParts.length > 0) {
     const technique = customizations.technique === 'print' ? 'Impression' : 'Broderie';

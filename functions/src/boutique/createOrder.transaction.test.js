@@ -215,6 +215,42 @@ function run(db, input = request(), overrides = {}) {
 }
 
 describe('createBoutiqueOrder callable transaction', () => {
+  test('MOB-052 persists only canonical embroidery text colours in both order snapshots and email data', async () => {
+    const data = seed();
+    data[productPath].embroidery = {
+      enabled: true, technique: 'embroidery', baseType: 'polo',
+      name: { enabled: true, zones: ['back'], surcharge: 0, pricePerCharacter: 0, color: 'Rouge', allowedColors: ['Rouge', 'Bleu'] },
+      certification: { enabled: true, zones: ['sleeve_left'], surcharge: 0, allowedValues: ['P2'], color: 'Blanc' },
+    };
+    const db = new MemoryFirestore(data);
+    const result = await run(db, request({items: [{productId:'product-1',variantId:'size-m',qty:2,
+      customizations: {name:{text:'FICTIF',zone:'back',color:'bleu'},certification:{value:'P2',zone:'sleeve_left'}}}]}));
+    const order = [...db.docs.entries()].find(([path]) => /\/orders\//.test(path))[1];
+    const item = order.items[0];
+    expect(result.total).toBe(50);
+    expect(item.customizations.name.color).toBe('Bleu');
+    expect(item.customizations.certification.color).toBe('Blanc');
+    expect(item.productSnapshot.customizations).toEqual(item.customizations);
+    expect(item.productSnapshot.variantAttributes).toEqual({color:'Bleu marine',gender:'Femme'});
+    expect(db.docs.get(productPath).variants[0]).toEqual({...data[productPath].variants[0],stockCount:3});
+    expect(db.docs.get(productPath).embroidery).toEqual(data[productPath].embroidery);
+    const template = buildBoutiqueOrderTemplateData(order, {clubName:'Club FICTIF',logoUrl:''});
+    expect(template.items[0].name).toContain('nom « FICTIF » (back) — couleur : Bleu');
+    expect(template.items[0].name).toContain('brevet P2 (sleeve_left) — couleur : Blanc');
+    expect(template.items[0].name).toContain('Bleu marine');
+  });
+
+  test('MOB-052 rejects stale text colour before any order, payment or inventory writes', async () => {
+    const data = seed();
+    data[productPath].embroidery = {enabled:true, name:{enabled:true,zones:['back'],color:'Blanc'}};
+    const db = new MemoryFirestore(data);
+    const before = clone([...db.docs]);
+    await expect(run(db, request({items:[{productId:'product-1',variantId:'size-m',qty:1,
+      customizations:{name:{text:'FICTIF',zone:'back',color:'Rouge'}}}]})))
+      .rejects.toMatchObject({code:'invalid-argument',details:{customization:'name.color'}});
+    expect(clone([...db.docs])).toEqual(before);
+  });
+
   test('uses the immutable product snapshot name in payment emails', () => {
     const templateData = buildBoutiqueOrderTemplateData({
       orderNumber: 'BTQ-2026-0039',

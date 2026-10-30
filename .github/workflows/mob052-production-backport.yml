@@ -1,0 +1,26 @@
+name: MOB-052 Functions production backport
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mob052-production-backport.yml'
+      - 'functions/src/boutique/createOrder*'
+      - 'functions/src/boutique/personalizationColors.js'
+permissions:
+  contents: read
+jobs:
+  scoped-backport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci --prefix functions --ignore-scripts --no-audit --no-fund
+      - name: Synthetic checkout, text-colour persistence, prices and access boundaries
+        run: npm --prefix functions test -- --runInBand src/boutique/createOrder.test.js src/boutique/createOrder.transaction.test.js src/boutique/shared.test.js src/boutique/setGlobalAccess.test.js src/utils/emailDelivery.test.js src/utils/communicationTemplates.test.js
+      - name: No dependency drift
+        run: git diff --exit-code -- functions/package.json functions/package-lock.json
