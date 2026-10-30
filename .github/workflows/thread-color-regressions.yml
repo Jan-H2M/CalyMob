@@ -7,8 +7,10 @@ on:
       - 'lib/models/boutique/**'
       - 'lib/widgets/boutique/**'
       - 'lib/screens/boutique/**'
+      - 'lib/providers/boutique_cart_provider.dart'
       - 'functions/src/boutique/**'
       - 'test/models/boutique*'
+      - 'test/providers/boutique_cart_provider_test.dart'
       - 'test/screens/boutique_product_detail_screen_test.dart'
       - 'test/dev/thread_colors_dev_test.dart'
       - 'test/support/thread_colors_dev_scenario.dart'
@@ -28,9 +30,9 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get --enforce-lockfile
-      - run: flutter test --no-pub test/models/boutique_thread_colors_test.dart test/models/boutique_product_personalization_test.dart test/screens/boutique_product_detail_screen_test.dart test/dev/thread_colors_dev_test.dart
+      - run: flutter test --no-pub test/models/boutique_thread_colors_test.dart test/models/boutique_product_personalization_test.dart test/providers/boutique_cart_provider_test.dart test/screens/boutique_product_detail_screen_test.dart test/dev/thread_colors_dev_test.dart
       - name: Real Chrome, fictional basket only
-        run: flutter test --no-pub --platform chrome test/dev/thread_colors_dev_test.dart
+        run: flutter test --no-pub --platform chrome test/dev/thread_colors_dev_test.dart test/providers/boutique_cart_provider_test.dart
       - run: git diff --exit-code -- pubspec.lock
   thread-colour-server:
     runs-on: ubuntu-latest

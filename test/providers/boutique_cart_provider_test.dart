@@ -101,7 +101,8 @@ void main() {
     },
   );
 
-  test('cart normalization keeps fixed price equal for one and many letters', () {
+  test('cart normalization keeps fixed price equal for one and many letters',
+      () {
     final product = _product();
     final one = normalizeBoutiqueCartPersonalization(product, const {
       'name': {'text': 'A', 'zone': 'chest_right'},
@@ -167,6 +168,66 @@ void main() {
     expect(cart.items.single.qty, 3);
     expect(cart.items.single.unitPrice, 27);
   });
+
+  test(
+      'revalidate persists both colours through reopen and checkout without merging different colours',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'boutique_cart_items_v1': jsonEncode([
+        for (final color in ['bleu', 'Rouge'])
+          _cartJson(key: color, unitPrice: 35, personalization: {
+            'name': {'text': 'FICTIF', 'zone': 'chest_right', 'color': color},
+            'certification': {
+              'value': 'P2',
+              'zone': 'sleeve_left',
+              'color': 'or'
+            },
+          }),
+      ]),
+    });
+    final cart =
+        BoutiqueCartProvider(authStateChanges: const Stream<User?>.empty());
+    await _waitUntilLoaded(cart);
+    await cart.revalidate([_product(threadColors: true)]);
+    expect(cart.items, hasLength(2));
+    expect(cart.items.map((item) => item.personalization['name']['color']),
+        ['Bleu', 'Rouge']);
+    expect(
+        cart.items
+            .map((item) => item.personalization['certification']['color']),
+        ['Or', 'Or']);
+    expect(cart.items.map((item) => item.unitPrice), [35, 35]);
+    final reopened =
+        BoutiqueCartProvider(authStateChanges: const Stream<User?>.empty());
+    await _waitUntilLoaded(reopened);
+    expect(await reopened.revalidate([_product(threadColors: true)]),
+        (removed: 0, repriced: 0));
+    final payloads =
+        reopened.items.map((item) => item.toOrderPayload()).toList();
+    expect(payloads[0]['customizations']['name']['color'], 'Bleu');
+    expect(payloads[1]['customizations']['name']['color'], 'Rouge');
+    expect(payloads[0]['customizations']['certification']['color'], 'Or');
+  });
+
+  test(
+      'revalidation defaults only missing legacy colours and preserves unavailable explicit choices',
+      () {
+    final product = _product(threadColors: true);
+    final legacy = normalizeBoutiqueCartPersonalization(product, const {
+      'name': {'text': 'FICTIF', 'zone': 'chest_right'},
+      'certification': {'value': 'P2', 'zone': 'sleeve_left'},
+    });
+    expect(legacy['name']['color'], 'Rouge');
+    expect(legacy['certification']['color'], 'Blanc');
+    for (final unavailable in ['Retiré', 42]) {
+      final result = normalizeBoutiqueCartPersonalization(product, {
+        'name': {'text': 'FICTIF', 'color': unavailable},
+        'certification': {'value': 'P2', 'color': unavailable},
+      });
+      expect(result['name']['color'], unavailable);
+      expect(result['certification']['color'], unavailable);
+    }
+  });
 }
 
 Future<void> _waitUntilLoaded(BoutiqueCartProvider cart) async {
@@ -199,6 +260,7 @@ Map<String, dynamic> _cartJson({
 
 BoutiqueProduct _product({
   BoutiqueNamePricingMode pricingMode = BoutiqueNamePricingMode.fixed,
+  bool threadColors = false,
 }) {
   return BoutiqueProduct(
     id: 'polo',
@@ -243,12 +305,20 @@ BoutiqueProduct _product({
         pricePerCharacter: 0.5,
         fixedPrice: 4,
         maxLength: 12,
+        threadColors: threadColors
+            ? const BoutiqueThreadColors(
+                fixedColor: 'Rouge', choices: ['Rouge', 'Bleu'])
+            : const BoutiqueThreadColors(),
       ),
-      certification: const BoutiqueCertificationOption(
+      certification: BoutiqueCertificationOption(
         enabled: true,
-        zones: ['sleeve_left'],
+        zones: const ['sleeve_left'],
         surcharge: 3,
-        allowedValues: ['P1', 'P2'],
+        allowedValues: const ['P1', 'P2'],
+        threadColors: threadColors
+            ? const BoutiqueThreadColors(
+                fixedColor: 'Blanc', choices: ['Blanc', 'Or'])
+            : const BoutiqueThreadColors(),
       ),
     ),
   );
