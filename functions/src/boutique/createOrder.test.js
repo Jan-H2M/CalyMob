@@ -63,6 +63,32 @@ function product({ pricingMode = 'fixed' } = {}) {
 }
 
 describe('boutique customization contract', () => {
+  test('MOB-052 reproduces and preserves buyer-selected thread colours without price changes', () => {
+    const p=product();
+    p.embroidery.name.allowedColors=['Rouge','Bleu'];
+    p.embroidery.name.color='Rouge';
+    p.embroidery.certification.allowedColors=['Blanc','Or'];
+    const selected=computeCustomizations(p,{name:{text:'FICTIF',zone:'chest_right',color:'bleu'},
+      certification:{value:'P2',zone:'sleeve_left',color:'Or'}});
+    expect(selected.customizations.name.color).toBe('Bleu');
+    expect(selected.customizations.certification.color).toBe('Or');
+    expect(selected.surcharge).toBe(10);
+    expect(computeCustomizations(p,{name:{text:'FICTIF',zone:'chest_right'}}).customizations.name.color).toBe('Rouge');
+  });
+  test.each(['Vert', {}, 23, '<img>', 'A'.repeat(41)])('rejects unconfigured buyer colour %p', color=>{
+    const p=product();p.embroidery.name.allowedColors=['Rouge','Bleu'];
+    expect(()=>computeCustomizations(p,{name:{text:'FICTIF',zone:'chest_right',color}}))
+      .toThrow();
+  });
+  test('keeps fixed legacy colour and rejects palette injection when choice is disabled',()=>{
+    const p=product();p.embroidery.name.color='Blanc';
+    expect(computeCustomizations(p,{name:{text:'A',zone:'chest_right'}}).customizations.name.color).toBe('Blanc');
+    expect(()=>computeCustomizations(p,{name:{text:'A',zone:'chest_right',color:'Vert'}})).toThrow();
+  });
+  test.each([null,'Rouge',[''],[42],Array(17).fill('Rouge')])('rejects malformed catalogue palette %p', allowedColors=>{
+    const p=product();p.embroidery.name.allowedColors=allowedColors;
+    expect(()=>computeCustomizations(p,{name:{text:'A',zone:'chest_right'}})).toThrow();
+  });
   test.each([
     ['missing', undefined],
     ['disabled', { clubLogo: { enabled: false } }],

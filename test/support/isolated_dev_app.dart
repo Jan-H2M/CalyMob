@@ -22,6 +22,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'formation_dev_scenarios.dart';
 import 'apnee_dev_scenario.dart';
 import 'bank_transfer_dev_scenario.dart';
+import 'thread_colors_dev_scenario.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
@@ -58,6 +59,7 @@ Future<void> main() async {
     'formation': 5,
     'apnee': 6,
     'bank-transfer': 7,
+    'thread-colors': 8,
   };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
@@ -284,6 +286,7 @@ class _DevHomeState extends State<_DevHome> {
                         (5, 'MOB-033 · Formation'),
                         (6, 'MOB-036 · Apnée'),
                         (7, 'MOB-051 · Virement bancaire'),
+                        (8, 'MOB-052 · Couleur de broderie'),
                       ])
                         DropdownMenuItem(value: index, child: Text(label)),
                     ],
@@ -303,7 +306,8 @@ class _DevHomeState extends State<_DevHome> {
                       4 => const FictionalEnvironments(),
                       5 => const FictionalFormation(),
                       6 => const FictionalApnee(),
-                      _ => const FictionalBankTransfer(),
+                      7 => const FictionalBankTransfer(),
+                      _ => const FictionalThreadColors(),
                     },
                   ),
                 ),
