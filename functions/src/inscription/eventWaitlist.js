@@ -900,6 +900,12 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
       return { guestInscriptionId: previous.guest_inscription_id, idempotent: true };
     }
     const operation = operationSnap.data();
+    // The event's guest opt-in applies to every caller, including staff.
+    // A prior successful request may still return its receipt above, but no
+    // new guest is created after the organizer disables guests.
+    if (operation.allow_guests !== true) {
+      throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
+    }
     const parent = parentSnap?.data() || null;
     const standaloneStaffFlow = parent === null;
     if (standaloneStaffFlow) {
@@ -910,9 +916,6 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
       if (parent.membre_id !== uid || parent.is_guest === true
         || parent.registration_status === 'canceled' || parent.registration_status === 'waitlisted') {
         throw new HttpsError('permission-denied', 'Seul le membre inscrit peut ajouter un invité.');
-      }
-      if (operation.allow_guests !== true) {
-        throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
       }
     }
     const existingGuests = inscriptionsSnap.docs.filter(doc => {
