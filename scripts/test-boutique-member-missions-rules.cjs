@@ -1,13 +1,13 @@
 const fs = require('node:fs');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
+const { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, serverTimestamp } = require('firebase/firestore');
 (async () => {
   if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) throw new Error('Loopback emulator required');
   const env = await initializeTestEnvironment({ projectId: 'demo-btq-missions', firestore: { rules: fs.readFileSync(process.env.BOUTIQUE_MISSIONS_RULES || 'firestore.rules', 'utf8') } });
   try {
     await env.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      for (const uid of ['geoffroy', 'other', 'admin']) await setDoc(doc(db, `clubs/rules-test/members/${uid}`), { member_status: 'active', app_role: uid === 'admin' ? 'admin' : 'user' });
+      for (const uid of ['geoffroy', 'other', 'admin']) await setDoc(doc(db, `clubs/rules-test/members/${uid}`), { member_status: 'active', app_role: uid === 'admin' ? 'admin' : uid === 'geoffroy' ? 'membre' : 'user', has_app_access: uid === 'admin', app_status: 'active' });
       await setDoc(doc(db, 'clubs/rules-test/fournisseurs/supplier'), { actif: true, supplierType: 'club_member', memberId: 'geoffroy' });
       await setDoc(doc(db, 'clubs/rules-test/supplier_order_batches/batch'), { supplierId: 'supplier', status: 'sent', items: [{ lineId: 'line', qty: 1 }] });
     });
@@ -35,6 +35,63 @@ const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
       if (uid === 'other') {
         await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { boutique_supplier_batch_id: 'batch' }));
         await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { demandeur_id: 'geoffroy', boutique_supplier_batch_id: 'batch' }));
+      }
+    }
+    // Actual mobile-only role can read its own notes and finish receipt uploads,
+    // but cannot edit someone else's note or gain approval/payment authority.
+    const mobileOnly = env.authenticatedContext('geoffroy').firestore();
+    for (const [name, ownerField, statusField, pending, approved, receiptField, approval] of [
+      ['expense_claims', 'requester_id', 'status', 'submitted', 'approved', 'supporting_document_urls', { approved_by: 'geoffroy', approved_by_name: 'Geoffroy', approved_at: serverTimestamp() }],
+      ['demandes_remboursement', 'demandeur_id', 'statut', 'soumis', 'approuve', 'urls_justificatifs', { approuve_par: 'geoffroy', approuve_par_nom: 'Geoffroy', date_approbation: serverTimestamp() }],
+    ]) {
+      const own = doc(mobileOnly, `clubs/rules-test/${name}/geoffroy`);
+      const foreign = doc(mobileOnly, `clubs/rules-test/${name}/other`);
+      await assertSucceeds(getDoc(own));
+      await assertSucceeds(getDocs(query(collection(mobileOnly, `clubs/rules-test/${name}`), where(ownerField, '==', 'geoffroy'))));
+      await assertFails(getDocs(collection(mobileOnly, `clubs/rules-test/${name}`)));
+      await assertFails(getDoc(foreign));
+      await assertSucceeds(updateDoc(own, { [receiptField]: ['https://example.test/ticket'], updated_at: serverTimestamp() }));
+      await assertSucceeds(updateDoc(own, { description: 'Ticket DEV corrigé' }));
+      await assertFails(updateDoc(foreign, { description: 'Forbidden' }));
+      await assertFails(updateDoc(own, { [ownerField]: 'other' }));
+      await assertFails(updateDoc(own, { [statusField]: approved, ...approval }));
+      await assertFails(updateDoc(own, { [name === 'expense_claims' ? 'category' : 'categorie']: 'remboursement_inscription' }));
+      await assertFails(updateDoc(own, { operation_id: 'unrelated-event' }));
+      await assertFails(updateDoc(own, { paid_amount: 1, paid_transaction_id: 'forged' }));
+      await assertFails(updateDoc(own, { ...approval }));
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), `clubs/rules-test/${name}/geoffroy`), { [statusField]: approved });
+      });
+      await assertFails(updateDoc(own, { [receiptField]: ['https://example.test/changed'] }));
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), `clubs/rules-test/${name}/geoffroy`), { [statusField]: pending });
+      });
+    }
+    // Revocation denies new/changed Boutique associations in both expense schemas.
+    // Ordinary expenses and removing an optional link remain available.
+    const revoked = env.authenticatedContext('geoffroy').firestore();
+    for (const [index, patch] of [
+      { member_status: 'inactive' }, { app_status: 'suspended' },
+      { isActive: false }, { actif: false }, { app_status: '' }, { app_status: false },
+    ].entries()) {
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), 'clubs/rules-test/members/geoffroy'), patch);
+      });
+      for (const [collection, data] of [
+        ['expense_claims', { requester_id: 'geoffroy', status: 'submitted', amount: 1 }],
+        ['demandes_remboursement', { demandeur_id: 'geoffroy', statut: 'soumis', montant: 1 }],
+      ]) {
+        const plain = doc(revoked, `clubs/rules-test/${collection}/revoked-${index}`);
+        await assertSucceeds(setDoc(plain, { ...data, description: 'Ticket DEV' }));
+        await assertFails(updateDoc(plain, { boutique_supplier_batch_id: 'batch' }));
+        await assertFails(setDoc(doc(revoked, `clubs/rules-test/${collection}/revoked-linked-${index}`), { ...data, boutique_supplier_batch_id: 'batch' }));
+        await assertSucceeds(updateDoc(doc(revoked, `clubs/rules-test/${collection}/linked-geoffroy`), { boutique_supplier_batch_id: null }));
+      }
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), 'clubs/rules-test/members/geoffroy'), { member_status: 'active', app_status: 'active', isActive: true, actif: true });
+      });
+      for (const collection of ['expense_claims', 'demandes_remboursement']) {
+        await assertSucceeds(updateDoc(doc(revoked, `clubs/rules-test/${collection}/linked-geoffroy`), { boutique_supplier_batch_id: 'batch' }));
       }
     }
     await env.withSecurityRulesDisabled(async (context) => {

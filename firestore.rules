@@ -474,7 +474,11 @@ service cloud.firestore {
     }
     function boutiqueExpenseSupplierMatches(clubId, supplierId, requesterId) {
       let supplier = get(/databases/$(database)/documents/clubs/$(clubId)/fournisseurs/$(supplierId)).data;
-      return supplier.get('supplierType', 'external') == 'club_member'
+      let member = get(/databases/$(database)/documents/clubs/$(clubId)/members/$(requesterId)).data;
+      return member.get('member_status', '') == 'active'
+        && member.get('isActive', true) != false && member.get('actif', true) != false
+        && (member.get('app_status', null) == null || member.get('app_status', null) == 'active')
+        && supplier.get('supplierType', 'external') == 'club_member'
         && supplier.get('memberId', null) == requesterId && supplier.get('actif', false) == true;
     }
 
@@ -820,10 +824,10 @@ service cloud.firestore {
 
       // Demandes de remboursement - USER ISOLATION: user can only see their own
       match /demandes_remboursement/{claimId} {
-        // Read: User role can only see their own demands (via demandeur_id)
+        // Read: User and mobile-only member roles can only see their own demands (via demandeur_id)
         allow read: if isMember(clubId) && (
           canManageExpenses(clubId) ||
-          (getUserData(clubId).app_role == 'user' && resource.data.demandeur_id == request.auth.uid)
+          (getUserData(clubId).app_role in ['user', 'membre'] && resource.data.demandeur_id == request.auth.uid)
         );
 
         // Create: Club members can create their own demands — EXCEPT for
@@ -851,7 +855,15 @@ service cloud.firestore {
           && (
             canManageExpenses(clubId) ||
             (
-              getUserData(clubId).app_role == 'user' &&
+              (getUserData(clubId).app_role == 'user' || (
+                getUserData(clubId).app_role == 'membre' &&
+                request.resource.data.statut in ['brouillon', 'soumis'] &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'montant', 'description', 'date_depense', 'fiscal_year_id',
+                  'urls_justificatifs',
+                  'documents_justificatifs', 'updated_at', 'boutique_supplier_batch_id'
+                ])
+              )) &&
               resource.data.demandeur_id == request.auth.uid &&
               request.resource.data.demandeur_id == resource.data.demandeur_id &&
               resource.data.statut in ['brouillon', 'soumis']
@@ -869,10 +881,10 @@ service cloud.firestore {
       // approved_by/approved_by_name/approved_at (not approuve_par/...).
       // See normalizeCanonicalExpenseClaimPayload() in expenseClaimGateway.ts for full mapping.
       match /expense_claims/{claimId} {
-        // Read: User role can only see their own claims (via canonical requester_id)
+        // Read: User and mobile-only member roles can only see their own claims (via canonical requester_id)
         allow read: if isMember(clubId) && (
           canManageExpenses(clubId) ||
-          (getUserData(clubId).app_role == 'user' && resource.data.requester_id == request.auth.uid)
+          (getUserData(clubId).app_role in ['user', 'membre'] && resource.data.requester_id == request.auth.uid)
         );
 
         // Create: User can create own claims; admin/validateur can mirror-create on
@@ -899,7 +911,15 @@ service cloud.firestore {
           && (
             canManageExpenses(clubId) ||
             (
-              getUserData(clubId).app_role == 'user' &&
+              (getUserData(clubId).app_role == 'user' || (
+                getUserData(clubId).app_role == 'membre' &&
+                request.resource.data.status in ['draft', 'submitted'] &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'amount', 'description', 'expense_date', 'fiscal_year_id',
+                  'supporting_document_urls',
+                  'supporting_documents', 'updated_at', 'boutique_supplier_batch_id'
+                ])
+              )) &&
               resource.data.requester_id == request.auth.uid &&
               request.resource.data.requester_id == resource.data.requester_id &&
               resource.data.status in ['draft', 'submitted']

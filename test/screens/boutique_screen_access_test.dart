@@ -1,6 +1,7 @@
 import 'package:calymob/providers/boutique_cart_provider.dart';
 import 'package:calymob/screens/boutique/boutique_screen.dart';
 import 'package:calymob/services/boutique/boutique_access_service.dart';
+import 'package:calymob/services/boutique/member_missions_service.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -74,8 +75,9 @@ void main() {
           child: MaterialApp(
             home: BoutiqueScreen(
               accessService: BoutiqueAccessService(
-                  firestore: firestore,
-                  authUserIds: () => Stream.value(userId)),
+                firestore: firestore,
+                authUserIds: () => Stream.value(userId),
+              ),
               clubId: clubId,
               testUserIdOverride: userId,
             ),
@@ -183,6 +185,65 @@ void main() {
       expectSections(visible: false);
 
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
+    'mobile-only linked supplier sees Mes missions without CalyCompta or shop/manager access',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final firestore = FakeFirebaseFirestore();
+      await firestore.doc('clubs/$clubId/settings/feature_flags').set({
+        'boutiqueEnabled': false,
+        'boutiqueAccess': 'masque',
+      });
+      final member = firestore.doc('clubs/$clubId/members/$userId');
+      await member.set({
+        'member_status': 'active',
+        'app_role': 'membre',
+        'has_app_access': false,
+        'has_web_access': false,
+        'app_status': 'active',
+        'clubStatuten': <String>[],
+      });
+      var eligibilityCalls = 0;
+      final cart = BoutiqueCartProvider(
+        authStateChanges: const Stream<User?>.empty(),
+      );
+      addTearDown(cart.dispose);
+      await tester.pumpWidget(
+        ChangeNotifierProvider<BoutiqueCartProvider>.value(
+          value: cart,
+          child: MaterialApp(
+            home: BoutiqueScreen(
+              clubId: clubId,
+              testUserIdOverride: userId,
+              accessService: BoutiqueAccessService(
+                firestore: firestore,
+                authUserIds: () => Stream.value(userId),
+                missions: MemberMissionsService(
+                  transport: (_) async {
+                    eligibilityCalls++;
+                    return {'version': 1, 'eligible': true, 'missions': []};
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await pumpAccessEvent(tester);
+      expect(eligibilityCalls, greaterThan(0));
+      expect(find.text('Mes missions'), findsOneWidget);
+      expect(find.text('Ouvrir CalyCompta'), findsNothing);
+      expectSections(visible: false);
+      await member.update({'app_status': 'suspended'});
+      await pumpAccessEvent(tester);
+      expect(find.text('Mes missions'), findsNothing);
+      expect(
+        find.byKey(const Key('boutique-access-unavailable')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox());
     },
   );
 }
