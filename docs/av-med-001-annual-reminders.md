@@ -7,9 +7,9 @@ validity date wins. If issue is absent, retain only an explicit approved expiry,
 never infer a physician's visit from file upload. Invalid/future/conflicting
 dates stay unknown. This is administrative status, not clinical fitness.
 
-The own-member summary is read when presenting an approved certificate. Its
+The own-member summary is watched while presenting an approved certificate. Its
 issue date is joined only if the explicit expiry matches that certificate.
-Conflict stays unknown. No new document approval or member-date write occurs.
+Conflict or a cleared summary stays unknown. No new document approval or member-date write occurs.
 The restricted operational projection carries issue date, never the directory.
 Existing projections are not backfilled by this change.
 
@@ -20,7 +20,11 @@ pending renewal, and token availability. Lockscreen text is generic. Transaction
 rechecks current member and consumes a unique receipt before dispatch. A second
 read checks renewal/opt-out immediately before dispatch. An FCM outcome cannot
 be atomic with database updates: ambiguous/error outcomes are not auto-retried.
-Logs contain aggregate counts only. History/badge helper remains canonical.
+The reminder runner logs aggregate counts only. The canonical history/badge
+helper is called in a request-local private logging context, including in cursor
+SHADOW/error paths; concurrent ordinary notifications keep their existing logs.
+This is not a blanket SDK/platform logging guarantee. History/badge behavior
+remains canonical.
 
 No production activation, notifications, credentials, login, member write,
 migration or store action is part of DEV delivery. A future approved deployment

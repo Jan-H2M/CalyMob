@@ -2,12 +2,18 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:rxdart/rxdart.dart';
 import '../models/medical_certification.dart';
 
 /// Service de gestion des certificats médicaux
 class MedicalCertificationService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseFirestore _firestore;
+  final FirebaseStorage? _providedStorage;
+  FirebaseStorage get _storage => _providedStorage ?? FirebaseStorage.instance;
+  MedicalCertificationService(
+      {FirebaseFirestore? firestore, FirebaseStorage? storage})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _providedStorage = storage;
 
   /// Récupérer le certificat médical actuel (le plus récent approuvé ou en attente)
   Future<MedicalCertification?> getCurrentCertification(
@@ -61,11 +67,14 @@ class MedicalCertificationService {
     String userId,
   ) {
     // Watch all certificates and apply priority logic locally
-    return _firestore
-        .collection('clubs/$clubId/members/$userId/medical_certificates')
-        .orderBy('uploaded_at', descending: true)
-        .snapshots()
-        .asyncMap((snapshot) async {
+    return Rx.combineLatest2<QuerySnapshot<Map<String, dynamic>>,
+            DocumentSnapshot<Map<String, dynamic>>, MedicalCertification?>(
+        _firestore
+            .collection('clubs/$clubId/members/$userId/medical_certificates')
+            .orderBy('uploaded_at', descending: true)
+            .snapshots(),
+        _firestore.doc('clubs/$clubId/members/$userId').snapshots(),
+        (snapshot, member) {
       if (snapshot.docs.isEmpty) return null;
 
       final certs = snapshot.docs
@@ -82,7 +91,7 @@ class MedicalCertificationService {
           final bDate = b.validUntil ?? DateTime(1900);
           return bDate.compareTo(aDate);
         });
-        return _withCurrentMemberDates(clubId, userId, approvedCerts.first);
+        return approvedCerts.first.withMemberDates(member.data() ?? {});
       }
 
       // Priority 2: Find pending certificate (most recent by uploaded_at)

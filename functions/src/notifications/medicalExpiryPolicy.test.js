@@ -3,6 +3,15 @@ const { dispatchMedicalReminder, runMedicalExpiryReminders } = require('./medica
 const now = new Date('2026-10-31T12:00:00Z');
 const member = { member_status: 'active', certificat_medical_date: '2025-11-20',
   certificat_medical_validite: '2030-01-01', fcm_tokens: ['dev-token', 'dev-token'] };
+test('rejects invalid ISO calendar/time and timezone-less datetimes, independent of host', () => {
+  for (const malformed of [{ toDate: true }, { toDate: 'bad' },
+    { toDate: () => { throw new Error('malformed'); } }]) expect(day(malformed)).toBeNull();
+  for (const raw of ['2026-02-30T00:00:00Z', '2026-01-31T24:00:00Z',
+    '2026-10-31T12:60:00Z', '2026-10-31T12:00:60Z', '2026-10-31T23:30:00',
+    '2026-10-31T00:00:00+14:30', '2026-10-31T00:00:00+15:00']) expect(day(raw)).toBeNull();
+  expect(day('2026-10-31T00:00:00+14:00').toISOString()).toBe('2026-10-30T00:00:00.000Z');
+  expect(day('2026-10-31T23:30:00Z').toISOString()).toBe('2026-11-01T00:00:00.000Z');
+});
 test('annual anniversary caps explicit date, not 365 days or December 31', () => {
   expect(medicalValidity(member, now)).toEqual({ status: 'expiringSoon',
     expiresOn: '2026-11-20', daysRemaining: 20 });

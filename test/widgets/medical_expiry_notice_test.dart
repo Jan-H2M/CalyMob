@@ -3,8 +3,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:calymob/widgets/medical_expiry_notice.dart';
 import 'package:calymob/widgets/certification_status_badge.dart';
 import 'package:calymob/models/medical_certification.dart';
+import 'package:calymob/models/member_profile.dart';
+import 'package:calymob/screens/scanner/member_validation_card.dart';
 
 void main() {
+  testWidgets(
+      'scanner text shares medical calendar day at late night and next Brussels day',
+      (t) async {
+    t.view.physicalSize = const Size(1200, 1000);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final member = MemberProfile(
+        id: 'dev',
+        prenom: 'A',
+        nom: 'FICTIF',
+        email: '',
+        certificatMedicalValidite: DateTime.utc(2026, 10, 31));
+    await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MemberValidationCard(
+                member: member, now: DateTime.parse('2026-10-31T22:59:00Z')))));
+    expect(find.text('Expire aujourd’hui'), findsOneWidget);
+    await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MemberValidationCard(
+                member: member, now: DateTime.parse('2026-10-31T23:30:00Z')))));
+    expect(find.text('Expiré depuis 1 jour'), findsOneWidget);
+    expect(find.text('Expiré depuis 0 jour'), findsNothing);
+  });
   testWidgets('visible annual warning and renewal action', (t) async {
     var opened = false;
     await t.pumpWidget(MaterialApp(

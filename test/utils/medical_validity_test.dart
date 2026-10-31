@@ -6,6 +6,22 @@ import 'package:calymob/models/member_profile.dart';
 
 void main() {
   final now = DateTime.parse('2026-10-31T12:00:00Z');
+  test('rejects invalid ISO calendar/time and timezone-less datetimes', () {
+    for (final raw in [
+      '2026-02-30T00:00:00Z',
+      '2026-01-31T24:00:00Z',
+      '2026-10-31T12:60:00Z',
+      '2026-10-31T12:00:60Z',
+      '2026-10-31T23:30:00',
+      '2026-10-31T00:00:00+14:30',
+      '2026-10-31T00:00:00+15:00'
+    ]) {
+      expect(parseMedicalDate(raw), isNull);
+    }
+    expect(parseMedicalDate('2026-10-31T00:00:00+14:00'),
+        DateTime.utc(2026, 10, 30));
+    expect(parseMedicalDate('2026-10-31T23:30:00Z'), DateTime.utc(2026, 11, 1));
+  });
   test('calendar year anniversary, not 365 days or end of year', () {
     final r = MedicalValidity.evaluate(
         issuedOn: DateTime(2024, 3, 1),

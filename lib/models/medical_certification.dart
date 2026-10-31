@@ -132,15 +132,13 @@ class MedicalCertification {
     if (status != CertificateStatus.approved) return this;
     final rawIssued = member['certificat_medical_date'];
     final rawUntil = member['certificat_medical_validite'];
-    if (rawIssued == null && rawUntil == null) return this;
     final issue = parseMedicalDate(rawIssued),
         until = parseMedicalDate(rawUntil);
-    final conflicting = (rawIssued != null || rawUntil != null) &&
-        (until == null ||
-            validUntil == null ||
-            until.year != validUntil!.year ||
-            until.month != validUntil!.month ||
-            until.day != validUntil!.day);
+    final conflicting = (until == null ||
+        validUntil == null ||
+        until.year != validUntil!.year ||
+        until.month != validUntil!.month ||
+        until.day != validUntil!.day);
     return MedicalCertification(
         id: id,
         memberId: memberId,

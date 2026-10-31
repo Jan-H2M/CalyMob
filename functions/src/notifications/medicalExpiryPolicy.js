@@ -5,7 +5,11 @@ const formatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit',
 });
 function day(value) {
+  try { return normalizedDay(value); } catch (_) { return null; }
+}
+function normalizedDay(value) {
   if (!value) return null;
+  if (typeof value === 'string') value = value.trim();
   let y, m, d;
   const legacy = typeof value === 'string' && value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (legacy) {
@@ -13,7 +17,17 @@ function day(value) {
   } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     [y, m, d] = value.split('-').map(Number);
   } else {
-    const date = value?.toDate ? value.toDate() : value instanceof Date ? value :
+    if (typeof value === 'string') {
+      const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/);
+      if (!iso) return null;
+      const [, year, month, date, hour, minute, second = '0', zone] = iso;
+      const calendar = new Date(Date.UTC(+year, +month - 1, +date));
+      if (calendar.getUTCFullYear() !== +year || calendar.getUTCMonth() !== +month - 1 ||
+          calendar.getUTCDate() !== +date || +hour > 23 || +minute > 59 || +second > 59) return null;
+      if (zone !== 'Z' && (+zone.slice(1, 3) > 14 || +zone.slice(4, 6) > 59 ||
+          (+zone.slice(1, 3) === 14 && zone.slice(4, 6) !== '00'))) return null;
+    }
+    const date = typeof value?.toDate === 'function' ? value.toDate() : value instanceof Date ? value :
       typeof value === 'string' ? new Date(value) : null;
     if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return null;
     const parts = Object.fromEntries(formatter.formatToParts(date).map(p => [p.type, p.value]));

@@ -24,6 +24,7 @@ DateTime _day(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 DateTime? parseMedicalDate(Object? value) {
   if (value == null) return null;
   if (value is String) {
+    value = value.trim();
     final legacy =
         RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(value.trim());
     if (legacy != null) {
@@ -39,6 +40,32 @@ DateTime? parseMedicalDate(Object? value) {
   if (value is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
     final d = DateTime.tryParse(value);
     return d != null && d.toIso8601String().startsWith(value) ? _day(d) : null;
+  }
+  if (value is String) {
+    final iso = RegExp(
+            r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$')
+        .firstMatch(value);
+    if (iso == null) return null; // No host/device-local datetime guesses.
+    final y = int.parse(iso[1]!),
+        m = int.parse(iso[2]!),
+        d = int.parse(iso[3]!);
+    final calendar = DateTime.utc(y, m, d);
+    if (calendar.year != y ||
+        calendar.month != m ||
+        calendar.day != d ||
+        int.parse(iso[4]!) > 23 ||
+        int.parse(iso[5]!) > 59 ||
+        int.parse(iso[6] ?? '0') > 59) {
+      return null;
+    }
+    final zone = iso[7]!;
+    if (zone != 'Z' &&
+        (int.parse(zone.substring(1, 3)) > 14 ||
+            int.parse(zone.substring(4, 6)) > 59 ||
+            (int.parse(zone.substring(1, 3)) == 14 &&
+                zone.substring(4, 6) != '00'))) {
+      return null;
+    }
   }
   final DateTime? instant = value is Timestamp
       ? value.toDate()

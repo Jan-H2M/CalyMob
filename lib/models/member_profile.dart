@@ -510,11 +510,15 @@ class MemberProfile {
           needsReview: medicalDatesNeedReview)
       .expiresOn;
 
-  ValidationStatus get certificatStatus {
-    final validity = MedicalValidity.evaluate(
-        issuedOn: certificatMedicalDate,
-        validUntil: certificatMedicalValidite,
-        needsReview: medicalDatesNeedReview);
+  MedicalValidity medicalValidityAt(DateTime? now) => MedicalValidity.evaluate(
+      issuedOn: certificatMedicalDate,
+      validUntil: certificatMedicalValidite,
+      needsReview: medicalDatesNeedReview,
+      now: now);
+
+  ValidationStatus get certificatStatus => certificatStatusAt(null);
+  ValidationStatus certificatStatusAt(DateTime? now) {
+    final validity = medicalValidityAt(now);
     return switch (validity.status) {
       MedicalValidityStatus.valid => ValidationStatus.valid,
       MedicalValidityStatus.expiringSoon => ValidationStatus.warning,

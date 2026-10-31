@@ -34,7 +34,7 @@ async function dispatchMedicalReminder({ db, memberRef, clubId, now, timestamp, 
         status: 'expiring', click_action: 'FLUTTER_NOTIFICATION_CLICK' },
       android: { notification: { channelId: 'medical_certificates' } },
       apns: { payload: { aps: { sound: 'default' } } },
-    }, 'Médical');
+    }, 'Médical', { privacySensitive: true });
     const status = result.successCount > 0 ? 'sent' : 'failed_no_retry';
     await claim.ref.update({ status, updated_at: timestamp() });
     return status;
