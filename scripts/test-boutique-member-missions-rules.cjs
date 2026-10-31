@@ -24,6 +24,7 @@ const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
       const linked = { requester_id: uid, status: 'submitted', description: 'Ticket DEV', amount: 1, boutique_supplier_batch_id: 'batch' };
       await (uid === 'geoffroy' ? assertSucceeds : assertFails)(setDoc(doc(db, `clubs/rules-test/expense_claims/linked-${uid}`), linked));
       await assertFails(updateDoc(doc(db, `clubs/rules-test/expense_claims/${uid}`), { boutique_supplier_batch_id: 'missing' }));
+      if (uid === 'other') await assertFails(updateDoc(doc(db, `clubs/rules-test/expense_claims/${uid}`), { requester_id: 'geoffroy', boutique_supplier_batch_id: 'batch' }));
     }
     for (const uid of ['geoffroy', 'other']) {
       const db = env.authenticatedContext(uid).firestore();
@@ -31,7 +32,10 @@ const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
       await assertSucceeds(setDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), own));
       await (uid === 'geoffroy' ? assertSucceeds : assertFails)(setDoc(doc(db, `clubs/rules-test/demandes_remboursement/linked-${uid}`), { ...own, boutique_supplier_batch_id: 'batch' }));
       await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { boutique_supplier_batch_id: 'missing' }));
-      if (uid === 'other') await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { boutique_supplier_batch_id: 'batch' }));
+      if (uid === 'other') {
+        await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { boutique_supplier_batch_id: 'batch' }));
+        await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { demandeur_id: 'geoffroy', boutique_supplier_batch_id: 'batch' }));
+      }
     }
     await env.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();

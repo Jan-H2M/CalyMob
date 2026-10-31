@@ -853,6 +853,7 @@ service cloud.firestore {
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.demandeur_id == request.auth.uid &&
+              request.resource.data.demandeur_id == resource.data.demandeur_id &&
               resource.data.statut in ['brouillon', 'soumis']
             )
           );
@@ -900,6 +901,7 @@ service cloud.firestore {
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.requester_id == request.auth.uid &&
+              request.resource.data.requester_id == resource.data.requester_id &&
               resource.data.status in ['draft', 'submitted']
             )
           );
