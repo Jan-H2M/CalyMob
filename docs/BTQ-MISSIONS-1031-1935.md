@@ -67,3 +67,18 @@ Production backfill, production rules/API/client deployment, actual notification
 sending and any TestFlight/store action remain unapproved. A cloud DEV project
 would require a separately approved isolated configuration; this local runtime
 must never be deployed to the existing production-backed project.
+
+## Independent Codex review repairs (BTQ-MISSIONS-1031-2155)
+
+The independent review found a mixed MCP/member receipt duplication path, an
+invoice guard using stale supplier type, an email draft mutation path, incomplete
+short-closure accounting, premature post-login deep-link consumption, and an
+expense form surviving an account switch. These paths now fail closed or derive
+completion consistently. Regression coverage includes real Firestore emulator
+transactions, both repositories' rules, and Flutter navigation/identity widgets.
+The shared v1 DTO is unchanged; the contract records the stricter ownership rules.
+
+Follow-up review also exercises the Admin SDK release writer, legacy expense
+create/update ingress, live supplier resolution in Décomptes, and unnamed login
+routes after logout. Login readiness is tied to an explicit authenticated-home
+navigation event and its UID, never inferred from a route having no name.

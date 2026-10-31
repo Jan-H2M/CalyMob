@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../config/firebase_config.dart';
 import '../../services/boutique/member_missions_service.dart';
 import '../../widgets/boutique/boutique_operations_scaffold.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
 import '../expenses/create_expense_screen.dart';
 
 class MemberMissionsScreen extends StatefulWidget {
@@ -127,6 +128,25 @@ class _MemberMissionsScreenState extends State<MemberMissionsScreen> {
     }
   }
 
+  void _openExpense(MemberMission mission) {
+    if (widget.onExpense != null) {
+      widget.onExpense!(mission);
+      return;
+    }
+    final ownerUid = BoutiqueAccessScope.maybeOf(context)?.userId;
+    Navigator.push(
+        context,
+        boutiqueAccessGuardedRoute<void>(
+          sourceContext: context,
+          requiredSection: 'missions',
+          builder: (_) => CreateExpenseScreen(
+            originatingUid: ownerUid,
+            boutiqueBatchId: mission.batchId,
+            boutiqueOrderLabel: mission.orderLabel,
+          ),
+        ));
+  }
+
   @override
   Widget build(BuildContext context) => BoutiqueOperationsScaffold(
         title: 'Mes missions',
@@ -190,20 +210,8 @@ class _MemberMissionsScreenState extends State<MemberMissionsScreen> {
                                 .toList(),
                           ),
                           TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => widget.onExpense != null
-                                    ? widget.onExpense!(mission)
-                                    : Navigator.push(
-                                        context,
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => CreateExpenseScreen(
-                                            boutiqueBatchId: mission.batchId,
-                                            boutiqueOrderLabel:
-                                                mission.orderLabel,
-                                          ),
-                                        ),
-                                      ),
+                            onPressed:
+                                _busy ? null : () => _openExpense(mission),
                             child: const Text('J’ai avancé des frais…'),
                           ),
                         ],

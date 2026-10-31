@@ -1,3 +1,4 @@
+import 'utils/boutique_mission_navigation.dart';
 import 'screens/boutique/member_missions_screen.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -245,6 +246,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   String? _notificationIdentityUserId;
   int _notificationIdentityGeneration = 0;
   bool _diveShareNavigationPending = false;
+  final _boutiqueNavigation = AuthenticatedNavigationReadiness();
 
   @override
   void initState() {
@@ -255,7 +257,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       Provider.of<UnreadCountProvider>(context, listen: false).refresh();
     };
     _notificationNavigatorObserver = _NotificationNavigatorObserver(
-      onNavigationChanged: _scheduleNotificationDrain,
+      onNavigationChanged: () {
+        _boutiqueNavigation.observe(_notificationNavigatorObserver.currentRoute, _notificationAuthProvider?.currentUser?.uid);
+        _scheduleNotificationDrain();
+      },
     );
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
@@ -368,7 +373,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final navContext = _navigatorKey.currentContext;
     await _deepLinkService.openPendingBoutiqueMissions(
       authenticated: navContext != null && navContext.mounted && Provider.of<AuthProvider>(navContext, listen: false).currentUser != null,
-      navigationReady: _navigatorKey.currentState != null,
+      navigationReady: boutiqueMissionNavigationReady(
+        hasNavigator: _navigatorKey.currentState != null,
+        memberLoaded: _notificationAuthProvider?.currentUser != null
+            && _notificationMemberProvider?.isLoadedFor(FirebaseConfig.defaultClubId, _notificationAuthProvider!.currentUser!.uid) == true,
+        passwordChangeRequired: _notificationMemberProvider?.requirePasswordChange != false,
+        loginCompleted: _boutiqueNavigation.isReadyFor(_notificationAuthProvider?.currentUser?.uid),
+      ),
       open: () async {
         await _navigatorKey.currentState?.push(boutiqueAccessGuardedRoute(
           requiredSection: 'missions', builder: (_) => const MemberMissionsScreen()));
@@ -585,6 +596,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (nextUserId == _notificationIdentityUserId) return;
 
     _notificationIdentityUserId = nextUserId;
+    _boutiqueNavigation.reset();
     _notificationIdentityGeneration++;
     _notificationDrainOwnerGeneration = null;
     _clearNotificationIdentityState();
@@ -614,6 +626,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _notificationDrainScheduled = false;
       _attachNotificationReadinessListeners();
       unawaited(_drainNotificationQueue());
+      unawaited(_openBoutiqueMissions());
     });
   }
 

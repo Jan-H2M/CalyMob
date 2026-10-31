@@ -1,3 +1,4 @@
+import '../../utils/boutique_mission_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
@@ -71,6 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
       Navigator.of(context).pushReplacement(MaterialPageRoute(
+        settings: RouteSettings(name: memberProvider.requirePasswordChange ? null : authenticatedHomeRouteName, arguments: user.uid),
         builder: (_) => memberProvider.requirePasswordChange
             ? const ForcePasswordChangeScreen()
             : const LandingScreen(),
@@ -177,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LandingScreen()),
+          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: context.read<AuthProvider>().currentUser?.uid), builder: (_) => const LandingScreen()),
         );
       }
     } catch (e) {
@@ -236,7 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LandingScreen()),
+          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: context.read<AuthProvider>().currentUser?.uid), builder: (_) => const LandingScreen()),
         );
       }
     } on AuthLoginException catch (e) {

@@ -52,3 +52,18 @@ Shared contract owned by CalyCompta (API) and CalyMob (client). Identical copy i
 * Backfill is dry-run by default and apply is limited to loopback emulators or an
   dedicated synthetic demo project in the loopback emulators. Exact unique member mapping only;
   ambiguous matches stop the whole operation. No production backfill in this task.
+
+Receipt ownership and expense identity invariants:
+* Club-member supplier receipts belong exclusively to the member mission API.
+  Aggregate MCP receipt writes are rejected using both the cached batch type and
+  the current supplier, rechecked inside the write transaction. Existing mission
+  progress also prevents falling back to aggregate receipts after a supplier edit.
+* A final handover accounts for received quantities plus historical closed
+  shortages; fully accounted short batches and stock purchases become closed_short.
+* Supplier invoice guards consult the current supplier, including legacy batches
+  without supplierType. Starting email dispatch freezes draft items/supplier identity.
+* Optional boutique_supplier_batch_id expense associations must belong to the
+  claim requester through the current member supplier. Unlinked ordinary expense
+  notes remain valid. Account changes invalidate open mobile expense forms.
+* A pending mission deep link waits for member data, any mandatory password
+  change, and completed login route replacement before it is consumed.

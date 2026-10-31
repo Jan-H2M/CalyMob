@@ -1,5 +1,5 @@
+import '../../utils/boutique_mission_navigation.dart';
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
@@ -93,7 +93,7 @@ class _ForcePasswordChangeScreenState extends State<ForcePasswordChangeScreen> {
 
         // Navigate to landing screen
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LandingScreen()),
+          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: context.read<AuthProvider>().currentUser?.uid), builder: (_) => const LandingScreen()),
         );
       }
     } on PasswordChangeException catch (e) {

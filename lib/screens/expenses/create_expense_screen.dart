@@ -19,10 +19,12 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de création d'une demande de remboursement
 class CreateExpenseScreen extends StatefulWidget {
+  final String? originatingUid;
   final String? boutiqueBatchId;
   final String? boutiqueOrderLabel;
   const CreateExpenseScreen({
     Key? key,
+    this.originatingUid,
     this.boutiqueBatchId,
     this.boutiqueOrderLabel,
   }) : super(key: key);
@@ -38,12 +40,42 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _imagePicker = ImagePicker();
 
   DateTime _selectedDate = DateTime.now();
-  List<File> _selectedPhotos = [];
+  final List<File> _selectedPhotos = [];
   bool _isSubmitting = false;
   bool _linkBoutique = false;
   String? _boutiqueBatchId;
   Map<String, String> _boutiqueChoices = {};
+  String? _originatingUid;
+  bool _identityBound = false;
+  bool _accountChanged = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final uid = context.watch<AuthProvider>().currentUser?.uid;
+    if (!_identityBound) {
+      _originatingUid = widget.originatingUid ?? uid;
+      _identityBound = true;
+      _accountChanged = uid == null || uid != _originatingUid;
+    } else if (uid != _originatingUid) {
+      _accountChanged = true;
+      _montantController.clear();
+      _descriptionController.clear();
+      _selectedPhotos.clear();
+      _boutiqueChoices.clear();
+      _boutiqueBatchId = null;
+      _linkBoutique = false;
+    }
+  }
+
+  bool get _sameAccount =>
+      mounted &&
+      !_accountChanged &&
+      _originatingUid != null &&
+      context.read<AuthProvider>().currentUser?.uid == _originatingUid;
+
   Future<void> _chooseBoutique(bool enabled) async {
+    if (!_sameAccount) return;
     setState(() {
       _linkBoutique = enabled;
     });
@@ -62,7 +94,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final data = await const MemberMissionsService().expenseOrders(
         FirebaseConfig.defaultClubId,
       );
-      if (mounted)
+      if (_sameAccount) {
         setState(() {
           _boutiqueChoices = {
             for (final row in data['orders'] as List)
@@ -70,6 +102,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                   row['label'] as String? ?? 'Commande Boutique',
           };
         });
+      }
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -196,8 +229,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
       final List<String>? scannedPaths =
           await CunningDocumentScanner.getPictures(
-            isGalleryImportAllowed: true,
-          );
+        isGalleryImportAllowed: true,
+      );
 
       debugPrint('🔍 Scanner: Result: $scannedPaths');
 
@@ -283,12 +316,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   }
 
   Future<void> _handleSubmit() async {
+    if (!_sameAccount) return;
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
     if ((_linkBoutique && _boutiqueBatchId == null) ||
-        ((_linkBoutique || widget.boutiqueBatchId != null) && _selectedPhotos.isEmpty)) {
+        ((_linkBoutique || widget.boutiqueBatchId != null) &&
+            _selectedPhotos.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -318,13 +353,13 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final expenseProvider = context.read<ExpenseProvider>();
       final memberProvider = context.read<MemberProvider>();
       final clubId = FirebaseConfig.defaultClubId;
-      final userId = authProvider.currentUser?.uid ?? '';
+      final userId = _originatingUid!;
       // Haal naam uit MemberProvider (displayName), fallback naar auth displayName of email
       final userName = memberProvider.displayName.isNotEmpty
           ? memberProvider.displayName
           : (authProvider.displayName ??
-                authProvider.currentUser?.email ??
-                'Utilisateur');
+              authProvider.currentUser?.email ??
+              'Utilisateur');
 
       final montant = parseAmount(_montantController.text)!;
       final description = _descriptionController.text.trim();
@@ -393,6 +428,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_sameAccount) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Nouvelle demande')),
+        body: const Center(
+            child: Text(
+                'Le compte a changé. Fermez ce formulaire et recommencez.')),
+      );
+    }
     return OceanGradientBackground(
       creatures: CreatureSet.bubbles,
       opacity: 0.5,
@@ -439,8 +482,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                               controller: _montantController,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
+                                decimal: true,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Montant (€)',
                                 prefixIcon: Icon(
@@ -579,9 +622,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                   _buildRoundButton(
                                     icon: Icons.document_scanner,
                                     label: 'Scanner',
-                                    onPressed: _isSubmitting
-                                        ? null
-                                        : _scanDocument,
+                                    onPressed:
+                                        _isSubmitting ? null : _scanDocument,
                                   ),
                                 // Photo button
                                 _buildRoundButton(
@@ -619,10 +661,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 physics: const NeverScrollableScrollPhysics(),
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                    ),
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
                                 itemCount: _selectedPhotos.length,
                                 itemBuilder: (context, index) {
                                   return Stack(
