@@ -23,4 +23,7 @@ in production, otherwise older clients will correctly be rejected. DEV merge is
 not store/public approval. For rollback, restore only the previous request rules
 and client code; preserve all immutable acceptance evidence. Never mark old
 requests as accepted. The local `loan-liability` scenario uses the actual form
-and service against Fake Firestore; negative rules tests use only a demo emulator.
+and service against a narrowly bound in-memory write sink (not an SDK platform
+mock, which is unavailable in release builds). Its displayed receipt explicitly
+is not a server acknowledgement; negative rules tests use only a demo emulator.
+CI smoke tests include both P1 scenarios in the actual release-compiled lab.

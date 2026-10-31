@@ -47,6 +47,8 @@ try {
     ['apnee',['1★ apnée · A1 / Discovery · 20h15','2★ apnée · A2 · 21h15','Élèves : Ada FICTIVE','présence à vérifier séparément']],
     ['bank-transfer',['MOB-051 · Virement FICTIF','Tester les choix de paiement fictifs']],
     ['thread-colors',['MOB-052 · Couleurs FICTIVES','Personnaliser le polo FICTIF']],
+    ['medical-expiry',['AV-MED-001 · Aucun certificat réel','expire bientôt']],
+    ['loan-liability',['AV-LOAN-001 · Membre et matériel FICTIFS','Ouvrir la vraie demande FICTIVE']],
   ]) {
     const context = await browser.newContext({serviceWorkers:'block',acceptDownloads:false,
       viewport:{width:1100,height:900}});
