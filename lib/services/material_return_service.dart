@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
 
 import '../models/material_loan.dart';
+import '../models/loan_liability_acceptance.dart';
 
 enum MaterialReturnDecision {
   fullRefund,
@@ -324,7 +325,12 @@ class MaterialReturnService {
     DateTime? requestedStartDate,
     required DateTime expectedReturnDate,
     String? notes,
+    bool liabilityAccepted = false,
   }) async {
+    final acceptance = newLoanLiabilityAcceptance(
+        accepted: liabilityAccepted, memberId: memberId);
+    if ((notes?.trim().length ?? 0) > 500)
+      throw ArgumentError('Remarque : 500 caractères maximum.');
     if (items.isEmpty) {
       throw Exception('Choisissez au moins un materiel');
     }
@@ -354,6 +360,7 @@ class MaterialReturnService {
       'memberEmail': memberEmail,
       'itemIds': items.map((item) => item.id).toList(),
       'items_snapshot': itemSnapshots,
+      'liability_acceptance': acceptance,
       if (requestedStartDate != null)
         'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
@@ -377,7 +384,12 @@ class MaterialReturnService {
     required DateTime requestedStartDate,
     required DateTime expectedReturnDate,
     String? notes,
+    bool liabilityAccepted = false,
   }) async {
+    final acceptance = newLoanLiabilityAcceptance(
+        accepted: liabilityAccepted, memberId: memberId);
+    if ((notes?.trim().length ?? 0) > 500)
+      throw ArgumentError('Remarque : 500 caractères maximum.');
     if (lines.isEmpty) {
       throw Exception('Choisissez au moins un materiel');
     }
@@ -395,6 +407,7 @@ class MaterialReturnService {
       'lines': lines.map((line) => line.toMap()).toList(),
       'itemIds': const <String>[],
       'assignedItemIds': const <String>[],
+      'liability_acceptance': acceptance,
       'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
       'status': 'submitted',
@@ -417,22 +430,41 @@ class MaterialReturnService {
     required DateTime requestedStartDate,
     required DateTime expectedReturnDate,
     String? notes,
+    bool liabilityAccepted = false,
+    required String memberId,
   }) async {
+    final acceptance = newLoanLiabilityAcceptance(
+        accepted: liabilityAccepted, memberId: memberId);
+    if ((notes?.trim().length ?? 0) > 500)
+      throw ArgumentError('Remarque : 500 caractères maximum.');
     if (lines.isEmpty) {
       throw Exception('Choisissez au moins un materiel');
     }
 
-    await _firestore
+    final ref = _firestore
         .collection('clubs')
         .doc(clubId)
         .collection('inventory_loan_requests')
-        .doc(requestId)
-        .update({
-      'lines': lines.map((line) => line.toMap()).toList(),
-      'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
-      'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
-      'notes': notes?.trim(),
-      'updatedAt': FieldValue.serverTimestamp(),
+        .doc(requestId);
+    await _firestore.runTransaction((tx) async {
+      final snapshot = await tx.get(ref);
+      final data = snapshot.data();
+      if (data == null ||
+          data['memberId'] != memberId ||
+          data['status'] != 'submitted') {
+        throw StateError('Cette demande ne peut plus être modifiée.');
+      }
+      tx.update(ref, {
+        'lines': lines.map((line) => line.toMap()).toList(),
+        'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
+        'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
+        'notes': notes?.trim(),
+        // Historical unaccepted requests require a real new acknowledgement.
+        // Existing evidence is never overwritten or made to look newly signed.
+        if (!data.containsKey('liability_acceptance'))
+          'liability_acceptance': acceptance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 

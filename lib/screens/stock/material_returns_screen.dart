@@ -17,8 +17,31 @@ import '../../services/material_return_service.dart';
 import '../../services/member_service.dart';
 import 'equipment_camera_capture.dart';
 import '../../widgets/empty_state_widget.dart';
+import '../../widgets/loan_liability_consent.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+
+Future<void> showMaterialLoanRequestForm(
+        {required BuildContext context,
+        required MaterialReturnService service,
+        required String clubId,
+        required String memberId,
+        required String memberName,
+        required String memberEmail,
+        MaterialLoanRequest? request}) =>
+    showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+        builder: (_) => _MaterialRequestSheet(
+            service: service,
+            clubId: clubId,
+            memberId: memberId,
+            memberName: memberName,
+            memberEmail: memberEmail,
+            request: request));
 
 class MaterialReturnsScreen extends StatefulWidget {
   const MaterialReturnsScreen({super.key});
@@ -259,21 +282,14 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     required MemberProvider memberProvider,
     MaterialLoanRequest? request,
   }) {
-    return showModalBottomSheet<void>(
+    return showMaterialLoanRequestForm(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) => _MaterialRequestSheet(
-        service: _service,
-        clubId: _clubId,
-        memberId: memberId,
-        memberName: memberProvider.displayName,
-        memberEmail: memberProvider.email ?? '',
-        request: request,
-      ),
+      service: _service,
+      clubId: _clubId,
+      memberId: memberId,
+      memberName: memberProvider.displayName,
+      memberEmail: memberProvider.email ?? '',
+      request: request,
     );
   }
 
@@ -1129,6 +1145,8 @@ class _MemberLoanRequestCard extends StatelessWidget {
                 style: const TextStyle(color: Colors.black87),
               ),
             ],
+            if (request.notes?.isNotEmpty == true) Text(request.notes!),
+            _RequestLiabilityEvidence(request: request),
             if (onEdit != null) ...[
               const SizedBox(height: 10),
               Align(
@@ -1240,6 +1258,7 @@ class _GonflageRequestCard extends StatelessWidget {
               ),
             ],
             if (onPrepare != null) ...[
+              _RequestLiabilityEvidence(request: request),
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerRight,
@@ -3821,7 +3840,10 @@ class _MaterialChoiceCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Switch.adaptive(value: selected, onChanged: onSelected),
+              Semantics(
+                  label: 'Demander $label',
+                  child:
+                      Switch.adaptive(value: selected, onChanged: onSelected)),
             ],
           ),
           if (selected) ...[
@@ -3871,6 +3893,22 @@ class _MaterialChoiceCard extends StatelessWidget {
       );
 }
 
+class _RequestLiabilityEvidence extends StatelessWidget {
+  final MaterialLoanRequest request;
+  const _RequestLiabilityEvidence({required this.request});
+  @override
+  Widget build(BuildContext context) {
+    final a = request.liabilityAcceptance;
+    return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+            a == null
+                ? 'Acceptation financière absente ou à vérifier — aucun accord présumé.'
+                : 'Responsabilité acceptée par le compte ${a.acceptedByUid} le ${a.acceptedAt.toIso8601String()} · ${a.termsVersion}',
+            style: const TextStyle(fontSize: 12)));
+  }
+}
+
 class _MaterialRequestSheet extends StatefulWidget {
   final MaterialReturnService service;
   final String clubId;
@@ -3899,6 +3937,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   late DateTime _requestedStartDate;
   late DateTime _expectedReturnDate;
   bool _submitting = false;
+  bool _liabilityAccepted = false;
 
   static const _categories = <_MaterialRequestCategory>[
     _MaterialRequestCategory(
@@ -3996,70 +4035,82 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 18),
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.86,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 46,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+        height: (MediaQuery.of(context).size.height - bottomInset) * 0.86,
+        child: SingleChildScrollView(
+          key: const Key('loan-request-form-scroll'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 46,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _isEditing ? 'Modifier ma demande' : 'Demande de pret',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.donkerblauw,
-                  ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Choisissez au maximum un article par catégorie. Le responsable attribuera le matériel réel lors de la remise.',
-              style: TextStyle(color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickStartDate,
-                    icon: const Icon(Icons.event_available),
-                    label: Text('Du ${_formatDate(_requestedStartDate)}'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickReturnDate,
-                    icon: const Icon(Icons.event_busy),
-                    label: Text('Au ${_formatDate(_expectedReturnDate)}'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _notesController,
-              minLines: 1,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Remarque',
-                hintText: 'Ex: sortie, taille souhaitee, besoin precis...',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+              Text(
+                _isEditing ? 'Modifier ma demande' : 'Demande de pret',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.donkerblauw,
+                    ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: ListView.separated(
-                itemCount: _categories.length,
+              const SizedBox(height: 6),
+              Text(
+                'Choisissez au maximum un article par catégorie. Le responsable attribuera le matériel réel lors de la remise.',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickStartDate,
+                      icon: const Icon(Icons.event_available),
+                      label: Text('Du ${_formatDate(_requestedStartDate)}'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickReturnDate,
+                      icon: const Icon(Icons.event_busy),
+                      label: Text('Au ${_formatDate(_expectedReturnDate)}'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _notesController,
+                minLines: 1,
+                maxLines: 3,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: 'Remarque',
+                  hintText: 'Ex: sortie, taille souhaitee, besoin precis...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListView.separated(
+                shrinkWrap: true,
+                primary: false,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _categories.length + 1,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
+                  if (index == _categories.length) {
+                    return LoanLiabilityConsent(
+                        accepted: _liabilityAccepted,
+                        enabled: !_submitting,
+                        onChanged: (v) =>
+                            setState(() => _liabilityAccepted = v));
+                  }
                   final category = _categories[index];
                   final choice = _selectedChoices[category.id];
                   return _MaterialChoiceCard(
@@ -4102,37 +4153,38 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                   );
                 },
               ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _submitting ? null : _submit,
-                icon: _submitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.send_outlined),
-                label: Text(
-                  _submitting
-                      ? 'Envoi...'
-                      : _isEditing
-                          ? 'Enregistrer les modifications'
-                          : 'Envoyer la demande (${_selectedLines.length})',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.middenblauw,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed:
+                      _submitting || !_liabilityAccepted ? null : _submit,
+                  icon: _submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send_outlined),
+                  label: Text(
+                    _submitting
+                        ? 'Envoi...'
+                        : _isEditing
+                            ? 'Enregistrer les modifications'
+                            : 'Envoyer la demande (${_selectedLines.length})',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.middenblauw,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -4192,6 +4244,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   }
 
   Future<void> _submit() async {
+    if (!_liabilityAccepted) return;
     if (_selectedLines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -4206,6 +4259,8 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     try {
       if (_isEditing) {
         await widget.service.updateLoanRequestLines(
+          memberId: widget.memberId,
+          liabilityAccepted: _liabilityAccepted,
           clubId: widget.clubId,
           requestId: widget.request!.id,
           lines: _selectedLines,
@@ -4215,6 +4270,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
         );
       } else {
         await widget.service.submitLoanRequestLines(
+          liabilityAccepted: _liabilityAccepted,
           clubId: widget.clubId,
           memberId: widget.memberId,
           memberName: widget.memberName,

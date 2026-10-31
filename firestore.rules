@@ -1606,17 +1606,41 @@ service cloud.firestore {
       // A member creates and consults their own request. Only the Gonflage
       // team may process it and create the corresponding physical loan.
       match /inventory_loan_requests/{requestId} {
+        function validAcceptance() {
+          let a = request.resource.data.liability_acceptance;
+          return a is map
+            && a.keys().hasOnly(['accepted', 'accepted_by_uid', 'accepted_at', 'terms_version', 'terms_text'])
+            && a.accepted == true
+            && a.accepted_by_uid == request.auth.uid
+            && a.accepted_by_uid == request.resource.data.memberId
+            && a.accepted_at == request.time
+            && a.terms_version == 'av-loan-001-v1'
+            && a.terms_text == "Je reconnais assumer l’entière responsabilité financière du matériel emprunté en cas de perte, de vol ou de dommage, jusqu’au coût de remplacement d’un matériel équivalent. Les constatations et ma version des faits seront examinées par le conseil d’administration avant toute décision. Cette acceptation n’autorise aucun prélèvement automatique.";
+        }
+        function keepsAcceptance() {
+          return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['liability_acceptance']);
+        }
         allow read: if isMember(clubId)
           && (resource.data.memberId == request.auth.uid || canManageMaterialLoans(clubId));
         allow create: if isMember(clubId)
           && request.resource.data.memberId == request.auth.uid
-          && request.resource.data.status == 'submitted';
-        allow update: if canManageMaterialLoans(clubId)
+          && request.resource.data.status == 'submitted'
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && validAcceptance();
+        allow update: if (canManageMaterialLoans(clubId)
+            && request.resource.data.memberId == resource.data.memberId
+            && keepsAcceptance())
           || (isMember(clubId)
             && resource.data.memberId == request.auth.uid
             && resource.data.status == 'submitted'
             && request.resource.data.memberId == resource.data.memberId
-            && request.resource.data.status == 'submitted');
+            && request.resource.data.status == 'submitted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'lines', 'date_pret_souhaitee', 'date_retour_prevue', 'notes',
+              'updatedAt', 'liability_acceptance'])
+            && (('liability_acceptance' in resource.data && keepsAcceptance())
+              || (!('liability_acceptance' in resource.data) && validAcceptance())));
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
