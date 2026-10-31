@@ -1,7 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode, kReleaseMode;
+import 'package:flutter/foundation.dart'
+    show
+        kIsWeb,
+        kDebugMode,
+        kReleaseMode,
+        defaultTargetPlatform,
+        TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -28,6 +35,7 @@ import 'services/formation_task_navigation_service.dart';
 import 'services/lifras_service.dart';
 import 'services/session_message_service.dart';
 import 'services/visible_read_ack_gate.dart';
+import 'services/startup_trace.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -78,14 +86,15 @@ import 'utils/club_role_utils.dart';
 
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
-// hide AuthProvider — firebase_auth exports its own AuthProvider class which
-// clashes with our providers/auth_provider.dart.
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 
 // Sentry
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-void main() async {
+Future<void> main() async {
+  final startup = StartupTrace('calymob.startup.dart');
+  const environment = String.fromEnvironment('ENV', defaultValue: 'production');
+  const profileStartup =
+      environment == 'dev' && bool.fromEnvironment('STARTUP_PROFILING');
   // Initialize Sentry FIRST — all other init happens inside appRunner
   // to ensure WidgetsFlutterBinding and runApp share the same zone.
   // SentryFlutter.init calls ensureInitialized() internally in its zone,
@@ -96,9 +105,9 @@ void main() async {
           ? '' // Désactivé en debug — pas d'envoi vers Sentry
           : 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
       options.tracesSampleRate =
-          kReleaseMode ? 0.2 : 0.0; // 20% en prod, 0 en debug
-      options.environment = kReleaseMode
-          ? const String.fromEnvironment('ENV', defaultValue: 'production')
+          profileStartup ? 1.0 : (kReleaseMode ? 0.2 : 0.0);
+      options.environment = kReleaseMode || (!kDebugMode && profileStartup)
+          ? environment
           : 'debug';
       options.debug = kDebugMode;
 
@@ -140,7 +149,7 @@ void main() async {
       options.replay.onErrorSampleRate = 1.0; // 100% des sessions avec erreur
     },
     appRunner: () async {
-      debugPrint('✅ Sentry initialisé');
+      startup.record('sentry.initialize', startup.startedAt, startup.now);
 
       // Register Syncfusion license
       // ignore: deprecated_member_use
@@ -148,15 +157,21 @@ void main() async {
           'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=');
 
       try {
-        // Initialiser Firebase avec les options de configuration
-        if (Firebase.apps.isEmpty) {
-          await Firebase.initializeApp(
-            options: DefaultFirebaseOptions.currentPlatform,
-          );
-          debugPrint('✅ Firebase initialisé');
-        } else {
-          debugPrint('ℹ️ Firebase déjà initialisé');
-        }
+        await initializeCriticalStartup(
+          trace: startup,
+          firebase: () async {
+            if (Firebase.apps.isEmpty) {
+              await Firebase.initializeApp(
+                options: DefaultFirebaseOptions.currentPlatform,
+              );
+            }
+          },
+          readTracker: () => LocalReadTracker().init(),
+          locale: () async {
+            await initializeDateFormatting('fr_FR', null);
+            Intl.defaultLocale = 'fr_FR';
+          },
+        );
 
         // Initialiser Firebase Crashlytics (pas sur web)
         if (!kIsWeb) {
@@ -168,41 +183,35 @@ void main() async {
           debugPrint('✅ Crashlytics initialisé');
         }
 
-        // Pré-initialiser LocalReadTracker (SharedPreferences) pour éviter ANR
-        await LocalReadTracker().init();
-        debugPrint('✅ LocalReadTracker pré-initialisé');
-
-        // Initialiser les données de locale pour le français
-        await initializeDateFormatting('fr_FR', null);
-        Intl.defaultLocale = 'fr_FR';
-        debugPrint('✅ Locale initialisée (fr_FR)');
-
-        // Initialiser le service de notifications (pas sur web)
         if (!kIsWeb) {
           FirebaseMessaging.onBackgroundMessage(
               firebaseMessagingBackgroundHandler);
         }
-
-        final notificationService = NotificationService();
-        await notificationService.initialize();
-        if (!kIsWeb) {
-          notificationService.setupForegroundNotifications();
-        }
-        debugPrint('✅ Notifications initialisées');
-
-        // Initialiser le service de deep links (pour les retours de paiement Mollie)
-        final deepLinkService = DeepLinkService();
-        await deepLinkService.initialize();
-        debugPrint('✅ Deep links initialisés');
-      } catch (e) {
-        debugPrint('❌ Erreur initialisation: $e');
-        debugPrint('Stack trace: ${StackTrace.current}');
+      } catch (error, stack) {
+        unawaited(startup.finish(status: const SpanStatus.internalError()));
+        unawaited(Sentry.captureException(error, stackTrace: stack));
+        // Never construct Firebase-dependent providers after failed bootstrap.
+        runApp(const MaterialApp(
+          home: Scaffold(
+              body: Center(
+                  child: Text(
+            'Le démarrage a échoué. Veuillez relancer l’application.',
+          ))),
+        ));
+        return;
       }
 
       // appRunner already executes inside Sentry's zone. Wrapping runApp in an
       // extra runZonedGuarded creates a different zone and triggers a web
       // "Zone mismatch" assertion at startup.
+      final frameStart = startup.now;
       runApp(const MyApp());
+      unawaited(WidgetsBinding.instance.endOfFrame.then((_) {
+        startup.record('flutter.first_frame', frameStart, startup.now);
+        startup.record(
+            'dart.main_to_first_frame', startup.startedAt, startup.now);
+        unawaited(startup.finish());
+      }));
     },
   );
 }
@@ -265,25 +274,108 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // (post-frame car le Provider n'est pas encore prêt dans initState)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _attachNotificationReadinessListeners();
-      final initialLocalPayload =
-          _notificationService.takeInitialLocalNotificationPayload();
-      if (initialLocalPayload != null) {
-        unawaited(_handleInitialLocalNotification(initialLocalPayload));
-      }
+      unawaited(WidgetsBinding.instance.endOfFrame.then((_) async {
+        if (!mounted) return;
+        await initializeDeferredStartup(
+          notifications: _initializeNotifications,
+          deepLinks: () async {
+            final trace = StartupTrace('calymob.startup.deep_links');
+            try {
+              await trace.measure(
+                  'deep_links.initialize', _deepLinkService.initialize);
+            } finally {
+              unawaited(trace.finish());
+            }
+          },
+          onError: (error, stack) {
+            unawaited(Sentry.captureException(error, stackTrace: stack));
+          },
+        );
+      }));
+      unawaited(_recordNativeStartup());
       _updateBadgeFromUnreadCounts();
       unawaited(_openDiveShareInbox());
     });
   }
 
+  Future<void> _recordNativeStartup() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      final timings = await const MethodChannel('calymob/startup')
+          .invokeMapMethod<String, num>('getTimings')
+          .timeout(const Duration(seconds: 2));
+      if (timings == null) return;
+      final start = DateTime.fromMicrosecondsSinceEpoch(
+          (timings['registrationStartUs']!).toInt(),
+          isUtc: true);
+      final end = DateTime.fromMicrosecondsSinceEpoch(
+          (timings['registrationEndUs']!).toInt(),
+          isUtc: true);
+      final transaction = Sentry.startTransaction(
+        'calymob.startup.native_plugins',
+        'app.startup',
+        startTimestamp: start,
+        bindToScope: false,
+      );
+      final span = transaction.startChild('app.startup',
+          description: 'native.generated_plugin_registration',
+          startTimestamp: start);
+      span.setData('duration_ms', timings['registrationDurationMs']);
+      await span.finish(endTimestamp: end, status: const SpanStatus.ok());
+      await transaction.finish(
+          endTimestamp: end, status: const SpanStatus.ok());
+    } catch (error) {
+      debugPrint('Native startup timings unavailable: $error');
+    }
+  }
+
+  Future<void> _initializeNotifications() async {
+    if (kIsWeb) return;
+    final trace = StartupTrace('calymob.startup.notifications');
+    try {
+      // Install the callback before initialization. Consuming launch details
+      // must not wait for the OS permission dialog or an FCM network request.
+      await trace.measure(
+          'notifications.local_initialize',
+          () => _notificationService.initialize(
+              onNotificationTap: _handleLocalNotificationTap));
+      if (!mounted) return;
+      _notificationService.setupForegroundNotifications();
+      final payload =
+          _notificationService.takeInitialLocalNotificationPayload();
+      if (payload != null) await _handleInitialLocalNotification(payload);
+      final enabled = await trace.measure('notifications.permission',
+          _notificationService.requestStartupPermission);
+      if (!mounted || !enabled) return;
+      final userId = _notificationAuthProvider?.currentUser?.uid;
+      if (userId != null) {
+        // Retry after a first permission grant; auth may have preceded it.
+        await trace.measure(
+            'notifications.token_registration',
+            () => _notificationService.saveTokenToFirestore(
+                FirebaseConfig.defaultClubId, userId));
+      }
+    } finally {
+      unawaited(trace.finish());
+    }
+  }
+
   Future<void> _openDiveShareInbox() async {
     if (_diveShareNavigationPending || !mounted) return;
     if (!await SuuntoShareInbox().hasPending() || !mounted) return;
-    final context = _navigatorKey.currentContext;
-    if (context == null || Provider.of<AuthProvider>(context, listen: false).currentUser == null) return;
+    final navContext = _navigatorKey.currentContext;
+    if (navContext == null ||
+        !navContext.mounted ||
+        Provider.of<AuthProvider>(navContext, listen: false).currentUser ==
+            null) {
+      return;
+    }
     _diveShareNavigationPending = true;
     try {
-      await _navigatorKey.currentState?.push<Object?>(MaterialPageRoute<Object?>(
-          builder: (_) => SuuntoImportScreen(diveSiteSource: FirestoreDiveSiteSource())));
+      await _navigatorKey.currentState?.push<Object?>(
+          MaterialPageRoute<Object?>(
+              builder: (_) => SuuntoImportScreen(
+                  diveSiteSource: FirestoreDiveSiteSource())));
     } finally {
       _diveShareNavigationPending = false;
     }

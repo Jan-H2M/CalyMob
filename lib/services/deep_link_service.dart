@@ -12,9 +12,13 @@ import 'package:app_links/app_links.dart';
 class DeepLinkService {
   static final DeepLinkService _instance = DeepLinkService._internal();
   factory DeepLinkService() => _instance;
-  DeepLinkService._internal();
+  DeepLinkService._internal() : _appLinks = AppLinks();
 
-  final AppLinks _appLinks = AppLinks();
+  @visibleForTesting
+  DeepLinkService.forTesting({required AppLinks appLinks})
+      : _appLinks = appLinks;
+
+  final AppLinks _appLinks;
 
   // Stream controller for payment return events
   final _paymentReturnController =
