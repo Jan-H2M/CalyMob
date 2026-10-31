@@ -10,6 +10,10 @@ Shared contract owned by CalyCompta (API) and CalyMob (client). Identical copy i
   `Authorization: Bearer …`. No CalyCompta login/session or admin role required for
   member actions. Active membership and active linked supplier are checked on every
   request and again inside the update transaction. No cross-club access.
+  `has_app_access` is CalyCompta back-office access: it is not required for
+  member `list`, `update` or `expense_orders`, nor for CalyMob mission visibility.
+  Membership must be active, `isActive`/`actif` must not be false, and an explicit
+  `app_status` must be active. Supplier linkage remains server-authoritative.
 * `{clubId, action: "list"}` → `{version:1, eligible, missions:[…]}`. Only own open
   assignments; no memberId parameter. Each piece has `id`, `batchId`, `lineKey`,
   `piece`, `article`, `size`, `recipient`, `orderedAt`, `dueAt`, `status`,
@@ -30,7 +34,8 @@ Shared contract owned by CalyCompta (API) and CalyMob (client). Identical copy i
   ambiguous historical receipts and finalized costs fail closed.
 * `{clubId, action:"overview"}` → read-only admin view of all member assignments,
   including check-offs and dates in still-open batches. Requires admin + valid
-  CalyCompta session. No admin update bypass exists in this API.
+  CalyCompta session and back-office access (`has_app_access` not false).
+  No admin update bypass exists in this API.
 * Error JSON: `{ok:false, code, error}`, HTTP 400 invalid input, 401 token,
   403 membership/ownership, 404 missing batch, 409 stale/inconsistent state.
   Direct member Firestore writes remain denied. List responses expose only item,

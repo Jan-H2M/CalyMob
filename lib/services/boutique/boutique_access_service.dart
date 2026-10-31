@@ -24,6 +24,13 @@ class BoutiqueAccessPolicy {
     return member?['member_status'] == 'active';
   }
 
+  // has_app_access grants CalyCompta back-office access, not member missions.
+  static bool canUseSupplierMissions(Map<String, dynamic>? member) =>
+      isActiveMember(member) &&
+      member?['isActive'] != false &&
+      member?['actif'] != false &&
+      (member?['app_status'] == null || member?['app_status'] == 'active');
+
   static bool hasBoutiqueResponsibility(Map<String, dynamic>? member) {
     final statuten = member?['clubStatuten'];
     if (statuten is! Iterable) return false;
@@ -180,8 +187,7 @@ class BoutiqueAccessService {
             }
 
             emit();
-            if (BoutiqueAccessPolicy.isActiveMember(state.member) &&
-                state.member?['has_app_access'] != false) {
+            if (BoutiqueAccessPolicy.canUseSupplierMissions(state.member)) {
               supplierAssignments = _missions.watchEligibility(clubId).listen((
                 eligible,
               ) {
