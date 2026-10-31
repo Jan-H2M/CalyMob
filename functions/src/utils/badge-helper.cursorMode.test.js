@@ -8,7 +8,7 @@ mockFirestore.FieldValue = { arrayRemove: (token) => ({ remove: token }) };
 jest.mock('firebase-admin', () => ({ firestore: mockFirestore, messaging: () => ({ sendEachForMulticast: mockSend }) }));
 jest.mock('./notificationHistory', () => ({ persistNotificationHistory: mockPersist }));
 
-const { sendNotificationsWithUnreadCursorMode } = require('./badge-helper');
+const { sendNotificationsWithUnreadCursorMode, sendNotificationsWithBadge } = require('./badge-helper');
 
 const ts = (iso) => new MemoryTimestamp(iso);
 const basePayload = { notification: { title: 'Hello', body: 'World' }, data: { type: 'event_message', operation_id: 'op' }, android: { priority: 'high' } };
@@ -30,6 +30,19 @@ function seeded({ mode = 'off', pilots = [], members = ['m'], canonicalAnnouncem
 }
 
 describe('sendNotificationsWithUnreadCursorMode', () => {
+  test.each(['off', 'shadow', 'on'])('private medical dispatch retains %s badge/history path without PII diagnostics', async mode => {
+    mockDb = seeded({ mode, canonicalAnnouncement: true });
+    mockSend.mockResolvedValue({ successCount: 1, failureCount: 0, responses: [{ success: true }] });
+    mockPersist.mockRejectedValue(new Error('private member/token/raw-error'));
+    const spies = ['log', 'warn', 'error'].map(m => jest.spyOn(console, m).mockImplementation(() => {}));
+    try {
+      const result = await sendNotificationsWithBadge('c', groups('m'), basePayload, 'Médical', { privacySensitive: true });
+      expect(result.successCount).toBe(1);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockPersist).toHaveBeenCalledTimes(1);
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    } finally { spies.forEach(s => s.mockRestore()); }
+  });
   beforeEach(() => {
     mockSend.mockReset(); mockPersist.mockReset();
     mockPersist.mockResolvedValue();

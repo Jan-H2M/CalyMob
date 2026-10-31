@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/medical_validity.dart';
 import '../utils/member_name.dart';
 
 /// Statut de validation pour cotisation et certificat médical
@@ -66,6 +67,8 @@ class MemberProfile {
   // Validation dates (for attendance tracking)
   final DateTime? cotisationValidite; // Membership fee validity
   final DateTime? certificatMedicalValidite; // Medical certificate validity
+  final DateTime? certificatMedicalDate;
+  final bool medicalDatesNeedReview;
   final String? membershipCategoryCode;
   final String? membershipPeriod;
   final String? membershipSeasonId;
@@ -117,6 +120,8 @@ class MemberProfile {
     this.memberStatus,
     this.cotisationValidite,
     this.certificatMedicalValidite,
+    this.certificatMedicalDate,
+    this.medicalDatesNeedReview = false,
     this.membershipCategoryCode,
     this.membershipPeriod,
     this.membershipSeasonId,
@@ -175,9 +180,11 @@ class MemberProfile {
       fcmToken: data['fcm_token'],
       memberStatus: resolveMemberStatus(data),
       cotisationValidite: _parseDate(data['cotisation_validite']),
-      certificatMedicalValidite: _parseDate(
+      certificatMedicalValidite: parseMedicalDate(
         data['certificat_medical_validite'],
       ),
+      certificatMedicalDate: parseMedicalDate(data['certificat_medical_date']),
+      medicalDatesNeedReview: _medicalNeedsReview(data),
       membershipCategoryCode: data['membership_category_code'],
       membershipPeriod: data['membership_period'],
       membershipSeasonId: data['membership_season_id'],
@@ -238,12 +245,20 @@ class MemberProfile {
             data['membership_category_code'],
       ),
       cotisationValidite: _parseDate(operationalStatus?['cotisation_validite']),
-      certificatMedicalValidite: _parseDate(
+      certificatMedicalValidite: parseMedicalDate(
         operationalStatus?['certificat_medical_validite'],
       ),
+      certificatMedicalDate:
+          parseMedicalDate(operationalStatus?['certificat_medical_date']),
+      medicalDatesNeedReview: _medicalNeedsReview(operationalStatus ?? {}),
       assuranceValidite: _parseDate(operationalStatus?['assurance_validite']),
     );
   }
+
+  static bool _medicalNeedsReview(Map<String, dynamic> data) => [
+        'certificat_medical_date',
+        'certificat_medical_validite'
+      ].any((key) => data[key] != null && parseMedicalDate(data[key]) == null);
 
   static String? _stringOrNull(dynamic value) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
@@ -399,6 +414,8 @@ class MemberProfile {
       memberStatus: memberStatus,
       cotisationValidite: cotisationValidite,
       certificatMedicalValidite: certificatMedicalValidite,
+      certificatMedicalDate: certificatMedicalDate,
+      medicalDatesNeedReview: medicalDatesNeedReview,
       membershipCategoryCode: membershipCategoryCode,
       membershipPeriod: membershipPeriod,
       membershipSeasonId: membershipSeasonId,
@@ -487,14 +504,27 @@ class MemberProfile {
   }
 
   /// Statut de validation du certificat médical
-  ValidationStatus get certificatStatus {
-    if (certificatMedicalValidite == null) return ValidationStatus.missing;
-    final now = DateTime.now();
-    final daysUntilExpiry = certificatMedicalValidite!.difference(now).inDays;
+  DateTime? get certificatMedicalEcheance => MedicalValidity.evaluate(
+          issuedOn: certificatMedicalDate,
+          validUntil: certificatMedicalValidite,
+          needsReview: medicalDatesNeedReview)
+      .expiresOn;
 
-    if (daysUntilExpiry < 0) return ValidationStatus.expired;
-    if (daysUntilExpiry <= 30) return ValidationStatus.warning;
-    return ValidationStatus.valid;
+  MedicalValidity medicalValidityAt(DateTime? now) => MedicalValidity.evaluate(
+      issuedOn: certificatMedicalDate,
+      validUntil: certificatMedicalValidite,
+      needsReview: medicalDatesNeedReview,
+      now: now);
+
+  ValidationStatus get certificatStatus => certificatStatusAt(null);
+  ValidationStatus certificatStatusAt(DateTime? now) {
+    final validity = medicalValidityAt(now);
+    return switch (validity.status) {
+      MedicalValidityStatus.valid => ValidationStatus.valid,
+      MedicalValidityStatus.expiringSoon => ValidationStatus.warning,
+      MedicalValidityStatus.expired => ValidationStatus.expired,
+      MedicalValidityStatus.unknown => ValidationStatus.missing,
+    };
   }
 
   /// Validité d'assurance effective pour l'accès.

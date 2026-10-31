@@ -1,3 +1,5 @@
+const { notificationLog } = require('../utils/notificationLogContext');
+
 function normalizeTimestampMode(data = {}) {
   if (data.unreadTimestampV2Enabled !== true) return 'off';
   return ['off', 'shadow', 'on'].includes(data.unreadTimestampV2Mode)
@@ -34,7 +36,7 @@ async function usesUnreadTimestampV2(db, clubId, memberId) {
   } catch (error) {
     // Keep using cursor-v1's established server-corrected legacy fields. This
     // is not a legacy unread counter fallback and never publishes a false 0.
-    console.warn(`Unread timestamp v2 authority unresolved for ${clubId}/${memberId}: ${error.message}`);
+    notificationLog.warn(`Unread timestamp v2 authority unresolved for ${clubId}/${memberId}: ${error.message}`);
     return false;
   }
 }

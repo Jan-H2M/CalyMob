@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { notificationLog } = require('./notificationLogContext');
 
 const CATEGORY_BY_TYPE = {
   announcement: 'Annonce',
@@ -82,7 +83,7 @@ async function persistNotificationHistory(
     return true;
   } catch (error) {
     // History must never turn a successfully delivered push into a failed send.
-    console.error(
+    notificationLog.error(
       `Notification history write failed for ${memberId}: ${error.message}`,
     );
     return false;

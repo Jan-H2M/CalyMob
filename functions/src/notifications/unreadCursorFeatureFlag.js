@@ -1,3 +1,5 @@
+const { notificationLog } = require('../utils/notificationLogContext');
+
 function normalizeMode(data = {}) {
   if (data.unreadCursorV1Enabled !== true) return 'off';
   return ['off', 'shadow', 'on'].includes(data.unreadCursorV1Mode)
@@ -18,7 +20,7 @@ async function getUnreadCursorV1Config(db, clubId) {
       .collection('settings').doc('feature_flags').get();
     return { known: true, data: snapshot.exists ? snapshot.data() || {} : {} };
   } catch (error) {
-    console.warn(`Unread cursor flag read failed for ${clubId}; badge authority unknown: ${error.message}`);
+    notificationLog.warn(`Unread cursor flag read failed for ${clubId}; badge authority unknown: ${error.message}`);
     return { known: false, data: {} };
   }
 }

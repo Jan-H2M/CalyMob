@@ -215,6 +215,15 @@ class _MedicalCertificationScreenState
         borderColor: const Color(0xFFFCA5A5),
       );
     }
+    if (cert.validity.expiresOn == null) {
+      return const _BannerStyle(
+          heading: 'VALIDITÉ À VÉRIFIER',
+          subheading: 'La date administrative doit être confirmée par le club.',
+          icon: Icons.help_outline,
+          fg: Color(0xFF475569),
+          bg: Color(0xFFF1F5F9),
+          borderColor: Color(0xFFCBD5E1));
+    }
     if (cert.isExpired) {
       return _BannerStyle(
         heading: 'EXPIRÉ',
@@ -230,8 +239,8 @@ class _MedicalCertificationScreenState
       final days = cert.daysUntilExpiry ?? 0;
       return _BannerStyle(
         heading: 'BIENTÔT EXPIRÉ',
-        subheading: days <= 1
-            ? 'Plus que quelques heures avant l\'expiration.'
+        subheading: days == 0
+            ? 'Valable jusqu’à aujourd’hui inclus — pense à renouveler.'
             : 'Encore $days jour${days > 1 ? 's' : ''} — pense à renouveler.',
         icon: Icons.timelapse,
         fg: const Color(0xFFC2410C), // orange-700

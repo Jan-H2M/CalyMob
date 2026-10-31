@@ -12,6 +12,7 @@ import '../../services/medical_certification_service.dart';
 import '../../services/profile_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/certification_status_badge.dart';
+import '../../widgets/medical_expiry_notice.dart';
 import '../../widgets/cotisation_status_badge.dart';
 import '../../widgets/bug_report_widget.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -152,6 +153,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    MedicalExpiryNotice(
+                        issuedOn: profile.certificatMedicalDate,
+                        needsReview: profile.medicalDatesNeedReview,
+                        validUntil: profile.certificatMedicalValidite,
+                        onOpen: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => MedicalCertificationScreen(
+                                    userId: userId)))),
                     UserQRCard(profile: profile),
                     if (showMesAcces) ...[
                       const SizedBox(height: 24),

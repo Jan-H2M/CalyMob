@@ -8,6 +8,7 @@
  */
 
 const admin = require('firebase-admin');
+const { notificationLog, withPrivateNotificationLogs } = require('./notificationLogContext');
 const { FIRESTORE_BATCH_LIMIT } = require('./constants');
 const { memberDisplayName } = require('./memberName');
 const { persistNotificationHistory } = require('./notificationHistory');
@@ -54,9 +55,9 @@ async function incrementUnreadCounts(clubId, recipientIds, category) {
 
     try {
       await batch.commit();
-      console.log(`✅ Unread counts incremented for ${batchIds.length} members (${category})`);
+      notificationLog.log(`✅ Unread counts incremented for ${batchIds.length} members (${category})`);
     } catch (error) {
-      console.error(`❌ Error incrementing unread counts: ${error.message}`);
+      notificationLog.error(`❌ Error incrementing unread counts: ${error.message}`);
       // Niet fataal - notificaties worden alsnog verstuurd
     }
   }
@@ -90,7 +91,7 @@ function removeInvalidTokens(clubId, memberId, tokens, responses) {
       const failedToken = tokens[index];
       admin.firestore().collection('clubs').doc(clubId).collection('members').doc(memberId)
         .update({ fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken) })
-        .catch((error) => console.error(`Failed to remove token: ${error.message}`));
+        .catch((error) => notificationLog.error(`Failed to remove token: ${error.message}`));
     }
   });
 }
@@ -132,7 +133,7 @@ async function getBadgeCount(clubId, memberId) {
     }
     return total;
   } catch (error) {
-    console.error(`❌ Error getting badge count for ${memberId}: ${error.message}`);
+    notificationLog.error(`❌ Error getting badge count for ${memberId}: ${error.message}`);
     return 1; // Fallback bij fout
   }
 }
@@ -204,9 +205,9 @@ function collectTokensAndMembers(memberDocs, senderId) {
 
   // Log warning voor stale tokens zodat het zichtbaar is in Cloud Function logs
   if (staleTokenMembers.length > 0) {
-    console.warn(`⚠️ STALE TOKENS: ${staleTokenMembers.length} member(s) met FCM token ouder dan ${STALE_TOKEN_DAYS} dagen:`);
+    notificationLog.warn(`⚠️ STALE TOKENS: ${staleTokenMembers.length} member(s) met FCM token ouder dan ${STALE_TOKEN_DAYS} dagen:`);
     staleTokenMembers.forEach(m => {
-      console.warn(`   - ${m.name} (${m.id}): token ${m.daysSince} dagen oud`);
+      notificationLog.warn(`   - ${m.name} (${m.id}): token ${m.daysSince} dagen oud`);
     });
   }
 
@@ -276,14 +277,14 @@ async function sendLegacyNotificationsWithBadge(clubId, memberTokenGroups, baseP
             } catch (error) {
               // Delivery already succeeded. History is an independent audit
               // side effect and must not turn this recipient into a retry.
-              console.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
+              notificationLog.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
             }
           }
 
           // Verwijder ongeldige tokens
           removeInvalidTokens(clubId, memberId, memberTokens, result.responses);
         } catch (error) {
-          console.error(`Error sending to member ${memberId}: ${error.message}`);
+          notificationLog.error(`Error sending to member ${memberId}: ${error.message}`);
           totalFailure += memberTokens.length;
         }
       })()
@@ -297,7 +298,7 @@ async function sendLegacyNotificationsWithBadge(clubId, memberTokenGroups, baseP
   // komt het in de Cloud Functions "errors" dashboard en triggered het
   // onze Firebase alert policy.
   if (totalFailure > totalSuccess && (totalSuccess + totalFailure) > 3) {
-    console.error(
+    notificationLog.error(
       `🚨 NOTIF DELIVERY DEGRADED (${category}): ${totalFailure} failures vs ${totalSuccess} successes — check token freshness en rules whitelist`
     );
   }
@@ -343,12 +344,12 @@ async function sendNotificationsWithoutBadge(clubId, memberTokenGroups, basePayl
         try {
           await persistNotificationHistory(clubId, memberId, basePayload, category);
         } catch (error) {
-          console.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
+          notificationLog.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
         }
       }
       removeInvalidTokens(clubId, memberId, tokens, result.responses);
     } catch (error) {
-      console.error(`Badge-neutral send failed for ${memberId}: ${error.message}`);
+      notificationLog.error(`Badge-neutral send failed for ${memberId}: ${error.message}`);
       failureCount += tokens.length;
     }
   });
@@ -386,7 +387,7 @@ async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, 
         getBadgeCount(clubId, memberId),
         getCanonicalUnreadBreakdown({ db, clubId, memberId }),
       ]);
-      console.log(JSON.stringify({ event: 'unread_cursor_shadow_diff', clubId, memberId, category, legacy, canonical: canonical.total }));
+      notificationLog.log(JSON.stringify({ event: 'unread_cursor_shadow_diff', clubId, memberId, category, legacy, canonical: canonical.total }));
     }));
     return {
       successCount: result.successCount + pilotResult.successCount + unknownResult.successCount,
@@ -399,13 +400,14 @@ async function sendNotificationsWithUnreadCursorMode(clubId, memberTokenGroups, 
 // Historical callers (birthdays, training, medical and reminders) still use
 // this name. Routing them through the same mode bridge prevents a non-unread
 // push from restoring a legacy 99+ badge while cursor authority is ON.
-async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category) {
-  return sendNotificationsWithUnreadCursorMode(
+async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, category, options = {}) {
+  const send = () => sendNotificationsWithUnreadCursorMode(
     clubId,
     memberTokenGroups,
     basePayload,
     category,
   );
+  return options.privacySensitive === true ? withPrivateNotificationLogs(send) : send();
 }
 
 async function sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, basePayload, category) {
@@ -426,7 +428,7 @@ async function sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, b
       } catch (error) {
         // Deliver the content without touching APNs badge authority. Never
         // substitute legacy counts for an effective-ON member.
-        console.error(`Canonical unread count failed for ${memberId}: ${error.message}`);
+        notificationLog.error(`Canonical unread count failed for ${memberId}: ${error.message}`);
         payload = withoutApnsBadge(forRecipient(basePayload, memberId));
       }
       const result = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
@@ -436,12 +438,12 @@ async function sendCanonicalCursorNotifications(db, clubId, memberTokenGroups, b
         try {
           await persistNotificationHistory(clubId, memberId, basePayload, category);
         } catch (error) {
-          console.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
+          notificationLog.error(`Notification history failed after delivery to ${memberId}: ${error.message}`);
         }
       }
       removeInvalidTokens(clubId, memberId, tokens, result.responses);
     } catch (error) {
-      console.error(`Canonical notification failed for ${memberId}: ${error.message}`);
+      notificationLog.error(`Canonical notification failed for ${memberId}: ${error.message}`);
       failureCount += tokens.length;
     }
   });
@@ -502,9 +504,9 @@ async function decrementUnreadCounts(clubId, memberId, category, amount) {
       'unread_counts.last_updated': admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    console.log(`📉 Unread counts decremented for ${memberId}: ${category} -${actualDecrement}`);
+    notificationLog.log(`📉 Unread counts decremented for ${memberId}: ${category} -${actualDecrement}`);
   } catch (error) {
-    console.error(`❌ Error decrementing unread counts for ${memberId}: ${error.message}`);
+    notificationLog.error(`❌ Error decrementing unread counts for ${memberId}: ${error.message}`);
   }
 }
 
