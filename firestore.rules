@@ -860,7 +860,7 @@ service cloud.firestore {
                 request.resource.data.statut in ['brouillon', 'soumis'] &&
                 request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                   'montant', 'description', 'date_depense', 'fiscal_year_id',
-                  'operation_id', 'categorie', 'statut', 'urls_justificatifs',
+                  'urls_justificatifs',
                   'documents_justificatifs', 'updated_at', 'boutique_supplier_batch_id'
                 ])
               )) &&
@@ -916,7 +916,7 @@ service cloud.firestore {
                 request.resource.data.status in ['draft', 'submitted'] &&
                 request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                   'amount', 'description', 'expense_date', 'fiscal_year_id',
-                  'operation_id', 'category', 'status', 'supporting_document_urls',
+                  'supporting_document_urls',
                   'supporting_documents', 'updated_at', 'boutique_supplier_batch_id'
                 ])
               )) &&

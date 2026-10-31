@@ -55,6 +55,8 @@ const { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, serve
       await assertFails(updateDoc(foreign, { description: 'Forbidden' }));
       await assertFails(updateDoc(own, { [ownerField]: 'other' }));
       await assertFails(updateDoc(own, { [statusField]: approved, ...approval }));
+      await assertFails(updateDoc(own, { [name === 'expense_claims' ? 'category' : 'categorie']: 'remboursement_inscription' }));
+      await assertFails(updateDoc(own, { operation_id: 'unrelated-event' }));
       await assertFails(updateDoc(own, { paid_amount: 1, paid_transaction_id: 'forged' }));
       await assertFails(updateDoc(own, { ...approval }));
       await env.withSecurityRulesDisabled(async (context) => {
