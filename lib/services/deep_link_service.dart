@@ -48,8 +48,9 @@ class DeepLinkService {
     required bool navigationReady,
     required Future<void> Function() open,
   }) async {
-    if (!hasPendingBoutiqueMissions || !authenticated || !navigationReady)
+    if (!hasPendingBoutiqueMissions || !authenticated || !navigationReady) {
       return;
+    }
     hasPendingBoutiqueMissions = false;
     try {
       await open();
