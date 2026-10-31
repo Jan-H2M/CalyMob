@@ -7,7 +7,7 @@ const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
   try {
     await env.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      for (const uid of ['geoffroy', 'other', 'admin']) await setDoc(doc(db, `clubs/rules-test/members/${uid}`), { member_status: 'active', app_role: uid === 'admin' ? 'admin' : 'user' });
+      for (const uid of ['geoffroy', 'other', 'admin']) await setDoc(doc(db, `clubs/rules-test/members/${uid}`), { member_status: 'active', app_role: uid === 'admin' ? 'admin' : 'user', has_app_access: uid === 'admin', app_status: 'active' });
       await setDoc(doc(db, 'clubs/rules-test/fournisseurs/supplier'), { actif: true, supplierType: 'club_member', memberId: 'geoffroy' });
       await setDoc(doc(db, 'clubs/rules-test/supplier_order_batches/batch'), { supplierId: 'supplier', status: 'sent', items: [{ lineId: 'line', qty: 1 }] });
     });
@@ -35,6 +35,33 @@ const { doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
       if (uid === 'other') {
         await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { boutique_supplier_batch_id: 'batch' }));
         await assertFails(updateDoc(doc(db, `clubs/rules-test/demandes_remboursement/${uid}`), { demandeur_id: 'geoffroy', boutique_supplier_batch_id: 'batch' }));
+      }
+    }
+    // Revocation denies new/changed Boutique associations in both expense schemas.
+    // Ordinary expenses and removing an optional link remain available.
+    const revoked = env.authenticatedContext('geoffroy').firestore();
+    for (const [index, patch] of [
+      { member_status: 'inactive' }, { app_status: 'suspended' },
+      { isActive: false }, { actif: false }, { app_status: '' }, { app_status: false },
+    ].entries()) {
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), 'clubs/rules-test/members/geoffroy'), patch);
+      });
+      for (const [collection, data] of [
+        ['expense_claims', { requester_id: 'geoffroy', status: 'submitted', amount: 1 }],
+        ['demandes_remboursement', { demandeur_id: 'geoffroy', statut: 'soumis', montant: 1 }],
+      ]) {
+        const plain = doc(revoked, `clubs/rules-test/${collection}/revoked-${index}`);
+        await assertSucceeds(setDoc(plain, { ...data, description: 'Ticket DEV' }));
+        await assertFails(updateDoc(plain, { boutique_supplier_batch_id: 'batch' }));
+        await assertFails(setDoc(doc(revoked, `clubs/rules-test/${collection}/revoked-linked-${index}`), { ...data, boutique_supplier_batch_id: 'batch' }));
+        await assertSucceeds(updateDoc(doc(revoked, `clubs/rules-test/${collection}/linked-geoffroy`), { boutique_supplier_batch_id: null }));
+      }
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), 'clubs/rules-test/members/geoffroy'), { member_status: 'active', app_status: 'active', isActive: true, actif: true });
+      });
+      for (const collection of ['expense_claims', 'demandes_remboursement']) {
+        await assertSucceeds(updateDoc(doc(revoked, `clubs/rules-test/${collection}/linked-geoffroy`), { boutique_supplier_batch_id: 'batch' }));
       }
     }
     await env.withSecurityRulesDisabled(async (context) => {

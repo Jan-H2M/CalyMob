@@ -474,7 +474,11 @@ service cloud.firestore {
     }
     function boutiqueExpenseSupplierMatches(clubId, supplierId, requesterId) {
       let supplier = get(/databases/$(database)/documents/clubs/$(clubId)/fournisseurs/$(supplierId)).data;
-      return supplier.get('supplierType', 'external') == 'club_member'
+      let member = get(/databases/$(database)/documents/clubs/$(clubId)/members/$(requesterId)).data;
+      return member.get('member_status', '') == 'active'
+        && member.get('isActive', true) != false && member.get('actif', true) != false
+        && (member.get('app_status', null) == null || member.get('app_status', null) == 'active')
+        && supplier.get('supplierType', 'external') == 'club_member'
         && supplier.get('memberId', null) == requesterId && supplier.get('actif', false) == true;
     }
 
