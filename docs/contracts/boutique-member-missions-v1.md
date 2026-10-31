@@ -74,5 +74,8 @@ Receipt ownership and expense identity invariants:
   Firestore creation/relinking enforces the same account revocations as the API,
   independently of back-office access. Unlinked ordinary expense
   notes remain valid. Account changes invalidate open mobile expense forms.
+  The mobile-only `membre` role can read its own notes and edit pending details,
+  receipt URLs and optional links. This grants no approval or payment authority;
+  approved notes, other requesters and financial/approval metadata stay protected.
 * A pending mission deep link waits for member data, any mandatory password
   change, and completed login route replacement before it is consumed.
