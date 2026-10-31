@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'loan_liability_acceptance.dart';
 
 /// One immutable observation on one physical item. Open observations remain
 /// visible at every handover until a repair explicitly closes them.
@@ -252,6 +253,7 @@ String? _variantFromData(Map<String, dynamic> data) {
 }
 
 class MaterialLoanRequest {
+  final LoanLiabilityAcceptance? liabilityAcceptance;
   final String id;
   final String memberId;
   final String memberName;
@@ -267,6 +269,7 @@ class MaterialLoanRequest {
   final List<MaterialLoanItem> items;
 
   const MaterialLoanRequest({
+    this.liabilityAcceptance,
     required this.id,
     required this.memberId,
     required this.memberName,
@@ -289,6 +292,9 @@ class MaterialLoanRequest {
     final data = doc.data() ?? {};
     final rawLines = data['lines'] as List<dynamic>?;
     return MaterialLoanRequest(
+      liabilityAcceptance: LoanLiabilityAcceptance.fromMap(
+          data['liability_acceptance'],
+          memberId: data['memberId']?.toString() ?? ''),
       id: doc.id,
       memberId: data['memberId']?.toString() ?? '',
       memberName: data['memberName']?.toString() ?? 'Membre',

@@ -1,0 +1,17 @@
+name: AV P1 borrower acceptance
+on:
+  pull_request:
+    branches: [dev]
+    paths: ['lib/models/loan_liability_acceptance.dart', 'lib/models/material_loan.dart', 'lib/services/material_return_service.dart', 'lib/screens/stock/material_returns_screen.dart', 'lib/widgets/loan_liability_consent.dart', 'test/**/loan*test.dart', '.github/workflows/av-p1-loan.yml']
+permissions: {contents: read}
+jobs:
+  loan-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: {flutter-version: '3.38.9', channel: stable, cache: true}
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test --no-pub test/services/loan_liability_request_test.dart test/widgets/loan_liability_consent_test.dart test/widgets/loan_request_form_test.dart test/services/material_return_service_test.dart test/services/material_loan_service_test.dart test/services/material_unassigned_loan_test.dart
+      - run: git diff --exit-code -- pubspec.lock
