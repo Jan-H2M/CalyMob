@@ -33,6 +33,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final String _clubId = FirebaseConfig.defaultClubId;
   final BiometricService _biometricService = BiometricService();
 
+  bool _loginInFlight = false;
+  bool _loginNavigationCommitted = false;
   bool _obscurePassword = true;
   bool _biometricAvailable = false;
   bool _hasStoredCredentials = false;
@@ -67,12 +69,15 @@ class _LoginScreenState extends State<LoginScreen> {
           authProvider.currentUser?.uid != user.uid ||
           !memberProvider.isLoadedFor(_clubId, user.uid) ||
           !canResumeLiveQaSession(
-              authenticatedUid: user.uid,
-              member: memberProvider.memberData)) {
+              authenticatedUid: user.uid, member: memberProvider.memberData)) {
         return;
       }
       Navigator.of(context).pushReplacement(MaterialPageRoute(
-        settings: RouteSettings(name: memberProvider.requirePasswordChange ? null : authenticatedHomeRouteName, arguments: user.uid),
+        settings: RouteSettings(
+            name: memberProvider.requirePasswordChange
+                ? null
+                : authenticatedHomeRouteName,
+            arguments: user.uid),
         builder: (_) => memberProvider.requirePasswordChange
             ? const ForcePasswordChangeScreen()
             : const LandingScreen(),
@@ -139,108 +144,94 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _handleLogin({bool saveBiometric = false}) async {
-    if (!_formKey.currentState!.validate()) return;
-
+  Future<void> _completeLogin(
+      {required String email,
+      required String password,
+      bool saveBiometric = false,
+      bool fromBiometric = false}) async {
     final authProvider = context.read<AuthProvider>();
     final memberProvider = context.read<MemberProvider>();
+    final origin = await authProvider.login(
+        email: email, password: password, clubId: _clubId);
+    bool current() => loginCompletionIsCurrent(
+        originatingUid: origin.uid,
+        originatingRevision: origin.revision,
+        currentUid: authProvider.currentUser?.uid,
+        currentRevision: authProvider.identityRevision,
+        mounted: mounted);
+    if (!current()) return;
+    await _saveLastLoginEmail(email);
+    if (!current()) return;
+    await memberProvider.loadMemberData(_clubId, origin.uid);
+    if (!current() || !memberProvider.isLoadedFor(_clubId, origin.uid)) return;
+    if (saveBiometric && _biometricAvailable) {
+      await _biometricService.saveCredentials(email, password);
+    }
+    if (!current() || !memberProvider.isLoadedFor(_clubId, origin.uid)) return;
+    if (memberProvider.requirePasswordChange && fromBiometric) {
+      await _biometricService.clearCredentials();
+      if (!current()) return;
+      setState(() {
+        _hasStoredCredentials = false;
+      });
+    }
+    if (!mounted || !current()) return;
+    final mustChangePassword = memberProvider.requirePasswordChange;
+    _loginNavigationCommitted = true;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      settings: RouteSettings(
+          name: mustChangePassword ? null : authenticatedHomeRouteName,
+          arguments: origin.uid),
+      builder: (_) => mustChangePassword
+          ? const ForcePasswordChangeScreen()
+          : const LandingScreen(),
+    ));
+  }
+
+  Future<void> _handleLogin({bool saveBiometric = false}) async {
+    if (_loginInFlight ||
+        _loginNavigationCommitted ||
+        !_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() {
+      _loginInFlight = true;
+    });
     final email = _emailController.text.trim();
     final password = _passwordController.text;
-
     try {
-      await authProvider.login(
-        email: email,
-        password: password,
-        clubId: _clubId,
-      );
-
-      await _saveLastLoginEmail(email);
-
-      if (authProvider.currentUser != null) {
-        await memberProvider.loadMemberData(
-          _clubId,
-          authProvider.currentUser!.uid,
-        );
-      }
-
-      if (saveBiometric && _biometricAvailable) {
-        await _biometricService.saveCredentials(email, password);
-      }
-
-      if (memberProvider.requirePasswordChange) {
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-                builder: (_) => const ForcePasswordChangeScreen()),
-          );
-        }
-        return;
-      }
-
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: context.read<AuthProvider>().currentUser?.uid), builder: (_) => const LandingScreen()),
-        );
-      }
+      await _completeLogin(
+          email: email, password: password, saveBiometric: saveBiometric);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(e.toString().replaceFirst('Exception: ', '')),
-            backgroundColor: Colors.red,
-          ),
-        );
+            backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loginInFlight = false;
+        });
       }
     }
   }
 
   Future<void> _handleBiometricLogin() async {
-    final authProvider = context.read<AuthProvider>();
-    final memberProvider = context.read<MemberProvider>();
-
-    final authenticated = await _biometricService.authenticate(
-      reason: 'Authentifiez-vous pour accéder à CalyMob',
-    );
-
-    if (!authenticated) return;
-
-    final credentials = await _biometricService.getCredentials();
-    if (credentials == null) return;
-
+    if (_loginInFlight || _loginNavigationCommitted) return;
+    setState(() {
+      _loginInFlight = true;
+    });
     try {
-      await authProvider.login(
-        email: credentials['email']!,
-        password: credentials['password']!,
-        clubId: _clubId,
-      );
-
-      if (authProvider.currentUser != null) {
-        await memberProvider.loadMemberData(
-          _clubId,
-          authProvider.currentUser!.uid,
-        );
-      }
-
-      if (memberProvider.requirePasswordChange) {
-        await _biometricService.clearCredentials();
-        setState(() {
-          _hasStoredCredentials = false;
-        });
-
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-                builder: (_) => const ForcePasswordChangeScreen()),
-          );
-        }
-        return;
-      }
-
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: context.read<AuthProvider>().currentUser?.uid), builder: (_) => const LandingScreen()),
-        );
-      }
+      final authenticated = await _biometricService.authenticate(
+          reason: 'Authentifiez-vous pour accéder à CalyMob');
+      if (!authenticated || !mounted) return;
+      final credentials = await _biometricService.getCredentials();
+      if (credentials == null || !mounted) return;
+      await _completeLogin(
+          email: credentials['email']!,
+          password: credentials['password']!,
+          fromBiometric: true);
     } on AuthLoginException catch (e) {
       if (!mounted) return;
       if (e.isCredentialFailure) {
@@ -277,6 +268,12 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loginInFlight = false;
+        });
+      }
     }
   }
 
@@ -288,6 +285,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLoginWithBiometricSetup() async {
+    if (_loginInFlight || _loginNavigationCommitted) return;
     if (!_formKey.currentState!.validate()) return;
 
     if (_biometricAvailable && !_hasStoredCredentials && !_biometricDeclined) {
@@ -347,7 +345,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         height: 56,
                         child: OutlinedButton.icon(
-                          onPressed: _handleBiometricLogin,
+                          onPressed:
+                              _loginInFlight ? null : _handleBiometricLogin,
                           icon: Icon(
                             _biometricTypeName == 'Face ID'
                                 ? Icons.face
@@ -458,7 +457,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: double.infinity,
                           height: 50,
                           child: ElevatedButton(
-                            onPressed: authProvider.isLoading
+                            onPressed: authProvider.isLoading || _loginInFlight
                                 ? null
                                 : _handleLoginWithBiometricSetup,
                             style: ElevatedButton.styleFrom(
@@ -467,7 +466,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            child: authProvider.isLoading
+                            child: authProvider.isLoading || _loginInFlight
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,

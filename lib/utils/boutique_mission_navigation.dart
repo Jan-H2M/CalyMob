@@ -26,3 +26,15 @@ bool boutiqueMissionNavigationReady({
   required bool loginCompleted,
 }) =>
     hasNavigator && memberLoaded && !passwordChangeRequired && loginCompleted;
+
+/// A late login must never adopt an account that signed in while it awaited I/O.
+bool loginCompletionIsCurrent({
+  required String originatingUid,
+  required int originatingRevision,
+  required String? currentUid,
+  required int currentRevision,
+  required bool mounted,
+}) =>
+    mounted &&
+    originatingUid == currentUid &&
+    originatingRevision == currentRevision;

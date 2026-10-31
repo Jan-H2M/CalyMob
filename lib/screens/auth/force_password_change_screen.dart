@@ -71,6 +71,7 @@ class _ForcePasswordChangeScreenState extends State<ForcePasswordChangeScreen> {
       final authProvider = context.read<AuthProvider>();
       final memberProvider = context.read<MemberProvider>();
       final userId = authProvider.currentUser?.uid ?? '';
+      final identityRevision = authProvider.identityRevision;
       final clubId = FirebaseConfig.defaultClubId;
 
       await _passwordService.changePassword(
@@ -82,7 +83,7 @@ class _ForcePasswordChangeScreenState extends State<ForcePasswordChangeScreen> {
       // Refresh member data to clear requirePasswordChange flag
       await memberProvider.refresh();
 
-      if (mounted) {
+      if (loginCompletionIsCurrent(originatingUid: userId, originatingRevision: identityRevision, currentUid: authProvider.currentUser?.uid, currentRevision: authProvider.identityRevision, mounted: mounted)) {
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -93,7 +94,7 @@ class _ForcePasswordChangeScreenState extends State<ForcePasswordChangeScreen> {
 
         // Navigate to landing screen
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: context.read<AuthProvider>().currentUser?.uid), builder: (_) => const LandingScreen()),
+          MaterialPageRoute(settings: RouteSettings(name: authenticatedHomeRouteName, arguments: userId), builder: (_) => const LandingScreen()),
         );
       }
     } on PasswordChangeException catch (e) {

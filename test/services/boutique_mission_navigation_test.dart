@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:calymob/utils/boutique_mission_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,6 +67,60 @@ void main() {
     expect(gate.isReadyFor('member-b'), isFalse);
     gate.reset();
     expect(ready(), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets(
+      'late A biometric completion cannot replace B missions or a newer A identity',
+      (tester) async {
+    final nav = GlobalKey<NavigatorState>();
+    await tester
+        .pumpWidget(MaterialApp(navigatorKey: nav, home: const Text('Login')));
+    final biometricA = Completer<void>();
+    String? currentUid = 'a';
+    var revision = 1;
+    Future<void> completeA() async {
+      const originUid = 'a';
+      const originRevision = 1;
+      await biometricA.future;
+      if (!loginCompletionIsCurrent(
+          originatingUid: originUid,
+          originatingRevision: originRevision,
+          currentUid: currentUid,
+          currentRevision: revision,
+          mounted: true)) return;
+      nav.currentState!.pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const Text('Stale home A')));
+    }
+
+    final oldCompletion = completeA();
+    currentUid = 'b';
+    revision = 2;
+    nav.currentState!.pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => const Text('B missions')));
+    await tester.pumpAndSettle();
+    biometricA.complete();
+    await oldCompletion;
+    await tester.pumpAndSettle();
+    expect(find.text('B missions'), findsOneWidget);
+    expect(find.text('Stale home A'), findsNothing);
+    currentUid = 'a';
+    revision = 3;
+    expect(
+        loginCompletionIsCurrent(
+            originatingUid: 'a',
+            originatingRevision: 1,
+            currentUid: currentUid,
+            currentRevision: revision,
+            mounted: true),
+        isFalse);
+    expect(
+        loginCompletionIsCurrent(
+            originatingUid: 'a',
+            originatingRevision: 3,
+            currentUid: currentUid,
+            currentRevision: revision,
+            mounted: true),
+        isTrue);
     await tester.pumpWidget(const SizedBox());
   });
 }

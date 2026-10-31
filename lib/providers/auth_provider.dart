@@ -32,6 +32,12 @@ class AuthProvider with ChangeNotifier {
   StreamSubscription<User?>? _authStateSubscription;
 
   User? _currentUser;
+  int _identityRevision = 0;
+  int get identityRevision => _identityRevision;
+  void _setCurrentUser(User? user) {
+    if (_currentUser?.uid != user?.uid) _identityRevision++;
+    _currentUser = user;
+  }
   String? _displayName;
   bool _isLoading = false;
   String? _errorMessage;
@@ -69,7 +75,7 @@ class AuthProvider with ChangeNotifier {
     _authStateSubscription = _authService.authStateChanges.listen((user) {
       _finishStartupAuth(const SpanStatus.ok());
       final authGeneration = ++_authGeneration;
-      _currentUser = user;
+      _setCurrentUser(user);
       if (user != null) {
         // A restored session retries a missed confirmation. The server only
         // records a new sign-in after an email correction, using auth_time.
@@ -241,7 +247,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Login avec email et mot de passe
-  Future<void> login({
+  Future<({String uid, int revision})> login({
     required String email,
     required String password,
     required String clubId,
@@ -253,7 +259,8 @@ class AuthProvider with ChangeNotifier {
 
       // 1. Login Firebase Auth
       final user = await _authService.login(email, password);
-      _currentUser = user;
+      _setCurrentUser(user);
+      final loginRevision = _identityRevision;
 
       // 2+3. Session Firestore + FCM token/device info: le listener
       // authStateChanges (déclenché par le sign-in ci-dessus) fait déjà les
@@ -278,6 +285,7 @@ class AuthProvider with ChangeNotifier {
 
       _isLoading = false;
       notifyListeners();
+      return (uid: user.uid, revision: loginRevision);
     } catch (e) {
       _isLoading = false;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -334,7 +342,7 @@ class AuthProvider with ChangeNotifier {
       // 2. Logout Firebase Auth
       await _authService.logout();
 
-      _currentUser = null;
+      _setCurrentUser(null);
       _isLoading = false;
       _errorMessage = null;
       CrashlyticsService.clearUserContext();
@@ -439,7 +447,7 @@ class AuthProvider with ChangeNotifier {
       }
 
       // 5. Nettoyer l'état local
-      _currentUser = null;
+      _setCurrentUser(null);
       _displayName = null;
       _isLoading = false;
       _errorMessage = null;
