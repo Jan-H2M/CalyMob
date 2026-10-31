@@ -227,7 +227,7 @@ class _AlarmOverlayState extends State<AlarmOverlay>
                           icon: Icons.medical_services,
                           message: _getCertificatMessage(
                             certificatStatus,
-                            widget.member.certificatMedicalValidite,
+                            widget.member.certificatMedicalEcheance,
                             dateFormat,
                           ),
                         ),

@@ -110,6 +110,7 @@ function buildOperationalStatusProjection(data) {
     member_status: resolvedMemberStatus(data),
     cotisation_validite: data.cotisation_validite || null,
     certificat_medical_validite: data.certificat_medical_validite || null,
+    certificat_medical_date: data.certificat_medical_date || null,
     assurance_validite: data.assurance_validite || null,
     membership_category_code: nonEmptyString(data.membership_category_code),
     has_pending_medical: data.has_pending_medical === true,

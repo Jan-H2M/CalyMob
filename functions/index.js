@@ -231,6 +231,7 @@ exports.onPiscineTaskAssigned = onPiscineTaskAssigned;
 const { onMedicalCertStatusChange, onMedicalCertCreated } = require('./src/notifications/onMedicalCertStatusChange');
 exports.onMedicalCertStatusChange = onMedicalCertStatusChange;
 exports.onMedicalCertCreated = onMedicalCertCreated;
+exports.dailyMedicalExpiryReminder = require('./src/notifications/dailyMedicalExpiryReminder').dailyMedicalExpiryReminder;
 
 // =============================================================================
 // CARNET DE FORMATION — PROGRESSION (Gen2)

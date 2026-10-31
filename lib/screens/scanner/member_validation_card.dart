@@ -50,7 +50,7 @@ class MemberValidationCard extends StatelessWidget {
                   child: _buildStatusCard(
                     'Certificat',
                     member.certificatStatus,
-                    member.certificatMedicalValidite,
+                    member.certificatMedicalEcheance,
                     Icons.medical_services,
                   ),
                 ),

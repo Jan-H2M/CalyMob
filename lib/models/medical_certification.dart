@@ -1,10 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/medical_validity.dart';
 
 /// Statut de validation du certificat médical
 enum CertificateStatus {
-  pending,   // En attente de validation par un admin
-  approved,  // Approuvé avec date de validité
-  rejected,  // Refusé avec raison
+  pending, // En attente de validation par un admin
+  approved, // Approuvé avec date de validité
+  rejected, // Refusé avec raison
 }
 
 /// Modèle pour un certificat médical
@@ -19,6 +20,8 @@ class MedicalCertification {
 
   // Champs remplis par l'admin dans CalyCompta
   final DateTime? validUntil;
+  final DateTime? issuedOn;
+  final bool datesNeedReview;
   final String? reviewedBy;
   final String? reviewedByNom; // Display name of the reviewer
   final DateTime? reviewedAt;
@@ -33,6 +36,8 @@ class MedicalCertification {
     required this.uploadedAt,
     required this.status,
     this.validUntil,
+    this.issuedOn,
+    this.datesNeedReview = false,
     this.reviewedBy,
     this.reviewedByNom,
     this.reviewedAt,
@@ -49,9 +54,15 @@ class MedicalCertification {
       documentUrl: data['document_url'] ?? '',
       documentType: data['document_type'] ?? 'image',
       fileName: data['file_name'],
-      uploadedAt: (data['uploaded_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      uploadedAt:
+          (data['uploaded_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       status: _parseStatus(data['status']),
-      validUntil: (data['valid_until'] as Timestamp?)?.toDate(),
+      validUntil: parseMedicalDate(data['valid_until']),
+      issuedOn: parseMedicalDate(data['issued_on']),
+      datesNeedReview: (data['issued_on'] != null &&
+              parseMedicalDate(data['issued_on']) == null) ||
+          (data['valid_until'] != null &&
+              parseMedicalDate(data['valid_until']) == null),
       reviewedBy: data['reviewed_by'],
       reviewedByNom: data['reviewed_by_nom'],
       reviewedAt: (data['reviewed_at'] as Timestamp?)?.toDate(),
@@ -69,6 +80,7 @@ class MedicalCertification {
       'uploaded_at': Timestamp.fromDate(uploadedAt),
       'status': status.name,
       if (validUntil != null) 'valid_until': Timestamp.fromDate(validUntil!),
+      if (issuedOn != null) 'issued_on': Timestamp.fromDate(issuedOn!),
       if (reviewedBy != null) 'reviewed_by': reviewedBy,
       if (reviewedAt != null) 'reviewed_at': Timestamp.fromDate(reviewedAt!),
       if (rejectionReason != null) 'rejection_reason': rejectionReason,
@@ -89,30 +101,63 @@ class MedicalCertification {
 
   /// Vérifie si le certificat est actuellement valide (approuvé et non expiré)
   bool get isValid {
-    if (status != CertificateStatus.approved) return false;
-    if (validUntil == null) return false;
-    return validUntil!.isAfter(DateTime.now());
+    return validity.status == MedicalValidityStatus.valid || isExpiringSoon;
   }
 
   /// Vérifie si le certificat expire bientôt (dans les 30 jours)
   bool get isExpiringSoon {
-    if (status != CertificateStatus.approved) return false;
-    if (validUntil == null) return false;
-    final daysUntilExpiry = validUntil!.difference(DateTime.now()).inDays;
-    return daysUntilExpiry >= 0 && daysUntilExpiry <= 30;
+    return validity.status == MedicalValidityStatus.expiringSoon;
   }
 
   /// Vérifie si le certificat est expiré
   bool get isExpired {
-    if (status != CertificateStatus.approved) return false;
-    if (validUntil == null) return false;
-    return validUntil!.isBefore(DateTime.now());
+    return validity.status == MedicalValidityStatus.expired;
   }
 
   /// Nombre de jours jusqu'à l'expiration (négatif si expiré)
   int? get daysUntilExpiry {
-    if (validUntil == null) return null;
-    return validUntil!.difference(DateTime.now()).inDays;
+    return validity.daysRemaining;
+  }
+
+  MedicalValidity get validity => MedicalValidity.evaluate(
+      issuedOn: issuedOn,
+      validUntil: validUntil,
+      needsReview: datesNeedReview,
+      approved: status == CertificateStatus.approved);
+
+  /// The annual issue date belongs to the canonical current member summary,
+  /// not to a file's upload time. Join only on the same approved validity date;
+  /// conflicting summaries stay unknown rather than reviving an old document.
+  MedicalCertification withMemberDates(Map<String, dynamic> member) {
+    if (status != CertificateStatus.approved) return this;
+    final rawIssued = member['certificat_medical_date'];
+    final rawUntil = member['certificat_medical_validite'];
+    if (rawIssued == null && rawUntil == null) return this;
+    final issue = parseMedicalDate(rawIssued),
+        until = parseMedicalDate(rawUntil);
+    final conflicting = (rawIssued != null || rawUntil != null) &&
+        (until == null ||
+            validUntil == null ||
+            until.year != validUntil!.year ||
+            until.month != validUntil!.month ||
+            until.day != validUntil!.day);
+    return MedicalCertification(
+        id: id,
+        memberId: memberId,
+        documentUrl: documentUrl,
+        documentType: documentType,
+        fileName: fileName,
+        uploadedAt: uploadedAt,
+        status: status,
+        validUntil: validUntil,
+        issuedOn: conflicting ? issuedOn : issue ?? issuedOn,
+        datesNeedReview: datesNeedReview ||
+            conflicting ||
+            (rawIssued != null && issue == null),
+        reviewedBy: reviewedBy,
+        reviewedByNom: reviewedByNom,
+        reviewedAt: reviewedAt,
+        rejectionReason: rejectionReason);
   }
 
   /// Peut être présenté (valide et non expiré)

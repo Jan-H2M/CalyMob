@@ -24,9 +24,10 @@ class MedicalCertificationService {
           .get();
 
       if (approvedQuery.docs.isNotEmpty) {
-        final cert = MedicalCertification.fromFirestore(approvedQuery.docs.first);
+        final cert =
+            MedicalCertification.fromFirestore(approvedQuery.docs.first);
         debugPrint('✅ Certificat approuvé trouvé: ${cert.id}');
-        return cert;
+        return _withCurrentMemberDates(clubId, userId, cert);
       }
 
       // Sinon chercher un certificat en attente
@@ -38,7 +39,8 @@ class MedicalCertificationService {
           .get();
 
       if (pendingQuery.docs.isNotEmpty) {
-        final cert = MedicalCertification.fromFirestore(pendingQuery.docs.first);
+        final cert =
+            MedicalCertification.fromFirestore(pendingQuery.docs.first);
         debugPrint('⏳ Certificat en attente trouvé: ${cert.id}');
         return cert;
       }
@@ -63,7 +65,7 @@ class MedicalCertificationService {
         .collection('clubs/$clubId/members/$userId/medical_certificates')
         .orderBy('uploaded_at', descending: true)
         .snapshots()
-        .map((snapshot) {
+        .asyncMap((snapshot) async {
       if (snapshot.docs.isEmpty) return null;
 
       final certs = snapshot.docs
@@ -71,9 +73,8 @@ class MedicalCertificationService {
           .toList();
 
       // Priority 1: Find approved certificate (most recent by valid_until)
-      final approvedCerts = certs
-          .where((c) => c.status == CertificateStatus.approved)
-          .toList();
+      final approvedCerts =
+          certs.where((c) => c.status == CertificateStatus.approved).toList();
       if (approvedCerts.isNotEmpty) {
         // Sort by valid_until descending
         approvedCerts.sort((a, b) {
@@ -81,13 +82,12 @@ class MedicalCertificationService {
           final bDate = b.validUntil ?? DateTime(1900);
           return bDate.compareTo(aDate);
         });
-        return approvedCerts.first;
+        return _withCurrentMemberDates(clubId, userId, approvedCerts.first);
       }
 
       // Priority 2: Find pending certificate (most recent by uploaded_at)
-      final pendingCerts = certs
-          .where((c) => c.status == CertificateStatus.pending)
-          .toList();
+      final pendingCerts =
+          certs.where((c) => c.status == CertificateStatus.pending).toList();
       if (pendingCerts.isNotEmpty) {
         // Already sorted by uploaded_at descending from query
         return pendingCerts.first;
@@ -96,6 +96,13 @@ class MedicalCertificationService {
       // Priority 3: Return most recent rejected (for display)
       return certs.first;
     });
+  }
+
+  Future<MedicalCertification> _withCurrentMemberDates(
+      String clubId, String userId, MedicalCertification cert) async {
+    final member = await _firestore.doc('clubs/$clubId/members/$userId').get();
+    if (!member.exists) throw StateError('Résumé administratif indisponible.');
+    return cert.withMemberDates(member.data()!);
   }
 
   /// Récupérer l'historique des certificats
@@ -140,7 +147,8 @@ class MedicalCertificationService {
       // Le contenu n'est pas un PDF : c'est forcément une image.
       return 'image';
     } catch (e) {
-      debugPrint('⚠️ Détection type fichier échouée, fallback "$fallbackType": $e');
+      debugPrint(
+          '⚠️ Détection type fichier échouée, fallback "$fallbackType": $e');
       return fallbackType == 'pdf' ? 'pdf' : 'image';
     }
   }
@@ -168,9 +176,8 @@ class MedicalCertificationService {
       final storageName = 'certificat_$timestamp.$extension';
 
       // 2. Chemin dans Storage
-      final ref = _storage
-          .ref()
-          .child('clubs/$clubId/members/$userId/medical_certificates/$storageName');
+      final ref = _storage.ref().child(
+          'clubs/$clubId/members/$userId/medical_certificates/$storageName');
 
       // 3. Upload avec metadata
       final contentType =

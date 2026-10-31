@@ -23,6 +23,7 @@ import 'formation_dev_scenarios.dart';
 import 'apnee_dev_scenario.dart';
 import 'bank_transfer_dev_scenario.dart';
 import 'thread_colors_dev_scenario.dart';
+import 'medical_expiry_dev_scenario.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
@@ -60,6 +61,7 @@ Future<void> main() async {
     'apnee': 6,
     'bank-transfer': 7,
     'thread-colors': 8,
+    'medical-expiry': 9,
   };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
@@ -287,6 +289,7 @@ class _DevHomeState extends State<_DevHome> {
                         (6, 'MOB-036 · Apnée'),
                         (7, 'MOB-051 · Virement bancaire'),
                         (8, 'MOB-052 · Couleur de broderie'),
+                        (9, 'AV-MED-001 · Échéance médicale'),
                       ])
                         DropdownMenuItem(value: index, child: Text(label)),
                     ],
@@ -307,7 +310,8 @@ class _DevHomeState extends State<_DevHome> {
                       5 => const FictionalFormation(),
                       6 => const FictionalApnee(),
                       7 => const FictionalBankTransfer(),
-                      _ => const FictionalThreadColors(),
+                      8 => const FictionalThreadColors(),
+                      _ => const FictionalMedicalExpiry(),
                     },
                   ),
                 ),

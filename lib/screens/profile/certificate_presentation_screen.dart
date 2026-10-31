@@ -150,15 +150,15 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
         break;
 
       case CertificateStatus.approved:
-        if (cert.validUntil == null) {
+        if (cert.validity.expiresOn == null) {
           setState(() {
             _isValid = false;
             _invalidReason = 'Date de validité non définie';
           });
-        } else if (cert.validUntil!.isBefore(DateTime.now())) {
+        } else if (cert.isExpired) {
           setState(() {
             _isValid = false;
-            _invalidReason = 'Expiré le ${_formatDate(cert.validUntil!)}';
+            _invalidReason = 'Expiré le ${_formatDate(cert.validity.expiresOn!)}';
           });
         } else {
           setState(() {
@@ -349,9 +349,9 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
           const SizedBox(height: 16),
 
           // Validity date
-          if (_currentCert?.validUntil != null)
+          if (_currentCert?.validity.expiresOn != null)
             Text(
-              'Valide jusqu\'au ${_formatDate(_currentCert!.validUntil!)}',
+              'Valide jusqu\'au ${_formatDate(_currentCert!.validity.expiresOn!)}',
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.white,

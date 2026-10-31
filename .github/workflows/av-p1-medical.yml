@@ -1,0 +1,24 @@
+name: AV P1 medical expiry
+on:
+  pull_request:
+    branches: [dev]
+    paths: ['lib/utils/medical_validity.dart', 'lib/models/medical_certification.dart', 'lib/models/member_profile.dart', 'lib/widgets/**', 'lib/screens/profile/**', 'functions/src/notifications/*Medical*', 'functions/src/notifications/medicalExpiry*', 'test/**medical*', '.github/workflows/av-p1-medical.yml']
+permissions:
+  contents: read
+jobs:
+  medical-expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: subosito/flutter-action@v2
+        with: {flutter-version: '3.38.9', channel: stable, cache: true}
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test test/utils/medical_validity_test.dart test/widgets/medical_expiry_notice_test.dart test/models/member_profile_test.dart test/models/member_profile_status_test.dart
+      - run: npm ci --ignore-scripts
+        working-directory: functions
+      - run: npx --no-install jest --runInBand --runTestsByPath src/notifications/medicalExpiryPolicy.test.js src/privacy/syncMemberProjections.test.js
+        working-directory: functions
+      - run: git diff --exit-code -- pubspec.lock functions/package-lock.json
