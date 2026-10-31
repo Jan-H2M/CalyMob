@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/firebase_config.dart';
+import '../../utils/authenticated_stream.dart';
 import '../payment_communication_copy_button.dart';
 
 /// Always asks the server for the current request. It never reuses the order's
@@ -15,8 +16,16 @@ class BoutiqueCurrentPaymentPanel extends StatefulWidget {
   final String orderId;
   final Future<Map<String, dynamic>> Function()? loadPayment;
   final Future<void> Function(Map<String, dynamic>)? sendEmail;
+  final Stream<DocumentSnapshot<Map<String, dynamic>>> Function(String orderId)?
+      watchOrder;
+  final Stream<String?> Function()? authUserIds;
   const BoutiqueCurrentPaymentPanel(
-      {super.key, required this.orderId, this.loadPayment, this.sendEmail});
+      {super.key,
+      required this.orderId,
+      this.loadPayment,
+      this.sendEmail,
+      this.watchOrder,
+      this.authUserIds});
 
   @override
   State<BoutiqueCurrentPaymentPanel> createState() =>
@@ -25,8 +34,10 @@ class BoutiqueCurrentPaymentPanel extends StatefulWidget {
 
 class _BoutiqueCurrentPaymentPanelState
     extends State<BoutiqueCurrentPaymentPanel> {
-  late Future<Map<String, dynamic>> _payment;
+  late Future<Map<String, dynamic>?> _payment;
   bool _sending = false;
+  bool _streamFailed = false;
+  int _listenGeneration = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
   String? _lastState;
   final _formatter =
@@ -43,59 +54,88 @@ class _BoutiqueCurrentPaymentPanelState
     return Map<String, dynamic>.from(result.data as Map);
   }
 
+  // A stream callback can run between frames. Observe failures immediately,
+  // before FutureBuilder attaches in the next frame (CALYMOB-25).
+  Future<Map<String, dynamic>?> _loadForDisplay() =>
+      _load().then<Map<String, dynamic>?>((data) => data,
+          onError: (Object error, StackTrace stack) => null);
+
   @override
   void initState() {
     super.initState();
-    _payment = _load();
+    _payment = _loadForDisplay();
     _listen();
   }
 
   void _listen() {
-    if (widget.loadPayment != null) return;
-    _subscription = FirebaseFirestore.instance
-        .collection('clubs')
-        .doc(FirebaseConfig.defaultClubId)
-        .collection('orders')
-        .doc(widget.orderId)
-        .snapshots()
-        .listen((snapshot) {
+    final generation = ++_listenGeneration;
+    _subscription?.cancel();
+    if (widget.loadPayment != null && widget.watchOrder == null) return;
+    _subscription = authenticatedStream(
+      () =>
+          widget.watchOrder?.call(widget.orderId) ??
+          FirebaseFirestore.instance
+              .collection('clubs')
+              .doc(FirebaseConfig.defaultClubId)
+              .collection('orders')
+              .doc(widget.orderId)
+              .snapshots(),
+      authUserIds: widget.authUserIds,
+    ).listen((snapshot) {
+      if (!mounted || generation != _listenGeneration) return;
       final value = snapshot.data();
+      if (!snapshot.exists) {
+        setState(() => _streamFailed = true);
+        return;
+      }
       final state =
           '${value?['status']}|${value?['pricing']}|${value?['paymentPlan']}|${value?['payment']}';
-      final changed = _lastState != null && state != _lastState;
+      final changed =
+          _streamFailed || (_lastState != null && state != _lastState);
       _lastState = state;
-      if (changed && mounted) setState(() => _payment = _load());
+      if (changed) {
+        setState(() {
+          _streamFailed = false;
+          _payment = _loadForDisplay();
+        });
+      }
     }, onError: (Object error) {
-      if (mounted) setState(() => _payment = Future.error(error));
+      if (!mounted || generation != _listenGeneration) return;
+      setState(() => _streamFailed = true);
     });
   }
 
   @override
   void didUpdateWidget(covariant BoutiqueCurrentPaymentPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.orderId != widget.orderId) {
-      _subscription?.cancel();
+    if (oldWidget.orderId != widget.orderId ||
+        oldWidget.watchOrder != widget.watchOrder ||
+        oldWidget.authUserIds != widget.authUserIds) {
       _lastState = null;
       _sending = false;
-      _payment = _load();
+      _streamFailed = false;
+      _payment = _loadForDisplay();
       _listen();
     }
   }
 
   @override
   void dispose() {
+    _listenGeneration++;
     _subscription?.cancel();
     super.dispose();
   }
 
   Future<void> _email(Map<String, dynamic> shown) async {
-    if (_sending) return;
+    if (_sending || _streamFailed) return;
     final startingOrderId = widget.orderId;
     setState(() => _sending = true);
     try {
       // Refresh first: an old dialog must never email a superseded amount.
       final current = await _load();
-      if (!mounted || widget.orderId != startingOrderId) return;
+      if (!mounted || _streamFailed || widget.orderId != startingOrderId) {
+        return;
+      }
       if (current['requestId'] != shown['requestId'] ||
           current['revision'] != shown['revision'] ||
           current['amount'] != shown['amount'] ||
@@ -135,18 +175,25 @@ class _BoutiqueCurrentPaymentPanelState
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>>(
+  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
         future: _payment,
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
+          if (!_streamFailed &&
+              snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError || !snapshot.hasData) {
+          if (_streamFailed || snapshot.hasError || !snapshot.hasData) {
             return Column(children: [
               const Text(
                   'Paiement actuel indisponible. Aucun ancien QR ne sera affiché.'),
               TextButton(
-                  onPressed: () => setState(() => _payment = _load()),
+                  onPressed: () {
+                    setState(() {
+                      _streamFailed = false;
+                      _payment = _loadForDisplay();
+                    });
+                    _listen();
+                  },
                   child: const Text('Réessayer')),
             ]);
           }

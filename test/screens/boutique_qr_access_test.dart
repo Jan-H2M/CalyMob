@@ -37,8 +37,10 @@ void main() {
       'member_status': 'active',
       'clubStatuten': ['RB']
     });
-    final service =
-        BoutiqueAccessService(firestore: firestore, operations: operations);
+    final service = BoutiqueAccessService(
+        firestore: firestore,
+        operations: operations,
+        authUserIds: () => Stream.value('actor'));
     await tester.pumpWidget(MaterialApp(
         home: BoutiqueScreen(
             accessService: service,

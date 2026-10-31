@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:calymob/widgets/boutique/boutique_current_payment_panel.dart';
 import 'package:calymob/widgets/payment_communication_copy_button.dart';
@@ -30,14 +32,97 @@ Map<String, dynamic> payment(
 
 Widget panel(Future<Map<String, dynamic>> Function() load,
         {String id = 'qa-order',
-        Future<void> Function(Map<String, dynamic>)? email}) =>
+        Future<void> Function(Map<String, dynamic>)? email,
+        Stream<DocumentSnapshot<Map<String, dynamic>>> Function(String)?
+            watchOrder,
+        Stream<String?> Function()? authUserIds}) =>
     MaterialApp(
         home: Scaffold(
             body: SingleChildScrollView(
                 child: BoutiqueCurrentPaymentPanel(
-                    orderId: id, loadPayment: load, sendEmail: email))));
+                    orderId: id,
+                    loadPayment: load,
+                    sendEmail: email,
+                    watchOrder: watchOrder,
+                    authUserIds: authUserIds))));
 
 void main() {
+  testWidgets('document permission error hides QR without an unobserved Future',
+      (tester) async {
+    final orders = StreamController<DocumentSnapshot<Map<String, dynamic>>>(
+        onCancel: () {});
+    addTearDown(orders.close);
+    await tester.pumpWidget(panel(() async => payment(),
+        watchOrder: (_) => orders.stream,
+        authUserIds: () => Stream.value('owner')));
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsOneWidget);
+    orders.addError(FirebaseException(
+        plugin: 'cloud_firestore', code: 'permission-denied'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(QrImageView), findsNothing);
+    expect(find.textContaining('Aucun ancien QR'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(orders.hasListener, isFalse);
+  });
+
+  testWidgets('failed reload between frames is observed before FutureBuilder',
+      (tester) async {
+    final db = FakeFirebaseFirestore();
+    final doc = db.doc('clubs/club/orders/order');
+    await doc.set({'status': 'pending'});
+    final orders = StreamController<DocumentSnapshot<Map<String, dynamic>>>(
+        onCancel: () {});
+    addTearDown(orders.close);
+    var calls = 0;
+    await tester.pumpWidget(panel(() async {
+      if (calls++ > 0) throw StateError('reload unavailable');
+      return payment();
+    },
+        watchOrder: (_) => orders.stream,
+        authUserIds: () => Stream.value('owner')));
+    await tester.pumpAndSettle();
+    orders.add(await doc.get());
+    await tester.pumpAndSettle();
+    await doc.update({'status': 'changed'});
+    orders.add(await doc.get());
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(QrImageView), findsNothing);
+    expect(find.textContaining('Aucun ancien QR'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('logout cancels the document and removes an already visible QR',
+      (tester) async {
+    final auth = StreamController<String?>();
+    addTearDown(auth.close);
+    final orders = StreamController<DocumentSnapshot<Map<String, dynamic>>>(
+        onCancel: () {});
+    addTearDown(orders.close);
+    await tester.pumpWidget(panel(() async => payment(),
+        watchOrder: (_) => orders.stream, authUserIds: () => auth.stream));
+    auth.add('owner');
+    await tester.pumpAndSettle();
+    expect(orders.hasListener, isTrue);
+    expect(find.byType(QrImageView), findsOneWidget);
+    // switchMap awaits native-listener cancellation before delivering auth loss.
+    await tester.runAsync(() async {
+      auth.add(null);
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pumpAndSettle();
+    expect(orders.hasListener, isFalse);
+    expect(find.byType(QrImageView), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(auth.hasListener, isFalse);
+  });
+
   testWidgets('new QR and copied amount are only 6.62, never 78.62',
       (tester) async {
     await tester.pumpWidget(panel(() async => payment()));

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:rxdart/rxdart.dart';
 
 import '../feature_flag_service.dart';
+import '../../utils/authenticated_stream.dart';
 import 'boutique_operations_service.dart';
 
 /// Eén gedeelde clientpolicy voor de Boutique-module en haar vijf secties.
@@ -81,11 +82,14 @@ class BoutiqueAccessState {
 class BoutiqueAccessService {
   final FirebaseFirestore _firestore;
   final BoutiqueOperationsService _operations;
+  final Stream<String?> Function()? _authUserIds;
 
   BoutiqueAccessService(
       {FirebaseFirestore? firestore,
+      Stream<String?> Function()? authUserIds,
       BoutiqueOperationsService operations = const BoutiqueOperationsService()})
       : _firestore = firestore ?? FirebaseFirestore.instance,
+        _authUserIds = authUserIds,
         _operations = operations;
 
   Stream<bool> watchCanAccessBoutique({
@@ -93,11 +97,22 @@ class BoutiqueAccessService {
     required String userId,
   }) {
     return watchBoutiqueAccess(clubId: clubId, userId: userId)
-        .map((state) => state.canOpenEntry)
-        .distinct();
+        // Re-emit even the same bool after an error, so the entry's
+        // StreamBuilder can leave its unavailable state on token recovery.
+        .map((state) => state.canOpenEntry);
   }
 
   Stream<BoutiqueAccessState> watchBoutiqueAccess({
+    required String clubId,
+    required String userId,
+  }) =>
+      authenticatedStream(
+        () => _watchBoutiqueAccess(clubId: clubId, userId: userId),
+        userId: userId,
+        authUserIds: _authUserIds,
+      );
+
+  Stream<BoutiqueAccessState> _watchBoutiqueAccess({
     required String clubId,
     required String userId,
   }) {
@@ -152,8 +167,11 @@ class BoutiqueAccessService {
           if (!cancelled && current == generation) output.add(state);
         });
       }, onError: (Object error, StackTrace stack) {
+        generation++;
+        unawaited(assignments?.cancel());
+        assignments = null;
         if (!cancelled) output.addError(error, stack);
-      });
+      }, cancelOnError: true);
     }, onCancel: () {
       cancelled = true;
       generation++;
