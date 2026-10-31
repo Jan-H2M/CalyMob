@@ -74,7 +74,7 @@ class UserQRCard extends StatelessWidget {
               icon: Icons.medical_services,
               label: 'Certificat médical',
               status: profile.certificatStatus,
-              validityDate: profile.certificatMedicalValidite,
+              validityDate: profile.certificatMedicalEcheance,
             ),
 
             const SizedBox(height: 8),

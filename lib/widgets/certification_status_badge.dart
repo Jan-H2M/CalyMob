@@ -109,7 +109,14 @@ class CertificationStatusBadge extends StatelessWidget {
         );
 
       case CertificateStatus.approved:
-        if (certification!.isExpired) {
+        if (certification!.validity.expiresOn == null) {
+          return (
+            Icons.help_outline,
+            'Validité à vérifier',
+            Colors.grey[100]!,
+            Colors.grey[600]!
+          );
+        } else if (certification!.isExpired) {
           return (
             Icons.error_outline,
             'Expiré',
@@ -142,7 +149,8 @@ class CertificationStatusBadge extends StatelessWidget {
         return 'Validation en cours';
 
       case CertificateStatus.rejected:
-        final reason = certification!.rejectionReason ?? 'Document non conforme';
+        final reason =
+            certification!.rejectionReason ?? 'Document non conforme';
         final reviewer = certification!.reviewedByNom;
         if (reviewer != null && reviewer.isNotEmpty) {
           return '$reviewer: $reason';
@@ -150,7 +158,8 @@ class CertificationStatusBadge extends StatelessWidget {
         return reason;
 
       case CertificateStatus.approved:
-        if (certification!.validUntil == null) return null;
+        if (certification!.validity.expiresOn == null)
+          return 'Date non confirmée';
         final days = certification!.daysUntilExpiry ?? 0;
         if (days < 0) {
           return 'Depuis ${-days} jour${days < -1 ? 's' : ''}';
@@ -161,7 +170,7 @@ class CertificationStatusBadge extends StatelessWidget {
         } else if (days <= 30) {
           return 'Expire dans $days jours';
         } else {
-          return 'Jusqu\'au ${_formatDate(certification!.validUntil!)}';
+          return 'Jusqu\'au ${_formatDate(certification!.validity.expiresOn!)}';
         }
     }
   }

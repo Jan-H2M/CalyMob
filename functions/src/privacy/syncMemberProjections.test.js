@@ -15,6 +15,11 @@ const {
 const admin = require('firebase-admin');
 
 describe('member privacy projections', () => {
+  test('annual issue date stays in restricted operational status, never directory', () => {
+    const data = { certificat_medical_date: '2026-10-31', certificat_medical_validite: '2027-10-31' };
+    expect(buildOperationalStatusProjection(data).certificat_medical_date).toBe('2026-10-31');
+    expect(buildMemberDirectoryProjection(data)).not.toHaveProperty('certificat_medical_date');
+  });
   test('projects legacy telephone and modern phone_number after implicit legacy consent', () => {
     expect(buildMemberDirectoryProjection({
       telephone: ' +32 470 00 00 01 ',

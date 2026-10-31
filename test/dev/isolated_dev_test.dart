@@ -15,6 +15,23 @@ void main() {
   }
 
   setUpAll(() => initializeDateFormatting('fr_FR'));
+  testWidgets('both board P1 scenarios coexist without a Firebase app',
+      (tester) async {
+    tester.view.physicalSize = const Size(1000, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const IsolatedDevApp(initialPage: 9));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Horloge fictive'), findsOneWidget);
+    expect(find.textContaining('expire bientôt'), findsOneWidget);
+    await selectScenario(tester, 'AV-LOAN-001 · Responsabilité de prêt');
+    expect(find.text('Ouvrir la vraie demande FICTIVE'), findsOneWidget);
+    await selectScenario(tester, 'AV-MED-001 · Échéance médicale');
+    expect(find.textContaining('Horloge fictive'), findsOneWidget);
+    expect(Firebase.apps, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
   test('DEV only accepts the explicit credentialless loopback target', () {
     validateDevOrigin(
       Uri.parse('http://127.0.0.1:7375'),

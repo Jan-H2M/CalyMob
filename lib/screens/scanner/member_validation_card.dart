@@ -10,6 +10,7 @@ class MemberValidationCard extends StatelessWidget {
   final bool isLoading;
   final bool alreadyCheckedIn;
   final bool isInscribed; // True if member is pre-registered for this event
+  final DateTime? now;
 
   const MemberValidationCard({
     Key? key,
@@ -18,6 +19,7 @@ class MemberValidationCard extends StatelessWidget {
     this.isLoading = false,
     this.alreadyCheckedIn = false,
     this.isInscribed = false,
+    this.now,
   }) : super(key: key);
 
   @override
@@ -49,9 +51,10 @@ class MemberValidationCard extends StatelessWidget {
                 Expanded(
                   child: _buildStatusCard(
                     'Certificat',
-                    member.certificatStatus,
-                    member.certificatMedicalValidite,
+                    member.certificatStatusAt(now),
+                    member.certificatMedicalEcheance,
                     Icons.medical_services,
+                    medicalCalendar: true,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -113,9 +116,8 @@ class MemberValidationCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isInscribed
-                          ? Colors.green[100]
-                          : Colors.orange[100],
+                      color:
+                          isInscribed ? Colors.green[100] : Colors.orange[100],
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -145,10 +147,10 @@ class MemberValidationCard extends StatelessWidget {
                   if (member.plongeurCode != null) ...[
                     const SizedBox(width: 8),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: AppColors.middenblauw.withOpacity(0.1),
+                        color: AppColors.middenblauw.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -174,11 +176,13 @@ class MemberValidationCard extends StatelessWidget {
     String title,
     ValidationStatus status,
     DateTime? validUntil,
-    IconData icon,
-  ) {
+    IconData icon, {
+    bool medicalCalendar = false,
+  }) {
     final colors = _getStatusColors(status);
     final statusText = _getStatusText(status);
-    final daysText = _getDaysText(status, validUntil);
+    final daysText =
+        _getDaysText(status, validUntil, medicalCalendar: medicalCalendar);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -200,7 +204,7 @@ class MemberValidationCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: colors.text.withOpacity(0.8),
+                    color: colors.text.withValues(alpha: 0.8),
                   ),
                 ),
               ),
@@ -229,7 +233,7 @@ class MemberValidationCard extends StatelessWidget {
               daysText,
               style: TextStyle(
                 fontSize: 11,
-                color: colors.text.withOpacity(0.7),
+                color: colors.text.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -321,16 +325,20 @@ class MemberValidationCard extends StatelessWidget {
     }
   }
 
-  String? _getDaysText(ValidationStatus status, DateTime? validUntil) {
+  String? _getDaysText(ValidationStatus status, DateTime? validUntil,
+      {bool medicalCalendar = false}) {
     if (validUntil == null) return null;
 
-    final now = DateTime.now();
-    final days = validUntil.difference(now).inDays;
+    final days = medicalCalendar
+        ? member.medicalValidityAt(now).daysRemaining
+        : validUntil.difference(DateTime.now()).inDays;
+    if (days == null) return null;
 
     if (status == ValidationStatus.expired) {
       return 'Expiré depuis ${-days} jour${-days > 1 ? 's' : ''}';
     } else if (status == ValidationStatus.warning ||
         status == ValidationStatus.valid) {
+      if (medicalCalendar && days == 0) return 'Expire aujourd’hui';
       return 'Expire dans $days jour${days > 1 ? 's' : ''}';
     }
     return null;
