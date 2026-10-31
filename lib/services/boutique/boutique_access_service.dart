@@ -5,6 +5,7 @@ import 'package:rxdart/rxdart.dart';
 import '../feature_flag_service.dart';
 import '../../utils/authenticated_stream.dart';
 import 'boutique_operations_service.dart';
+import 'member_missions_service.dart';
 
 /// Eén gedeelde clientpolicy voor de Boutique-module en haar vijf secties.
 class BoutiqueAccessPolicy {
@@ -53,6 +54,7 @@ class BoutiqueAccessState {
 
   final bool qrEnabled;
   final bool hasPickupAssignments;
+  final bool hasSupplierMissions;
 
   const BoutiqueAccessState({
     required this.canAccess,
@@ -60,11 +62,14 @@ class BoutiqueAccessState {
     required this.member,
     this.qrEnabled = false,
     this.hasPickupAssignments = false,
+    this.hasSupplierMissions = false,
   });
 
-  bool get canOpenEntry => canAccess || (qrEnabled && hasPickupAssignments);
+  bool get canOpenEntry =>
+      canAccess || hasSupplierMissions || (qrEnabled && hasPickupAssignments);
 
   bool canAccessSection(String key) {
+    if (key == 'missions') return hasSupplierMissions;
     if (key == 'gestion') {
       return qrEnabled &&
           BoutiqueAccessPolicy.hasBoutiqueResponsibility(member);
@@ -82,35 +87,37 @@ class BoutiqueAccessState {
 class BoutiqueAccessService {
   final FirebaseFirestore _firestore;
   final BoutiqueOperationsService _operations;
+  final MemberMissionsService _missions;
   final Stream<String?> Function()? _authUserIds;
 
-  BoutiqueAccessService(
-      {FirebaseFirestore? firestore,
-      Stream<String?> Function()? authUserIds,
-      BoutiqueOperationsService operations = const BoutiqueOperationsService()})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _authUserIds = authUserIds,
-        _operations = operations;
+  BoutiqueAccessService({
+    FirebaseFirestore? firestore,
+    Stream<String?> Function()? authUserIds,
+    BoutiqueOperationsService operations = const BoutiqueOperationsService(),
+    MemberMissionsService missions = const MemberMissionsService(),
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _authUserIds = authUserIds,
+       _operations = operations,
+       _missions = missions;
 
   Stream<bool> watchCanAccessBoutique({
     required String clubId,
     required String userId,
   }) {
     return watchBoutiqueAccess(clubId: clubId, userId: userId)
-        // Re-emit even the same bool after an error, so the entry's
-        // StreamBuilder can leave its unavailable state on token recovery.
-        .map((state) => state.canOpenEntry);
+    // Re-emit even the same bool after an error, so the entry's
+    // StreamBuilder can leave its unavailable state on token recovery.
+    .map((state) => state.canOpenEntry);
   }
 
   Stream<BoutiqueAccessState> watchBoutiqueAccess({
     required String clubId,
     required String userId,
-  }) =>
-      authenticatedStream(
-        () => _watchBoutiqueAccess(clubId: clubId, userId: userId),
-        userId: userId,
-        authUserIds: _authUserIds,
-      );
+  }) => authenticatedStream(
+    () => _watchBoutiqueAccess(clubId: clubId, userId: userId),
+    userId: userId,
+    authUserIds: _authUserIds,
+  );
 
   Stream<BoutiqueAccessState> _watchBoutiqueAccess({
     required String clubId,
@@ -129,55 +136,96 @@ class BoutiqueAccessService {
         .doc(userId)
         .snapshots();
 
-    final core = Rx.combineLatest2<DocumentSnapshot<Map<String, dynamic>>,
-        DocumentSnapshot<Map<String, dynamic>>, BoutiqueAccessState>(
-      flagsStream,
-      memberStream,
-      (flagsDoc, memberDoc) => stateFromData(
-        flags: flagsDoc.data(),
-        member: memberDoc.data(),
-      ),
-    );
+    final core =
+        Rx.combineLatest2<
+          DocumentSnapshot<Map<String, dynamic>>,
+          DocumentSnapshot<Map<String, dynamic>>,
+          BoutiqueAccessState
+        >(
+          flagsStream,
+          memberStream,
+          (flagsDoc, memberDoc) =>
+              stateFromData(flags: flagsDoc.data(), member: memberDoc.data()),
+        );
     late StreamController<BoutiqueAccessState> output;
     StreamSubscription<BoutiqueAccessState>? source;
     StreamSubscription<bool>? assignments;
+    StreamSubscription<bool>? supplierAssignments;
     var generation = 0;
     var cancelled = false;
-    output = StreamController<BoutiqueAccessState>(onListen: () {
-      source = core.listen((state) {
-        final current = ++generation;
-        // Revoke local permissions immediately, before any assignment RPC.
-        unawaited(assignments?.cancel());
-        assignments = null;
-        if (cancelled) return;
-        output.add(state);
-        if (!state.qrEnabled ||
-            BoutiqueAccessPolicy.hasBoutiqueResponsibility(state.member)) {
-          return;
-        }
-        assignments = _operations.watchHasAssignment(clubId).listen((assigned) {
-          if (cancelled || current != generation) return;
-          output.add(BoutiqueAccessState(
-              canAccess: state.canAccess,
-              visibility: state.visibility,
-              member: state.member,
-              qrEnabled: state.qrEnabled,
-              hasPickupAssignments: assigned));
-        }, onError: (Object error, StackTrace stack) {
-          if (!cancelled && current == generation) output.add(state);
-        });
-      }, onError: (Object error, StackTrace stack) {
+    output = StreamController<BoutiqueAccessState>(
+      onListen: () {
+        source = core.listen(
+          (state) {
+            final current = ++generation;
+            // Revoke local permissions immediately, before any assignment RPC.
+            unawaited(assignments?.cancel());
+            assignments = null;
+            unawaited(supplierAssignments?.cancel());
+            supplierAssignments = null;
+            if (cancelled) return;
+            var pickup = false, supplier = false;
+            void emit() {
+              if (cancelled || current != generation) return;
+              output.add(
+                BoutiqueAccessState(
+                  canAccess: state.canAccess,
+                  visibility: state.visibility,
+                  member: state.member,
+                  qrEnabled: state.qrEnabled,
+                  hasPickupAssignments: pickup,
+                  hasSupplierMissions: supplier,
+                ),
+              );
+            }
+
+            emit();
+            if (BoutiqueAccessPolicy.isActiveMember(state.member) &&
+                state.member?['has_app_access'] != false) {
+              supplierAssignments = _missions.watchEligibility(clubId).listen((
+                eligible,
+              ) {
+                if (supplier != eligible) {
+                  supplier = eligible;
+                  emit();
+                }
+              });
+            }
+            if (!state.qrEnabled ||
+                BoutiqueAccessPolicy.hasBoutiqueResponsibility(state.member)) {
+              return;
+            }
+            assignments = _operations
+                .watchHasAssignment(clubId)
+                .listen(
+                  (assigned) {
+                    if (cancelled || current != generation) return;
+                    pickup = assigned;
+                    emit();
+                  },
+                  onError: (Object error, StackTrace stack) {
+                    if (!cancelled && current == generation) output.add(state);
+                  },
+                );
+          },
+          onError: (Object error, StackTrace stack) {
+            generation++;
+            unawaited(assignments?.cancel());
+            unawaited(supplierAssignments?.cancel());
+            assignments = null;
+            if (!cancelled) output.addError(error, stack);
+          },
+          cancelOnError: true,
+        );
+      },
+      onCancel: () {
+        cancelled = true;
         generation++;
+        unawaited(source?.cancel());
         unawaited(assignments?.cancel());
-        assignments = null;
-        if (!cancelled) output.addError(error, stack);
-      }, cancelOnError: true);
-    }, onCancel: () {
-      cancelled = true;
-      generation++;
-      unawaited(source?.cancel());
-      unawaited(assignments?.cancel());
-    });
+        unawaited(supplierAssignments?.cancel());
+      },
+    );
     return output.stream;
   }
 
@@ -193,16 +241,19 @@ class BoutiqueAccessService {
     required Map<String, dynamic>? member,
   }) {
     final visibility = FeatureFlagService.parseBoutiqueVisibility(flags);
-    final enabled = flags?['boutiqueEnabled'] == true ||
+    final enabled =
+        flags?['boutiqueEnabled'] == true ||
         flags?['boutiqueMobileEnabled'] == true;
-    final canAccess = enabled &&
+    final canAccess =
+        enabled &&
         BoutiqueAccessPolicy.canAccessMode(visibility['access'], member);
 
     return BoutiqueAccessState(
       canAccess: canAccess,
       visibility: visibility,
       member: member,
-      qrEnabled: enabled &&
+      qrEnabled:
+          enabled &&
           flags?['boutiqueQrEnabled'] == true &&
           visibility['access'] != FeatureFlagService.modeMasque &&
           BoutiqueAccessPolicy.isActiveMember(member) &&

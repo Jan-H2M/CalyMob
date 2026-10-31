@@ -1,3 +1,4 @@
+import 'screens/boutique/member_missions_screen.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart'
@@ -258,6 +259,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     );
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
+    _deepLinkService.onBoutiqueMissions.listen((_) => _openBoutiqueMissions());
     _deepLinkService.onDiveShareInbox.listen((_) => _openDiveShareInbox());
     _setupNotificationTapHandlers();
     NotificationHistoryNavigationDispatcher.instance.handler = (data) {
@@ -295,6 +297,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       unawaited(_recordNativeStartup());
       _updateBadgeFromUnreadCounts();
       unawaited(_openDiveShareInbox());
+      unawaited(_openBoutiqueMissions());
     });
   }
 
@@ -358,6 +361,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     } finally {
       unawaited(trace.finish());
     }
+  }
+
+  Future<void> _openBoutiqueMissions() async {
+    if (!_deepLinkService.hasPendingBoutiqueMissions || !mounted) return;
+    final navContext = _navigatorKey.currentContext;
+    if (navContext == null || !navContext.mounted || Provider.of<AuthProvider>(navContext, listen: false).currentUser == null) return;
+    _deepLinkService.hasPendingBoutiqueMissions = false;
+    await _navigatorKey.currentState?.push(boutiqueAccessGuardedRoute(
+      requiredSection: 'missions', builder: (_) => const MemberMissionsScreen()));
   }
 
   Future<void> _openDiveShareInbox() async {
@@ -1118,6 +1130,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // die veranderd zijn terwijl de app in de achtergrond was)
       _refreshFcmToken();
       unawaited(_openDiveShareInbox());
+      unawaited(_openBoutiqueMissions());
     } else if (state == AppLifecycleState.paused) {
       // Badge updaten bij vertrek uit app
       _updateBadgeFromUnreadCounts();

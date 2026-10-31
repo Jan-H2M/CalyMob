@@ -47,4 +47,25 @@ void main() {
     service.dispose();
     await links.opened.close();
   });
+  test(
+      'Boutique missions deep link survives cold start until login and carries no member authority',
+      () async {
+    final links = _Links();
+    final service = DeepLinkService.forTesting(appLinks: links);
+    var opened = 0;
+    service.onBoutiqueMissions.listen((_) => opened++);
+    final init = service.initialize();
+    links.initial.complete(
+        Uri.parse('calymob://boutique/missions?memberId=someone-else'));
+    await init;
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, 1);
+    expect(service.hasPendingBoutiqueMissions, isTrue);
+    service.hasPendingBoutiqueMissions = false;
+    links.opened.add(Uri.parse('calymob://boutique/missions'));
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, 2);
+    service.dispose();
+    await links.opened.close();
+  });
 }

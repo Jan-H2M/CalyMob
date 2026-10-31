@@ -80,3 +80,9 @@ const { DEFAULT_FLAGS, notificationsOwner } = require('../migrationFlags.js');
 }
 
 console.log('OK — dormant sync-engine: change-detection, projecties, guards, ownership, flags');
+
+{
+  const canonical = s.buildCanonicalFromLegacy({ demandeur_id: 'member', statut: 'soumis', boutique_supplier_batch_id: 'batch-dev' }, 'expense-dev');
+  assert.strictEqual(canonical.boutique_supplier_batch_id, 'batch-dev');
+  assert.strictEqual(s.buildLegacyFromCanonical(canonical, 'expense-dev').boutique_supplier_batch_id, 'batch-dev');
+}

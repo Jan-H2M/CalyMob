@@ -17,6 +17,7 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
+import 'member_missions_screen.dart';
 import 'boutique_management_screen.dart';
 import 'boutique_action_management_screen.dart';
 import '../stock/material_returns_screen.dart';
@@ -84,35 +85,61 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
+                  if (showSection('missions')) ...[
+                    _BoutiqueHomeCard(
+                      icon: Icons.task_alt,
+                      title: 'Mes missions',
+                      subtitle:
+                          'Suivre et confirmer les articles qui vous sont confiés.',
+                      emphasized: true,
+                      onTap: () => Navigator.push(
+                        context,
+                        boutiqueAccessGuardedRoute(
+                          sourceContext: context,
+                          requiredSection: 'missions',
+                          builder: (_) =>
+                              MemberMissionsScreen(clubId: widget.clubId),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (showSection('gestion')) ...[
                     _BoutiqueHomeCard(
-                        icon: Icons.inventory_2_outlined,
-                        title: 'Gestion Boutique',
-                        subtitle:
-                            'Choisir une action, préciser les valeurs, sélectionner les paquets et confirmer.',
-                        emphasized: true,
-                        onTap: () => Navigator.push(
-                            context,
-                            boutiqueAccessGuardedRoute(
-                                sourceContext: context,
-                                requiredSection: 'gestion',
-                                builder: (_) => BoutiqueActionManagementScreen(
-                                    service: widget.operationsService)))),
+                      icon: Icons.inventory_2_outlined,
+                      title: 'Gestion Boutique',
+                      subtitle:
+                          'Choisir une action, préciser les valeurs, sélectionner les paquets et confirmer.',
+                      emphasized: true,
+                      onTap: () => Navigator.push(
+                        context,
+                        boutiqueAccessGuardedRoute(
+                          sourceContext: context,
+                          requiredSection: 'gestion',
+                          builder: (_) => BoutiqueActionManagementScreen(
+                            service: widget.operationsService,
+                          ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                   ] else if (showSection('remises')) ...[
                     _BoutiqueHomeCard(
-                        icon: Icons.assignment_turned_in_outlined,
-                        title: 'Mes remises',
-                        subtitle:
-                            'Réceptionner et remettre les lots qui vous sont confiés.',
-                        emphasized: true,
-                        onTap: () => Navigator.push(
-                            context,
-                            boutiqueAccessGuardedRoute(
-                                sourceContext: context,
-                                requiredSection: 'remises',
-                                builder: (_) => const BoutiqueManagementScreen(
-                                    manager: false)))),
+                      icon: Icons.assignment_turned_in_outlined,
+                      title: 'Mes remises',
+                      subtitle:
+                          'Réceptionner et remettre les lots qui vous sont confiés.',
+                      emphasized: true,
+                      onTap: () => Navigator.push(
+                        context,
+                        boutiqueAccessGuardedRoute(
+                          sourceContext: context,
+                          requiredSection: 'remises',
+                          builder: (_) =>
+                              const BoutiqueManagementScreen(manager: false),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                   ],
                   if (showSection('produits')) ...[
@@ -268,10 +295,7 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
-          'Boutique',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Boutique', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -338,8 +362,10 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
               final filteredProducts = _selectedCategory == null
                   ? products
                   : products
-                      .where((product) => product.category == _selectedCategory)
-                      .toList();
+                        .where(
+                          (product) => product.category == _selectedCategory,
+                        )
+                        .toList();
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,14 +382,20 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                     ),
                   ),
                   _CategoryFilter(
-                    categories: products
-                        .map((product) => product.category)
-                        .toSet()
-                        .where((category) =>
-                            category != BoutiqueProductCategory.autre)
-                        .toList()
-                      ..sort((a, b) => boutiqueCategoryLabel(a)
-                          .compareTo(boutiqueCategoryLabel(b))),
+                    categories:
+                        products
+                            .map((product) => product.category)
+                            .toSet()
+                            .where(
+                              (category) =>
+                                  category != BoutiqueProductCategory.autre,
+                            )
+                            .toList()
+                          ..sort(
+                            (a, b) => boutiqueCategoryLabel(
+                              a,
+                            ).compareTo(boutiqueCategoryLabel(b)),
+                          ),
                     selectedCategory: _selectedCategory,
                     onSelected: (category) {
                       setState(() => _selectedCategory = category);
@@ -386,8 +418,8 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                                       requiredSection: 'produits',
                                       builder: (_) =>
                                           BoutiqueProductDetailScreen(
-                                        product: product,
-                                      ),
+                                            product: product,
+                                          ),
                                     ),
                                   );
                                 },
@@ -446,11 +478,7 @@ class _BoutiqueHomeCard extends StatelessWidget {
                       : AppColors.surfaceGrey,
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Icon(
-                  icon,
-                  color: AppColors.middenblauw,
-                  size: 30,
-                ),
+                child: Icon(icon, color: AppColors.middenblauw, size: 30),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -609,10 +637,7 @@ class _ProductCard extends StatelessWidget {
   final BoutiqueProduct product;
   final VoidCallback onTap;
 
-  const _ProductCard({
-    required this.product,
-    required this.onTap,
-  });
+  const _ProductCard({required this.product, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

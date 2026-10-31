@@ -1,0 +1,22 @@
+name: Boutique member missions
+on:
+  pull_request:
+    branches: [dev]
+permissions:
+  contents: read
+jobs:
+  mobile-missions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test test/services/member_missions_service_test.dart test/screens/member_missions_screen_test.dart test/services/boutique_access_service_test.dart test/screens/boutique_screen_access_test.dart test/services/deep_link_startup_test.dart
+      - run: flutter analyze --no-pub --no-fatal-infos lib/services/boutique/member_missions_service.dart lib/screens/boutique/member_missions_screen.dart lib/services/boutique/boutique_access_service.dart
+      - run: node functions/src/expenses/__tests__/expenseSync.check.cjs
+      - run: git diff --exit-code -- pubspec.lock
