@@ -45,6 +45,7 @@ function buildCanonicalFromLegacy(legacy, id) {
     legacy_collection: 'demandes_remboursement',
     legacy_document_id: id ?? null,
     operation_id: firstDefined(legacy, ['operation_id', 'evenement_id']),
+    boutique_supplier_batch_id: legacy.boutique_supplier_batch_id ?? null,
     operation_title: firstDefined(legacy, ['operation_titre', 'evenement_titre']),
     requester_id: legacy.demandeur_id ?? null,
     requester_name: legacy.demandeur_nom ?? null,
@@ -102,6 +103,7 @@ function buildLegacyFromCanonical(canon, id) {
   return compact({
     club_id: canon.club_id ?? null,
     operation_id: firstDefined(canon, ['operation_id', 'evenement_id']),
+    boutique_supplier_batch_id: canon.boutique_supplier_batch_id ?? null,
     operation_titre: firstDefined(canon, ['operation_title', 'operation_titre']),
     demandeur_id: firstDefined(canon, ['requester_id', 'demandeur_id']),
     demandeur_nom: firstDefined(canon, ['requester_name', 'demandeur_nom']),

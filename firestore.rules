@@ -464,6 +464,20 @@ service cloud.firestore {
       );
     }
 
+    function validBoutiqueExpenseAssociation(clubId, data, requesterId) {
+      let batchId = data.get('boutique_supplier_batch_id', null);
+      return batchId == null || (batchId is string && batchId.matches('^[^/]{1,200}$')
+        && exists(/databases/$(database)/documents/clubs/$(clubId)/supplier_order_batches/$(batchId))
+        && boutiqueExpenseSupplierMatches(clubId,
+          get(/databases/$(database)/documents/clubs/$(clubId)/supplier_order_batches/$(batchId)).data.supplierId,
+          requesterId));
+    }
+    function boutiqueExpenseSupplierMatches(clubId, supplierId, requesterId) {
+      let supplier = get(/databases/$(database)/documents/clubs/$(clubId)/fournisseurs/$(supplierId)).data;
+      return supplier.get('supplierType', 'external') == 'club_member'
+        && supplier.get('memberId', null) == requesterId && supplier.get('actif', false) == true;
+    }
+
     function hasCanonicalApprovalMetadata(data) {
       // Canonical schema (expense_claims) — see normalizeCanonicalExpenseClaimPayload()
       return data.status != 'approved' || (
@@ -821,6 +835,7 @@ service cloud.firestore {
         // field at all; a bare `data.categorie != ...` on a missing field
         // denies the write instead of coercing to null.
         allow create: if isMember(clubId)
+          && validBoutiqueExpenseAssociation(clubId, request.resource.data, request.resource.data.get('demandeur_id', null))
           && request.resource.data.get('categorie', '') != 'remboursement_inscription'
           && (
             canManageExpenses(clubId) ||
@@ -831,11 +846,14 @@ service cloud.firestore {
         // CRITICAL: Validate approval metadata when status is set to 'approuve'
         allow update: if isMember(clubId)
           && hasValidApprovalMetadata(request.resource.data)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['boutique_supplier_batch_id', 'demandeur_id'])
+            || validBoutiqueExpenseAssociation(clubId, request.resource.data, request.resource.data.get('demandeur_id', null)))
           && (
             canManageExpenses(clubId) ||
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.demandeur_id == request.auth.uid &&
+              request.resource.data.demandeur_id == resource.data.demandeur_id &&
               resource.data.statut in ['brouillon', 'soumis']
             )
           );
@@ -863,7 +881,8 @@ service cloud.firestore {
         // NOTE: canonical doc uses English field name `category` (mapped from
         // legacy `categorie` in normalizeCanonicalExpenseClaimPayload).
         // Use .get(field, default) so a missing field doesn't deny the write.
-        allow create: if isMember(clubId) && (
+        allow create: if isMember(clubId)
+          && validBoutiqueExpenseAssociation(clubId, request.resource.data, request.resource.data.get('requester_id', null)) && (
           canManageExpenses(clubId) ||
           (
             request.resource.data.requester_id == request.auth.uid
@@ -875,11 +894,14 @@ service cloud.firestore {
         // Status check uses canonical 'draft' / 'submitted' (mapped from legacy brouillon/soumis).
         allow update: if isMember(clubId)
           && hasCanonicalApprovalMetadata(request.resource.data)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['boutique_supplier_batch_id', 'requester_id'])
+            || validBoutiqueExpenseAssociation(clubId, request.resource.data, request.resource.data.get('requester_id', null)))
           && (
             canManageExpenses(clubId) ||
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.requester_id == request.auth.uid &&
+              request.resource.data.requester_id == resource.data.requester_id &&
               resource.data.status in ['draft', 'submitted']
             )
           );
@@ -2613,7 +2635,15 @@ service cloud.firestore {
     }
 
     match /clubs/{clubId}/supplier_order_batches/{batchId} {
-      allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+      allow read, create, delete: if isAdmin(clubId) && hasValidSession(clubId);
+      allow update: if isAdmin(clubId) && hasValidSession(clubId)
+        && (resource.data.status != 'draft' || resource.data.get('supplierOrderEmail', null) == null
+          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['items', 'supplierId']))
+        && (resource.data.status == 'draft'
+          || (resource.data.get('supplierType', 'external') != 'club_member'
+            && (!exists(/databases/$(database)/documents/clubs/$(clubId)/fournisseurs/$(resource.data.supplierId))
+              || get(/databases/$(database)/documents/clubs/$(clubId)/fournisseurs/$(resource.data.supplierId)).data.get('supplierType', 'external') != 'club_member'))
+          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['items', 'status', 'receivedAt', 'receivedBy', 'lastReceiptKey']));
     }
 
     match /clubs/{clubId}/delivery_notes/{noteId} {

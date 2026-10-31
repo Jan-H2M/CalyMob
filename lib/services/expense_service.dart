@@ -18,35 +18,43 @@ class ExpenseService {
   static const String _collection = 'expense_claims';
 
   /// Stream des demandes de l'utilisateur
-  Stream<List<ExpenseClaim>> getUserExpensesStream(String clubId, String userId) {
+  Stream<List<ExpenseClaim>> getUserExpensesStream(
+    String clubId,
+    String userId,
+  ) {
     return _firestore
         .collection('clubs/$clubId/$_collection')
         .where('requester_id', isEqualTo: userId)
         .snapshots()
         .map((snapshot) {
-      final expenses = snapshot.docs
-          .map((doc) => ExpenseClaim.fromFirestore(doc))
-          .toList();
-      expenses.sort((a, b) => b.dateDemande.compareTo(a.dateDemande));
-      debugPrint('💸 ${expenses.length} demandes chargées pour user $userId');
-      return expenses;
-    });
+          final expenses = snapshot.docs
+              .map((doc) => ExpenseClaim.fromFirestore(doc))
+              .toList();
+          expenses.sort((a, b) => b.dateDemande.compareTo(a.dateDemande));
+          debugPrint(
+            '💸 ${expenses.length} demandes chargées pour user $userId',
+          );
+          return expenses;
+        });
   }
 
   /// Stream des demandes en attente d'approbation (statuts canonical)
-  Stream<List<ExpenseClaim>> getPendingApprovalsStream(String clubId, String currentUserId) {
+  Stream<List<ExpenseClaim>> getPendingApprovalsStream(
+    String clubId,
+    String currentUserId,
+  ) {
     return _firestore
         .collection('clubs/$clubId/$_collection')
         .where('status', whereIn: ['submitted', 'pending_approval'])
         .snapshots()
         .map((snapshot) {
-      final expenses = snapshot.docs
-          .map((doc) => ExpenseClaim.fromFirestore(doc))
-          .toList();
-      expenses.sort((a, b) => b.dateDemande.compareTo(a.dateDemande));
-      debugPrint('✅ ${expenses.length} demandes en attente d\'approbation');
-      return expenses;
-    });
+          final expenses = snapshot.docs
+              .map((doc) => ExpenseClaim.fromFirestore(doc))
+              .toList();
+          expenses.sort((a, b) => b.dateDemande.compareTo(a.dateDemande));
+          debugPrint('✅ ${expenses.length} demandes en attente d\'approbation');
+          return expenses;
+        });
   }
 
   /// Créer une nouvelle demande de remboursement (canonical)
@@ -58,6 +66,7 @@ class ExpenseService {
     required String description,
     required DateTime dateDepense,
     String? operationId,
+    String? boutiqueSupplierBatchId,
     List<File>? photoFiles,
   }) async {
     try {
@@ -67,21 +76,24 @@ class ExpenseService {
       final expenseRef = await _firestore
           .collection('clubs/$clubId/$_collection')
           .add({
-        'club_id': clubId,
-        'requester_id': userId,
-        'requester_name': userName,
-        'amount': montant,
-        'description': description,
-        'status': 'submitted',
-        'expense_date': Timestamp.fromDate(dateDepense),
-        'requested_at': Timestamp.now(),
-        'operation_id': operationId,
-        'fiscal_year_id': fiscalYearId, // Required for web app filtering
-        'source': 'mobile', // Identifies CalyMob submission (drives confirmation email)
-        'supporting_document_urls': <String>[],
-        'created_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+            'club_id': clubId,
+            'requester_id': userId,
+            'requester_name': userName,
+            'amount': montant,
+            'description': description,
+            'status': 'submitted',
+            'expense_date': Timestamp.fromDate(dateDepense),
+            'requested_at': Timestamp.now(),
+            'operation_id': operationId,
+            if (boutiqueSupplierBatchId != null)
+              'boutique_supplier_batch_id': boutiqueSupplierBatchId,
+            'fiscal_year_id': fiscalYearId, // Required for web app filtering
+            'source':
+                'mobile', // Identifies CalyMob submission (drives confirmation email)
+            'supporting_document_urls': <String>[],
+            'created_at': FieldValue.serverTimestamp(),
+            'updated_at': FieldValue.serverTimestamp(),
+          });
 
       final expenseId = expenseRef.id;
       debugPrint('✅ Demande créée: $expenseId');
@@ -120,12 +132,16 @@ class ExpenseService {
     for (int i = 0; i < photoFiles.length; i++) {
       try {
         final file = photoFiles[i];
-        final fileName = 'photo_${i + 1}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final storageRef = _storage
-            .ref()
-            .child('clubs/$clubId/demandes/$expenseId/$fileName');
+        final fileName =
+            'photo_${i + 1}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final storageRef = _storage.ref().child(
+          'clubs/$clubId/demandes/$expenseId/$fileName',
+        );
         debugPrint('📤 Upload photo ${i + 1}/${photoFiles.length}: $fileName');
-        await storageRef.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+        await storageRef.putFile(
+          file,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         final downloadUrl = await storageRef.getDownloadURL();
         photoUrls.add(downloadUrl);
         debugPrint('✅ Photo ${i + 1} uploadée');
@@ -137,9 +153,15 @@ class ExpenseService {
   }
 
   /// Supprimer une demande (seulement si statut soumis/submitted)
-  Future<void> deleteExpenseClaim(String clubId, String expenseId, String userId) async {
+  Future<void> deleteExpenseClaim(
+    String clubId,
+    String expenseId,
+    String userId,
+  ) async {
     try {
-      final docRef = _firestore.collection('clubs/$clubId/$_collection').doc(expenseId);
+      final docRef = _firestore
+          .collection('clubs/$clubId/$_collection')
+          .doc(expenseId);
       final doc = await docRef.get();
       if (!doc.exists) {
         throw Exception('Demande non trouvée');
@@ -184,16 +206,20 @@ class ExpenseService {
         .collection('clubs/$clubId/$_collection')
         .doc(demandeId)
         .update({
-      'status': 'approved',
-      'approved_by': approverId,
-      'approved_by_name': approverName,
-      'approved_at': FieldValue.serverTimestamp(),
-      'updated_at': FieldValue.serverTimestamp(),
-    });
+          'status': 'approved',
+          'approved_by': approverId,
+          'approved_by_name': approverName,
+          'approved_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
   }
 
   /// Refuser une demande de remboursement (canonical)
-  Future<void> rejectExpense(String clubId, String demandeId, {String? reason}) async {
+  Future<void> rejectExpense(
+    String clubId,
+    String demandeId, {
+    String? reason,
+  }) async {
     final updates = <String, dynamic>{
       'status': 'rejected',
       'updated_at': FieldValue.serverTimestamp(),
@@ -218,7 +244,9 @@ class ExpenseService {
   }) async {
     try {
       debugPrint('💸 Mise à jour demande: $expenseId');
-      final docRef = _firestore.collection('clubs/$clubId/$_collection').doc(expenseId);
+      final docRef = _firestore
+          .collection('clubs/$clubId/$_collection')
+          .doc(expenseId);
       final doc = await docRef.get();
       if (!doc.exists) {
         throw Exception('Demande introuvable');

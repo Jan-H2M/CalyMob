@@ -39,6 +39,27 @@ class DeepLinkService {
   final _diveShareInboxController = StreamController<void>.broadcast();
   Stream<void> get onDiveShareInbox => _diveShareInboxController.stream;
 
+  final _boutiqueMissionsController = StreamController<void>.broadcast();
+  Stream<void> get onBoutiqueMissions => _boutiqueMissionsController.stream;
+  bool hasPendingBoutiqueMissions = false;
+
+  Future<void> openPendingBoutiqueMissions({
+    required bool authenticated,
+    required bool navigationReady,
+    required Future<void> Function() open,
+  }) async {
+    if (!hasPendingBoutiqueMissions || !authenticated || !navigationReady) {
+      return;
+    }
+    hasPendingBoutiqueMissions = false;
+    try {
+      await open();
+    } catch (_) {
+      hasPendingBoutiqueMissions = true;
+      rethrow;
+    }
+  }
+
   StreamSubscription<Uri>? _linkSubscription;
   bool _isInitialized = false;
 
@@ -77,6 +98,13 @@ class DeepLinkService {
     debugPrint('DeepLink: Handling URI: $uri');
     debugPrint(
         'DeepLink: Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
+    if (uri.scheme == 'calymob' &&
+        uri.host == 'boutique' &&
+        uri.path == '/missions') {
+      hasPendingBoutiqueMissions = true;
+      _boutiqueMissionsController.add(null);
+      return;
+    }
     if (uri.scheme == 'calymob' && uri.host == 'dive-share-inbox') {
       _diveShareInboxController.add(null);
       return;
@@ -174,6 +202,7 @@ class DeepLinkService {
     _passwordResetController.close();
     _historicalValidationController.close();
     _diveShareInboxController.close();
+    _boutiqueMissionsController.close();
     _isInitialized = false;
   }
 }

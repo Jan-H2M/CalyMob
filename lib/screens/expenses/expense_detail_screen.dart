@@ -138,6 +138,10 @@ class ExpenseDetailScreen extends StatelessWidget {
                       label: 'Catégorie',
                       value: expense.categorie ?? 'Non spécifié',
                     ),
+                    if (expense.boutiqueSupplierBatchId != null) ...[
+                      const SizedBox(height: 12),
+                      _buildInfoRow(icon: Icons.storefront, label: 'Boutique', value: 'Commande Boutique liée à cette note de frais'),
+                    ],
                     if (expense.operationId != null) ...[
                       const SizedBox(height: 12),
                       _buildInfoRow(

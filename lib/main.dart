@@ -1,3 +1,5 @@
+import 'utils/boutique_mission_navigation.dart';
+import 'screens/boutique/member_missions_screen.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart'
@@ -244,6 +246,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   String? _notificationIdentityUserId;
   int _notificationIdentityGeneration = 0;
   bool _diveShareNavigationPending = false;
+  final _boutiqueNavigation = AuthenticatedNavigationReadiness();
 
   @override
   void initState() {
@@ -254,10 +257,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       Provider.of<UnreadCountProvider>(context, listen: false).refresh();
     };
     _notificationNavigatorObserver = _NotificationNavigatorObserver(
-      onNavigationChanged: _scheduleNotificationDrain,
+      onNavigationChanged: () {
+        _boutiqueNavigation.observe(_notificationNavigatorObserver.currentRoute, _notificationAuthProvider?.currentUser?.uid);
+        _scheduleNotificationDrain();
+      },
     );
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
+    _deepLinkService.onBoutiqueMissions.listen((_) => _openBoutiqueMissions());
     _deepLinkService.onDiveShareInbox.listen((_) => _openDiveShareInbox());
     _setupNotificationTapHandlers();
     NotificationHistoryNavigationDispatcher.instance.handler = (data) {
@@ -295,6 +302,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       unawaited(_recordNativeStartup());
       _updateBadgeFromUnreadCounts();
       unawaited(_openDiveShareInbox());
+      unawaited(_openBoutiqueMissions());
     });
   }
 
@@ -358,6 +366,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     } finally {
       unawaited(trace.finish());
     }
+  }
+
+  Future<void> _openBoutiqueMissions() async {
+    if (!_deepLinkService.hasPendingBoutiqueMissions || !mounted) return;
+    final navContext = _navigatorKey.currentContext;
+    await _deepLinkService.openPendingBoutiqueMissions(
+      authenticated: navContext != null && navContext.mounted && Provider.of<AuthProvider>(navContext, listen: false).currentUser != null,
+      navigationReady: boutiqueMissionNavigationReady(
+        hasNavigator: _navigatorKey.currentState != null,
+        memberLoaded: _notificationAuthProvider?.currentUser != null
+            && _notificationMemberProvider?.isLoadedFor(FirebaseConfig.defaultClubId, _notificationAuthProvider!.currentUser!.uid) == true,
+        passwordChangeRequired: _notificationMemberProvider?.requirePasswordChange != false,
+        loginCompleted: _boutiqueNavigation.isReadyFor(_notificationAuthProvider?.currentUser?.uid),
+      ),
+      open: () async {
+        await _navigatorKey.currentState?.push(boutiqueAccessGuardedRoute(
+          requiredSection: 'missions', builder: (_) => const MemberMissionsScreen()));
+      },
+    );
   }
 
   Future<void> _openDiveShareInbox() async {
@@ -550,6 +577,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _synchronizeNotificationIdentity();
     _scheduleNotificationDrain();
     unawaited(_openDiveShareInbox());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_openBoutiqueMissions());
+    });
   }
 
   void _synchronizeNotificationIdentity() {
@@ -566,6 +596,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (nextUserId == _notificationIdentityUserId) return;
 
     _notificationIdentityUserId = nextUserId;
+    _boutiqueNavigation.reset();
     _notificationIdentityGeneration++;
     _notificationDrainOwnerGeneration = null;
     _clearNotificationIdentityState();
@@ -595,6 +626,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _notificationDrainScheduled = false;
       _attachNotificationReadinessListeners();
       unawaited(_drainNotificationQueue());
+      unawaited(_openBoutiqueMissions());
     });
   }
 
@@ -1118,6 +1150,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // die veranderd zijn terwijl de app in de achtergrond was)
       _refreshFcmToken();
       unawaited(_openDiveShareInbox());
+      unawaited(_openBoutiqueMissions());
     } else if (state == AppLifecycleState.paused) {
       // Badge updaten bij vertrek uit app
       _updateBadgeFromUnreadCounts();
