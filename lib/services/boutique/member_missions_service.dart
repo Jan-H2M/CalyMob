@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
-typedef MissionTransport =
-    Future<Map<String, dynamic>> Function(Map<String, dynamic> request);
+typedef MissionTransport = Future<Map<String, dynamic>> Function(
+    Map<String, dynamic> request);
 
 class MemberMission {
   final Map<String, dynamic> data;
@@ -35,14 +35,15 @@ class MemberMissionsException implements Exception {
   final String code;
   const MemberMissionsException(this.code);
   String get message => switch (code) {
-    'own_assignment_required' ||
-    'active_member_required' => 'Cette mission ne vous est plus attribuée.',
-    'stale_or_invalid_transition' =>
-      'La mission a changé. Actualisez avant de confirmer.',
-    'handover_location_required' => 'Indiquez le lieu de remise.',
-    _ =>
-      'Impossible de confirmer. Actualisez pour vérifier le résultat avant de réessayer.',
-  };
+        'own_assignment_required' ||
+        'active_member_required' =>
+          'Cette mission ne vous est plus attribuée.',
+        'stale_or_invalid_transition' =>
+          'La mission a changé. Actualisez avant de confirmer.',
+        'handover_location_required' => 'Indiquez le lieu de remise.',
+        _ =>
+          'Impossible de confirmer. Actualisez pour vérifier le résultat avant de réessayer.',
+      };
 }
 
 class MemberMissionsService {
@@ -85,6 +86,8 @@ class MemberMissionsService {
 
   Future<Map<String, dynamic>> list(String clubId) =>
       call({'clubId': clubId, 'action': 'list'});
+  Future<Map<String, dynamic>> expenseOrders(String clubId) =>
+      call({'clubId': clubId, 'action': 'expense_orders'});
   Future<void> update(
     String clubId,
     MemberMission mission,

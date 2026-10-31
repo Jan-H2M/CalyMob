@@ -366,10 +366,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Future<void> _openBoutiqueMissions() async {
     if (!_deepLinkService.hasPendingBoutiqueMissions || !mounted) return;
     final navContext = _navigatorKey.currentContext;
-    if (navContext == null || !navContext.mounted || Provider.of<AuthProvider>(navContext, listen: false).currentUser == null) return;
-    _deepLinkService.hasPendingBoutiqueMissions = false;
-    await _navigatorKey.currentState?.push(boutiqueAccessGuardedRoute(
-      requiredSection: 'missions', builder: (_) => const MemberMissionsScreen()));
+    await _deepLinkService.openPendingBoutiqueMissions(
+      authenticated: navContext != null && navContext.mounted && Provider.of<AuthProvider>(navContext, listen: false).currentUser != null,
+      navigationReady: _navigatorKey.currentState != null,
+      open: () async {
+        await _navigatorKey.currentState?.push(boutiqueAccessGuardedRoute(
+          requiredSection: 'missions', builder: (_) => const MemberMissionsScreen()));
+      },
+    );
   }
 
   Future<void> _openDiveShareInbox() async {
@@ -562,6 +566,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _synchronizeNotificationIdentity();
     _scheduleNotificationDrain();
     unawaited(_openDiveShareInbox());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_openBoutiqueMissions());
+    });
   }
 
   void _synchronizeNotificationIdentity() {

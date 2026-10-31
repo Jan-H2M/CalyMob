@@ -12,6 +12,7 @@ void main() {
       return {'version': 1, 'eligible': true, 'missions': []};
     });
     await service.list('club');
+    await service.expenseOrders('club');
     await service.update(
         'club',
         const MemberMission(
@@ -19,6 +20,7 @@ void main() {
         'handed_over',
         location: 'Piscine');
     expect(calls.first, {'clubId': 'club', 'action': 'list'});
+    expect(calls[1], {'clubId': 'club', 'action': 'expense_orders'});
     expect(calls.last, {
       'clubId': 'club',
       'action': 'update',

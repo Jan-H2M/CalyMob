@@ -41,6 +41,9 @@ Shared contract owned by CalyCompta (API) and CalyMob (client). Identical copy i
 * Club-member suppliers never expect supplier invoices. Reimbursement is an
   ordinary receipt-backed expense claim; nullable `boutique_supplier_batch_id` is
   a voluntary per-expense association, unrelated to approval or payment authority.
+  `{clubId, action:"expense_orders"}` returns `{version:1, eligible, orders}` with
+  only own placed/completed batches (`batchId`, `label`, `orderedAt`), so a receipt
+  can still be linked after final Remis. No buyer contact or financial fields.
 * Order notification uses the friendly French member template. Preparing,
   cancelling and failed sending never mark ordered; only the existing successful
   provider receipt and matching line fingerprint permit placement. DEV sends none.

@@ -59,15 +59,15 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       return;
     }
     try {
-      final data = await const MemberMissionsService().list(
+      final data = await const MemberMissionsService().expenseOrders(
         FirebaseConfig.defaultClubId,
       );
       if (mounted)
         setState(() {
           _boutiqueChoices = {
-            for (final row in data['missions'] as List)
+            for (final row in data['orders'] as List)
               row['batchId'] as String:
-                  row['orderLabel'] as String? ?? 'Commande Boutique',
+                  row['label'] as String? ?? 'Commande Boutique',
           };
         });
     } catch (_) {
