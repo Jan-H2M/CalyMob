@@ -106,7 +106,9 @@ Future<void> main() async {
           : 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
       options.tracesSampleRate =
           profileStartup ? 1.0 : (kReleaseMode ? 0.2 : 0.0);
-      options.environment = kDebugMode ? 'debug' : environment;
+      options.environment = kReleaseMode || (!kDebugMode && profileStartup)
+          ? environment
+          : 'debug';
       options.debug = kDebugMode;
 
       // Ne pas envoyer d'événements en debug mode (sécurité supplémentaire)
