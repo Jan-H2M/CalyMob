@@ -100,7 +100,8 @@ precedes any permission/token request. They are not phone timing measurements.
 
 Use a development iPhone. The preparation script creates a separate detached
 worktree, synthetic `demo-calymob-startup` native Firebase configuration, disabled
-native collection/auto-init, empty capabilities, and unique `.startupprofile`
+native collection/auto-init, empty capabilities, no URL/document handlers, a
+disabled share extension, and unique `.startupprofile`
 bundle IDs. It does not overwrite the installed production app. AppDelegate
 checks the expanded Flutter target, demo config and collection flags BEFORE
 plugin registration; an ordinary checkout refuses to launch this profiling
@@ -166,7 +167,9 @@ PR checkout with `--revision <PR_BASE_COMMIT>` and a different new destination
 (`/tmp/calymob-native-profile-baseline`), then repeat step 2 from that destination.
 Find the base with `gh pr view 189 --json baseRefOid`. The script copies the same
 current diagnostic delegate and shell into both native dependency sets. Both
-use identical demo configuration and omit native permission/APNs work; therefore
+use identical demo configuration, omit the native permission prompt and explicit
+AppDelegate APNs registration (Firebase Messaging can still register with APNs
+natively); therefore
 this isolates engine/plugin costs and does not measure the permission change or
 full app behavior. Keep both diagnostic worktrees uncommitted. Do not copy their
 synthetic config into the actual app branches.

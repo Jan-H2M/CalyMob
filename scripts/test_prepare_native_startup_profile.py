@@ -14,7 +14,17 @@ class NativeProfileConfigurationTest(unittest.TestCase):
                 (root / name).mkdir(parents=True)
             project = root / 'ios/Runner.xcodeproj/project.pbxproj'
             project.write_text('be.calypsodc.calymob be.calypsodc.calymob.SuuntoShare')
-            (root / 'ios/Runner/Info.plist').write_bytes(plistlib.dumps({}))
+            (root / 'ios/Runner/Info.plist').write_bytes(plistlib.dumps({
+                'CFBundleURLTypes': [{'CFBundleURLSchemes': ['calymob']}],
+                'CFBundleDocumentTypes': [{'CFBundleTypeName': 'Dive file'}],
+                'UTImportedTypeDeclarations': [{'UTTypeIdentifier': 'production'}],
+                'UIBackgroundModes': ['remote-notification'],
+            }))
+            (root / 'ios/ShareExtension/Info.plist').write_bytes(plistlib.dumps({
+                'CFBundleDisplayName': 'CalyMob',
+                'NSExtension': {'NSExtensionAttributes': {
+                    'NSExtensionActivationRule': 'TRUEPREDICATE'}},
+            }))
             (root / 'ios/Runner/GoogleService-Info.plist').write_bytes(
                 plistlib.dumps({'PROJECT_ID': 'production', 'API_KEY': 'old-key'}))
             sanitize(root)
@@ -26,6 +36,13 @@ class NativeProfileConfigurationTest(unittest.TestCase):
                 'be.calypsodc.calymob.startupprofile be.calypsodc.calymob.startupprofile.SuuntoShare')
             info = plistlib.loads((root / 'ios/Runner/Info.plist').read_bytes())
             self.assertEqual(info['CalyMobFlutterTarget'], '$(FLUTTER_TARGET)')
+            for key in ['CFBundleURLTypes', 'CFBundleDocumentTypes',
+                        'UTImportedTypeDeclarations', 'UIBackgroundModes']:
+                self.assertNotIn(key, info)
+            extension = plistlib.loads((root / 'ios/ShareExtension/Info.plist').read_bytes())
+            self.assertEqual(extension['CFBundleDisplayName'], 'Startup DEV (disabled)')
+            self.assertEqual(extension['NSExtension']['NSExtensionAttributes'][
+                'NSExtensionActivationRule'], 'FALSEPREDICATE')
             self.assertFalse(info['FirebaseDataCollectionDefaultEnabled'])
             self.assertFalse(info['FirebaseCrashlyticsCollectionEnabled'])
             self.assertFalse(info['FirebaseMessagingAutoInitEnabled'])

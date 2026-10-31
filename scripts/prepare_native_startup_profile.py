@@ -32,7 +32,20 @@ def sanitize(root):
         'FirebaseCrashlyticsCollectionEnabled': False,
         'FirebaseMessagingAutoInitEnabled': False,
     })
+    # Do not claim production payment/reset URLs, document opens or background
+    # entrypoints alongside the member's ordinary installed CalyMob app.
+    for key in ['CFBundleURLTypes', 'CFBundleDocumentTypes',
+                'UTExportedTypeDeclarations', 'UTImportedTypeDeclarations',
+                'UIBackgroundModes']:
+        info.pop(key, None)
     info_path.write_bytes(plistlib.dumps(info))
+    extension_path = root / 'ios/ShareExtension/Info.plist'
+    extension = plistlib.loads(extension_path.read_bytes())
+    extension['CFBundleDisplayName'] = 'Startup DEV (disabled)'
+    attributes = extension.setdefault('NSExtension', {}).setdefault(
+        'NSExtensionAttributes', {})
+    attributes['NSExtensionActivationRule'] = 'FALSEPREDICATE'
+    extension_path.write_bytes(plistlib.dumps(extension))
     # This target does not need production APNs, keychain or app-group access.
     for name in ['ios/Runner/Runner.entitlements',
                  'ios/ShareExtension/CalyMobSuuntoShare.entitlements']:
