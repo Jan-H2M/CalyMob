@@ -9,6 +9,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'crashlytics_service.dart';
+import 'startup_trace.dart';
 
 // Import dart:io only on non-web platforms
 import 'notification_service_io.dart'
@@ -40,12 +41,23 @@ class NotificationService {
 
   factory NotificationService() => _instance;
 
-  NotificationService._internal();
+  NotificationService._internal()
+      : _messaging = FirebaseMessaging.instance,
+        _firestore = FirebaseFirestore.instance,
+        _localNotifications = FlutterLocalNotificationsPlugin();
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
+  @visibleForTesting
+  NotificationService.forTesting({
+    required FirebaseMessaging messaging,
+    required FirebaseFirestore firestore,
+    required FlutterLocalNotificationsPlugin localNotifications,
+  })  : _messaging = messaging,
+        _firestore = firestore,
+        _localNotifications = localNotifications;
+
+  final FirebaseMessaging _messaging;
+  final FirebaseFirestore _firestore;
+  final FlutterLocalNotificationsPlugin _localNotifications;
 
   String? _initialLocalNotificationPayload;
 
@@ -75,7 +87,11 @@ class NotificationService {
       // Initialiser flutter_local_notifications pour afficher les notifications en foreground
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
-      const iosSettings = DarwinInitializationSettings();
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
       const initSettings =
           InitializationSettings(android: androidSettings, iOS: iosSettings);
       await _localNotifications.initialize(
@@ -98,29 +114,8 @@ class NotificationService {
             launchDetails?.notificationResponse?.payload;
       }
 
-      // Demander la permission (iOS uniquement, Android 13+ demande aussi)
-      final settings = await _messaging.requestPermission(
-        alert: true,
-        announcement: false,
-        badge: true,
-        carPlay: false,
-        criticalAlert: false,
-        provisional: false,
-        sound: true,
-      );
-
-      debugPrint('✅ Permission notifications: ${settings.authorizationStatus}');
-
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        // Obtenir le token FCM
-        final token = await _messaging.getToken();
-        if (token != null) {
-          debugPrint('✅ FCM token disponible');
-          return;
-        }
-      }
-
-      debugPrint('⚠️  Notifications non autorisées');
+      // Permission is requested separately after launch payload delivery.
+      // Token acquisition belongs to authenticated member registration.
     } catch (e, stack) {
       debugPrint('❌ Erreur initialisation notifications: $e');
       CrashlyticsService.notificationError(e, stack, 'initialize failed');
@@ -375,12 +370,15 @@ class NotificationService {
 
   /// Obtenir le token FCM actuel
   Future<String?> getToken() async {
+    final trace = StartupTrace('calymob.notifications.token');
     try {
-      return await _messaging.getToken();
+      return await trace.measure('messaging.get_token', _messaging.getToken);
     } catch (e, stack) {
       debugPrint('❌ Erreur récupération token FCM: $e');
       CrashlyticsService.notificationError(e, stack, 'getToken failed');
       return null;
+    } finally {
+      unawaited(trace.finish());
     }
   }
 
@@ -712,6 +710,16 @@ class NotificationService {
           e, stack, 'areNotificationsEnabled check failed');
       return false;
     }
+  }
+
+  /// Only a new grant needs token-registration retry. Existing grants are
+  /// already handled by auth; avoid a duplicate device/token Firestore write.
+  Future<bool> requestStartupPermission() async {
+    final settings = await _messaging.getNotificationSettings();
+    if (settings.authorizationStatus != AuthorizationStatus.notDetermined) {
+      return false;
+    }
+    return requestPermission();
   }
 
   /// Demander la permission pour les notifications

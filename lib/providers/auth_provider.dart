@@ -14,6 +14,8 @@ import '../services/local_read_tracker.dart';
 import '../services/member_email_login_audit_service.dart';
 import '../config/firebase_config.dart';
 import '../utils/member_name.dart';
+import '../services/startup_trace.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// Provider pour l'état d'authentification
 class AuthProvider with ChangeNotifier {
@@ -22,7 +24,8 @@ class AuthProvider with ChangeNotifier {
   final NotificationService _notificationService = NotificationService();
   final ProfileService _profileService = ProfileService();
   final BiometricService _biometricService = BiometricService();
-  final MemberEmailLoginAuditService _emailLoginAuditService = MemberEmailLoginAuditService();
+  final MemberEmailLoginAuditService _emailLoginAuditService =
+      MemberEmailLoginAuditService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Stream subscription for memory management
@@ -38,6 +41,19 @@ class AuthProvider with ChangeNotifier {
   /// login() triggeren anders beide).
   final Set<String> _freshInstallHandledIdentities = <String>{};
   int _authGeneration = 0;
+  final StartupTrace _startupAuth = StartupTrace('calymob.startup.auth');
+  Timer? _startupAuthTimeout;
+  bool _startupAuthFinished = false;
+
+  void _finishStartupAuth(SpanStatus status) {
+    if (_startupAuthFinished) return;
+    _startupAuthFinished = true;
+    _startupAuthTimeout?.cancel();
+    _startupAuth.record(
+        'auth.first_state', _startupAuth.startedAt, _startupAuth.now,
+        status: status);
+    unawaited(_startupAuth.finish(status: status));
+  }
 
   // Getters
   User? get currentUser => _currentUser;
@@ -47,8 +63,11 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _currentUser != null;
 
   AuthProvider() {
+    _startupAuthTimeout = Timer(const Duration(seconds: 30),
+        () => _finishStartupAuth(const SpanStatus.deadlineExceeded()));
     // Écouter les changements d'état d'authentification
     _authStateSubscription = _authService.authStateChanges.listen((user) {
+      _finishStartupAuth(const SpanStatus.ok());
       final authGeneration = ++_authGeneration;
       _currentUser = user;
       if (user != null) {
@@ -104,11 +123,15 @@ class AuthProvider with ChangeNotifier {
         unawaited(LocalReadTracker().deactivateContext());
       }
       notifyListeners();
+    }, onError: (Object error, StackTrace stack) {
+      _finishStartupAuth(const SpanStatus.internalError());
+      unawaited(Sentry.captureException(error, stackTrace: stack));
     });
   }
 
   @override
   void dispose() {
+    _finishStartupAuth(const SpanStatus.cancelled());
     _authStateSubscription?.cancel();
     _notificationService.stopListeningForTokenRefresh();
     super.dispose();

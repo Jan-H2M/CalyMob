@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import UserNotifications
+import os.signpost
 
 enum SuuntoSharePasteboard {
   static let type = "be.calypsodc.calymob.suunto-share-inbox"
@@ -25,13 +26,30 @@ enum SuuntoSharePasteboard {
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private let startupLog = OSLog(subsystem: "be.calypsodc.calymob", category: "Startup")
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     // Let Flutter's firebase_core handle Firebase initialization
+    // Measure the whole registrant, rather than interpreting Sentry's
+    // process-start-to-Sentry-registration interval as plugin execution time.
+    let registrationStart = Date().timeIntervalSince1970
+    let registrationClock = ProcessInfo.processInfo.systemUptime
+    os_signpost(.begin, log: startupLog, name: "GeneratedPluginRegistration")
     GeneratedPluginRegistrant.register(with: self)
+    let registrationDuration = ProcessInfo.processInfo.systemUptime - registrationClock
+    os_signpost(.end, log: startupLog, name: "GeneratedPluginRegistration")
     let controller = window?.rootViewController as! FlutterViewController
+    let startup = FlutterMethodChannel(name: "calymob/startup", binaryMessenger: controller.binaryMessenger)
+    startup.setMethodCallHandler { call, result in
+      guard call.method == "getTimings" else { result(FlutterMethodNotImplemented); return }
+      result([
+        "registrationStartUs": registrationStart * 1_000_000,
+        "registrationEndUs": (registrationStart + registrationDuration) * 1_000_000,
+        "registrationDurationMs": registrationDuration * 1000
+      ])
+    }
     let inbox = FlutterMethodChannel(name: "calymob/suunto_share_inbox", binaryMessenger: controller.binaryMessenger)
     inbox.setMethodCallHandler { call, result in
       struct InboxItem: Codable { let id: String; let storedName: String; let originalName: String; let uti: String }
@@ -120,11 +138,8 @@ enum SuuntoSharePasteboard {
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
 
-      let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-      UNUserNotificationCenter.current().requestAuthorization(
-        options: authOptions,
-        completionHandler: { _, _ in }
-      )
+      // Dart requests permission once, after its first frame and launch-payload
+      // delivery. Do not present a second dialog during native startup.
     }
 
     // Register for remote notifications
