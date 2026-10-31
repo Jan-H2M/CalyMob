@@ -29,7 +29,8 @@ Notification initialization no longer requests permission or warms an unused
 FCM token. One FCM permission path runs after the frame and local launch-payload
 delivery; native AppDelegate and local-notification initialization do not prompt.
 Existing authorizations avoid a second token/device write. A newly granted
-permission retries registration for the currently authenticated member.
+permission retries registration for the currently authenticated member. Android
+13+ also requests from its initial `denied` status; iOS denial does not re-prompt.
 Initial deep links now arrive after the app's listeners and Navigator exist.
 
 ## Measurements added
@@ -85,6 +86,7 @@ flutter analyze --no-pub lib/main.dart lib/providers/auth_provider.dart \
   test/services/startup_trace_test.dart \
   test/services/notification_startup_test.dart \
   test/services/deep_link_startup_test.dart
+python3 -m unittest discover -s scripts -p test_prepare_native_startup_profile.py
 git diff --exit-code -- pubspec.lock
 ```
 
@@ -96,9 +98,14 @@ precedes any permission/token request. They are not phone timing measurements.
 
 ## Exact physical-device procedure for Jan
 
-Use a spare development iPhone: the Runner bundle ID matches the installed app,
-so installing a development build can replace that app. No production-backed
-app launch is needed for the native investigation below. Use USB, leave the
+Use a development iPhone. The preparation script creates a separate detached
+worktree, synthetic `demo-calymob-startup` native Firebase configuration, disabled
+native collection/auto-init, empty capabilities, and unique `.startupprofile`
+bundle IDs. It does not overwrite the installed production app. AppDelegate
+checks the expanded Flutter target, demo config and collection flags BEFORE
+plugin registration; an ordinary checkout refuses to launch this profiling
+entrypoint. This guard is needed because Firebase Core configures the bundled
+native Firebase app during registration, before Dart starts. Use USB, leave the
 phone unlocked, and enable Developer Mode. Keep the same device, iOS version,
 power/thermal state and build mode throughout the comparison.
 
@@ -106,13 +113,16 @@ power/thermal state and build mode throughout the comparison.
    `git rev-parse HEAD`. On the Mini, Flutter is `/Users/jan/flutter/bin/flutter`;
    on the MacBook, find Flutter with `command -v flutter` instead of copying a
    Mini path. Run `flutter devices` and note the physical device ID.
-2. Install the **native-only** target. It draws a static local shell and reads
-   the timing bridge; it does not import the ordinary app or initialize Firebase,
-   Sentry, auth, notifications, or deep-link services. Generated native plugins
-   are still registered by AppDelegate. Keep the phone in airplane mode with
-   Wi-Fi disabled during measurement (USB stays connected):
+2. Prepare a new isolated worktree, then install the **native-only** target
+   from THAT directory. It draws a static local shell and reads the timing
+   bridge. Generated native plugins, including demo-configured Firebase Core,
+   still register; no ordinary Dart app or auth/notification/deep-link/Sentry
+   service starts. Keep airplane mode/Wi-Fi off for consistent offline timings;
+   configuration isolation, not airplane mode, prevents production access:
 
    ```sh
+   python3 scripts/prepare_native_startup_profile.py /tmp/calymob-native-profile-candidate
+   cd /tmp/calymob-native-profile-candidate
    flutter pub get --enforce-lockfile
    flutter run --profile -d '<PHYSICAL_DEVICE_ID>' \
      --target=tool/startup_profile/main.dart \
@@ -151,16 +161,18 @@ power/thermal state and build mode throughout the comparison.
    it. Run the baseline and candidate alternately to reduce thermal/order bias.
    Twenty observations are diagnostic, not a reliable field p95.
 
-For a baseline native capture, create another clean worktree at the PR base
-revision (`gh pr view <PR_NUMBER> --json baseRefOid`). Copy only
-`tool/startup_profile/main.dart` into it and repeat step 2 in that worktree. The
-baseline will report that no timing bridge exists; the Instruments call stacks
-still show the generated registrant. For paired signpost comparisons apply only
-the timing/bridge hunks from AppDelegate, leaving its original permission path
-and plugin order intact. Keep these local diagnostics outside the PR.
+For a baseline native capture, run the same preparation script from the clean
+PR checkout with `--revision <PR_BASE_COMMIT>` and a different new destination
+(`/tmp/calymob-native-profile-baseline`), then repeat step 2 from that destination.
+Find the base with `gh pr view 189 --json baseRefOid`. The script copies the same
+current diagnostic delegate and shell into both native dependency sets. Both
+use identical demo configuration and omit native permission/APNs work; therefore
+this isolates engine/plugin costs and does not measure the permission change or
+full app behavior. Keep both diagnostic worktrees uncommitted. Do not copy their
+synthetic config into the actual app branches.
 
 This native-only shell does **not** validate Dart app startup or real auth/FCM.
-A full native-app DEV backend target does not currently exist in this repository;
+A full native-app DEV backend target does not currently exist in this repository (the new shell is native-only);
 the existing isolated DEV target is a credentialless web client lab. Therefore
 the full-app Sentry before/after comparison requires a separately configured,
 verified non-production native app/backend. Do not substitute `ENV=dev` alone.

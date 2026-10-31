@@ -31,6 +31,24 @@ enum SuuntoSharePasteboard {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    let isNativeProfile = (Bundle.main.object(forInfoDictionaryKey: "CalyMobFlutterTarget") as? String)?
+      .hasSuffix("tool/startup_profile/main.dart") == true
+    if isNativeProfile {
+      // firebase_core configures the bundled native Firebase app DURING plugin
+      // registration, before Dart can reject an unsafe profiling configuration.
+      guard Bundle.main.bundleIdentifier == "be.calypsodc.calymob.startupprofile",
+            let url = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist"),
+            let data = try? Data(contentsOf: url),
+            let config = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+            config["PROJECT_ID"] as? String == "demo-calymob-startup",
+            config["GOOGLE_APP_ID"] as? String == "1:1234567890:ios:0123456789abcdef012345",
+            Bundle.main.object(forInfoDictionaryKey: "FirebaseDataCollectionDefaultEnabled") as? Bool == false,
+            Bundle.main.object(forInfoDictionaryKey: "FirebaseCrashlyticsCollectionEnabled") as? Bool == false,
+            Bundle.main.object(forInfoDictionaryKey: "FirebaseMessagingAutoInitEnabled") as? Bool == false,
+            Bundle.main.object(forInfoDictionaryKey: "FIREBASE_ANALYTICS_COLLECTION_ENABLED") as? Bool == false,
+            Bundle.main.object(forInfoDictionaryKey: "FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED") as? Bool == true
+      else { fatalError("Run scripts/prepare_native_startup_profile.py before native profiling") }
+    }
     // Let Flutter's firebase_core handle Firebase initialization
     // Measure the whole registrant, rather than interpreting Sentry's
     // process-start-to-Sentry-registration interval as plugin execution time.
@@ -143,7 +161,9 @@ enum SuuntoSharePasteboard {
     }
 
     // Register for remote notifications
-    application.registerForRemoteNotifications()
+    if !isNativeProfile {
+      application.registerForRemoteNotifications()
+    }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

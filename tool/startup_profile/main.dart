@@ -1,5 +1,7 @@
 // Native-only Instruments target. It deliberately does not import the app,
-// Firebase, authentication, notifications, deep links or Sentry initialization.
+// authentication, notifications, deep links or Sentry initialization. Native
+// Firebase is demo-only: prepare_native_startup_profile.py and AppDelegate guard
+// must sanitize and verify configuration BEFORE generated plugin registration.
 import 'dart:async';
 
 import 'package:flutter/material.dart';

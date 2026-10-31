@@ -5,6 +5,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 
 class _Settings extends Fake implements NotificationSettings {
   _Settings(this.authorizationStatus);
@@ -77,12 +78,36 @@ void main() {
   late _LocalNotifications local;
   late NotificationService service;
   setUp(() {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     messaging = _Messaging();
     local = _LocalNotifications();
     service = NotificationService.forTesting(
         messaging: messaging,
         firestore: FakeFirebaseFirestore(),
         localNotifications: local);
+  });
+
+  tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('Android 13 fresh-install denied status still requests permission',
+      () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    messaging.status = AuthorizationStatus.denied;
+    final result = service.requestStartupPermission();
+    await Future<void>.delayed(Duration.zero);
+    expect(messaging.permissionRequests, 1);
+    messaging.permission.complete(_Settings(AuthorizationStatus.authorized));
+    expect(await result, isTrue);
+  });
+
+  test('Android denial does not retry token registration', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    messaging.status = AuthorizationStatus.denied;
+    messaging.permission.complete(_Settings(AuthorizationStatus.denied));
+    expect(await service.requestStartupPermission(), isFalse);
+    expect(messaging.permissionRequests, 1);
   });
 
   test('launch payload and tap callback are ready without permission or token',

@@ -10,6 +10,9 @@ on:
       - 'lib/services/notification_service.dart'
       - 'lib/services/deep_link_service.dart'
       - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Info.plist'
+      - 'scripts/prepare_native_startup_profile.py'
+      - 'scripts/test_prepare_native_startup_profile.py'
       - 'test/services/startup_trace_test.dart'
       - 'test/services/notification_startup_test.dart'
       - 'test/services/deep_link_startup_test.dart'
@@ -41,6 +44,8 @@ jobs:
           test/services/notification_navigation_service_test.dart
           test/services/auth_service_test.dart
           test/services/local_read_tracker_export_test.dart
+      - name: Synthetic native profiling configuration isolation
+        run: python3 -m unittest discover -s scripts -p test_prepare_native_startup_profile.py
       - name: Analyze startup implementation
         run: >-
           flutter analyze --no-pub

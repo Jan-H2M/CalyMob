@@ -716,7 +716,13 @@ class NotificationService {
   /// already handled by auth; avoid a duplicate device/token Firestore write.
   Future<bool> requestStartupPermission() async {
     final settings = await _messaging.getNotificationSettings();
-    if (settings.authorizationStatus != AuthorizationStatus.notDetermined) {
+    // Android 13+ reports `denied` even before its first runtime request.
+    // Preserve that request path; iOS `denied` cannot be prompted again.
+    final androidNeedsRequest =
+        defaultTargetPlatform == TargetPlatform.android &&
+            settings.authorizationStatus == AuthorizationStatus.denied;
+    if (settings.authorizationStatus != AuthorizationStatus.notDetermined &&
+        !androidNeedsRequest) {
       return false;
     }
     return requestPermission();
