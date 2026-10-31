@@ -41,6 +41,9 @@ failure mechanisms rather than claiming a proven production path.
    derived from stale flags/member data. Errors now cancel both core documents
    and assignment polling, and invalidate queued assignment callbacks. Access
    streams are bound to the requested authenticated UID.
+   The entry bool stream re-emits its recovered value after an error; keeping
+   `distinct()` here would suppress `true` after `true → error → true`, leaving
+   the home entry hidden despite successful recovery.
 4. Pool session detail ignored its document stream's errors and used the original
    session as fallback. It now shows an unavailable message on error, removes the
    stream when signed out and hides cached session actions.

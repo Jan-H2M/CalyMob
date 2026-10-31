@@ -47,6 +47,47 @@ class _Operations extends BoutiqueOperationsService {
 }
 
 void main() {
+  test('Boutique entry restores true after an error and same-UID token refresh',
+      () async {
+    final db = _Firestore();
+    final flags = StreamController<Doc>.broadcast();
+    final member = StreamController<Doc>.broadcast();
+    db.streams['clubs/club/settings/feature_flags'] = flags;
+    db.streams['clubs/club/members/owner'] = member;
+    final fixtures = FakeFirebaseFirestore();
+    final flagsRef = fixtures.doc('clubs/club/settings/feature_flags');
+    final memberRef = fixtures.doc('clubs/club/members/owner');
+    await flagsRef.set({'boutiqueEnabled': true, 'boutiqueAccess': 'tous'});
+    await memberRef.set({'member_status': 'active'});
+    final auth = StreamController<String?>();
+    final events = <Object>[];
+    final subscription =
+        BoutiqueAccessService(firestore: db, authUserIds: () => auth.stream)
+            .watchCanAccessBoutique(clubId: 'club', userId: 'owner')
+            .listen(events.add, onError: events.add);
+    Future<void> flush() => Future<void>.delayed(Duration.zero);
+    auth.add('owner');
+    await flush();
+    flags.add(await flagsRef.get());
+    member.add(await memberRef.get());
+    await flush();
+    expect(events, [true]);
+    flags.addError(FirebaseException(
+        plugin: 'cloud_firestore', code: 'permission-denied'));
+    await flush();
+    expect(events.last, isA<FirebaseException>());
+    auth.add('owner');
+    await flush();
+    flags.add(await flagsRef.get());
+    member.add(await memberRef.get());
+    await flush();
+    expect(events, [true, isA<FirebaseException>(), true]);
+    await subscription.cancel();
+    await auth.close();
+    await flags.close();
+    await member.close();
+  });
+
   test(
       'permission loss cancels both documents and assignment permissions; auth retries',
       () async {

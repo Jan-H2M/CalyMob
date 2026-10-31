@@ -97,8 +97,9 @@ class BoutiqueAccessService {
     required String userId,
   }) {
     return watchBoutiqueAccess(clubId: clubId, userId: userId)
-        .map((state) => state.canOpenEntry)
-        .distinct();
+        // Re-emit even the same bool after an error, so the entry's
+        // StreamBuilder can leave its unavailable state on token recovery.
+        .map((state) => state.canOpenEntry);
   }
 
   Stream<BoutiqueAccessState> watchBoutiqueAccess({
