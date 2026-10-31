@@ -73,7 +73,9 @@ void main() {
           value: cart,
           child: MaterialApp(
             home: BoutiqueScreen(
-              accessService: BoutiqueAccessService(firestore: firestore),
+              accessService: BoutiqueAccessService(
+                  firestore: firestore,
+                  authUserIds: () => Stream.value(userId)),
               clubId: clubId,
               testUserIdOverride: userId,
             ),

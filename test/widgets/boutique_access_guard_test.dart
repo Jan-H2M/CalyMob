@@ -20,7 +20,7 @@ void main() {
       ({
         FakeFirebaseFirestore firestore,
         BoutiqueAccessService service,
-      })> onlineAccess() async {
+      })> onlineAccess({String authenticatedUserId = userId}) async {
     final firestore = FakeFirebaseFirestore();
     await firestore
         .collection('clubs')
@@ -43,7 +43,9 @@ void main() {
     });
     return (
       firestore: firestore,
-      service: BoutiqueAccessService(firestore: firestore),
+      service: BoutiqueAccessService(
+          firestore: firestore,
+          authUserIds: () => Stream.value(authenticatedUserId)),
     );
   }
 
@@ -291,7 +293,7 @@ void main() {
 
   testWidgets('a real AuthProvider takes precedence over the test uid override',
       (tester) async {
-    final access = await onlineAccess();
+    final access = await onlineAccess(authenticatedUserId: 'member-2');
     await access.firestore
         .collection('clubs')
         .doc(clubId)
@@ -388,7 +390,8 @@ void main() {
       'member_status': 'active',
       'clubStatuten': <String>[],
     });
-    final service = BoutiqueAccessService(firestore: firestore);
+    final service = BoutiqueAccessService(
+        firestore: firestore, authUserIds: () => Stream.value(alternateUser));
 
     await tester.pumpWidget(
       MaterialApp(

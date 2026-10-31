@@ -146,9 +146,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         opacity: 0.7,
         child: SafeArea(
           child: StreamBuilder<PiscineSession?>(
-            stream: _sessionStream,
+            stream: userId.isEmpty ? null : _sessionStream,
             initialData: widget.session,
             builder: (context, snapshot) {
+              if (userId.isEmpty || snapshot.hasError) {
+                return const Center(
+                  child: Text(
+                    'Cette séance n’est plus accessible. Reconnectez-vous pour réessayer.',
+                    style: TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                );
+              }
               final session = snapshot.data ?? widget.session;
 
               return SingleChildScrollView(

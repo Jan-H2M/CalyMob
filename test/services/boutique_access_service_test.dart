@@ -227,7 +227,8 @@ void main() {
       await flags.set({'boutiqueEnabled': true, 'boutiqueAccess': preparation});
       await memberRef.set(member());
 
-      final service = BoutiqueAccessService(firestore: firestore);
+      final service = BoutiqueAccessService(
+          firestore: firestore, authUserIds: () => Stream.value('member-1'));
       final access = service.watchCanAccessBoutique(
         clubId: 'calypso',
         userId: 'member-1',
@@ -254,7 +255,8 @@ void main() {
       await flags.set({'boutiqueEnabled': true, 'boutiqueAccess': preparation});
       await memberRef.set(member());
 
-      final service = BoutiqueAccessService(firestore: firestore);
+      final service = BoutiqueAccessService(
+          firestore: firestore, authUserIds: () => Stream.value('member-1'));
       final states = service.watchBoutiqueAccess(
         clubId: 'calypso',
         userId: 'member-1',

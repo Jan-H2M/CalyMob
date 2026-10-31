@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/unread_cursor_feature_flag.dart';
+import '../utils/authenticated_stream.dart';
 
 /// Service voor feature flags — bestuurt of Carnet de Formation of
 /// Boutique zichtbaar is.
@@ -8,37 +11,63 @@ import '../models/unread_cursor_feature_flag.dart';
 class FeatureFlagService extends ChangeNotifier {
   late final FirebaseFirestore _firestore;
   bool _isLoading = true;
+  final Stream<String?> Function()? _authUserIds;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
+  int _generation = 0;
+  Object? _error;
 
   /// Constructor. Optioneel een [firestore] en [clubId] voor injectie in tests.
-  FeatureFlagService({FirebaseFirestore? firestore, String? clubId})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  FeatureFlagService({
+    FirebaseFirestore? firestore,
+    String? clubId,
+    Stream<String?> Function()? authUserIds,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _authUserIds = authUserIds;
 
   bool get isLoading => _isLoading;
+  Object? get error => _error;
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _watchFlags(String clubId) =>
+      authenticatedStream(
+        () => _firestore
+            .collection('clubs')
+            .doc(clubId)
+            .collection('settings')
+            .doc('feature_flags')
+            .snapshots(),
+        authUserIds: _authUserIds,
+      );
 
   /// Start listening to the feature_flags document.
   /// Called automatically when [clubId] is known (or pass one).
   void listen(String clubId) {
-    _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('settings')
-        .doc('feature_flags')
-        .snapshots()
-        .listen((doc) {
+    final generation = ++_generation;
+    _subscription?.cancel();
+    _isLoading = true;
+    _error = null;
+    _subscription = _watchFlags(clubId).listen((doc) {
+      if (generation != _generation) return;
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+    }, onError: (Object error, StackTrace stack) {
+      if (generation != _generation) return;
+      _error = error;
       _isLoading = false;
       notifyListeners();
     });
   }
 
+  @override
+  void dispose() {
+    _generation++;
+    _subscription?.cancel();
+    super.dispose();
+  }
+
   /// Stream die true/false geeft voor carnetFormationEnabled.
   Stream<bool> isCarnetFormationEnabled(String clubId) {
-    return _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('settings')
-        .doc('feature_flags')
-        .snapshots()
-        .map((doc) {
+    return _watchFlags(clubId).map((doc) {
       if (!doc.exists) return false;
       final data = doc.data();
       return data?['carnetFormationEnabled'] == true;
@@ -47,13 +76,7 @@ class FeatureFlagService extends ChangeNotifier {
 
   /// Stream die true/false geeft voor adminOnly modus.
   Stream<bool> isCarnetFormationAdminOnly(String clubId) {
-    return _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('settings')
-        .doc('feature_flags')
-        .snapshots()
-        .map((doc) {
+    return _watchFlags(clubId).map((doc) {
       if (!doc.exists) return true;
       final data = doc.data();
       return data?['carnetFormationAdminOnly'] ?? true;
@@ -105,33 +128,16 @@ class FeatureFlagService extends ChangeNotifier {
 
   /// Stream met de genormaliseerde Boutique-zichtbaarheid.
   Stream<Map<String, String>> boutiqueVisibility(String clubId) {
-    return _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('settings')
-        .doc('feature_flags')
-        .snapshots()
+    return _watchFlags(clubId)
         .map((doc) => parseBoutiqueVisibility(doc.data()));
   }
 
   /// Cursor-v1 rollout flag. A missing document is a real OFF value, but a
   /// read error remains unknown. Converting an error to OFF could briefly
   /// expose stale legacy `99+` counts for a member who is effectively ON.
-  Stream<UnreadCursorFeatureFlag> unreadCursorV1(String clubId) async* {
-    try {
-      await for (final doc in _firestore
-          .collection('clubs')
-          .doc(clubId)
-          .collection('settings')
-          .doc('feature_flags')
-          .snapshots()) {
-        yield UnreadCursorFeatureFlag.fromFirestore(doc.data());
-      }
-    } catch (error) {
-      debugPrint('⚠️ unreadCursorV1 feature flag read failed: $error');
-      rethrow;
-    }
-  }
+  Stream<UnreadCursorFeatureFlag> unreadCursorV1(String clubId) =>
+      _watchFlags(clubId)
+          .map((doc) => UnreadCursorFeatureFlag.fromFirestore(doc.data()));
 
   /// One-shot counterpart for startup paths and tests.
   Future<UnreadCursorFeatureFlag> getUnreadCursorV1(String clubId) async {

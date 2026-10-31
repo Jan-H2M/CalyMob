@@ -1,0 +1,65 @@
+name: Firestore document streams
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/firestore-document-streams.yml'
+      - 'lib/utils/authenticated_stream.dart'
+      - 'lib/services/feature_flag_service.dart'
+      - 'lib/services/boutique/boutique_access_service.dart'
+      - 'lib/widgets/boutique/boutique_current_payment_panel.dart'
+      - 'lib/screens/piscine/session_detail_screen.dart'
+      - 'test/utils/authenticated_stream_test.dart'
+      - 'test/services/feature_flag_service_stream_test.dart'
+      - 'test/services/boutique_access*test.dart'
+      - 'test/widgets/boutique*test.dart'
+      - 'test/screens/boutique*test.dart'
+permissions:
+  contents: read
+concurrency:
+  group: firestore-document-streams-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  document-stream-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Auth loss, permissions, payment and access lifecycle
+        run: >-
+          flutter test
+          test/utils/authenticated_stream_test.dart
+          test/services/feature_flag_service_stream_test.dart
+          test/services/boutique_access_stream_lifecycle_test.dart
+          test/services/boutique_access_service_test.dart
+          test/widgets/boutique_current_payment_panel_test.dart
+          test/widgets/boutique_access_guard_test.dart
+          test/screens/boutique_screen_access_test.dart
+          test/screens/boutique_qr_access_test.dart
+      - name: Existing document consumers and observation regressions
+        run: >-
+          flutter test
+          test/providers/unread_count_provider_test.dart
+          test/providers/unread_count_provider_cursor_test.dart
+          test/services/team_channel_service_test.dart
+          test/services/sensitive_info_service_test.dart
+          test/services/profile_service_directory_stream_test.dart
+          test/services/piscine_session_service_test.dart
+          test/services/medical_validity_stream_test.dart
+          test/services/apnee_training_service_test.dart
+          test/services/read_state_service_test.dart
+          test/screens/observation_stream_error_handling_test.dart
+      - name: Analyze protected document stream implementation
+        run: >-
+          flutter analyze --no-pub
+          lib/utils/authenticated_stream.dart
+          lib/services/feature_flag_service.dart
+          lib/services/boutique/boutique_access_service.dart
+          lib/widgets/boutique/boutique_current_payment_panel.dart
+      - run: git diff --exit-code -- pubspec.lock
