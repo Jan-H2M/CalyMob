@@ -13,5 +13,5 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: {flutter-version: '3.38.9', channel: stable, cache: true}
       - run: flutter pub get --enforce-lockfile
-      - run: flutter test --no-pub test/services/loan_liability_request_test.dart test/widgets/loan_liability_consent_test.dart test/widgets/loan_request_form_test.dart test/services/material_return_service_test.dart test/services/material_loan_service_test.dart test/services/material_unassigned_loan_test.dart
+      - run: flutter test --no-pub test/services/loan_liability_release_exclusion_test.dart test/services/loan_liability_request_test.dart test/widgets/loan_liability_consent_test.dart test/widgets/loan_request_form_test.dart test/dev/loan_liability_release_fixture_test.dart test/services/material_return_service_test.dart test/services/material_loan_service_test.dart test/services/material_unassigned_loan_test.dart
       - run: git diff --exit-code -- pubspec.lock

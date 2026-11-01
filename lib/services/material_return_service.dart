@@ -49,12 +49,36 @@ class MaterialReturnResult {
 class MaterialReturnService {
   final FirebaseFirestore _firestore;
   FirebaseStorage? _storage;
+  final bool liabilityDeclarationEnabled;
 
   MaterialReturnService({
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _storage = storage;
+        _storage = storage,
+        liabilityDeclarationEnabled = false;
+
+  /// Retains AV-LOAN-001 solely for explicit, fictitious DEV verification.
+  /// Normal app construction cannot enable the unapproved declaration.
+  @visibleForTesting
+  MaterialReturnService.forDevLoanLiability({
+    required FirebaseFirestore firestore,
+  })  : _firestore = firestore,
+        _storage = null,
+        liabilityDeclarationEnabled = true;
+
+  Map<String, dynamic>? _requestAcceptance({
+    required String clubId,
+    required String memberId,
+    required bool accepted,
+  }) {
+    if (!liabilityDeclarationEnabled) return null;
+    if (clubId != 'dev-fictional') {
+      throw StateError(
+          'DEV liability verification requires the fictional club.');
+    }
+    return newLoanLiabilityAcceptance(accepted: accepted, memberId: memberId);
+  }
 
   FirebaseStorage get _storageInstance => _storage ??= FirebaseStorage.instance;
 
@@ -327,10 +351,11 @@ class MaterialReturnService {
     String? notes,
     bool liabilityAccepted = false,
   }) async {
-    final acceptance = newLoanLiabilityAcceptance(
-        accepted: liabilityAccepted, memberId: memberId);
-    if ((notes?.trim().length ?? 0) > 500)
+    final acceptance = _requestAcceptance(
+        clubId: clubId, accepted: liabilityAccepted, memberId: memberId);
+    if ((notes?.trim().length ?? 0) > 500) {
       throw ArgumentError('Remarque : 500 caractères maximum.');
+    }
     if (items.isEmpty) {
       throw Exception('Choisissez au moins un materiel');
     }
@@ -360,7 +385,7 @@ class MaterialReturnService {
       'memberEmail': memberEmail,
       'itemIds': items.map((item) => item.id).toList(),
       'items_snapshot': itemSnapshots,
-      'liability_acceptance': acceptance,
+      if (acceptance != null) 'liability_acceptance': acceptance,
       if (requestedStartDate != null)
         'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
@@ -386,10 +411,11 @@ class MaterialReturnService {
     String? notes,
     bool liabilityAccepted = false,
   }) async {
-    final acceptance = newLoanLiabilityAcceptance(
-        accepted: liabilityAccepted, memberId: memberId);
-    if ((notes?.trim().length ?? 0) > 500)
+    final acceptance = _requestAcceptance(
+        clubId: clubId, accepted: liabilityAccepted, memberId: memberId);
+    if ((notes?.trim().length ?? 0) > 500) {
       throw ArgumentError('Remarque : 500 caractères maximum.');
+    }
     if (lines.isEmpty) {
       throw Exception('Choisissez au moins un materiel');
     }
@@ -407,7 +433,7 @@ class MaterialReturnService {
       'lines': lines.map((line) => line.toMap()).toList(),
       'itemIds': const <String>[],
       'assignedItemIds': const <String>[],
-      'liability_acceptance': acceptance,
+      if (acceptance != null) 'liability_acceptance': acceptance,
       'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
       'status': 'submitted',
@@ -433,10 +459,11 @@ class MaterialReturnService {
     bool liabilityAccepted = false,
     required String memberId,
   }) async {
-    final acceptance = newLoanLiabilityAcceptance(
-        accepted: liabilityAccepted, memberId: memberId);
-    if ((notes?.trim().length ?? 0) > 500)
+    final acceptance = _requestAcceptance(
+        clubId: clubId, accepted: liabilityAccepted, memberId: memberId);
+    if ((notes?.trim().length ?? 0) > 500) {
       throw ArgumentError('Remarque : 500 caractères maximum.');
+    }
     if (lines.isEmpty) {
       throw Exception('Choisissez au moins un materiel');
     }
@@ -459,9 +486,9 @@ class MaterialReturnService {
         'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
         'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
         'notes': notes?.trim(),
-        // Historical unaccepted requests require a real new acknowledgement.
+        // Only the explicit DEV path may create acknowledgement evidence.
         // Existing evidence is never overwritten or made to look newly signed.
-        if (!data.containsKey('liability_acceptance'))
+        if (acceptance != null && !data.containsKey('liability_acceptance'))
           'liability_acceptance': acceptance,
         'updatedAt': FieldValue.serverTimestamp(),
       });

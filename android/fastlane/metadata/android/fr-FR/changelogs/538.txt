@@ -1,0 +1,1 @@
+Nouveau : les fournisseurs membres du club retrouvent leurs missions Boutique dans « Mes missions » et suivent leur avancement. Améliorations de l’accès, de la navigation et de la stabilité.
