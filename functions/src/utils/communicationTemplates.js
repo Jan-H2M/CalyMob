@@ -294,7 +294,9 @@ const SYSTEM_SEED_TEMPLATES = {
   <div style="background: #F3F4F6; border-radius: 8px; padding: 20px; margin: 20px 0;">
     <p><strong>Commande:</strong> {{orderNumber}}</p>
     <p><strong>Montant:</strong> {{amountFormatted}}</p>
-    <p><strong>Communication:</strong> {{communication}}</p>
+    <p><strong>Bénéficiaire:</strong> {{beneficiary}}</p>
+    <p><strong>IBAN:</strong> {{ibanFormatted}}</p>
+    <p><strong>Communication libre (pas une communication structurée):</strong> {{communication}}</p>
     {{#if items.length}}
       <p><strong>Articles:</strong></p>
       <ul>
