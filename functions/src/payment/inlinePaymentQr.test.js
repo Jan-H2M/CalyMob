@@ -76,8 +76,22 @@ describe('inline payment QR email payloads', () => {
   });
 
   it('passes an inline CID image and matching attachment for Boutique payments', async () => {
+    const order = {
+      orderNumber: 'BTQ-2026-0100',
+      structuredCommunication: '+++BTQ-2026-0100+++',
+      status: 'awaiting_payment', pricing: { total: 43 },
+      buyer: { userId: 'fixture-member', displayName: 'Jan', email: 'jan@example.test' },
+      payment: {
+        status: 'pending', amount: 43,
+        iban: 'BE68539007547034', beneficiary: 'Calypso Diving Club',
+        communication: '+++BTQ-2026-0100+++',
+        qrCodeUrl: 'data:image/png;base64,qr-bytes',
+      },
+      items: [{ qty: 2, productSnapshot: { name: 'Bonnet Calypso' } }],
+    };
     const orderRef = {
       id: 'order-1',
+      get: jest.fn(async () => snapshot(order)),
       update: jest.fn(async () => undefined),
     };
 
@@ -85,16 +99,7 @@ describe('inline payment QR email payloads', () => {
       clubRef: buildClubRef(),
       clubId: 'calypso',
       orderRef,
-      order: {
-        orderNumber: 'BTQ-2026-0100',
-        buyer: { displayName: 'Jan', email: 'jan@example.test' },
-        payment: {
-          amount: 43,
-          communication: '+++BTQ-2026-0100+++',
-          qrCodeUrl: 'data:image/png;base64,qr-bytes',
-        },
-        items: [{ qty: 2, productSnapshot: { name: 'Bonnet Calypso' } }],
-      },
+      order,
     });
 
     expect(sendEmailWithConfig).toHaveBeenCalledWith(
@@ -103,11 +108,14 @@ describe('inline payment QR email payloads', () => {
         html: expect.stringContaining('src="cid:qrcode"'),
         attachments: [{
           filename: 'boutique-qrcode.png',
-          content: 'qr-bytes',
+          content: expect.any(String),
           content_id: 'qrcode',
         }],
       }),
     );
+    const attachment = sendEmailWithConfig.mock.calls[0][1].attachments[0];
+    expect(attachment.content).not.toBe('qr-bytes');
+    expect(Buffer.from(attachment.content, 'base64').subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
     expect(logEmailHistoryAndCommunication).toHaveBeenCalledTimes(1);
   });
 

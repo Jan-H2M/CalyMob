@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { randomUUID } = require('crypto');
 const QRCode = require('qrcode');
+const { escapeExpression } = require('handlebars');
 const { resolvePersonalizationColor } = require('./personalizationColors');
 const { currentBoutiquePayment, assertCurrentPayment } = require('./paymentContext');
 const {
@@ -384,6 +385,9 @@ function buildBoutiqueOrderTemplateData(order, emailSettings) {
     amount: payment.amount,
     amountFormatted: formatAmount(payment.amount),
     communication: payment.communication || `+++${order.orderNumber}+++`,
+    iban: payment.iban || '',
+    ibanFormatted: String(payment.iban || '').replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim(),
+    beneficiary: payment.beneficiary || '',
     qrCodeImage: 'cid:qrcode',
     items: Array.isArray(order.items)
       ? order.items.map(item => ({
@@ -394,10 +398,9 @@ function buildBoutiqueOrderTemplateData(order, emailSettings) {
   };
 }
 
-async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
-  let currentPayment = null;
-  if (order.paymentPlan) {
-    currentPayment = currentBoutiquePayment(order);
+async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }, dependencies = {}) {
+  const currentPayment = currentBoutiquePayment(order);
+  {
     if (!currentPayment.requestId) throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Aucun nouveau virement à demander. Réception bancaire en attente.');
     const qrCodeUrl = await QRCode.toDataURL(currentPayment.epcPayload);
     const fresh = await orderRef.get();
@@ -417,7 +420,16 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const rendered = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const subject = currentPayment?.kind === 'supplement' ? `Complément de paiement — ${rendered.subject}` : rendered.subject;
-  const html = currentPayment ? `<p><strong>Demande actuelle : ${formatAmount(currentPayment.amount)} uniquement.</strong> Total de la commande : ${formatAmount(currentPayment.orderTotal)}. Déjà reçu en banque : ${formatAmount(currentPayment.receivedAmount)}. Virement déclaré en cours, non reçu : ${formatAmount(currentPayment.reportedAmount)}.</p><p>Communication libre : <strong>${currentPayment.communication}</strong></p><p>${currentPayment.receivedAmount > 0 || currentPayment.reportedAmount > 0 ? 'Ne payez pas à nouveau le total. ' : ''}Les anciens e-mails et QR ne peuvent pas être rappelés. Avant de payer, consultez toujours la demande actuelle dans CalyMob → Mes commandes.</p>${rendered.html}` : rendered.html;
+  const notice = order.paymentPlan ? `<p><strong>Demande actuelle : ${formatAmount(currentPayment.amount)} uniquement.</strong> Total de la commande : ${formatAmount(currentPayment.orderTotal)}. Déjà reçu en banque : ${formatAmount(currentPayment.receivedAmount)}. Virement déclaré en cours, non reçu : ${formatAmount(currentPayment.reportedAmount)}.</p><p>Communication libre : <strong>${escapeExpression(currentPayment.communication)}</strong></p><p>${currentPayment.receivedAmount > 0 || currentPayment.reportedAmount > 0 ? 'Ne payez pas à nouveau le total. ' : ''}Les anciens e-mails et QR ne peuvent pas être rappelés. Avant de payer, consultez toujours la demande actuelle dans CalyMob → Mes commandes.</p>` : '';
+  // An older/custom template must not omit the manual alternative to its QR.
+  const hasDetails = [templateData.amountFormatted, templateData.communication, templateData.beneficiary]
+    .every((value) => rendered.html.includes(escapeExpression(value)))
+    && [templateData.iban, templateData.ibanFormatted].some((value) => value && rendered.html.includes(escapeExpression(value)))
+    && rendered.html.includes('cid:qrcode');
+  const fallback = hasDetails ? '' : `<div><h2>Virement bancaire</h2><p>Montant : <strong>${escapeExpression(templateData.amountFormatted)}</strong></p><p>Bénéficiaire : ${escapeExpression(templateData.beneficiary)}</p><p>IBAN : <strong>${escapeExpression(templateData.ibanFormatted)}</strong></p><p>Communication libre (pas une communication structurée) : <strong>${escapeExpression(templateData.communication)}</strong></p>${rendered.html.includes('cid:qrcode') ? '' : '<p>Scannez ce QR avec votre application bancaire :</p><img src="cid:qrcode" alt="QR de paiement" width="280" height="280" />'}</div>`;
+  const extra = notice + fallback;
+  const html = /<\/body>/i.test(rendered.html)
+    ? rendered.html.replace(/<\/body>/i, `${extra}</body>`) : rendered.html + extra;
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
   const entityLabel = `Commande ${order.orderNumber}`;
   const recipientName = buyer.displayName || recipientEmail;
@@ -444,7 +456,7 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
       throw buildDomainError('INVALID_INPUT', 'Le destinataire a changé. Rechargez la demande.');
     }
   }
-  const result = await sendEmailWithConfig(emailSettings.emailConfig, {
+  const result = await (dependencies.sendEmailWithConfig || sendEmailWithConfig)(emailSettings.emailConfig, {
     to: recipientEmail,
     subject,
     html,
@@ -539,7 +551,12 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
 
     const clubId = typeof request.data?.clubId === 'string' ? request.data.clubId.trim() : '';
     const items = Array.isArray(request.data?.items) ? request.data.items : [];
-    const deferPaymentEmail = request.data?.deferPaymentEmail === true;
+    // Older apps always sent deferPaymentEmail=true, including manual transfer.
+    // Every new SEPA order now gets its payment mail; never backfill old orders.
+    const presentation = request.data?.paymentPresentation ?? 'unspecified';
+    if (!['bank', 'email', 'unspecified'].includes(presentation)) {
+      throw new HttpsError('invalid-argument', 'Choix de paiement invalide.');
+    }
 
     if (!clubId || items.length === 0) {
       throw new HttpsError('invalid-argument', 'clubId ou items manquant', {
@@ -795,6 +812,8 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
           },
           payment: {
             method: 'qr_transfer',
+            presentation,
+            email_status: 'pending',
             iban: bankSettings.iban,
             beneficiary: bankSettings.beneficiary,
             amount: total,
@@ -870,13 +889,15 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
             beneficiary: existingPayment.beneficiary || bankSettings.beneficiary,
             epcPayload: existingPayment.epcPayload || '',
             qrCodeUrl: existingPayment.qrCodeUrl || '',
+            presentation: existingPayment.presentation || 'unspecified',
+            emailStatus: existingPayment.email_status || null,
           },
         };
       }
 
       let emailSentAt = null;
-      let emailStatus = deferPaymentEmail ? 'deferred' : 'failed';
-      if (!deferPaymentEmail) {
+      let emailStatus = 'failed';
+      {
         try {
           emailSentAt = await orderEmailSender({
             clubRef,
@@ -918,6 +939,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
           beneficiary: bankSettings.beneficiary,
           amount: result.total,
           structuredCommunication: result.paymentCommunication,
+          presentation,
           epcPayload: result.epcPayload,
           qrCodeUrl: result.qrCodeUrl,
           emailSentAt: emailSentAt?.toDate?.()?.toISOString?.() || null,
