@@ -176,6 +176,7 @@ void main() {
     await tester.drag(find.byType(ListView).first, const Offset(0, -500));
     await frames(tester);
     await tester.ensureVisible(find.text('Envoyer cette demande par e-mail'));
+    await frames(tester);
     await tester.tap(find.text('Envoyer cette demande par e-mail'));
     await frames(tester);
     expect(emails, 1);
@@ -200,7 +201,7 @@ void main() {
   });
 
   testWidgets(
-      'bank checkout confirms one saved order, clears cart, shows transfer details and sends no mail',
+      'bank checkout persists the choice and shows QR and separate transfer copies',
       (tester) async {
     var calls = 0, emails = 0;
     Map<String, dynamic>? payload;
@@ -216,18 +217,19 @@ void main() {
     expect(calls, 1);
     expect(cart.isEmpty, true);
     expect(emails, 0);
-    expect(payload!['deferPaymentEmail'], true);
+    expect(payload!.containsKey('deferPaymentEmail'), false);
+    expect(payload!['paymentPresentation'], 'bank');
     expect(payload!['idempotencyKey'], isNotEmpty);
     expect(find.text('Votre commande est bien enregistrée'), findsOneWidget);
     expect(find.text('BTQ-2099-9001'), findsOneWidget);
     expect(find.textContaining('panier a été vidé'), findsOneWidget);
-    expect(find.textContaining('Aucun e-mail'), findsOneWidget);
+    expect(find.textContaining('automatiquement à la création'), findsOneWidget);
     expect(find.textContaining('Virement bancaire'), findsWidgets);
     await tester.drag(find.byType(ListView).first, const Offset(0, -400));
     await frames(tester);
     expect(find.textContaining('BE68539007547034'), findsOneWidget);
     expect(find.byType(PaymentCommunicationCopyButton), findsOneWidget);
-    expect(find.byType(QrImageView), findsNothing);
+    expect(find.byType(QrImageView), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

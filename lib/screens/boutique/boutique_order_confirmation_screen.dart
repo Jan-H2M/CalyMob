@@ -108,16 +108,16 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       Text(
                           paymentMethod == 'bank'
-                              ? 'Virement bancaire choisi. Aucun e-mail n’est envoyé automatiquement. Utilisez uniquement les coordonnées de paiement actualisées ci-dessous.'
-                              : 'Paiement par e-mail choisi. Utilisez le bouton d’envoi ci-dessous pour recevoir la demande actuelle ; aucun e-mail n’est envoyé automatiquement.',
+                              ? 'Virement bancaire choisi. Retrouvez le QR et les coordonnées actuelles ci-dessous. Un e-mail de paiement est aussi prévu automatiquement à la création.'
+                              : 'Paiement par e-mail choisi. Retrouvez aussi le QR et les coordonnées actuelles ci-dessous.',
                           textAlign: TextAlign.center),
                       const SizedBox(height: 18),
                       if (orderId != null && orderId!.isNotEmpty)
                         (paymentPanelBuilder?.call(
-                                orderId!, paymentMethod == 'email') ??
+                                orderId!, true) ??
                             BoutiqueCurrentPaymentPanel(
                                 orderId: orderId!,
-                                showQr: paymentMethod == 'email'))
+                                showQr: true))
                       else if (paymentMethod == 'email')
                         _EmailPaymentDetails(
                           orderId: orderId,

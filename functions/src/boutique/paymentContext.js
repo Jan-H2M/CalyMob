@@ -38,6 +38,8 @@ function currentBoutiquePayment(order) {
     fullyPaid: !request && order.payment?.status === 'paid',
     refundAmount: Math.max(0, receivedAmount - Number(order.pricing?.total || 0)),
     oldInstructionsObsolete: Boolean(order.paymentPlan),
+    presentation: payment.presentation || 'unspecified',
+    emailStatus: payment.email_status || null,
   };
 }
 function assertCurrentPayment(expected, actual) {
