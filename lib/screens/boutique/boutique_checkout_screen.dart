@@ -379,7 +379,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     );
 
     if (!_validateBeforeSubmit(context, orderPayload)) return;
-    orderPayload['deferPaymentEmail'] = true;
+    orderPayload['paymentPresentation'] = paymentMethod;
 
     // Fix audit 2026-07-19 (K5): idempotency-key per mandje; een retry na
     // timeout/app-kill hergebruikt dezelfde key → server geeft de bestaande
@@ -428,7 +428,8 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
             amount: _asDouble(data['total'] ?? payment['amount']),
             epcPayload: payment['epcPayload']?.toString(),
             emailSent: payment['emailStatus'] == 'sent',
-            paymentMethod: paymentMethod,
+            paymentMethod: ['bank', 'email'].contains(payment['presentation'])
+                ? payment['presentation'].toString() : paymentMethod,
             paymentPanelBuilder: widget.paymentPanelBuilder,
           ),
         ),

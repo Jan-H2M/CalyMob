@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -47,6 +48,68 @@ Widget panel(Future<Map<String, dynamic>> Function() load,
                     authUserIds: authUserIds))));
 
 void main() {
+  testWidgets('fresh own-order details work immediately while the callable never completes', (tester) async {
+    final db = FakeFirebaseFirestore();
+    final doc = db.doc('clubs/calypso/orders/qa');
+    await doc.set({
+      'orderNumber': 'BTQ-2099-9001', 'status': 'awaiting_payment',
+      'structuredCommunication': '+++BTQ-2099-9001+++',
+      'pricing': {'total': 41.5},
+      'payment': {'status': 'pending', 'iban': 'BE68539007547034',
+        'beneficiary': 'Club QA', 'epcPayload': 'OBSOLETE QR',
+        'presentation': 'bank', 'email_status': 'sent'},
+    });
+    final slow = Completer<Map<String, dynamic>>();
+    await tester.pumpWidget(panel(() => slow.future,
+        watchOrder: (_) => doc.snapshots(), authUserIds: () => Stream.value('owner')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Mode choisi : virement bancaire'), findsOneWidget);
+    expect(find.textContaining('E-mail de paiement envoyé'), findsOneWidget);
+    expect((tester.widget<QrImageView>(find.byType(QrImageView)).key as ValueKey<String>).value.split('\n')[7], 'EUR41.50');
+    final copies = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copies.add((call.arguments as Map)['text'] as String);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    for (final key in ['copy-payment-iban', 'copy-payment-amount', 'copy-payment-communication']) {
+      await tester.ensureVisible(find.byKey(Key(key)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key(key)));
+      await tester.pumpAndSettle();
+    }
+    expect(copies, ['BE68539007547034', '41.50', '+++BTQ-2099-9001+++']);
+    await tester.ensureVisible(find.text('Ouvrir le QR en grand'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ouvrir le QR en grand'));
+    await tester.pumpAndSettle();
+    expect(tester.widgetList<QrImageView>(find.byType(QrImageView)).any((qr) => qr.size == 300), true);
+    // A receipt removes all QR/copy actions, including the expanded QR, without
+    // waiting for the still-pending callable. Its late stale reply is ignored.
+    await doc.update({'status': 'paid', 'payment.status': 'paid', 'payment.bankRef': 'qa-receipt'});
+    await tester.pumpAndSettle();
+    slow.complete(payment());
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsNothing);
+    expect(find.byKey(const Key('copy-payment-amount')), findsNothing);
+    expect(find.textContaining('Paiement complet'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('fresh document remains payable when current-payment callable fails', (tester) async {
+    final db = FakeFirebaseFirestore();
+    final doc = db.doc('clubs/calypso/orders/qa');
+    await doc.set({'orderNumber': 'BTQ-2099-9001', 'status': 'awaiting_payment',
+      'structuredCommunication': '+++BTQ-2099-9001+++', 'pricing': {'total': 6.62},
+      'payment': {'status': 'pending', 'iban': 'BE68539007547034', 'beneficiary': 'Club QA'}});
+    await tester.pumpWidget(panel(() async => throw StateError('404'),
+        watchOrder: (_) => doc.snapshots(), authUserIds: () => Stream.value('owner')));
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsOneWidget);
+    expect(find.byKey(const Key('copy-payment-amount')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('document permission error hides QR without an unobserved Future',
       (tester) async {
     final orders = StreamController<DocumentSnapshot<Map<String, dynamic>>>(
