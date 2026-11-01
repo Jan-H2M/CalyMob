@@ -3,3 +3,6 @@ const { currentBoutiquePayment } = require('./paymentContext');
 test.each(fixtures.filter((f) => f.expected))('shared Dart/server payment contract: $name', ({ order, expected }) => {
   expect(currentBoutiquePayment(order)).toEqual(expected);
 });
+test.each(fixtures.filter((f) => !f.expected))('invalid shared payment contract: $name', ({ order }) => {
+  expect(() => currentBoutiquePayment(order)).toThrow();
+});

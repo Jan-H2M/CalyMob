@@ -432,5 +432,47 @@
       }
     },
     "expected": null
+  },
+  {
+    "name": "explicit null supplement reference is invalid, not legacy",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "pending",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++"
+          },
+          {
+            "id": "supplement-qa-revision",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "pending",
+            "reportedSent": false,
+            "reference": null
+          }
+        ]
+      }
+    },
+    "expected": null
   }
 ]
