@@ -44,6 +44,7 @@ class _BoutiqueCurrentPaymentPanelState
   bool _sending = false;
   bool _streamFailed = false;
   int _listenGeneration = 0;
+  int _documentGeneration = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
   String? _lastState;
   final _formatter = NumberFormat.currency(
@@ -96,8 +97,9 @@ class _BoutiqueCurrentPaymentPanelState
       (snapshot) {
         if (!mounted || generation != _listenGeneration) return;
         final value = snapshot.data();
-      if (!snapshot.exists || snapshot.metadata.isFromCache ||
-          snapshot.metadata.hasPendingWrites) {
+        if (!snapshot.exists || snapshot.metadata.isFromCache ||
+            snapshot.metadata.hasPendingWrites) {
+          _documentGeneration++;
           setState(() => _streamFailed = true);
           return;
         }
@@ -106,6 +108,7 @@ class _BoutiqueCurrentPaymentPanelState
         final changed = _streamFailed || state != _lastState;
         _lastState = state;
         if (changed) {
+          _documentGeneration++;
           setState(() {
             _streamFailed = false;
             // The server document is sufficient even if the callable is slow,
@@ -118,6 +121,7 @@ class _BoutiqueCurrentPaymentPanelState
       },
       onError: (Object error) {
         if (!mounted || generation != _listenGeneration) return;
+        _documentGeneration++;
         setState(() => _streamFailed = true);
       },
     );
@@ -130,6 +134,7 @@ class _BoutiqueCurrentPaymentPanelState
         oldWidget.watchOrder != widget.watchOrder ||
         oldWidget.authUserIds != widget.authUserIds) {
       _lastState = null;
+      _documentGeneration++;
       _sending = false;
       _streamFailed = false;
       _payment = _loadForDisplay();
@@ -147,12 +152,18 @@ class _BoutiqueCurrentPaymentPanelState
   Future<void> _email(Map<String, dynamic> shown) async {
     if (_sending || _streamFailed) return;
     final startingOrderId = widget.orderId;
+    final startingDocumentGeneration = _documentGeneration;
     setState(() => _sending = true);
     try {
       // Refresh first: an old dialog must never email a superseded amount.
       final current = await _load();
       if (!mounted || _streamFailed || widget.orderId != startingOrderId) {
         return;
+      }
+      // A fresh receipt/amendment may have arrived while this callable waited.
+      // Its older reply must neither replace the snapshot nor trigger a send.
+      if (_documentGeneration != startingDocumentGeneration) {
+        throw StateError('La demande a changé pendant le chargement.');
       }
       if (current['requestId'] != shown['requestId'] ||
           current['revision'] != shown['revision'] ||

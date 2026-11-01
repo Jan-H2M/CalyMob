@@ -48,6 +48,32 @@ Widget panel(Future<Map<String, dynamic>> Function() load,
                     authUserIds: authUserIds))));
 
 void main() {
+  testWidgets('a delayed email refresh cannot reinstate a request after a fresh receipt', (tester) async {
+    final db = FakeFirebaseFirestore();
+    final doc = db.doc('clubs/calypso/orders/qa');
+    await doc.set({'orderNumber': 'BTQ-2099-9001', 'status': 'awaiting_payment',
+      'structuredCommunication': '+++BTQ-2099-9001+++', 'pricing': {'total': 41.5},
+      'payment': {'status': 'pending', 'iban': 'BE68539007547034', 'beneficiary': 'Club QA'}});
+    final refresh = Completer<Map<String, dynamic>>();
+    var calls = 0, sends = 0;
+    await tester.pumpWidget(panel(() => calls++ == 0 ? Future.value(payment()) : refresh.future,
+        watchOrder: (_) => doc.snapshots(), authUserIds: () => Stream.value('owner'),
+        email: (_) async => sends++));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Envoyer cette demande par e-mail'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Envoyer cette demande par e-mail'));
+    await tester.pump();
+    await doc.update({'status': 'paid', 'payment.status': 'paid', 'payment.bankRef': 'qa-receipt'});
+    await tester.pumpAndSettle();
+    refresh.complete(payment());
+    await tester.pumpAndSettle();
+    expect(sends, 0);
+    expect(find.byType(QrImageView), findsNothing);
+    expect(find.byType(PaymentCommunicationCopyButton), findsNothing);
+    expect(find.textContaining('Paiement complet'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('fresh own-order details work immediately while the callable never completes', (tester) async {
     final db = FakeFirebaseFirestore();
     final doc = db.doc('clubs/calypso/orders/qa');
