@@ -14,7 +14,19 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_order_confirmation_screen.dart';
 
 class BoutiqueCheckoutScreen extends StatefulWidget {
-  const BoutiqueCheckoutScreen({super.key});
+  @visibleForTesting
+  final BoutiqueService? boutiqueService;
+  @visibleForTesting
+  final Future<Map<String, dynamic>> Function(Map<String, dynamic>)?
+      createOrder;
+  @visibleForTesting
+  final Widget Function(String orderId, bool showQr)? paymentPanelBuilder;
+
+  const BoutiqueCheckoutScreen(
+      {super.key,
+      this.boutiqueService,
+      this.createOrder,
+      this.paymentPanelBuilder});
 
   @override
   State<BoutiqueCheckoutScreen> createState() => _BoutiqueCheckoutScreenState();
@@ -46,7 +58,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     if (_revalidated || !mounted) return;
     _revalidated = true;
     try {
-      final products = await BoutiqueService()
+      final products = await (widget.boutiqueService ?? BoutiqueService())
           .watchPublishedProducts(FirebaseConfig.defaultClubId)
           .first;
       if (!mounted) return;
@@ -367,7 +379,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     );
 
     if (!_validateBeforeSubmit(context, orderPayload)) return;
-    orderPayload['deferPaymentEmail'] = true;
+    orderPayload['paymentPresentation'] = paymentMethod;
 
     // Fix audit 2026-07-19 (K5): idempotency-key per mandje; een retry na
     // timeout/app-kill hergebruikt dezelfde key → server geeft de bestaande
@@ -377,10 +389,24 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     if (!context.mounted) return;
     setState(() => _submitting = true);
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')
-          .httpsCallable('createBoutiqueOrder');
-      final result = await callable.call(orderPayload);
-      final data = Map<String, dynamic>.from(result.data as Map);
+      final Map<String, dynamic> data;
+      if (widget.createOrder != null) {
+        data = await widget.createOrder!(orderPayload);
+      } else {
+        final result =
+            await FirebaseFunctions.instanceFor(region: 'europe-west1')
+                .httpsCallable('createBoutiqueOrder')
+                .call(orderPayload);
+        data = Map<String, dynamic>.from(result.data as Map);
+      }
+      // A cleared cart is not a receipt. Only clear after a confirmed server
+      // response that we can keep on screen, including on an idempotent replay.
+      if (data['success'] != true ||
+          (data['orderId']?.toString().trim().isEmpty ?? true) ||
+          (data['orderNumber']?.toString().trim().isEmpty ?? true)) {
+        throw StateError(
+            'Confirmation de commande incomplète. Réessayez sans modifier le panier.');
+      }
       final payment = Map<String, dynamic>.from(data['payment'] as Map);
 
       if (!context.mounted) return;
@@ -402,7 +428,9 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
             amount: _asDouble(data['total'] ?? payment['amount']),
             epcPayload: payment['epcPayload']?.toString(),
             emailSent: payment['emailStatus'] == 'sent',
-            paymentMethod: paymentMethod,
+            paymentMethod: ['bank', 'email'].contains(payment['presentation'])
+                ? payment['presentation'].toString() : paymentMethod,
+            paymentPanelBuilder: widget.paymentPanelBuilder,
           ),
         ),
         (route) => route.isFirst,

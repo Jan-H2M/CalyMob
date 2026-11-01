@@ -8,6 +8,8 @@ import '../../utils/epc_qr_code.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/payment_communication_copy_button.dart';
 import '../../widgets/boutique/boutique_current_payment_panel.dart';
+import '../../widgets/boutique/boutique_access_guard.dart';
+import 'mes_commandes_screen.dart';
 
 class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   final String? orderId;
@@ -19,6 +21,8 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   final String? epcPayload;
   final bool emailSent;
   final String paymentMethod;
+  @visibleForTesting
+  final Widget Function(String orderId, bool showQr)? paymentPanelBuilder;
 
   const BoutiqueOrderConfirmationScreen({
     super.key,
@@ -31,6 +35,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
     this.epcPayload,
     this.emailSent = false,
     this.paymentMethod = 'bank',
+    this.paymentPanelBuilder,
   });
 
   @override
@@ -71,6 +76,12 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                         size: 44,
                       ),
                       const SizedBox(height: 10),
+                      const Text('Votre commande est bien enregistrée',
+                          key: Key('boutique-order-saved'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
                       Text(
                         orderNumber,
                         style: const TextStyle(
@@ -82,7 +93,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text(
                         orderId != null
-                            ? 'Consultez le paiement actuel ci-dessous'
+                            ? 'Total à la création : ${formatter.format(amount)}'
                             : formatter.format(amount),
                         style: const TextStyle(
                           color: AppColors.oranje,
@@ -90,9 +101,23 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                           fontSize: 20,
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      const Text(
+                          'Votre panier a été vidé parce que les articles sont maintenant dans cette commande. Ne les commandez pas une seconde fois.',
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      Text(
+                          paymentMethod == 'bank'
+                              ? 'Virement bancaire choisi. Retrouvez le QR et les coordonnées actuelles ci-dessous. Un e-mail de paiement est aussi prévu automatiquement à la création.'
+                              : 'Paiement par e-mail choisi. Retrouvez aussi le QR et les coordonnées actuelles ci-dessous.',
+                          textAlign: TextAlign.center),
                       const SizedBox(height: 18),
                       if (orderId != null && orderId!.isNotEmpty)
-                        BoutiqueCurrentPaymentPanel(orderId: orderId!)
+                        (paymentPanelBuilder?.call(
+                                orderId!, true) ??
+                            BoutiqueCurrentPaymentPanel(
+                                orderId: orderId!,
+                                showQr: true))
                       else if (paymentMethod == 'email')
                         _EmailPaymentDetails(
                           orderId: orderId,
@@ -107,6 +132,16 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                           amount: amount,
                         ),
                       const SizedBox(height: 18),
+                      if (orderId != null && orderId!.isNotEmpty)
+                        OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context)
+                                .pushReplacement(boutiqueAccessGuardedRoute(
+                                    sourceContext: context,
+                                    requiredSection: 'commandes',
+                                    builder: (_) =>
+                                        const MesCommandesScreen())),
+                            icon: const Icon(Icons.receipt_long_outlined),
+                            label: const Text('Mes commandes')),
                       if (orderId == null) ...[
                         const SizedBox(height: 10),
                         SizedBox(
