@@ -14,6 +14,10 @@ import '../payment_communication_copy_button.dart';
 /// historical QR, nor treats a member's transfer declaration as a receipt.
 class BoutiqueCurrentPaymentPanel extends StatefulWidget {
   final String orderId;
+
+  /// Manual bank-transfer checkout does not ask the buyer to scan a QR.
+  /// Both modes still require the same current, server-validated payment data.
+  final bool showQr;
   final Future<Map<String, dynamic>> Function()? loadPayment;
   final Future<void> Function(Map<String, dynamic>)? sendEmail;
   final Stream<DocumentSnapshot<Map<String, dynamic>>> Function(String orderId)?
@@ -22,6 +26,7 @@ class BoutiqueCurrentPaymentPanel extends StatefulWidget {
   const BoutiqueCurrentPaymentPanel(
       {super.key,
       required this.orderId,
+      this.showQr = true,
       this.loadPayment,
       this.sendEmail,
       this.watchOrder,
@@ -185,7 +190,7 @@ class _BoutiqueCurrentPaymentPanelState
           if (_streamFailed || snapshot.hasError || !snapshot.hasData) {
             return Column(children: [
               const Text(
-                  'Paiement actuel indisponible. Aucun ancien QR ne sera affiché.'),
+                  'Les coordonnées de paiement actuelles sont indisponibles. Ne repassez pas la commande : réessayez ici ou retrouvez-la dans Mes commandes. Aucun ancien QR ne sera affiché.'),
               TextButton(
                   onPressed: () {
                     setState(() {
@@ -227,11 +232,12 @@ class _BoutiqueCurrentPaymentPanelState
                       key: const Key('boutique-current-amount'),
                       style: const TextStyle(
                           fontSize: 20, fontWeight: FontWeight.bold)),
-                  QrImageView(
-                      key: ValueKey(epc),
-                      data: epc,
-                      size: 220,
-                      backgroundColor: Colors.white),
+                  if (widget.showQr)
+                    QrImageView(
+                        key: ValueKey(epc),
+                        data: epc,
+                        size: 220,
+                        backgroundColor: Colors.white),
                   Text('Bénéficiaire : ${data['beneficiary']}'),
                   Text('IBAN : ${data['iban']}'),
                   SelectableText(
