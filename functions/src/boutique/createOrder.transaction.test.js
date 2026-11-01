@@ -200,6 +200,7 @@ function run(db, input = request(), overrides = {}) {
     serverTimestamp: () => ({ serverTimestamp: true }),
     randomUUID: () => 'line-uuid',
     qrToDataURL: async () => 'data:image/png;base64,qr',
+    sendBoutiqueOrderEmail: jest.fn(async () => now),
     resolveClubBankSettings: async () => ({ iban: 'BE68539007547034', beneficiary: 'Calypso' }),
     assertBoutiqueAccess: async () => ({
       memberId: uid,
@@ -436,5 +437,43 @@ describe('createBoutiqueOrder callable transaction', () => {
       emailStatus: 'sent',
       emailSentAt: '2026-10-04T12:00:01.000Z',
     });
+  });
+
+  test.each(['bank', 'email'])('new %s choice is saved and emailed even with the old defer flag', async (paymentPresentation) => {
+    const db = new MemoryFirestore(seed());
+    const send = jest.fn(async () => now);
+    const input = request({ paymentPresentation, deferPaymentEmail: true });
+    const result = await run(db, input, { sendBoutiqueOrderEmail: send });
+    const order = db.docs.get(`clubs/${clubId}/orders/${result.orderId}`);
+    expect(order.payment.presentation).toBe(paymentPresentation);
+    expect(result.payment).toMatchObject({ presentation: paymentPresentation, emailStatus: 'sent' });
+    expect(send).toHaveBeenCalledTimes(1);
+    // A replay keeps the original presentation and never sends a second mail.
+    const replay = await run(db, request({ paymentPresentation: paymentPresentation === 'bank' ? 'email' : 'bank' }), { sendBoutiqueOrderEmail: send });
+    expect(replay.orderId).toBe(result.orderId);
+    expect(replay.payment.presentation).toBe(paymentPresentation);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  test('legacy clients get a payment mail without inventing their presentation choice', async () => {
+    const send = jest.fn(async () => now);
+    const result = await run(new MemoryFirestore(seed()), request(), { sendBoutiqueOrderEmail: send });
+    expect(result.payment.presentation).toBe('unspecified');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  test('mail failure preserves the saved payable order and does not send again on a checkout retry', async () => {
+    const db = new MemoryFirestore(seed());
+    const send = jest.fn(async () => { throw new Error('synthetic provider failure'); });
+    const result = await run(db, request({ paymentPresentation: 'bank' }), { sendBoutiqueOrderEmail: send });
+    expect(result.success).toBe(true);
+    expect(result.payment.emailStatus).toBe('failed');
+    expect(db.docs.get(`clubs/${clubId}/orders/${result.orderId}`).payment.email_status).toBe('failed');
+    await run(db, request(), { sendBoutiqueOrderEmail: send });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  test('invalid presentation makes no order, reservation or mail', async () => {
+    const db = new MemoryFirestore(seed());
+    const before = clone([...db.docs]);
+    await expect(run(db, request({ paymentPresentation: 'arbitrary' }))).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect(clone([...db.docs])).toEqual(before);
   });
 });

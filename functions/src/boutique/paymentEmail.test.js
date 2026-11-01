@@ -76,3 +76,30 @@ test('a supplement received during late template resolution suppresses the obsol
   expect(sendEmailWithConfig).not.toHaveBeenCalled();
   expect(input.orderRef.update).not.toHaveBeenCalled();
 });
+
+test('a legacy initial order gets a fresh QR and full manual details even with an old custom template', async () => {
+  const input = fixture(41.5, 0.01, false);
+  delete input.order.paymentPlan;
+  input.order.pricing.total = 41.5;
+  input.order.payment.amount = 999; // stale historical snapshot must be ignored
+  await sendBoutiqueOrderEmail(input);
+  const email = sendEmailWithConfig.mock.calls[0][1];
+  expect(QRCode.toDataURL.mock.calls[0][0].split('\n')[7]).toBe('EUR41.50');
+  expect(email.html).toContain('41,50 €');
+  expect(email.html).toContain('BE68 5390 0754 7034');
+  expect(email.html).toContain('Club QA');
+  expect(email.html).toContain('+++BTQ-2026-9001+++');
+  expect(email.html).toContain('pas une communication structurée');
+  expect(email.html).toContain('cid:qrcode');
+  expect(email.attachments[0].content).toBe('UUE=');
+});
+test('an initial receipt arriving during mail preparation suppresses obsolete instructions too', async () => {
+  const input = fixture();
+  delete input.order.paymentPlan;
+  resolveCommunicationTemplate.mockImplementationOnce(async () => {
+    input.order.status = 'paid'; input.order.payment.status = 'paid'; input.order.payment.bankRef = 'qa-receipt';
+    return { template: { id: 'qa-template', name: 'QA' } };
+  });
+  await expect(sendBoutiqueOrderEmail(input)).rejects.toThrow('La demande de paiement a changé');
+  expect(sendEmailWithConfig).not.toHaveBeenCalled();
+});

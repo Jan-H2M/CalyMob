@@ -1,0 +1,436 @@
+[
+  {
+    "name": "initial",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 41.5
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      }
+    },
+    "expected": {
+      "orderNumber": "BTQ-2099-9001",
+      "orderTotal": 41.5,
+      "receivedAmount": 0,
+      "reportedAmount": 0,
+      "amount": 41.5,
+      "requestId": "initial",
+      "kind": "initial",
+      "revision": "legacy",
+      "communication": "+++BTQ-2099-9001+++",
+      "iban": "BE68539007547034",
+      "beneficiary": "Club QA",
+      "epcPayload": "BCD\n002\n1\nSCT\n\nClub QA\nBE68539007547034\nEUR41.50\n\n\n+++BTQ-2099-9001+++",
+      "awaitingBankReceipt": false,
+      "fullyPaid": false,
+      "refundAmount": 0,
+      "oldInstructionsObsolete": false,
+      "presentation": "bank",
+      "emailStatus": "sent"
+    }
+  },
+  {
+    "name": "one cent",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 0.01
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      }
+    },
+    "expected": {
+      "orderNumber": "BTQ-2099-9001",
+      "orderTotal": 0.01,
+      "receivedAmount": 0,
+      "reportedAmount": 0,
+      "amount": 0.01,
+      "requestId": "initial",
+      "kind": "initial",
+      "revision": "legacy",
+      "communication": "+++BTQ-2099-9001+++",
+      "iban": "BE68539007547034",
+      "beneficiary": "Club QA",
+      "epcPayload": "BCD\n002\n1\nSCT\n\nClub QA\nBE68539007547034\nEUR0.01\n\n\n+++BTQ-2099-9001+++",
+      "awaitingBankReceipt": false,
+      "fullyPaid": false,
+      "refundAmount": 0,
+      "oldInstructionsObsolete": false,
+      "presentation": "bank",
+      "emailStatus": "sent"
+    }
+  },
+  {
+    "name": "supplement with reported initial",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "pending",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++"
+          },
+          {
+            "id": "supplement-qa-revision",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "pending",
+            "reportedSent": false,
+            "reference": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "orderNumber": "BTQ-2099-9001",
+      "orderTotal": 48.12,
+      "receivedAmount": 0,
+      "reportedAmount": 41.5,
+      "amount": 6.62,
+      "requestId": "supplement-qa-revision",
+      "kind": "supplement",
+      "revision": "qa-revision",
+      "communication": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++",
+      "iban": "BE68539007547034",
+      "beneficiary": "Club QA",
+      "epcPayload": "BCD\n002\n1\nSCT\n\nClub QA\nBE68539007547034\nEUR6.62\n\n\n+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++",
+      "awaitingBankReceipt": false,
+      "fullyPaid": false,
+      "refundAmount": 0,
+      "oldInstructionsObsolete": true,
+      "presentation": "bank",
+      "emailStatus": "sent"
+    }
+  },
+  {
+    "name": "only supplement after initial receipt",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "received",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++",
+            "bankRef": "initial-receipt",
+            "receivedAt": "qa-time"
+          },
+          {
+            "id": "supplement-qa-revision",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "pending",
+            "reportedSent": false,
+            "reference": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "orderNumber": "BTQ-2099-9001",
+      "orderTotal": 48.12,
+      "receivedAmount": 41.5,
+      "reportedAmount": 0,
+      "amount": 6.62,
+      "requestId": "supplement-qa-revision",
+      "kind": "supplement",
+      "revision": "qa-revision",
+      "communication": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++",
+      "iban": "BE68539007547034",
+      "beneficiary": "Club QA",
+      "epcPayload": "BCD\n002\n1\nSCT\n\nClub QA\nBE68539007547034\nEUR6.62\n\n\n+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++",
+      "awaitingBankReceipt": false,
+      "fullyPaid": false,
+      "refundAmount": 0,
+      "oldInstructionsObsolete": true,
+      "presentation": "bank",
+      "emailStatus": "sent"
+    }
+  },
+  {
+    "name": "supplement received first waits for original",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "pending",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++"
+          },
+          {
+            "id": "supplement-qa-revision",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "received",
+            "reportedSent": false,
+            "reference": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++",
+            "bankRef": "extra-receipt",
+            "receivedAt": "qa-time"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "orderNumber": "BTQ-2099-9001",
+      "orderTotal": 48.12,
+      "receivedAmount": 6.62,
+      "reportedAmount": 41.5,
+      "amount": 0,
+      "requestId": null,
+      "kind": null,
+      "revision": "qa-revision",
+      "communication": "+++BTQ-2099-9001+++",
+      "iban": "BE68539007547034",
+      "beneficiary": "Club QA",
+      "epcPayload": null,
+      "awaitingBankReceipt": true,
+      "fullyPaid": false,
+      "refundAmount": 0,
+      "oldInstructionsObsolete": true,
+      "presentation": "bank",
+      "emailStatus": "sent"
+    }
+  },
+  {
+    "name": "fully received no second QR",
+    "order": {
+      "status": "paid",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "paid",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "received",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++",
+            "bankRef": "initial-receipt",
+            "receivedAt": "qa-time"
+          },
+          {
+            "id": "supplement-qa-revision",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "received",
+            "reportedSent": false,
+            "reference": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++",
+            "bankRef": "extra-receipt",
+            "receivedAt": "qa-time"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "orderNumber": "BTQ-2099-9001",
+      "orderTotal": 48.12,
+      "receivedAmount": 48.12,
+      "reportedAmount": 0,
+      "amount": 0,
+      "requestId": null,
+      "kind": null,
+      "revision": "qa-revision",
+      "communication": "+++BTQ-2099-9001+++",
+      "iban": "BE68539007547034",
+      "beneficiary": "Club QA",
+      "epcPayload": null,
+      "awaitingBankReceipt": false,
+      "fullyPaid": true,
+      "refundAmount": 0,
+      "oldInstructionsObsolete": true,
+      "presentation": "bank",
+      "emailStatus": "sent"
+    }
+  },
+  {
+    "name": "cancelled no instructions",
+    "order": {
+      "status": "cancelled",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 41.5
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      }
+    },
+    "expected": null
+  },
+  {
+    "name": "wrong supplement reference",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "pending",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++"
+          },
+          {
+            "id": "supplement-qa-revision",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "pending",
+            "reportedSent": false,
+            "reference": "+++BTQ-2099-9999+++"
+          }
+        ]
+      }
+    },
+    "expected": null
+  },
+  {
+    "name": "duplicate request ID",
+    "order": {
+      "status": "awaiting_payment",
+      "orderNumber": "BTQ-2099-9001",
+      "structuredCommunication": "+++BTQ-2099-9001+++",
+      "pricing": {
+        "total": 48.12
+      },
+      "payment": {
+        "status": "pending",
+        "iban": "BE68539007547034",
+        "beneficiary": "Club QA",
+        "epcPayload": "STALE HISTORICAL QR",
+        "presentation": "bank",
+        "email_status": "sent"
+      },
+      "paymentPlan": {
+        "version": 1,
+        "revision": "qa-revision",
+        "requests": [
+          {
+            "id": "initial",
+            "kind": "initial",
+            "amount": 41.5,
+            "status": "pending",
+            "reportedSent": true,
+            "reference": "+++BTQ-2099-9001+++"
+          },
+          {
+            "id": "initial",
+            "kind": "supplement",
+            "amount": 6.62,
+            "status": "pending",
+            "reportedSent": false,
+            "reference": "+++BTQ-2099-9001-SB512BCF56123C6DD264B7D3B+++"
+          }
+        ]
+      }
+    },
+    "expected": null
+  }
+]
