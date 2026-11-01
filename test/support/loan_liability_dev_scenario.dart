@@ -21,7 +21,8 @@ class _FictionalLoanLiabilityState extends State<FictionalLoanLiability> {
             onPressed: () async {
               await showMaterialLoanRequestForm(
                   context: context,
-                  service: MaterialReturnService(firestore: db),
+                  service:
+                      MaterialReturnService.forDevLoanLiability(firestore: db),
                   clubId: 'dev-fictional',
                   memberId: 'dev-borrower',
                   memberName: 'Membre FICTIF',

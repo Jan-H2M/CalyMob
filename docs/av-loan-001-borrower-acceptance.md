@@ -1,5 +1,23 @@
 # AV-LOAN-001 — borrower financial-liability acknowledgement (DEV)
 
+## 1.29.0 release exclusion
+
+Jan explicitly excluded this declaration from 1.29.0 (538). Normal
+`MaterialReturnService` construction keeps it disabled: no checkbox/evidence
+notice, no acceptance requirement and no new `liability_acceptance` field on
+create or amendment, even if a caller passes `liabilityAccepted: true`.
+Existing evidence is never erased or overwritten. Ownership/state checks remain.
+
+The implementation is retained for the explicit test-only
+`MaterialReturnService.forDevLoanLiability` constructor with an injected store;
+its writes are bound to `dev-fictional`. Only fictitious fixtures/tests opt in.
+No environment variable, remote setting or normal app entry point enables it.
+The release package test checks that no normal app caller uses this constructor.
+The following intended DEV behavior and rules tests remain available; these
+rules are not part of a production deployment for this release.
+
+## Intended DEV behavior (not active in normal builds)
+
 Only the member's own material request is changed. The specific note remains
 optional (500 characters). No checkbox is preselected, including on an amendment.
 The app guards all request-create methods; a note and versioned acceptance with

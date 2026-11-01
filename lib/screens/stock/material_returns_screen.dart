@@ -199,6 +199,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                                           const EdgeInsets.only(bottom: 12),
                                       child: _GonflageRequestCard(
                                         request: request,
+                                        showLiabilityEvidence: _service
+                                            .liabilityDeclarationEnabled,
                                         currentLoans:
                                             loansByMember[request.memberId] ??
                                                 const [],
@@ -377,6 +379,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _MemberLoanRequestCard(
                             request: request,
+                            showLiabilityEvidence:
+                                _service.liabilityDeclarationEnabled,
                             onEdit: request.status == 'submitted'
                                 ? () => _openMemberRequestSheet(
                                       memberId: userId,
@@ -1088,8 +1092,13 @@ class _MemberLoanCard extends StatelessWidget {
 class _MemberLoanRequestCard extends StatelessWidget {
   final MaterialLoanRequest request;
   final VoidCallback? onEdit;
+  final bool showLiabilityEvidence;
 
-  const _MemberLoanRequestCard({required this.request, this.onEdit});
+  const _MemberLoanRequestCard({
+    required this.request,
+    this.onEdit,
+    this.showLiabilityEvidence = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1146,7 +1155,8 @@ class _MemberLoanRequestCard extends StatelessWidget {
               ),
             ],
             if (request.notes?.isNotEmpty == true) Text(request.notes!),
-            _RequestLiabilityEvidence(request: request),
+            if (showLiabilityEvidence)
+              _RequestLiabilityEvidence(request: request),
             if (onEdit != null) ...[
               const SizedBox(height: 10),
               Align(
@@ -1185,11 +1195,13 @@ class _GonflageRequestCard extends StatelessWidget {
   final MaterialLoanRequest request;
   final List<MaterialLoan> currentLoans;
   final VoidCallback? onPrepare;
+  final bool showLiabilityEvidence;
 
   const _GonflageRequestCard({
     required this.request,
     this.currentLoans = const [],
     this.onPrepare,
+    this.showLiabilityEvidence = false,
   });
 
   @override
@@ -1258,7 +1270,8 @@ class _GonflageRequestCard extends StatelessWidget {
               ),
             ],
             if (onPrepare != null) ...[
-              _RequestLiabilityEvidence(request: request),
+              if (showLiabilityEvidence)
+                _RequestLiabilityEvidence(request: request),
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerRight,
@@ -4101,7 +4114,8 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                 shrinkWrap: true,
                 primary: false,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: _categories.length + 1,
+                itemCount: _categories.length +
+                    (widget.service.liabilityDeclarationEnabled ? 1 : 0),
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   if (index == _categories.length) {
@@ -4157,8 +4171,11 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed:
-                      _submitting || !_liabilityAccepted ? null : _submit,
+                  onPressed: _submitting ||
+                          (widget.service.liabilityDeclarationEnabled &&
+                              !_liabilityAccepted)
+                      ? null
+                      : _submit,
                   icon: _submitting
                       ? const SizedBox(
                           width: 18,
@@ -4244,7 +4261,9 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   }
 
   Future<void> _submit() async {
-    if (!_liabilityAccepted) return;
+    if (widget.service.liabilityDeclarationEnabled && !_liabilityAccepted) {
+      return;
+    }
     if (_selectedLines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

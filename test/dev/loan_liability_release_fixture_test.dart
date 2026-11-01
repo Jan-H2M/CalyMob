@@ -12,7 +12,7 @@ void main() {
     expect(() => store.collection('production'), throwsUnsupportedError);
     expect(
         () => store.collection('clubs').doc('other'), throwsUnsupportedError);
-    final service = MaterialReturnService(firestore: store);
+    final service = MaterialReturnService.forDevLoanLiability(firestore: store);
     await service.submitLoanRequestLines(
       clubId: 'dev-fictional',
       memberId: 'dev-borrower',
@@ -36,7 +36,8 @@ void main() {
       () async {
     final store = FictionalLoanRequestStore();
     await expectLater(
-        MaterialReturnService(firestore: store).submitLoanRequestLines(
+        MaterialReturnService.forDevLoanLiability(firestore: store)
+            .submitLoanRequestLines(
           clubId: 'dev-fictional',
           memberId: 'dev-borrower',
           memberName: 'FICTIF',

@@ -7,6 +7,20 @@ const root = path.resolve(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 
 // This is a source-preservation gate, not native acceptance or store approval.
+test('unapproved borrower declaration is off in normal app construction and DEV opt-in stays outside app callers', () => {
+  const service = read('lib/services/material_return_service.dart');
+  assert.match(service, /liabilityDeclarationEnabled = false/);
+  assert.match(service, /if \(!liabilityDeclarationEnabled\) return null/);
+  assert.match(service, /clubId != 'dev-fictional'/);
+  const callers = fs.readdirSync(path.join(root, 'lib'), { recursive: true })
+    .filter(file => file.endsWith('.dart'))
+    .flatMap(file => [...read(`lib/${file}`).matchAll(/MaterialReturnService\.forDevLoanLiability\s*\(/g)].map(() => file));
+  assert.deepEqual(callers, [path.join('services', 'material_return_service.dart')],
+    'Only the constructor declaration may appear in normal app sources; DEV callers live in test fixtures');
+  assert.ok(read('test/services/loan_liability_release_exclusion_test.dart').length > 100);
+  assert.ok(read('test/widgets/loan_request_form_test.dart').includes('excludes declaration and saves without agreement'));
+});
+
 test('published formation/history/depth regression suites stay in the package', () => {
   for (const file of [
     'test/services/mil_depth_cumulative_test.dart',

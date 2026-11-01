@@ -15,7 +15,7 @@ void main() {
   ];
   setUp(() {
     db = FakeFirebaseFirestore();
-    service = MaterialReturnService(firestore: db);
+    service = MaterialReturnService.forDevLoanLiability(firestore: db);
   });
   Future<String> create(
           {bool accepted = false, String note = 'Sortie FICTIVE'}) =>

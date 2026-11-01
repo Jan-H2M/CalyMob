@@ -15,19 +15,27 @@ or submit either store's release metadata or submit a build for review until the
 applicable text approval is recorded. This preparation does not authorize a
 production backend/rules deployment, business-data change or app_version write.
 
-There is a second independent production-build blocker: unchanged DEV includes
-AV-LOAN-001 (#187), whose liability wording requires board review before
-production activation. It has no feature flag and a store client would activate
-its consent form even without deploying rules. Do not distribute this candidate
-as-is. Jan has been asked whether to keep this DEV-only change out of the release;
-no answer has been received. Do not infer that version approval answers that
-scope question. Preserve the feature on DEV until an explicit scope decision.
+Jan explicitly confirmed on 1 November2026 (GROKBOT-CALYMOB-BUILD-1101-0828)
+that the liability declaration stays out of1.29.0(538). The app's normal service
+constructor now disables its consent form, acceptance requirement and new evidence
+writes. A caller cannot manufacture agreement by passing liabilityAccepted=true
+while it is disabled; existing historical evidence is preserved on amendment.
+Member and Gonflage cards do not display the candidate's evidence notice.
+
+The DEV implementation and its tests remain available through the explicit
+test-only forDevLoanLiability constructor with an injected fictional store;
+writes through that constructor reject any club other than dev-fictional.
+Normal app sources have no opt-in caller; no environment or remote setting
+activates it. The isolated fictional DEV lab opts in explicitly. Thus merging
+the release preparation need not erase AV-LOAN-001 from DEV, and this release
+does not require deploying the candidate's rules or unreviewed wording.
 
 Production inventory_loan_requests rules currently permit admin updates, not the
 owner-amend route. This is an existing compatibility limit, not a proven new
 regression introduced by this version. Do not solve it with an unauthorized
-rules deployment. A final scope-adjusted release commit needs its own independent
-review and combined test evidence before building.
+rules deployment. The scope-adjusted release commit needs its own independent
+review and combined test evidence before building. Text approval and local
+Android disk space remain independent holds.
 
 ## Included DEV ancestry
 
@@ -38,7 +46,7 @@ e3571c17ba60cfcd5ea04ea3aa3e05b84f7e4fb1. It retains released iOS537 source
 | PR | Scope | Production boundary |
 | --- | --- | --- |
 | #186 | Annual medical expiry display and candidate reminders | App can use existing explicit dates. Reminder/projection Functions remain separately deployable, not active because of an app build. |
-| #187 | Borrower financial-liability acceptance | Unapproved public activation: hold or explicitly isolate after Jan's decision. |
+| #187 | Borrower financial-liability acceptance | Excluded from normal release behavior per Jan; implementation retained only for explicit fictional DEV tests. No new evidence writes in normal flow. |
 | #188 | Auth-bound document streams and fail-closed old QR handling | No additional production backend deployment needed by this client repair. |
 | #189 | Startup, notifications and deep-link ordering | Native cold-start/permission/deep-link acceptance still needed on exact new artifacts. |
 | #190 | Mes missions for member suppliers | Production API contract already present. |
@@ -73,8 +81,11 @@ Unauthenticated live list requests return 401; GET returns 405.
 - Extended legacy screen analysis has warnings/infos; it is not represented as
   warning-free. Existing missions CI permits informational diagnostics explicitly.
 
-The final commit's release checks and exact independent review must be recorded
-in the PR. No existing device check or owner waiver for build 537 is reused for
+The scope-exclusion commit changes only the material-request declaration paths,
+its fictional fixtures/tests, release-source regression checks and this policy
+documentation. It makes no Functions/rules/native-config/dependency changes.
+Final checks and exact independent review must be recorded in the PR. No existing
+device check or owner waiver for build 537 is reused for
 new artifacts. Native review or an explicit exact-artifact waiver is still needed
 before public submission. No real mission check-off, receipt upload or expense
 creation is allowed as production QA for this work item.
