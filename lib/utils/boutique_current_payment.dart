@@ -60,7 +60,7 @@ Map<String, dynamic>? boutiqueCurrentPayment(Map<String, dynamic> order) {
         final expected = row['kind'] == 'initial'
             ? '+++$number+++'
             : '+++$number-S${sha256.convert(utf8.encode('$number:$id')).toString().substring(0, 24).toUpperCase()}+++';
-        if (row['reference'] != null &&
+        if (row.containsKey('reference') &&
             (row['reference'] != expected || !references.add(expected))) {
           return null;
         }
