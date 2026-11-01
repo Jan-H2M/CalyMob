@@ -19,7 +19,7 @@ const ms = (value) => value?.toMillis?.() ?? value?.toDate?.()?.getTime() ?? (va
 const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])])) : value;
 const active = (member) => member?.member_status === 'active' && member.has_app_access !== false && (!member.app_status || member.app_status === 'active') && member.isActive !== false && member.actif !== false;
-const ready = (unit) => ['returned_embroidered', 'not_required_reviewed'].includes(unit.finish) && unit.saleStatus === 'sale_ready';
+const ready = (unit) => !unit.inventoryExcluded && ['returned_embroidered', 'not_required_reviewed'].includes(unit.finish) && unit.saleStatus === 'sale_ready';
 const paid = (order) => order?.payment?.status === 'paid' && !order.payment.lastMatchError && order.paymentAdjustment?.type !== 'additional_payment_due' && order.additional_payment_due !== true && ['paid', 'preparing', 'ready', 'delivered'].includes(order.status);
 // Keep the existing Calypso line customization semantics, including historic
 // snapshot fallback. A plain stock base can still require customer embroidery.
@@ -125,6 +125,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
         fail('not-found', 'Pièce introuvable dans ce club.');
       }
       const unit = asUnit(snap);
+      if (unit.inventoryExcluded) fail('failed-precondition', 'Pièce retirée du stock par correction de comptage. Vérifiez son historique dans CalyCompta.');
       if (!manager && unit.transportMissionId !== mission.id && unit.pickupMissionId !== mission.id && unit.handover?.missionId !== mission.id) fail('permission-denied', 'Cette pièce a quitté votre mission.');
       return { unit: publicUnit(unit) };
     }
@@ -134,7 +135,8 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const page = input.cursor ? base.startAfter(input.cursor) : base;
       const [units, members] = await Promise.all([tx.get(page.limit(201)), input.cursor ? Promise.resolve(null) : tx.get(club.collection('members').where('member_status', '==', 'active').limit(500))]);
       const docs = units.docs.slice(0, 200), hasMore = units.size > 200;
-      return { units: docs.map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
+      // Preserve the unfiltered cursor: excluded rows must not hide later pages.
+      return { units: docs.filter(s => !s.data().inventoryExcluded).map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
     }
     // Selection only: RB-scoped reads, never an inventory/order mutation. Do not
     // derive a whole order from the management screen's truncated 200-unit list.
@@ -164,6 +166,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
         const unitSnap = await tx.get(club.collection('boutique_physical_stock_units').doc(unitId));
         if (!unitSnap.exists) fail('failed-precondition', 'Une pièce de la commande est introuvable.');
         const unit = asUnit(unitSnap);
+        if (unit.inventoryExcluded) fail('failed-precondition', 'Une pièce a été retirée du stock par correction. Vérifiez la commande dans CalyCompta.');
         if (unit.customerOrderId !== input.orderId || unit.customerLineId !== line.lineId || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation d’une pièce a changé. Actualisez la commande.');
         if (unit.saleStatus === 'sold') {
           if (unit.handover?.type !== 'member_qr' || !id(order.buyer?.userId) || unit.handover?.recipientMemberId !== order.buyer.userId || !id(unit.handover?.operationId) || !ms(unit.handover?.confirmedAt)) fail('failed-precondition', 'Une remise de cette commande est à vérifier.');
@@ -207,6 +210,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       unitMap.set(unitId, asUnit(snap));
     }
     const selected = wanted.map(unitId => unitMap.get(unitId));
+    if (selected.some(unit => unit.inventoryExcluded)) fail('failed-precondition', 'Une pièce a été retirée du stock par correction. Actualisez et vérifiez le lot.');
     if (input.action !== 'mission') for (const unit of selected) {
       if (unit.saleStatus === 'sold') fail('failed-precondition', 'Une pièce a déjà été remise. Actualisez le lot.');
       if (unit.revision !== input.units.find(u => u.id === unit.id).revision) fail('aborted', 'Une pièce a changé. Actualisez et vérifiez la sélection avant de confirmer.');

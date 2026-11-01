@@ -248,3 +248,31 @@ test('complete receipt listing pages beyond 200 with batch identity and manager-
   assert.equal((await club.collection('boutique_physical_stock_units').doc(receipt[60].id).get()).data().location, 'Jan');
   assert.equal(await count('boutique_pickup_notifications'), notifications);
 });
+
+test('count-excluded pieces are hidden from active lists and blocked at lookup and every mutation, including stale sessions', async () => {
+  const unitId = 'count-excluded-carnet';
+  const ref = club.collection('boutique_physical_stock_units').doc(unitId);
+  await ref.set({ productName: 'Carnet QA', variantLabel: 'Standard', location: 'Piscine', destination: 'free',
+    finish: 'unembroidered', saleStatus: 'not_ready', requiresEmbroidery: false, inventoryExcluded: true, history: [] });
+  const excluded = await ref.get();
+  const revision = `${excluded.updateTime.seconds}:${excluded.updateTime.nanoseconds}`;
+  const page = await call('rb', 'list');
+  assert.ok(!page.units.some(u => u.id === unitId));
+  await assert.rejects(call('rb', 'lookup', { unitId }), e => e.code === 'failed-precondition' && /correction/.test(e.message));
+  for (const action of ['move', 'prepareJim', 'confirmJim', 'finishJim', 'reviewPlain', 'dispatch']) {
+    for (const preview of [true, false]) await assert.rejects(call('rb', action, {
+      units: [{ id: unitId, revision }], sourceLocation: 'Piscine', destination: 'Jim',
+      idempotencyKey: key(), note: 'Inspection QA', preview,
+    }), e => e.code === 'failed-precondition' && /correction/.test(e.message));
+  }
+  assert.equal((await ref.get()).data().location, 'Piscine');
+  await ref.update({ inventoryExcluded: false });
+  const restored = (await call('rb', 'lookup', { unitId })).unit;
+  assert.equal(restored.id, unitId);
+  assert.equal((await call('rb', 'move', { units: [{ id: unitId, revision: restored.revision }],
+    sourceLocation: 'Piscine', destination: 'Réserve', preview: true, idempotencyKey: key() })).count, 1);
+  // A piece counted out after preview cannot be moved using a captured revision.
+  await ref.update({ inventoryExcluded: true });
+  await assert.rejects(call('rb', 'move', { units: [{ id: unitId, revision: restored.revision }],
+    sourceLocation: 'Piscine', destination: 'Réserve', idempotencyKey: key() }), { code: 'failed-precondition' });
+});
