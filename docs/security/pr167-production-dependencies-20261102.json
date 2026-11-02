@@ -1,0 +1,1386 @@
+{
+  "observedAt": "2026-11-02",
+  "project": "calycompta",
+  "scope": "126 Gen2 function source archives; Gen1 confirmResolution not audited",
+  "main": "6d278fa0434d16a45ade9bdceb6f41673c87e1b0",
+  "dev": "3a7a5b148e5c6cf64f5ef14262971dd4a0aab6ba",
+  "groups": [
+    {
+      "group": "prod-group-00",
+      "md5Hash": "GZku4zfxY6fgzImPeqxpdA==",
+      "functions": [
+        "syncMemberProjections",
+        "correctPoolStudentGroup",
+        "manageFormationEnrollment",
+        "updateEventRegistration",
+        "addGuestToEvent",
+        "registerForEvent",
+        "assignApneePoolCourse",
+        "unregisterFromEvent",
+        "onPiscineAttendeeCreated",
+        "onQrTrainingGroupCreated"
+      ],
+      "representative": {
+        "function": "syncMemberProjections",
+        "updateTime": "2026-10-12T16:20:39.917161367Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791822018968490",
+          "object": "syncMemberProjections/function-source.zip"
+        },
+        "size": "706399",
+        "md5Hash": "GZku4zfxY6fgzImPeqxpdA=="
+      },
+      "fileSha256": {
+        "package.json": "c428bb61fce6ace4a78913f6ac954efa958798e99c72559444b060bd21c2aed2",
+        "package-lock.json": "957882fba8aa3f1a6d88440430b1d08cbda515998f955aa2a8363afb558b3495",
+        "src/utils/communicationTemplates.js": "2eb1906f782bdce468aca3c12058470f7605c5055b2dcd003cd8eabb206f5ecb"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.10"
+        ],
+        "proxy-addr": [
+          "2.0.8"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": true,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 0,
+        "total": 3
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-01",
+      "md5Hash": "JgIqDaJ/qxTqsDGua7z7ug==",
+      "functions": [
+        "getBoutiqueOrderPayment",
+        "sendBoutiqueOrderPaymentEmail",
+        "createBoutiqueOrder"
+      ],
+      "representative": {
+        "function": "getBoutiqueOrderPayment",
+        "updateTime": "2026-11-01T18:44:51.819684948Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1793558682841521",
+          "object": "getBoutiqueOrderPayment/function-source.zip"
+        },
+        "size": "676359",
+        "md5Hash": "JgIqDaJ/qxTqsDGua7z7ug=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "df8998481ace4358437f57b8d32c4ead766d16014822d51c0da0ad95c2da3d12"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-02",
+      "md5Hash": "A9QHJ1wr09Jl88jYhfI93w==",
+      "functions": [
+        "onClaimAccepted",
+        "analyzeLogbookDictation",
+        "reviewMilProposal",
+        "onExpenseStatusChange",
+        "resolveCanonicalDiveLocation",
+        "cleanupOldMessages",
+        "onOperationFinished",
+        "getMaterialLoanPaymentQr",
+        "onTargetLevelChanged",
+        "mirrorCanonicalToLegacy",
+        "mergeDiveLocations",
+        "createInscriptionRefund",
+        "processStaleDraftClaims",
+        "previewDiveLocationMerge",
+        "previewDiveLocationReconciliation",
+        "onInscriptionPaymentChange",
+        "sendPaymentQrEmail",
+        "nodaWebhook",
+        "milImpactPreview",
+        "onObservationAcquis",
+        "onClaimResubmitted",
+        "resolveReferenceDiveSiteLocation",
+        "createNodaPayment",
+        "eventPaymentReminder",
+        "onPalanqueeSaved",
+        "onMemberCarnetPreferenceChanged",
+        "onExpenseCreated",
+        "analyzeLogbookPage",
+        "onClaimSubmitted",
+        "deleteDiveLocationSafely",
+        "confirmReferenceDiveSiteLocation",
+        "onInscriptionPaidMarkPresent",
+        "sendPaymentReminder",
+        "listReferenceDiveSites",
+        "onInscriptionPaymentAudit",
+        "checkNodaPaymentStatus",
+        "onOperationPalanqueeSaved",
+        "onMedicalCertCreated",
+        "onLogbookEntryGroupChanged",
+        "sendMaterialLoanPaymentQrEmail",
+        "mirrorLegacyExpenseClaim"
+      ],
+      "representative": {
+        "function": "onClaimAccepted",
+        "updateTime": "2026-08-24T15:26:54.113965780Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1787585187605323",
+          "object": "onClaimAccepted/function-source.zip"
+        },
+        "size": "473332",
+        "md5Hash": "A9QHJ1wr09Jl88jYhfI93w=="
+      },
+      "fileSha256": {
+        "package.json": "da2d1c8622d11ab996680f77b0dd1c5dcddf381c56055340c0e7b6ec92240420",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-03",
+      "md5Hash": "eiq8KuSFWl405kRgPIx2Og==",
+      "functions": [
+        "onNewTeamMessage",
+        "joinEventWaitlist",
+        "onNewAnnouncement",
+        "onAnnouncementReplyDeleted",
+        "onLogbookDiveBuddiesChanged",
+        "leaveEventWaitlist",
+        "onAnnouncementWritten",
+        "onNewAnnouncementReply",
+        "ensurePiscineSessionChatAcl",
+        "onExerciceDeclared",
+        "onNewSessionMessage",
+        "sessionReminder",
+        "dailyExerciseDeclarationDigest",
+        "onPiscineTaskAssigned",
+        "onClaimRejected",
+        "onNewOperation",
+        "onReadStateScopeWritten",
+        "birthdayNotification",
+        "onNewEventMessage",
+        "onMedicalCertStatusChange",
+        "bootstrapUnreadCursorV1",
+        "processFormationTaskReminders",
+        "acknowledgeVisibleUnreadCursorV1",
+        "promoteEventWaitlistEntry"
+      ],
+      "representative": {
+        "function": "onNewTeamMessage",
+        "updateTime": "2026-09-26T07:23:05.062629428Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1790407369459806",
+          "object": "onNewTeamMessage/function-source.zip"
+        },
+        "size": "643050",
+        "md5Hash": "eiq8KuSFWl405kRgPIx2Og=="
+      },
+      "fileSha256": {
+        "package.json": "220a85031cd9356338077f7ec53eaa4653f35df22e4b931acbe9382fe3d742b0",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-04",
+      "md5Hash": "jplSXdn5SDaI0/u1NDCrAw==",
+      "functions": [
+        "autoClosePoolSessions",
+        "onPoolSessionClosed",
+        "respondToLogbookDiveConfirmation",
+        "onMonitorObservationCompleted",
+        "assignDiveNumber",
+        "requestExerciseEvaluation",
+        "decideExerciseEvaluation",
+        "backfillMyDiveNumbers",
+        "onBuddyConfirmationTask"
+      ],
+      "representative": {
+        "function": "autoClosePoolSessions",
+        "updateTime": "2026-09-12T20:05:30.783304891Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1789243469558127",
+          "object": "autoClosePoolSessions/function-source.zip"
+        },
+        "size": "576764",
+        "md5Hash": "jplSXdn5SDaI0/u1NDCrAw=="
+      },
+      "fileSha256": {
+        "package.json": "220a85031cd9356338077f7ec53eaa4653f35df22e4b931acbe9382fe3d742b0",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-05",
+      "md5Hash": "+X7U2bviageA0k5VH4HZEQ==",
+      "functions": [
+        "createCotisationPayment"
+      ],
+      "representative": {
+        "function": "createCotisationPayment",
+        "updateTime": "2026-10-07T05:27:45.302954334Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791350852019179",
+          "object": "createCotisationPayment/function-source.zip"
+        },
+        "size": "647123",
+        "md5Hash": "+X7U2bviageA0k5VH4HZEQ=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-06",
+      "md5Hash": "npVDrRGpPOXzF96SsRNgOQ==",
+      "functions": [
+        "onAnnouncementUnreadTimestampCreated",
+        "onEventMessageUnreadTimestampCreated",
+        "onAnnouncementReplyUnreadTimestampCreated",
+        "onTeamMessageUnreadTimestampCreated",
+        "onPiscineSessionChatAclWritten",
+        "onSessionMessageUnreadTimestampCreated"
+      ],
+      "representative": {
+        "function": "onAnnouncementUnreadTimestampCreated",
+        "updateTime": "2026-09-26T07:37:37.593633859Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1790408227473719",
+          "object": "onAnnouncementUnreadTimestampCreated/function-source.zip"
+        },
+        "size": "645619",
+        "md5Hash": "npVDrRGpPOXzF96SsRNgOQ=="
+      },
+      "fileSha256": {
+        "package.json": "220a85031cd9356338077f7ec53eaa4653f35df22e4b931acbe9382fe3d742b0",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-07",
+      "md5Hash": "Bi0wobT5omSMN6VgdFlo3Q==",
+      "functions": [
+        "manageApneeTraining"
+      ],
+      "representative": {
+        "function": "manageApneeTraining",
+        "updateTime": "2026-10-12T09:43:16.283833223Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791798103122223",
+          "object": "manageApneeTraining/function-source.zip"
+        },
+        "size": "701855",
+        "md5Hash": "Bi0wobT5omSMN6VgdFlo3Q=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-08",
+      "md5Hash": "OIM8PZpaGGEQlIMVdqS4WQ==",
+      "functions": [
+        "onInscriptionChangeAudit"
+      ],
+      "representative": {
+        "function": "onInscriptionChangeAudit",
+        "updateTime": "2026-09-05T22:40:18.478604932Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1788647956288392",
+          "object": "onInscriptionChangeAudit/function-source.zip"
+        },
+        "size": "482376",
+        "md5Hash": "OIM8PZpaGGEQlIMVdqS4WQ=="
+      },
+      "fileSha256": {
+        "package.json": "da2d1c8622d11ab996680f77b0dd1c5dcddf381c56055340c0e7b6ec92240420",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-09",
+      "md5Hash": "97dhVCtWEuRLIvuW8bCfgQ==",
+      "functions": [
+        "onExerciseClaimWriteSnapshot",
+        "onExercicesValidesWriteSnapshot",
+        "recordOfficialFormationResult",
+        "onMemberObservationWriteSnapshot",
+        "setPersonalExerciseProgress",
+        "onFormationGoalsWriteSnapshot",
+        "recordPoolQrAttendance",
+        "onPlongeurCodeChanged",
+        "rebuildStaleSnapshots",
+        "onMemberFormationFieldsWriteSnapshot",
+        "onLogbookEntryWriteSnapshot",
+        "getPoolFormationOverviewV1"
+      ],
+      "representative": {
+        "function": "onExerciseClaimWriteSnapshot",
+        "updateTime": "2026-10-11T18:19:39.576456029Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791742766009949",
+          "object": "onExerciseClaimWriteSnapshot/function-source.zip"
+        },
+        "size": "700649",
+        "md5Hash": "97dhVCtWEuRLIvuW8bCfgQ=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-10",
+      "md5Hash": "ZGSNQs9kPG7COisoMFrRtw==",
+      "functions": [
+        "milSyncWeekly",
+        "runMilSyncNow"
+      ],
+      "representative": {
+        "function": "milSyncWeekly",
+        "updateTime": "2026-10-11T10:40:19.724850066Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791715113623432",
+          "object": "milSyncWeekly/function-source.zip"
+        },
+        "size": "670147",
+        "md5Hash": "ZGSNQs9kPG7COisoMFrRtw=="
+      },
+      "fileSha256": {
+        "package.json": "939fe62d0b03110f617f5b244710678ca708ee30d240b9c687d2d30dcaaf4e99",
+        "package-lock.json": "bfc33513b1185dfd931955a35da9c98d8d30d3923094469f654a5e5711d9bb09",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 3,
+        "critical": 2,
+        "total": 6
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs",
+        "undici"
+      ]
+    },
+    {
+      "group": "prod-group-11",
+      "md5Hash": "jKUhstN5uIM5veLZnyxHQw==",
+      "functions": [
+        "sendBoutiquePickupNotification"
+      ],
+      "representative": {
+        "function": "sendBoutiquePickupNotification",
+        "updateTime": "2026-11-01T13:32:19.508591957Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1793539881999065",
+          "object": "sendBoutiquePickupNotification/function-source.zip"
+        },
+        "size": "652429",
+        "md5Hash": "jKUhstN5uIM5veLZnyxHQw=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-12",
+      "md5Hash": "vGs4mA9K/VLRmZ04G4J7hA==",
+      "functions": [
+        "updateBirthdaySharing"
+      ],
+      "representative": {
+        "function": "updateBirthdaySharing",
+        "updateTime": "2026-10-11T08:47:36.794966015Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791708447907403",
+          "object": "updateBirthdaySharing/function-source.zip"
+        },
+        "size": "666318",
+        "md5Hash": "vGs4mA9K/VLRmZ04G4J7hA=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-13",
+      "md5Hash": "+12PT0bHweVN7CS5JLQFQg==",
+      "functions": [
+        "sendMaterialLoanHandoverReceipt"
+      ],
+      "representative": {
+        "function": "sendMaterialLoanHandoverReceipt",
+        "updateTime": "2026-09-11T14:38:50.397060309Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1789137476214371",
+          "object": "sendMaterialLoanHandoverReceipt/function-source.zip"
+        },
+        "size": "495342",
+        "md5Hash": "+12PT0bHweVN7CS5JLQFQg=="
+      },
+      "fileSha256": {
+        "package.json": "da2d1c8622d11ab996680f77b0dd1c5dcddf381c56055340c0e7b6ec92240420",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-14",
+      "md5Hash": "3VWWEJqQ9ndvrvaYPzphRw==",
+      "functions": [
+        "cancelBoutiqueOrder",
+        "listBoutiqueOrders",
+        "expireBoutiqueOrders"
+      ],
+      "representative": {
+        "function": "cancelBoutiqueOrder",
+        "updateTime": "2026-11-01T12:23:29.459977879Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1793535801095286",
+          "object": "cancelBoutiqueOrder/function-source.zip"
+        },
+        "size": "660156",
+        "md5Hash": "3VWWEJqQ9ndvrvaYPzphRw=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-15",
+      "md5Hash": "KVKF8Jqz936xMGkb6e/nUw==",
+      "functions": [
+        "onReadStateWritten",
+        "onNotificationHistoryWritten"
+      ],
+      "representative": {
+        "function": "onReadStateWritten",
+        "updateTime": "2026-10-23T08:03:13.311699053Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1792742576196725",
+          "object": "onReadStateWritten/function-source.zip"
+        },
+        "size": "656762",
+        "md5Hash": "KVKF8Jqz936xMGkb6e/nUw=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-16",
+      "md5Hash": "x3WVLDvO4os3VeYzb5Kl1g==",
+      "functions": [
+        "onPoolCheckinCompleted"
+      ],
+      "representative": {
+        "function": "onPoolCheckinCompleted",
+        "updateTime": "2026-09-15T16:40:48.259658386Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1789490382208344",
+          "object": "onPoolCheckinCompleted/function-source.zip"
+        },
+        "size": "577401",
+        "md5Hash": "x3WVLDvO4os3VeYzb5Kl1g=="
+      },
+      "fileSha256": {
+        "package.json": "220a85031cd9356338077f7ec53eaa4653f35df22e4b931acbe9382fe3d742b0",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-17",
+      "md5Hash": "sfJXu354L2SW9GbxoQ6OhQ==",
+      "functions": [
+        "recordInstallmentPayment",
+        "recordOnSitePayment",
+        "recordPaymentCommunication"
+      ],
+      "representative": {
+        "function": "recordInstallmentPayment",
+        "updateTime": "2026-08-31T20:05:31.045175909Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1788206719950070",
+          "object": "recordInstallmentPayment/function-source.zip"
+        },
+        "size": "482142",
+        "md5Hash": "sfJXu354L2SW9GbxoQ6OhQ=="
+      },
+      "fileSha256": {
+        "package.json": "da2d1c8622d11ab996680f77b0dd1c5dcddf381c56055340c0e7b6ec92240420",
+        "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.8"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.15.3"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 1,
+        "moderate": 13,
+        "high": 6,
+        "critical": 5,
+        "total": 25
+      },
+      "auditPackages": [
+        "@fastify/busboy",
+        "@google-cloud/firestore",
+        "@google-cloud/storage",
+        "@grpc/grpc-js",
+        "@protobufjs/utf8",
+        "@tootallnate/once",
+        "axios",
+        "body-parser",
+        "fast-xml-parser",
+        "firebase-admin",
+        "follow-redirects",
+        "form-data",
+        "gaxios",
+        "google-gax",
+        "googleapis",
+        "googleapis-common",
+        "handlebars",
+        "node-forge",
+        "protobufjs",
+        "proxy-addr",
+        "qs",
+        "retry-request",
+        "teeny-request",
+        "uuid",
+        "websocket-driver"
+      ]
+    },
+    {
+      "group": "prod-group-18",
+      "md5Hash": "oxIfHv2tM/D0XvZ+fH3iVg==",
+      "functions": [
+        "queueBugResolutionFeedbackV1",
+        "respondToBugResolutionFeedbackV1"
+      ],
+      "representative": {
+        "function": "queueBugResolutionFeedbackV1",
+        "updateTime": "2026-10-23T08:17:38.843343190Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1792743399856334",
+          "object": "queueBugResolutionFeedbackV1/function-source.zip"
+        },
+        "size": "656957",
+        "md5Hash": "oxIfHv2tM/D0XvZ+fH3iVg=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-19",
+      "md5Hash": "9HvHK5D3wQBZoA0r3kCrPA==",
+      "functions": [
+        "boutiquePhysicalOperations"
+      ],
+      "representative": {
+        "function": "boutiquePhysicalOperations",
+        "updateTime": "2026-11-01T13:32:30.977759795Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1793539878960189",
+          "object": "boutiquePhysicalOperations/function-source.zip"
+        },
+        "size": "655065",
+        "md5Hash": "9HvHK5D3wQBZoA0r3kCrPA=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "475dfd5f2b026571a9ae6fa576319ad9d9b5d060a3d41e7e32f1a22488aea631"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    },
+    {
+      "group": "prod-group-20",
+      "md5Hash": "iB8T6UvYzN4XSmI6TP2p3g==",
+      "functions": [
+        "setBoutiqueGlobalAccess"
+      ],
+      "representative": {
+        "function": "setBoutiqueGlobalAccess",
+        "updateTime": "2026-10-04T09:32:41.660828576Z",
+        "source": {
+          "bucket": "gcf-v2-sources-328464166969-europe-west1",
+          "generation": "1791106287254277",
+          "object": "setBoutiqueGlobalAccess/function-source.zip"
+        },
+        "size": "642285",
+        "md5Hash": "iB8T6UvYzN4XSmI6TP2p3g=="
+      },
+      "fileSha256": {
+        "package.json": "b920a03542c6c43c8e6330146a7b61c3e866d50a455dd6d0826824c58bda6107",
+        "package-lock.json": "24df46eeb8f012f4c248807b2aab0d720d875fdf9828d6efa70abd9e4595349a",
+        "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f"
+      },
+      "versions": {
+        "handlebars": [
+          "4.7.9"
+        ],
+        "proxy-addr": [
+          "2.0.7"
+        ],
+        "body-parser": [
+          "2.3.0"
+        ],
+        "qs": [
+          "6.16.0"
+        ]
+      },
+      "templateGuard": false,
+      "audit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 2,
+        "total": 5
+      },
+      "auditPackages": [
+        "body-parser",
+        "follow-redirects",
+        "handlebars",
+        "proxy-addr",
+        "qs"
+      ]
+    }
+  ]
+}
