@@ -1,0 +1,33 @@
+name: Material loan permissions
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/material-loan-permissions.yml'
+      - 'functions/src/payment/materialLoanPayment*'
+      - 'functions/src/loans/materialLoanRoles*'
+      - 'functions/package*.json'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/material-loan-permissions.yml'
+      - 'functions/src/payment/materialLoanPayment*'
+      - 'functions/src/loans/materialLoanRoles*'
+      - 'functions/package*.json'
+permissions:
+  contents: read
+jobs:
+  authorization:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm --prefix functions ci --ignore-scripts
+      - name: Both deposit callables enforce the Gonflage matrix
+        run: npm --prefix functions test -- --runInBand src/payment/materialLoanPayment src/loans/materialLoanRoles
+      - run: git diff --exit-code -- functions/package-lock.json

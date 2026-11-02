@@ -22,6 +22,7 @@ const callableOptions = {
 };
 
 function isMaterialLoanManager(member = {}) {
+  // COM-153: the Gonflage badge is required, independently of app/admin roles.
   return hasGonflageRole(member);
 }
 
@@ -113,15 +114,17 @@ async function loadMaterialLoanPaymentContext(db, { clubId, loanId, callerUid })
   }
 
   const clubRef = db.collection('clubs').doc(clubId);
-  const [callerDoc, loanDoc, bankDoc, generalDoc] = await Promise.all([
-    clubRef.collection('members').doc(callerUid).get(),
+  const callerDoc = await clubRef.collection('members').doc(callerUid).get();
+  if (!callerDoc.exists || !isMaterialLoanManager(callerDoc.data())) {
+    throw new HttpsError('permission-denied', 'Seuls les responsables Gonflage peuvent gérer cette caution.');
+  }
+
+  // Authorize from the requested club before reading its loan or bank details.
+  const [loanDoc, bankDoc, generalDoc] = await Promise.all([
     clubRef.collection('inventory_loans').doc(loanId).get(),
     clubRef.collection('settings').doc('bank').get(),
     clubRef.collection('settings').doc('general').get(),
   ]);
-  if (!callerDoc.exists || !isMaterialLoanManager(callerDoc.data())) {
-    throw new HttpsError('permission-denied', 'Seuls les responsables matériel peuvent gérer cette caution.');
-  }
   if (!loanDoc.exists) {
     throw new HttpsError('not-found', 'Prêt matériel introuvable.');
   }
