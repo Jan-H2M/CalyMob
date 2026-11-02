@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "project": "calycompta",
+  "region": "europe-west1",
+  "source": "releases/com153-borg/functions",
+  "exports": [
+    "getMaterialLoanPaymentQr",
+    "sendMaterialLoanPaymentQrEmail"
+  ],
+  "authorization": "Jan 2026-11-02 16:10 Europe/Brussels: Ja, COM-153 naar productie",
+  "baselineArchiveSha256": "25f7f845c4b358552ee07884a6a672b35d97cd9a71b0a47d93369e996007a839",
+  "baselineFunctions": {
+    "getMaterialLoanPaymentQr": {
+      "revision": "getmaterialloanpaymentqr-00002-meq",
+      "updateTime": "2026-08-24T15:25:34.016320554Z",
+      "source": {
+        "bucket": "gcf-v2-sources-328464166969-europe-west1",
+        "generation": "1787585122693303",
+        "object": "getMaterialLoanPaymentQr/function-source.zip"
+      },
+      "zipSha256": "25f7f845c4b358552ee07884a6a672b35d97cd9a71b0a47d93369e996007a839",
+      "runtime": "nodejs22",
+      "entryPoint": "getMaterialLoanPaymentQr",
+      "service": "projects/calycompta/locations/europe-west1/services/getmaterialloanpaymentqr"
+    },
+    "sendMaterialLoanPaymentQrEmail": {
+      "revision": "sendmaterialloanpaymentqremail-00002-ges",
+      "updateTime": "2026-08-24T15:26:09.649653999Z",
+      "source": {
+        "bucket": "gcf-v2-sources-328464166969-europe-west1",
+        "generation": "1787585122801753",
+        "object": "sendMaterialLoanPaymentQrEmail/function-source.zip"
+      },
+      "zipSha256": "25f7f845c4b358552ee07884a6a672b35d97cd9a71b0a47d93369e996007a839",
+      "runtime": "nodejs22",
+      "entryPoint": "sendMaterialLoanPaymentQrEmail",
+      "service": "projects/calycompta/locations/europe-west1/services/sendmaterialloanpaymentqremail"
+    }
+  },
+  "baselineFileSha256": {
+    "package.json": "da2d1c8622d11ab996680f77b0dd1c5dcddf381c56055340c0e7b6ec92240420",
+    "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+    "src/payment/materialLoanPayment.js": "961e7bf716120adb969549007fc881ae2806a05b8dfd9665cd5d7577ef8740ee",
+    "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f",
+    "src/utils/emailDelivery.js": "be5ee759aad93271637956d2c76c097567af26277e819cbfd501fc90506ab073"
+  },
+  "candidateFileSha256": {
+    "index.js": "d840f713517f3735e639ca4669751c0bffc736031e3a9ce40e713f5c20e100ea",
+    "package-lock.json": "db4bbe3f4ebc81481a0ef80eecf1ac9cd11b8e2ebf1da3397c5aa518377972b1",
+    "package.json": "da2d1c8622d11ab996680f77b0dd1c5dcddf381c56055340c0e7b6ec92240420",
+    "src/loans/materialLoanRoles.js": "84ef2c4540483afdd84ad3049d3077b3f70fd18c8c86170f07729685f74da504",
+    "src/loans/materialLoanRoles.test.js": "9259369d25c20ebcb280d3ce1342c907b71197e145787b2fce010adfe273a298",
+    "src/payment/materialLoanPayment.authorization.test.js": "5fbe857711c1eea4d7ba075b56d5605d2a8dce91f0749b7a4a9023a1f3bc4af0",
+    "src/payment/materialLoanPayment.js": "740827a30ddbc0b057516398bb22da152533e822fc4661b1553e65b4ebc5b796",
+    "src/payment/materialLoanPayment.test.js": "2bc78ffd467ecf3c39b633df1ba268d8dc5f913695285649569295fba2435d3f",
+    "src/utils/communicationTemplates.js": "93f7e4d7b92e02cb8dbd3feaf4bcbe8f0412ef805ff12a436ea9a519c064aa8f",
+    "src/utils/emailDelivery.js": "be5ee759aad93271637956d2c76c097567af26277e819cbfd501fc90506ab073"
+  },
+  "backportFiles": [
+    "src/payment/materialLoanPayment.js",
+    "src/loans/materialLoanRoles.js"
+  ],
+  "forbiddenActions": [
+    "other functions",
+    "backfill",
+    "mail invocation",
+    "store release"
+  ]
+}
