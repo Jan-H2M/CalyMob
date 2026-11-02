@@ -1,0 +1,1 @@
+Correction de l’affichage de la validité des certificats médicaux : CalyMob respecte désormais la date approuvée dans CalyCompta.
