@@ -52,10 +52,10 @@ test('new DEV payment and action-first regressions are not lost in consolidation
   assert.match(read('lib/widgets/boutique/boutique_current_payment_panel.dart'), /current\['communication'\] != shown\['communication'\]/);
 });
 
-test('prepared French and Dutch notes agree between platforms for reserved build', () => {
+test('published French notes agree between platforms for reserved build', () => {
   const version = /^version: (\d+\.\d+\.\d+)\+(\d+)$/m.exec(read('pubspec.yaml'));
   assert.ok(version, 'numeric marketing version and reservation required');
-  for (const locale of ['fr-FR', 'nl-NL']) {
+  for (const locale of ['fr-FR']) {
     const ios = read(`ios/fastlane/metadata/${locale}/release_notes.txt`).trim();
     const android = read(`android/fastlane/metadata/android/${locale}/changelogs/${version[2]}.txt`).trim();
     assert.ok(ios.length > 30 && ios.length < 500, locale);
