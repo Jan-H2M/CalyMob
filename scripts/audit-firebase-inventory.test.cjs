@@ -3,6 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
+const { spawnSync } = require('node:child_process');
 const { readExports, normalizeLive, compareLive, validateManifest } = require('./audit-firebase-inventory.cjs');
 const root = path.resolve(__dirname, '..');
 const readFile = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -76,4 +78,25 @@ test('live additions, removals, regions, state, runtime and redeploys are visibl
     const changed = structuredClone(snapshot); changed[0][field] = value;
     assert.ok(compareLive(manifest, changed).length > 0, field);
   }
+});
+
+test('CLI never echoes malformed cloud JSON or a sensitive input path', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'com155-redaction-'));
+  const marker = 'SYNTHETIC_SENSITIVE_MARKER';
+  const file = path.join(directory, `${marker}.json`);
+  try {
+    for (const input of [marker, `[{"environmentVariables":{"secret":"${marker}"}`]) {
+      fs.writeFileSync(file, input);
+      const result = spawnSync(process.execPath, ['scripts/audit-firebase-inventory.cjs', '--live-json', file],
+        { cwd: root, encoding: 'utf8' });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /Cannot read live metadata JSON/);
+      assert.equal((result.stdout + result.stderr).includes(marker), false);
+    }
+    fs.unlinkSync(file);
+    const result = spawnSync(process.execPath, ['scripts/audit-firebase-inventory.cjs', '--live-json', file],
+      { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.equal((result.stdout + result.stderr).includes(marker), false);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

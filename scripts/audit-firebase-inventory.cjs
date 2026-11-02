@@ -15,6 +15,13 @@ function invariant(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function readLiveJson(file) {
+  // SyntaxError.message can contain a fragment of the input, including secrets
+  // from a truncated raw cloud response. Do not propagate parser or I/O text.
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch { throw new Error('Cannot read live metadata JSON; provide a complete gcloud functions list response'); }
+}
+
 // The entrypoint uses three explicit CommonJS forms: named imports, module
 // imports and direct require(...).export assignments. Reject other forms so a
 // future refactor cannot silently shrink the inventory. Parsing never runs it.
@@ -135,9 +142,9 @@ function main(argv) {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, MANIFEST), 'utf8'));
   const summary = validateManifest(manifest, readExports(readFile('functions/index.js')), readFile);
   if (liveFile) {
-    const differences = compareLive(manifest, normalizeLive(JSON.parse(fs.readFileSync(liveFile, 'utf8')), manifest.project));
+    const differences = compareLive(manifest, normalizeLive(readLiveJson(liveFile), manifest.project));
     invariant(differences.length === 0, differences.join('\n'));
-    summary.freshLiveMetadataMatched = true;
+    summary.suppliedLiveMetadataMatched = true;
   }
   console.log(JSON.stringify(summary, null, 2));
   if (!liveFile) console.log('Offline snapshot validation only; no fresh production read was performed.');
