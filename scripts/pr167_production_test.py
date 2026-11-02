@@ -131,6 +131,27 @@ class ProductionBackportTest(unittest.TestCase):
                 release.deploy(folder)
             request.assert_not_called()
 
+    def test_only_the_exact_reviewed_com153_runtime_gets_external_test_files(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as z:
+            z.writestr('index.js', b'an unknown production runtime without tests')
+        with tempfile.TemporaryDirectory() as directory, zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as z:
+            with self.assertRaises(RuntimeError):
+                release.supply_com153_tests(z, Path(directory))
+
+    def test_sealed_com153_tests_stay_outside_the_deployment_archive(self):
+        sealed = release.ROOT / 'releases/com153-borg/functions'
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as z:
+            for name in ['index.js', 'src/payment/materialLoanPayment.js', 'src/loans/materialLoanRoles.js',
+                         'src/utils/communicationTemplates.js', 'src/utils/emailDelivery.js']:
+                z.writestr(name, (sealed / name).read_bytes())
+        with tempfile.TemporaryDirectory() as directory, zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as z:
+            work = Path(directory)
+            release.supply_com153_tests(z, work)
+            self.assertTrue((work / 'src/payment/materialLoanPayment.authorization.test.js').exists())
+            self.assertFalse(any(name.endswith('.test.js') for name in z.namelist()))
+
 
 if __name__ == '__main__':
     unittest.main()

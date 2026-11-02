@@ -210,6 +210,24 @@ def merge_manifest(original, current):
     return result
 
 
+def supply_com153_tests(archive, work):
+    """The sealed COM153 deploy excludes tests; add its reviewed tests only to the harness."""
+    if any(name.endswith('.test.js') for name in archive.namelist()):
+        return 'deployed synthetic tests'
+    sealed = ROOT / 'releases/com153-borg/functions'
+    runtime = ['index.js', 'src/payment/materialLoanPayment.js', 'src/loans/materialLoanRoles.js',
+               'src/utils/communicationTemplates.js', 'src/utils/emailDelivery.js']
+    for name in runtime:
+        if name not in archive.namelist() or archive.read(name) != (sealed / name).read_bytes():
+            raise RuntimeError('Test-free archive does not match the reviewed COM153 runtime')
+    for name in ['src/loans/materialLoanRoles.test.js', 'src/payment/materialLoanPayment.test.js',
+                 'src/payment/materialLoanPayment.authorization.test.js']:
+        path = work / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((sealed / name).read_bytes())
+    return 'reviewed COM153 sealed-bundle synthetic tests (harness only)'
+
+
 def run_npm(args, cwd, log, extra_env=None):
     env = dict(os.environ)
     for key, value in (extra_env or {}).items():
@@ -266,6 +284,7 @@ def prepare(folder):
                 target = work / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(patched if name == 'src/utils/communicationTemplates.js' else z.read(name))
+            test_source = supply_com153_tests(z, work)
         log = folder / (group_name + '-test.log')
         run_npm(['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'], work, log)
         run_npm(['audit', 'fix', '--package-lock-only', '--ignore-scripts', '--omit=dev', '--no-fund'], work, log)
@@ -290,7 +309,8 @@ def prepare(folder):
         dest.write_bytes(output)
         dest.chmod(0o600)
         candidates.append({'group': group_name, 'archiveSha256': sha(output), 'changed': changed,
-                           'versions': actual, 'runtimeAudit': 0, 'syntheticTests': 'passed'})
+                           'versions': actual, 'runtimeAudit': 0, 'syntheticTests': 'passed',
+                           'testHarnessFrom': test_source})
         save(folder / 'candidates.json', candidates)
         print(f'{group_name}: frozen code preserved, runtime audit 0, synthetic tests passed', flush=True)
 
