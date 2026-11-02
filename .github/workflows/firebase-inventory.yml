@@ -1,0 +1,35 @@
+name: Firebase inventory
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/firebase-inventory.yml'
+      - 'functions/index.js'
+      - 'functions/src/**'
+      - 'functions/config/function-inventory.json'
+      - 'scripts/audit-firebase-inventory*'
+      - 'docs/operations/COM-155-firebase-inventory.md'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/firebase-inventory.yml'
+      - 'functions/index.js'
+      - 'functions/src/**'
+      - 'functions/config/function-inventory.json'
+      - 'scripts/audit-firebase-inventory*'
+      - 'docs/operations/COM-155-firebase-inventory.md'
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline export and ownership checks (no credentials or cloud calls)
+        run: |
+          node --test scripts/audit-firebase-inventory.test.cjs
+          node scripts/audit-firebase-inventory.cjs
