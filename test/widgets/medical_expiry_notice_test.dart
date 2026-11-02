@@ -8,6 +8,61 @@ import 'package:calymob/screens/scanner/member_validation_card.dart';
 
 void main() {
   testWidgets(
+      'COM-156 approved official date is shown without a false expiry warning',
+      (t) async {
+    final now = DateTime.parse('2026-11-02T10:00:00Z');
+    final member = MemberProfile(
+      id: 'com156-fictional',
+      prenom: 'Test',
+      nom: 'FICTIF',
+      email: '',
+      certificatMedicalDate: DateTime.utc(2025, 2, 9),
+      certificatMedicalValidite: DateTime.utc(2027, 1, 30),
+    );
+    t.view.physicalSize = const Size(1200, 1000);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: Column(children: [
+      MemberValidationCard(member: member, now: now),
+      MedicalExpiryNotice(
+          issuedOn: member.certificatMedicalDate,
+          validUntil: member.certificatMedicalValidite,
+          now: now),
+    ]))));
+    expect(find.text('Valide'), findsOneWidget);
+    expect(member.medicalValidityAt(now).expiresOn, DateTime.utc(2027, 1, 30));
+    expect(find.textContaining('échéance dépassée'), findsNothing);
+    expect(find.textContaining('expire bientôt'), findsNothing);
+    expect(find.textContaining('09/02/2026'), findsNothing);
+  });
+
+  testWidgets(
+      'certificate badge respects the approved deadline despite an old issue date',
+      (t) async {
+    // Relative dates keep this visual test independent of the runner's clock.
+    final today = DateTime.now();
+    final until = DateTime.utc(today.year + 2, 1, 30);
+    final cert = MedicalCertification(
+      id: 'com156-fictional',
+      memberId: 'fictional',
+      documentUrl: '',
+      documentType: 'pdf',
+      uploadedAt: DateTime.utc(today.year),
+      status: CertificateStatus.approved,
+      issuedOn: DateTime.utc(today.year - 2, 2, 9),
+      validUntil: until,
+    );
+    await t.pumpWidget(MaterialApp(
+        home: Scaffold(body: CertificationStatusBadge(certification: cert))));
+    expect(find.text('Valide'), findsOneWidget);
+    expect(find.text('Expiré'), findsNothing);
+    expect(find.textContaining('30/01/${until.year}'), findsOneWidget);
+  });
+
+  testWidgets(
       'scanner text shares medical calendar day at late night and next Brussels day',
       (t) async {
     t.view.physicalSize = const Size(1200, 1000);
@@ -38,7 +93,6 @@ void main() {
         home: Scaffold(
             body: MedicalExpiryNotice(
                 issuedOn: DateTime(2025, 11, 5),
-                validUntil: DateTime(2030),
                 now: DateTime.parse('2026-10-31T12:00Z'),
                 onOpen: () => opened = true))));
     expect(find.textContaining('expire bientôt'), findsOneWidget);

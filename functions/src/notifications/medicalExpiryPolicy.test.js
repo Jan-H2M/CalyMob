@@ -2,7 +2,7 @@ const { day, medicalValidity, reminderPlan } = require('./medicalExpiryPolicy');
 const { dispatchMedicalReminder, runMedicalExpiryReminders } = require('./medicalExpiryRunner');
 const now = new Date('2026-10-31T12:00:00Z');
 const member = { member_status: 'active', certificat_medical_date: '2025-11-20',
-  certificat_medical_validite: '2030-01-01', fcm_tokens: ['dev-token', 'dev-token'] };
+  certificat_medical_validite: '2026-11-20', fcm_tokens: ['dev-token', 'dev-token'] };
 test('rejects invalid ISO calendar/time and timezone-less datetimes, independent of host', () => {
   for (const malformed of [{ toDate: true }, { toDate: 'bad' },
     { toDate: () => { throw new Error('malformed'); } }]) expect(day(malformed)).toBeNull();
@@ -12,11 +12,16 @@ test('rejects invalid ISO calendar/time and timezone-less datetimes, independent
   expect(day('2026-10-31T00:00:00+14:00').toISOString()).toBe('2026-10-30T00:00:00.000Z');
   expect(day('2026-10-31T23:30:00Z').toISOString()).toBe('2026-11-01T00:00:00.000Z');
 });
-test('annual anniversary caps explicit date, not 365 days or December 31', () => {
+test('explicit deadline is authoritative; annual fallback is only for missing deadline', () => {
   expect(medicalValidity(member, now)).toEqual({ status: 'expiringSoon',
     expiresOn: '2026-11-20', daysRemaining: 20 });
   expect(medicalValidity({ certificat_medical_date: '2024-03-01' }, new Date('2025-02-01T12:00Z')).expiresOn).toBe('2025-03-01');
   expect(medicalValidity({ certificat_medical_date: '2024-02-29' }, new Date('2025-02-28T12:00Z')).daysRemaining).toBe(0);
+  expect(medicalValidity({ ...member, certificat_medical_validite: '2030-01-01' }, now))
+    .toMatchObject({ status: 'valid', expiresOn: '2030-01-01' });
+  expect(medicalValidity({ certificat_medical_date: '2025-02-09',
+    certificat_medical_validite: '2027-01-30' }, new Date('2026-11-02T10:00Z')))
+    .toMatchObject({ status: 'valid', expiresOn: '2027-01-30' });
 });
 test('Brussels midnight, summer time and inclusive end date', () => {
   expect(day('07/08/2099').toISOString()).toBe('2099-08-07T00:00:00.000Z');
@@ -41,7 +46,7 @@ test('two bounded reminder bands, missing/expired/pending/opt-out/unknown-active
   for (const patch of [{ member_status: 'inactive' }, { member_status: 'deleted' },
     { member_status: null }, { notifications_enabled: false }, { has_pending_medical: true },
     { notification_preferences: { medical_certificates: false } }, { fcm_tokens: [] },
-    { certificat_medical_date: '2024-01-01' }, { certificat_medical_validite: 'bad' }]) {
+    { certificat_medical_validite: '2024-01-01' }, { certificat_medical_validite: 'bad' }]) {
     expect(reminderPlan({ ...member, ...patch }, now)).toBeNull();
   }
   expect(reminderPlan(member, new Date('2026-11-20T12:00Z'))).toBeNull();

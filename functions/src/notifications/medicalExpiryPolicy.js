@@ -47,10 +47,13 @@ function medicalValidity(member, now = new Date()) {
   if (issued && issued > today) return unknown;
   let expiry = until;
   if (issued) {
-    const y = issued.getUTCFullYear() + 1, m = issued.getUTCMonth();
-    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const annual = new Date(Date.UTC(y, m, Math.min(issued.getUTCDate(), last)));
-    if (!expiry || annual < expiry) expiry = annual;
+    // Match the app and CalyCompta: never cap an explicit administrative date
+    // using a potentially older issue date. Annual fallback is for missing dates.
+    if (!expiry) {
+      const y = issued.getUTCFullYear() + 1, m = issued.getUTCMonth();
+      const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      expiry = new Date(Date.UTC(y, m, Math.min(issued.getUTCDate(), last)));
+    }
     if (expiry < issued) return unknown;
   }
   if (!expiry) return unknown;

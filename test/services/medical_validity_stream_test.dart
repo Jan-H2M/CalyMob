@@ -7,7 +7,44 @@ import 'package:calymob/services/medical_certification_service.dart';
 
 void main() {
   test(
-      'open certificate reacts to summary correction, clearing and renewal without certificate writes',
+      'COM-156 getter and stream preserve the approved web date without writes',
+      () async {
+    final db = FakeFirebaseFirestore();
+    final member = db.doc('clubs/dev-fictional/members/com156-fictional');
+    final certRef =
+        member.collection('medical_certificates').doc('fictional-cert');
+    await member.set({
+      'certificat_medical_date': Timestamp.fromDate(DateTime.utc(2025, 2, 9)),
+      'certificat_medical_validite':
+          Timestamp.fromDate(DateTime.utc(2027, 1, 30)),
+    });
+    await certRef.set({
+      'member_id': 'com156-fictional',
+      'document_url': '',
+      'document_type': 'pdf',
+      'uploaded_at': Timestamp.fromDate(DateTime.utc(2026, 5, 23)),
+      'status': 'approved',
+      'valid_until': Timestamp.fromDate(DateTime.utc(2027, 1, 30)),
+    });
+    final beforeMember = (await member.get()).data();
+    final beforeCert = (await certRef.get()).data();
+    final service = MedicalCertificationService(firestore: db);
+    final loaded = await service.getCurrentCertification(
+        'dev-fictional', 'com156-fictional');
+    final streamed = await service
+        .watchCurrentCertification('dev-fictional', 'com156-fictional')
+        .first;
+    for (final cert in [loaded, streamed]) {
+      expect(cert, isNotNull);
+      expect(cert!.validity.expiresOn, DateTime.utc(2027, 1, 30));
+      expect(cert.datesNeedReview, isFalse);
+    }
+    expect((await member.get()).data(), beforeMember);
+    expect((await certRef.get()).data(), beforeCert);
+  });
+
+  test(
+      'open certificate respects explicit deadline, clearing and renewal without certificate writes',
       () async {
     final db = FakeFirebaseFirestore();
     final member = db.doc('clubs/dev-fictional/members/dev-member');
@@ -27,10 +64,10 @@ void main() {
         .watchCurrentCertification('dev-fictional', 'dev-member');
     final values = StreamIterator<MedicalCertification?>(stream);
     expect(await values.moveNext().timeout(const Duration(seconds: 2)), isTrue);
-    expect(values.current!.validity.expiresOn, DateTime.utc(2026, 11, 1));
+    expect(values.current!.validity.expiresOn, DateTime.utc(2030, 1, 1));
     await member.update({'certificat_medical_date': '2025-12-01'});
     expect(await values.moveNext().timeout(const Duration(seconds: 2)), isTrue);
-    expect(values.current!.validity.expiresOn, DateTime.utc(2026, 12, 1));
+    expect(values.current!.validity.expiresOn, DateTime.utc(2030, 1, 1));
     await member.update(
         {'certificat_medical_date': null, 'certificat_medical_validite': null});
     expect(await values.moveNext().timeout(const Duration(seconds: 2)), isTrue);

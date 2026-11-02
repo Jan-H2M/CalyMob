@@ -47,7 +47,7 @@ class MedicalExpiryNotice extends StatelessWidget {
             title: Text(title),
             subtitle: Text(unknown
                 ? 'La date administrative doit être confirmée par le club.'
-                : 'Échéance annuelle : $dateLabel (dernier jour inclus). Pensez à renouveler. '
+                : 'Échéance administrative : $dateLabel (dernier jour inclus). Pensez à renouveler. '
                     'Ce statut administratif n’est pas un avis médical.'),
             trailing: onOpen == null ? null : const Icon(Icons.chevron_right),
             onTap: onOpen));

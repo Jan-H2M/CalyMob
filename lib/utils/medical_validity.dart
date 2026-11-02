@@ -98,12 +98,16 @@ class MedicalValidity {
     }
     DateTime? expiry = validUntil == null ? null : _day(validUntil);
     if (issuedOn != null) {
-      // Clamp 29 February to 28 February, not 1 March of the next year.
-      final lastDay =
-          DateTime.utc(issuedOn.year + 1, issuedOn.month + 1, 0).day;
-      final anniversary = DateTime.utc(issuedOn.year + 1, issuedOn.month,
-          issuedOn.day > lastDay ? lastDay : issuedOn.day);
-      if (expiry == null || anniversary.isBefore(expiry)) expiry = anniversary;
+      // CalyCompta's explicit administrative deadline is authoritative. An old
+      // issue date must not silently shorten an approved/corrected deadline.
+      // Keep the annual fallback only for records without an explicit deadline.
+      if (expiry == null) {
+        // Clamp 29 February to 28 February, not 1 March of the next year.
+        final lastDay =
+            DateTime.utc(issuedOn.year + 1, issuedOn.month + 1, 0).day;
+        expiry = DateTime.utc(issuedOn.year + 1, issuedOn.month,
+            issuedOn.day > lastDay ? lastDay : issuedOn.day);
+      }
       if (expiry.isBefore(_day(issuedOn))) {
         return const MedicalValidity._(
             null, null, MedicalValidityStatus.unknown);

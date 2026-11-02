@@ -64,7 +64,8 @@ void main() {
             .status,
         MedicalValidityStatus.valid);
   });
-  test('explicit earlier deadline is never extended', () {
+  test('explicit deadline is never extended or shortened by the issue date',
+      () {
     expect(
         MedicalValidity.evaluate(
                 issuedOn: DateTime(2026, 1, 1),
@@ -78,7 +79,7 @@ void main() {
                 validUntil: DateTime(2030, 1, 1),
                 now: now)
             .expiresOn,
-        DateTime.utc(2026, 11, 1));
+        DateTime.utc(2030, 1, 1));
   });
   test('missing, future issue, contradictory or unapproved stays unknown', () {
     expect(MedicalValidity.evaluate(now: now).status,
@@ -142,7 +143,7 @@ void main() {
       'certificat_medical_date': '2025-11-01',
       'certificat_medical_validite': '2030-01-01'
     });
-    expect(joined.validity.expiresOn, DateTime.utc(2026, 11, 1));
+    expect(joined.validity.expiresOn, DateTime.utc(2030, 1, 1));
     expect(
         cert.withMemberDates({
           'certificat_medical_date': '2025-11-01',
