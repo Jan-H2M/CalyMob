@@ -1,0 +1,39 @@
+name: COM-153 production backport
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/com153-production-backport.yml'
+      - 'firebase.com153-production.json'
+      - 'releases/com153-borg/**'
+      - 'scripts/verify-com153-production.cjs'
+      - 'functions/src/payment/materialLoanPayment*'
+      - 'functions/src/loans/materialLoanRoles*'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/com153-production-backport.yml'
+      - 'firebase.com153-production.json'
+      - 'releases/com153-borg/**'
+      - 'scripts/verify-com153-production.cjs'
+      - 'functions/src/payment/materialLoanPayment*'
+      - 'functions/src/loans/materialLoanRoles*'
+permissions:
+  contents: read
+jobs:
+  frozen-live-backport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: releases/com153-borg/functions/package-lock.json
+      - run: npm ci --prefix releases/com153-borg/functions --ignore-scripts --no-audit --no-fund
+      - name: Frozen source, dependencies and two-export deployment boundary
+        run: node scripts/verify-com153-production.cjs
+      - name: Gonflage permissions on the actual production bundle (mocked mail)
+        run: npm --prefix releases/com153-borg/functions test -- --runInBand
+      - run: git diff --exit-code -- releases/com153-borg/functions/package.json releases/com153-borg/functions/package-lock.json

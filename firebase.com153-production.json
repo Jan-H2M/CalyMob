@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "source": "releases/com153-borg/functions",
+    "codebase": "default",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "**/*.test.js",
+      "firebase-debug.log",
+      "firebase-debug.*.log"
+    ]
+  }
+}
