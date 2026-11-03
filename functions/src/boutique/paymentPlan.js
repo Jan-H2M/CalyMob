@@ -1,7 +1,7 @@
 // Server-authoritative split receipts for one amended Boutique order.
 // A reported transfer is a request, never a receipt.
 const { createHash } = require('crypto');
-const FULL_REFERENCE = /^BTQ-\d{4}-\d{4,}(?:-S[A-F0-9]{24})?$/;
+const FULL_REFERENCE = /^BTQ-\d{4}-\d{4,}(?:-S[A-F0-9]{12}(?:[A-F0-9]{12})?)?$/;
 function normalizedPlanReference(value) {
   const text = String(value || '').toUpperCase();
   // A communication spanning payment domains is ambiguous regardless of token
@@ -10,12 +10,12 @@ function normalizedPlanReference(value) {
       || /\+\+\+(?:[PS][A-Z]{4}|\d[A-Z0-9]{5})\+\+\+/.test(text)) return null;
   const tokens = text.match(/BTQ-[\p{L}\p{M}\p{N}\p{Pc}-]+/gu) || [];
   if (tokens.some((token) => !FULL_REFERENCE.test(token))) return null;
-  const matches = [...text.matchAll(/(?:^|[^\p{L}\p{M}\p{N}\p{Pc}-])(BTQ-\d{4}-\d{4,}(?:-S[A-F0-9]{24})?)(?![\p{L}\p{M}\p{N}\p{Pc}-])/gu)].map((match) => match[1]);
+  const matches = [...text.matchAll(/(?:^|[^\p{L}\p{M}\p{N}\p{Pc}-])(BTQ-\d{4}-\d{4,}(?:-S[A-F0-9]{12}(?:[A-F0-9]{12})?)?)(?![\p{L}\p{M}\p{N}\p{Pc}-])/gu)].map((match) => match[1]);
   const keys = [...new Set(matches)];
   return keys.length === 1 ? keys[0] : null;
 }
 function baseBoutiqueReference(value) {
-  return normalizedPlanReference(value)?.replace(/-S[A-F0-9]{24}$/, '') || null;
+  return normalizedPlanReference(value)?.replace(/-S[A-F0-9]{12}(?:[A-F0-9]{12})?$/, '') || null;
 }
 function orderBaseReference(order) {
   const base = baseBoutiqueReference(order.structuredCommunication || order.payment?.communication || order.orderNumber);
@@ -23,9 +23,11 @@ function orderBaseReference(order) {
   if (!base || base !== numberBase) throw planError('boutique_payment_plan_invalid');
   return base;
 }
-function supplementReference(order, requestId) {
+// New references fit a 35-character bank field for the usual order numbers.
+// Already-issued 24-digit suffixes remain valid and are never rewritten.
+function supplementReference(order, requestId, suffixLength = 12) {
   const base = orderBaseReference(order);
-  const suffix = createHash('sha256').update(base + ':' + requestId).digest('hex').slice(0, 24).toUpperCase();
+  const suffix = createHash('sha256').update(base + ':' + requestId).digest('hex').slice(0, suffixLength).toUpperCase();
   return '+++' + base + '-S' + suffix + '+++';
 }
 function requestPaymentReference(order, request) {
@@ -34,7 +36,8 @@ function requestPaymentReference(order, request) {
   // original communication. Never silently migrate an in-flight transfer.
   if (request.reference === undefined) return '+++' + base + '+++';
   const key = normalizedPlanReference(request.reference);
-  const expected = request.kind === 'initial' ? base : normalizedPlanReference(supplementReference(order, request.id));
+  const suffixLength = key?.match(/-S([A-F0-9]+)$/)?.[1].length;
+  const expected = request.kind === 'initial' ? base : normalizedPlanReference(supplementReference(order, request.id, suffixLength));
   if (!key || key !== expected) throw planError('boutique_payment_plan_invalid');
   return '+++' + key + '+++';
 }

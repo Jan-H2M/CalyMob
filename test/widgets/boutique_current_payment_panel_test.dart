@@ -48,6 +48,18 @@ Widget panel(Future<Map<String, dynamic>> Function() load,
                     authUserIds: authUserIds))));
 
 void main() {
+  testWidgets('COM-161: the short supplement reference is encoded unchanged in the displayed QR', (tester) async {
+    const reference = '+++BTQ-2026-9001-SABCDEF012345+++';
+    await tester.pumpWidget(panel(() async => payment(communication: reference)));
+    await tester.pumpAndSettle();
+    final qr = tester.widget<QrImageView>(find.byType(QrImageView));
+    final epc = (qr.key as ValueKey<String>).value.split('\n');
+    expect(epc[7], 'EUR6.62');
+    expect(epc[9], isEmpty);
+    expect(epc[10], reference);
+    expect(epc[10].length, lessThanOrEqualTo(35));
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('a delayed email refresh cannot reinstate a request after a fresh receipt', (tester) async {
     final db = FakeFirebaseFirestore();
     final doc = db.doc('clubs/calypso/orders/qa');

@@ -28,8 +28,22 @@ test('current payment uses only 6.62 in the EPC amount field, not the cached ful
   expect(context.epcPayload.split('\n')[7]).toBe('EUR6.62');
   expect(context.receivedAmount).toBe(0);
   expect(context.reportedAmount).toBe(72);
-  expect(context.communication).toMatch(/^\+\+\+BTQ-2026-9001-S[A-F0-9]{24}\+\+\+$/);
+  expect(context.communication).toMatch(/^\+\+\+BTQ-2026-9001-S[A-F0-9]{12}\+\+\+$/);
+  expect(context.communication.length).toBeLessThanOrEqual(35);
   expect(context.epcPayload.split('\n')[10]).toBe(context.communication);
+});
+test('COM-161: an issued long reference is kept in the QR while new requests fit 35 characters', () => {
+  const { createHash } = require('node:crypto');
+  const order = seed();
+  const extra = currentPaymentRequest(order);
+  expect(extra.reference.length).toBeLessThanOrEqual(35);
+  extra.reference = '+++' + order.orderNumber + '-S' + createHash('sha256')
+    .update(order.orderNumber + ':' + extra.id).digest('hex').slice(0, 24).toUpperCase() + '+++';
+  const context = currentBoutiquePayment(order);
+  expect(context.communication).toBe(extra.reference);
+  expect(context.epcPayload.split('\n')[10]).toBe(extra.reference);
+  expect(context.epcPayload.split('\n')[7]).toBe('EUR6.62');
+  expect(context.epcPayload.split('\n')[6]).toBe(order.payment.iban);
 });
 test('a supplement received before the original transfer produces no second payment request', () => {
   const order = seed();
