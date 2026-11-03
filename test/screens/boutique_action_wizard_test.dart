@@ -89,7 +89,7 @@ void main() {
   }
 
   Future<void> selectAll(WidgetTester tester) =>
-      tap(tester, find.text('Tout sélectionner · liste affichée'));
+      tap(tester, find.text('Tout sélectionner'));
   Future<void> review(WidgetTester tester) =>
       tap(tester, find.byKey(const Key('wizard-next')));
 
@@ -219,22 +219,18 @@ void main() {
     expect(store.applied, 0);
   });
   testWidgets(
-      'finishing requires a control note; incompatible pieces remain excluded; no move',
+      'finishing needs no location or note; incompatible pieces remain excluded; no move',
       (tester) async {
     await open(tester);
     await tap(tester, find.text('Statut / finition'));
-    await select(tester, 'Action', 'Broderie terminée chez Jim');
-    await select(tester, 'Lieu actuel des pièces', 'Jim');
-    await tap(tester, find.byKey(const Key('wizard-next')));
-    expect(find.byKey(const Key('wizard-error')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('wizard-note')));
-    await tester.enterText(find.byKey(const Key('wizard-note')),
-        'Broderie contrôlée en démonstration');
+    await select(tester, 'Action', 'Autre statut');
+    await select(tester, 'Statut', 'Broderie terminée chez Jim');
+    expect(find.text('Lieu actuel des pièces'), findsNothing);
     await tap(tester, find.byKey(const Key('wizard-next')));
     await selectAll(tester);
     expect(find.textContaining('2 pièce(s) sélectionnée(s)'), findsOneWidget);
     await review(tester);
-    expect(find.text('Jim · inchangé'), findsOneWidget);
+    expect(find.text('Lieu'), findsNothing);
     await tap(tester, find.byKey(const Key('wizard-next')));
     expect(store.applied, 1);
     expect(store.units['polo-a']!['workshopReady'], isTrue);
@@ -242,6 +238,38 @@ void main() {
     expect(store.units['polo-a']!['finish'], 'at_jim');
     expect(store.units['transit-b']!['workshopReady'], isFalse);
   });
+  testWidgets(
+      'default embroidery preparation scans and selects across locations without moving',
+      (tester) async {
+    store.units['veste-p']!['location'] = 'Réserve';
+    await open(tester);
+    await tap(tester, find.text('Statut / finition'));
+    expect(find.text('Préparer la broderie'), findsWidgets);
+    expect(find.text('Lieu actuel des pièces'), findsNothing);
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    await tap(tester, find.text('Scanner les articles'));
+    await tap(tester, find.text('QR · polo-p'));
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await selectAll(tester);
+    expect(find.textContaining('2 pièce(s) sélectionnée(s)'), findsOneWidget);
+    await review(tester);
+    await tap(tester, find.byKey(const Key('wizard-next')));
+    final calls =
+        store.requests.where((r) => r['action'] == 'prepareJim').toList();
+    expect(calls, hasLength(2));
+    for (final request in calls) {
+      expect(request.containsKey('sourceLocation'), isFalse);
+      expect(request.containsKey('destination'), isFalse);
+      expect(request.containsKey('note'), isFalse);
+      expect(request.containsKey('confirmed'), isFalse);
+    }
+    expect(store.units['polo-p']!['location'], 'Piscine');
+    expect(store.units['veste-p']!['location'], 'Réserve');
+    expect(store.units['polo-p']!['finish'], 'to_jim');
+    expect(store.units['veste-p']!['finish'], 'to_jim');
+  });
+
   testWidgets(
       'unknown response locks values and retries exactly the same identity once',
       (tester) async {
@@ -323,7 +351,7 @@ void main() {
     await startMove(tester);
     await tap(tester, find.byType(Checkbox).first);
     expect(find.textContaining('2 pièce(s) sélectionnée(s)'), findsOneWidget);
-    await tap(tester, find.text('Scanner des pièces · facultatif'));
+    await tap(tester, find.text('Scanner les articles'));
     final pendingScan = scan!(
         const BoutiqueUnitQr(clubId: 'synthetic-boutique', unitId: 'bonnet-b')
             .url);
@@ -378,8 +406,8 @@ void main() {
       (tester) async {
     await open(tester);
     await tap(tester, find.text('Statut / finition'));
-    await select(tester, 'Action', 'Broderie terminée chez Jim');
-    await select(tester, 'Lieu actuel des pièces', 'Jim');
+    await select(tester, 'Action', 'Autre statut');
+    await select(tester, 'Statut', 'Broderie terminée chez Jim');
     await tester.enterText(find.byKey(const Key('wizard-note')), 'Contrôlé');
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -416,7 +444,7 @@ void main() {
       (tester) async {
     await open(tester);
     await startMove(tester);
-    await tap(tester, find.text('Scanner des pièces · facultatif'));
+    await tap(tester, find.text('Scanner les articles'));
     await tap(tester, find.text('QR · polo-a'));
     expect(find.text('1 pièce(s) sélectionnée(s)'), findsOneWidget);
     await tap(tester, find.text('QR · polo-a'));
@@ -426,10 +454,42 @@ void main() {
     expect(find.textContaining('1 pièce(s) sélectionnée(s)'), findsOneWidget);
     expect(store.applied, 0);
   });
-  test(
-      'a required or unknown embroidery requirement cannot bypass plain review',
-      () {
-    for (final value in [true, null]) {
+  test('synthetic service preserves location for old status payloads',
+      () async {
+    final store = LocalBoutiqueWizardStore();
+    Future<Map<String, dynamic>> status(String action, String key,
+            {String? destination}) =>
+        store.call({
+          'clubId': 'synthetic-boutique',
+          'action': action,
+          'expectedActorId': 'demo-rb',
+          'idempotencyKey': key,
+          'sourceLocation': 'Piscine',
+          if (destination != null) 'destination': destination,
+          'units': [
+            {'id': 'polo-p', 'revision': store.units['polo-p']!['revision']}
+          ],
+        });
+    await status('prepareJim', 'key-prepare');
+    final result =
+        await status('confirmJim', 'key-confirm', destination: 'Jim');
+    expect(result['destination'], isNull);
+    expect(store.units['polo-p']!['location'], 'Piscine');
+    expect(store.units['polo-p']!['finish'], 'at_jim');
+  });
+
+  test('unknown stock embroidery is available for server review', () {
+    final unit = BoutiquePhysicalUnit({
+      'id': 'x',
+      'revision': '1',
+      'location': 'Réserve',
+      'finish': 'unembroidered',
+      'stockPurchaseOrderId': 'stock'
+    });
+    expect(boutiqueBatchBlockedReason(unit, 'reviewPlain', null), isNull);
+  });
+  test('a known embroidery requirement cannot bypass plain review', () {
+    for (final value in [true]) {
       final unit = BoutiquePhysicalUnit({
         'id': 'x',
         'revision': '1',

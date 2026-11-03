@@ -7,7 +7,8 @@ import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
 /// A complete paged read, followed by an explicit subset at one actual place.
 class BoutiqueReceiptSelectionScreen extends StatefulWidget {
-  final String clubId, location;
+  final String clubId;
+  final String? location;
   final BoutiqueOperationsService service;
   final bool selectionOnly;
   final int maximum;
@@ -46,7 +47,8 @@ class _ReceiptSelectionState extends State<BoutiqueReceiptSelectionScreen> {
       setState(() {
         _units = units;
         if (!_units.any((u) =>
-            u.supplierBatchId == _batch && u.location == widget.location)) {
+            u.supplierBatchId == _batch &&
+            (widget.location == null || u.location == widget.location))) {
           _batch = null;
         }
       });
@@ -77,7 +79,7 @@ class _ReceiptSelectionState extends State<BoutiqueReceiptSelectionScreen> {
             requiredSection: 'gestion',
             builder: (_) => BoutiqueStockSessionScreen(
                 clubId: widget.clubId,
-                location: widget.location,
+                location: widget.location!,
                 assignees: const [],
                 service: widget.service,
                 initialUnits: chosen,
@@ -95,14 +97,16 @@ class _ReceiptSelectionState extends State<BoutiqueReceiptSelectionScreen> {
   Widget build(BuildContext context) {
     final batches = <String, String>{};
     for (final unit in _units) {
-      if (unit.location == widget.location && unit.supplierBatchId != null) {
+      if ((widget.location == null || unit.location == widget.location) &&
+          unit.supplierBatchId != null) {
         batches[unit.supplierBatchId!] = unit.supplierReference;
       }
     }
     final batchUnits =
         _units.where((u) => u.supplierBatchId == _batch).toList();
-    final here =
-        batchUnits.where((u) => u.location == widget.location).toList();
+    final here = batchUnits
+        .where((u) => widget.location == null || u.location == widget.location)
+        .toList();
     final eligible = here.where((u) => !u.sold && !u.inTransport).toList();
     final chosen = eligible.where((u) => _selected.contains(u.id)).toList();
     return BoutiqueOperationsScaffold(
@@ -136,8 +140,9 @@ class _ReceiptSelectionState extends State<BoutiqueReceiptSelectionScreen> {
                         ]))),
         body: SafeArea(
             child: ListView(padding: const EdgeInsets.all(16), children: [
-          Text('Lieu actuel : ${widget.location}',
-              style: Theme.of(context).textTheme.titleMedium),
+          if (widget.location != null)
+            Text('Lieu actuel : ${widget.location}',
+                style: Theme.of(context).textTheme.titleMedium),
           const Text(
               'Choisissez les pièces déjà reçues. Aucun scan nécessaire.'),
           if (_loading) const LinearProgressIndicator(),
@@ -171,8 +176,9 @@ class _ReceiptSelectionState extends State<BoutiqueReceiptSelectionScreen> {
                     })),
             if (_batch != null) ...[
               const SizedBox(height: 12),
-              Text(
-                  '${here.length} pièce(s) à ${widget.location} · ${batchUnits.length - here.length} ailleurs'),
+              Text(widget.location == null
+                  ? '${here.length} pièce(s)'
+                  : '${here.length} pièce(s) à ${widget.location} · ${batchUnits.length - here.length} ailleurs'),
               Wrap(spacing: 8, children: [
                 TextButton(
                     onPressed:

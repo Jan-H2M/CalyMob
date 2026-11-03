@@ -41,7 +41,7 @@ function validate(input, actor) {
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
   if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
   if (input.orderId !== undefined && (!id(input.orderId) || input.action !== 'orderSelection')) fail('invalid-argument', 'Commande invalide.');
-  if (input.action === 'orderSelection' && (!id(input.orderId) || typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))) fail('invalid-argument', 'Commande ou lieu invalide.');
+  if (input.action === 'orderSelection' && (!id(input.orderId) || (input.sourceLocation !== undefined && (typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))))) fail('invalid-argument', 'Commande ou lieu invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
   if (!MUTATIONS.has(input.action)) return;
   if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
@@ -172,7 +172,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
           if (unit.handover?.type !== 'member_qr' || !id(order.buyer?.userId) || unit.handover?.recipientMemberId !== order.buyer.userId || !id(unit.handover?.operationId) || !ms(unit.handover?.confirmedAt)) fail('failed-precondition', 'Une remise de cette commande est à vérifier.');
           continue;
         }
-        if (!['not_ready', 'sale_ready'].includes(unit.saleStatus) || unit.location !== input.sourceLocation || unit.transportMissionId) fail('failed-precondition', 'Toutes les pièces restantes ne sont pas présentes au lieu de cette session. Scannez uniquement les pièces présentes individuellement.');
+        if (!['not_ready', 'sale_ready'].includes(unit.saleStatus) || (input.sourceLocation !== undefined && unit.location !== input.sourceLocation) || unit.transportMissionId) fail('failed-precondition', 'Toutes les pièces restantes ne sont pas présentes au lieu de cette session. Scannez uniquement les pièces présentes individuellement.');
         units.push(publicUnit(unit));
       }
       if (!units.length || units.length > MAX_UNITS) fail('failed-precondition', 'Sélectionnez de 1 à 50 pièces restantes. Une commande plus grande doit être scannée par lots.');
@@ -215,7 +215,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (unit.saleStatus === 'sold') fail('failed-precondition', 'Une pièce a déjà été remise. Actualisez le lot.');
       if (unit.revision !== input.units.find(u => u.id === unit.id).revision) fail('aborted', 'Une pièce a changé. Actualisez et vérifiez la sélection avant de confirmer.');
       if (['arrive','deliver'].includes(input.action) && !mission.unitIds.includes(unit.id)) fail('permission-denied', 'Une pièce ne fait pas partie de cette mission.');
-      if (!['arrive','deliver'].includes(input.action) && (!text(input.sourceLocation, 160) || unit.location !== input.sourceLocation)) fail('failed-precondition', 'Toutes les pièces doivent être au lieu de cette session.');
+      if (!['arrive','deliver'].includes(input.action) && ((['move','dispatch'].includes(input.action) && !text(input.sourceLocation, 160)) || (input.sourceLocation !== undefined && unit.location !== input.sourceLocation))) fail('failed-precondition', 'Toutes les pièces doivent être au lieu de cette session.');
     }
     const orderMap = new Map();
     for (const orderId of unique(selected.map(u => u.customerOrderId).filter(Boolean))) {
@@ -266,8 +266,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     const event = (kind, extra = {}) => ({ kind, at: now, by: actor.uid, ...(note ? { note } : {}), ...extra });
     const updateUnit = (unit, change, events) => { const next = { ...unit, ...change, updatedAt: now, history: [...(unit.history || []), ...events] }; stagedUnits.set(unit.id, next); unitMap.set(unit.id, next); };
     let nextMission = mission ? { ...mission } : null;
-    if (['move','confirmJim','dispatch'].includes(input.action) && !text(input.destination, 160)) fail('invalid-argument', 'Choisissez le lieu de destination.');
-    if (['confirmJim','finishJim','reviewPlain'].includes(input.action) && note.length < 3) fail('invalid-argument', 'Notez le contrôle effectué pour ce lot.');
+    if (['move','dispatch'].includes(input.action) && !text(input.destination, 160)) fail('invalid-argument', 'Choisissez le lieu de destination.');
     if (input.action === 'move') for (const unit of selected) {
       if (unit.location === input.destination) fail('failed-precondition', 'Choisissez un autre emplacement.');
       if (unit.transportMissionId) fail('failed-precondition', 'Réceptionnez ou retirez d’abord la mission de transport.');
@@ -276,9 +275,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (input.action === 'prepareJim' || input.action === 'confirmJim') for (const unit of selected) {
       const required = input.action === 'prepareJim' ? 'unembroidered' : 'to_jim', finish = input.action === 'prepareJim' ? 'to_jim' : 'at_jim';
       if (unit.finish !== required || !needsProduction(unit) || unit.transportMissionId) fail('failed-precondition', 'Une pièce n’est pas à la bonne étape pour Jim.');
-      const place = input.action === 'confirmJim' ? input.destination : unit.location;
-      if (place === unit.location && input.action === 'confirmJim' && input.confirmed !== true) fail('failed-precondition', 'Confirmez explicitement que les pièces sont déjà chez Jim.');
-      updateUnit(unit, { finish, location: place }, [...(place !== unit.location ? [event('moved', { from: unit.location, to: place })] : []), event('finish_changed', { from: unit.finish, to: finish })]);
+      updateUnit(unit, { finish }, [event('finish_changed', { from: unit.finish, to: finish })]);
     }
     if (input.action === 'finishJim') for (const unit of selected) {
       if (unit.finish !== 'at_jim' || unit.workshopReadyAt || unit.transportMissionId) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
@@ -361,7 +358,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (existing.exists) continue;
       notifications.push({ notificationId, historyRef, order, unitIds: available.map(u => u.id), partial: !complete, remaining: Math.max(0, state.pendingTotal - available.length) });
     }
-    const result = { applied: input.preview !== true, action: input.action, count: wanted.length, missionId: nextMission?.id || null, missionClosed: nextMission?.status === 'closed', notificationCount: notifications.length, heldOrders: held, recipientName: input.action === 'deliver' ? orderMap.values().next().value?.buyer?.displayName || 'Membre' : null, destination: nextMission?.destination || input.destination || input.sourceLocation, expiresAt: nextMission ? new Date(ms(nextMission.expiresAt)).toISOString() : null };
+    const result = { applied: input.preview !== true, action: input.action, count: wanted.length, missionId: nextMission?.id || null, missionClosed: nextMission?.status === 'closed', notificationCount: notifications.length, heldOrders: held, recipientName: input.action === 'deliver' ? orderMap.values().next().value?.buyer?.displayName || 'Membre' : null, destination: nextMission?.destination || (['move', 'dispatch'].includes(input.action) ? input.destination || input.sourceLocation : null) || null, expiresAt: nextMission ? new Date(ms(nextMission.expiresAt)).toISOString() : null };
     if (input.preview === true) return result;
     for (const unit of stagedUnits.values()) { const { id: unitId, revision: unused, ...data } = unit; tx.set(club.collection('boutique_physical_stock_units').doc(unitId), data); }
     for (const order of stagedOrders.values()) tx.update(club.collection('orders').doc(order.id), { items: order.items, status: order.status, updatedAt: now });

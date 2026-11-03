@@ -34,7 +34,9 @@ void main() {
         .pumpWidget(MaterialApp(home: MemberMissionsScreen(service: service)));
     await tester.pumpAndSettle();
     expect(find.text('1 × Bonnet DEV · M'), findsOneWidget);
-    expect(find.text('Pour : Membre DEV'), findsOneWidget);
+    expect(find.textContaining('Membre DEV'), findsOneWidget);
+    await tester.tap(find.text('1 × Bonnet DEV · M'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Remis / Afgeleverd'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Annuler'));
@@ -53,8 +55,9 @@ void main() {
       'failed check-off never shows completion and clears stale actions',
       (tester) async {
     final service = MemberMissionsService(transport: (request) async {
-      if (request['action'] == 'update')
+      if (request['action'] == 'update') {
         throw const MemberMissionsException('own_assignment_required');
+      }
       return {
         'version': 1,
         'eligible': true,
@@ -63,6 +66,8 @@ void main() {
     });
     await tester
         .pumpWidget(MaterialApp(home: MemberMissionsScreen(service: service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 × Bonnet DEV · M'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('En cours'));
     await tester.pumpAndSettle();

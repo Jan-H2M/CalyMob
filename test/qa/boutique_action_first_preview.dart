@@ -115,7 +115,8 @@ class LocalBoutiqueWizardStore {
               u['customerOrderId'] == input['orderId'] &&
               u['saleStatus'] != 'sold')
           .toList();
-      if (rows.any((u) => u['location'] != input['sourceLocation'])) {
+      if (input['sourceLocation'] != null &&
+          rows.any((u) => u['location'] != input['sourceLocation'])) {
         fail(
             'Commande répartie entre plusieurs lieux : choisissez ses pièces dans la liste.');
       }
@@ -137,7 +138,7 @@ class LocalBoutiqueWizardStore {
         fail('La pièce a changé.');
       }
       final reason = boutiqueBatchBlockedReason(BoutiquePhysicalUnit(u),
-          action as String, input['sourceLocation'] as String);
+          action as String, input['sourceLocation'] as String?);
       if (reason != null) fail(reason);
       return u;
     }).toList();
@@ -145,25 +146,24 @@ class LocalBoutiqueWizardStore {
       fail('Sélection invalide.');
     }
     final dest = input['destination'] as String?;
-    if (['move', 'dispatch', 'confirmJim'].contains(action) &&
+    if (['move', 'dispatch'].contains(action) &&
         (dest == null || dest.trim().isEmpty)) {
       fail('Destination obligatoire.');
     }
     if (action == 'move' && dest == input['sourceLocation']) {
       fail('Choisissez un autre lieu.');
     }
-    if (['finishJim', 'confirmJim', 'reviewPlain'].contains(action) &&
-        (input['note'] as String? ?? '').trim().length < 3) {
-      fail('Contrôle obligatoire.');
-    }
     final result = <String, dynamic>{
       'count': selected.length,
-      'destination': dest ?? input['sourceLocation'],
+      'destination': ['move', 'dispatch'].contains(action)
+          ? dest ?? input['sourceLocation']
+          : null,
       'notificationCount': 0,
       'heldOrders': []
     };
     if (input['preview'] == true) return result;
-    if (input['confirmed'] != true || input['expectedActorId'] != 'demo-rb') {
+    if ((['move', 'dispatch'].contains(action) && input['confirmed'] != true) ||
+        input['expectedActorId'] != 'demo-rb') {
       fail('Confirmation requise.');
     }
     for (final u in selected) {
@@ -174,7 +174,6 @@ class LocalBoutiqueWizardStore {
           u['finish'] = 'to_jim';
         case 'confirmJim':
           u['finish'] = 'at_jim';
-          u['location'] = dest;
         case 'finishJim':
           u['workshopReady'] = true;
         case 'reviewPlain':
