@@ -52,7 +52,7 @@ test('RB and current feature flag are required; helper/admin and wrong club are 
 });
 test('missing, malformed, incomplete or cancelled orders never return a partial selection', async () => {
   await assert.rejects(call('orderSelection', { orderId: 'absent', sourceLocation: 'Jim' }), { code: 'not-found' });
-  for (const params of [{ orderId: '../escape', sourceLocation: 'Jim' }, { orderId: 'complete' }, { orderId: 'complete', sourceLocation: ' ' }, { orderId: 'complete', sourceLocation: 'Jim', role: 'admin' }]) await assert.rejects(call('orderSelection', params), { code: 'invalid-argument' });
+  for (const params of [{ orderId: '../escape', sourceLocation: 'Jim' }, { orderId: 'complete', sourceLocation: ' ' }, { orderId: 'complete', sourceLocation: 'Jim', role: 'admin' }]) await assert.rejects(call('orderSelection', params), { code: 'invalid-argument' });
   const { order } = await seed('incomplete');
   await club.collection('orders').doc('incomplete').update({ items: [{ ...order.items[0], qty: 3 }] });
   await assert.rejects(call('orderSelection', { orderId: 'incomplete', sourceLocation: 'Jim' }), { code: 'failed-precondition' });
@@ -105,4 +105,11 @@ test('a changed piece still fails the existing mutation preview revision check',
   const selected = await call('orderSelection', { orderId: 'revision', sourceLocation: 'Jim' });
   await club.collection('boutique_physical_stock_units').doc(ids[0]).update({ location: 'Piscine' });
   await assert.rejects(execute(readDb, actor('rb'), { clubId, action: 'move', expectedActorId: 'rb', units: selected.units.map(({ id, revision }) => ({ id, revision })), sourceLocation: 'Jim', destination: 'Réserve', preview: true, idempotencyKey: 'qa_revision_preview_123' }), { code: 'aborted' });
+});
+
+test('order selection without a place can include pieces at different locations', async () => {
+  const { ids } = await seed('multiplace');
+  await club.collection('boutique_physical_stock_units').doc(ids[0]).update({ location: 'Piscine' });
+  const selected = await call('orderSelection', { orderId: 'multiplace' });
+  assert.deepEqual(new Set(selected.units.map(unit => unit.location)), new Set(['Jim', 'Piscine']));
 });

@@ -159,7 +159,10 @@ test('plain club stock cannot skip a reserved customer name; positive Jim route 
   await assert.rejects(mutate('rb','reviewPlain',[40],{sourceLocation:'Réserve',note:'Contrôlé'}),{code:'failed-precondition'});
   assert.equal((await piece(40)).saleStatus,'not_ready');
   await mutate('rb','prepareJim',[40],{sourceLocation:'Réserve'});
-  await mutate('rb','confirmJim',[40],{sourceLocation:'Réserve',destination:'Jim',note:'Pièce reçue pour personnalisation'});
+  await mutate('rb','confirmJim',[40],{sourceLocation:'Réserve',destination:'Jim'});
+  assert.equal((await piece(40)).location, 'Réserve');
+  assert.equal((await club.collection('boutique_physical_stock_units').doc('u40').get()).data().history.filter(e => e.kind === 'moved').length, 0);
+  await mutate('rb','move',[40],{sourceLocation:'Réserve',destination:'Jim'});
   await mutate('rb','finishJim',[40],{note:'Nom brodé et vérifié'});
   const task=await mutate('rb','dispatch',[40],{destination:'Piscine',assigneeIds:['helper1'],pickupPoint:true,pickupWindow:'Ce soir'});
   await mutate('helper1','arrive',[40],{missionId:task.missionId});
@@ -275,4 +278,31 @@ test('count-excluded pieces are hidden from active lists and blocked at lookup a
   await ref.update({ inventoryExcluded: true });
   await assert.rejects(call('rb', 'move', { units: [{ id: unitId, revision: restored.revision }],
     sourceLocation: 'Piscine', destination: 'Réserve', idempotencyKey: key() }), { code: 'failed-precondition' });
+});
+
+test('finishing across locations never moves pieces and needs no place, note or separate confirmation', async () => {
+  for (const [number, location, needsEmbroidery] of [[901, 'Piscine', true], [902, 'Réserve', true], [903, 'Bureau', false]]) {
+    await club.collection('boutique_physical_stock_units').doc(`u${number}`).set({
+      productName: 'Article fictif', variantLabel: 'M', location, destination: 'free', finish: 'unembroidered',
+      saleStatus: 'not_ready', requiresEmbroidery: needsEmbroidery, history: []
+    });
+  }
+  const notificationsBefore = await count('boutique_pickup_notifications');
+  const perform = async (action, numbers) => {
+    const request = { units: await selection(numbers), idempotencyKey: key() };
+    const preview = await call('rb', action, { ...request, preview: true });
+    assert.equal(preview.count, numbers.length);
+    await call('rb', action, request);
+  };
+  await perform('prepareJim', [901, 902]);
+  await perform('confirmJim', [901, 902]);
+  await perform('finishJim', [901, 902]);
+  await perform('reviewPlain', [903]);
+  for (const [number, location] of [[901, 'Piscine'], [902, 'Réserve'], [903, 'Bureau']]) {
+    const actual = await piece(number);
+    assert.equal(actual.location, location);
+    assert.equal(actual.destination, 'free');
+    assert.equal(actual.saleStatus, number === 903 ? 'sale_ready' : 'not_ready');
+  }
+  assert.equal(await count('boutique_pickup_notifications'), notificationsBefore);
 });

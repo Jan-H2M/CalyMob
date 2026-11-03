@@ -39,8 +39,8 @@ class _BoutiqueStockSessionScreenState
   Map<String, dynamic>? _pending;
   static const _actions = {
     'move': 'Changer de lieu',
-    'prepareJim': 'Préparer le départ chez Jim',
-    'confirmJim': 'Confirmer l’arrivée chez Jim',
+    'prepareJim': 'Préparer la broderie',
+    'confirmJim': 'En fabrication',
     'finishJim': 'Broderie terminée chez Jim',
     'reviewPlain': 'Contrôler les articles sans broderie',
     'dispatch': 'Confier un transport / point d’enlèvement',
@@ -50,10 +50,9 @@ class _BoutiqueStockSessionScreenState
         'Seul le lieu change. La finition et la réservation client sont conservées.',
     'prepareJim':
         'Les pièces restent au lieu actuel, en attente du départ chez Jim.',
-    'confirmJim':
-        'À utiliser lorsque les pièces ont réellement été réceptionnées chez Jim.',
+    'confirmJim': 'Met les pièces en fabrication sans changer leur lieu.',
     'finishJim':
-        'Les pièces restent chez Jim. Les acheteurs ne sont pas encore avertis.',
+        'La broderie est terminée. Le lieu ne change pas et les acheteurs ne sont pas encore avertis.',
     'reviewPlain':
         'Confirmez le contrôle des articles qui ne nécessitent aucune broderie.',
     'dispatch':
@@ -204,10 +203,11 @@ class _BoutiqueStockSessionScreenState
   Map<String, dynamic> _request() => {
         'expectedActorId': BoutiqueAccessScope.maybeOf(context)!.userId,
         'units': _selection.units.map((u) => u.selection).toList(),
-        'sourceLocation': widget.location,
+        if (['move', 'dispatch'].contains(_action))
+          'sourceLocation': widget.location,
         'idempotencyKey': BoutiqueOperationsService.confirmationKey(),
-        'confirmed': true,
-        if (['move', 'confirmJim', 'dispatch'].contains(_action))
+        if (['move', 'dispatch'].contains(_action)) 'confirmed': true,
+        if (['move', 'dispatch'].contains(_action))
           'destination': _destination.text.trim(),
         if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
         if (_action == 'dispatch') ...{
@@ -247,8 +247,9 @@ class _BoutiqueStockSessionScreenState
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                          Text(
-                              '${widget.location} → ${preview['destination']}'),
+                          Text(['move', 'dispatch'].contains(_action)
+                              ? '${widget.location} → ${preview['destination']}'
+                              : 'Lieu inchangé pour chaque pièce'),
                           const SizedBox(height: 12),
                           Text(
                               '${preview['notificationCount']} acheteur(s) sera/seront averti(s).'),
@@ -376,7 +377,7 @@ class _BoutiqueStockSessionScreenState
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(_help[_action]!)),
-            if (['move', 'confirmJim', 'dispatch'].contains(_action)) ...[
+            if (['move', 'dispatch'].contains(_action)) ...[
               TextField(
                   controller: _destination,
                   enabled: !locked,
@@ -447,12 +448,9 @@ class _BoutiqueStockSessionScreenState
                   enabled: !locked,
                   minLines: 1,
                   maxLines: 3,
-                  decoration: InputDecoration(
-                      labelText: ['confirmJim', 'finishJim', 'reviewPlain']
-                              .contains(_action)
-                          ? 'Contrôle effectué · obligatoire'
-                          : 'Note pour ce lot · facultatif',
-                      border: const OutlineInputBorder())),
+                  decoration: const InputDecoration(
+                      labelText: 'Note pour ce lot · facultatif',
+                      border: OutlineInputBorder())),
           ],
           if (_error != null)
             Padding(

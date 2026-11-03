@@ -5,7 +5,8 @@ import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
 /// Only selects existing physical pieces. No action, payment or stock write.
 class BoutiqueOrderSelectionScreen extends StatefulWidget {
-  final String clubId, location;
+  final String clubId;
+  final String? location;
   final BoutiqueOperationsService service;
   const BoutiqueOrderSelectionScreen(
       {super.key,
@@ -65,7 +66,7 @@ class _BoutiqueOrderSelectionScreenState
       final result =
           await widget.service.call(widget.clubId, 'orderSelection', {
         'orderId': order['id'],
-        'sourceLocation': widget.location,
+        if (widget.location != null) 'sourceLocation': widget.location,
       });
       final units = (result['units'] as List)
           .map((u) => BoutiquePhysicalUnit(Map<String, dynamic>.from(u as Map)))
@@ -89,9 +90,10 @@ class _BoutiqueOrderSelectionScreenState
     return BoutiqueOperationsScaffold(
       title: 'Sélectionner une commande',
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Lieu : ${widget.location}'),
-        const Text(
-            'Ajoute toutes les pièces physiques restantes, uniquement si elles sont présentes à ce lieu. Aucune action n’est encore effectuée.'),
+        if (widget.location != null) Text('Lieu : ${widget.location}'),
+        Text(widget.location == null
+            ? 'Ajoute les pièces physiques restantes. Aucune action n’est encore effectuée.'
+            : 'Ajoute toutes les pièces physiques restantes présentes à ce lieu. Aucune action n’est encore effectuée.'),
         const SizedBox(height: 12),
         TextField(
             decoration: const InputDecoration(

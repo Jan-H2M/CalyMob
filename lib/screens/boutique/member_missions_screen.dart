@@ -177,45 +177,41 @@ class _MemberMissionsScreenState extends State<MemberMissionsScreen> {
                 ..._missions.map(
                   (mission) => Card(
                     key: ValueKey(mission.id),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '1 × ${mission.article} · ${mission.size}',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text('Pour : ${mission.recipient}'),
-                          Text(
-                            'Commandée le ${mission.orderedAt == null ? 'date inconnue' : DateFormat('dd/MM/yyyy HH:mm').format(mission.orderedAt!.toLocal())}',
-                          ),
-                          if (mission.dueAt != null)
-                            Text(
-                              'À remettre de préférence avant le ${DateFormat('dd/MM/yyyy').format(mission.dueAt!.toLocal())}',
-                            ),
-                          Text(MemberMission.statusLabel(mission.status)),
-                          Wrap(
-                            spacing: 8,
-                            children: mission.allowedNext
-                                .map(
-                                  (status) => FilledButton(
+                    child: ExpansionTile(
+                      dense: true,
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                      title: Text('1 × ${mission.article} · ${mission.size}',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      subtitle: Text(
+                          '${mission.recipient} · ${MemberMission.statusLabel(mission.status)}'),
+                      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      children: [
+                        Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                                'Commandée le ${mission.orderedAt == null ? 'date inconnue' : DateFormat('dd/MM/yyyy HH:mm').format(mission.orderedAt!.toLocal())}')),
+                        if (mission.dueAt != null)
+                          Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                  'À remettre de préférence avant le ${DateFormat('dd/MM/yyyy').format(mission.dueAt!.toLocal())}')),
+                        Wrap(
+                          spacing: 8,
+                          children: mission.allowedNext
+                              .map((status) => FilledButton(
                                     onPressed: _busy
                                         ? null
                                         : () => _change(mission, status),
                                     child:
                                         Text(MemberMission.statusLabel(status)),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                          TextButton(
-                            onPressed:
-                                _busy ? null : () => _openExpense(mission),
-                            child: const Text('J’ai avancé des frais…'),
-                          ),
-                        ],
-                      ),
+                                  ))
+                              .toList(),
+                        ),
+                        TextButton(
+                          onPressed: _busy ? null : () => _openExpense(mission),
+                          child: const Text('J’ai avancé des frais…'),
+                        ),
+                      ],
                     ),
                   ),
                 ),

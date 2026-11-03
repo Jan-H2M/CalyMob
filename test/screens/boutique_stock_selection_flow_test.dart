@@ -81,7 +81,7 @@ void main() {
     await tester.tap(find.text('Contrôler les articles sans broderie').last);
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-        find.text('Contrôle effectué · obligatoire'), 120,
+        find.text('Note pour ce lot · facultatif'), 120,
         scrollable: find.byType(Scrollable).first);
     await tester.enterText(find.byType(TextField).last, 'Contrôle fictif');
   }
@@ -140,8 +140,8 @@ void main() {
     await tester.tap(find.byType(DropdownButton<String>));
     await tester.pumpAndSettle();
     expect(find.text('Changer de lieu'), findsOneWidget);
-    expect(find.text('Préparer le départ chez Jim'), findsOneWidget);
-    expect(find.text('Confirmer l’arrivée chez Jim'), findsOneWidget);
+    expect(find.text('Préparer la broderie'), findsOneWidget);
+    expect(find.text('En fabrication'), findsOneWidget);
     expect(find.text('Broderie terminée chez Jim'), findsOneWidget);
     expect(find.text('Contrôler les articles sans broderie'), findsOneWidget);
     expect(
@@ -172,6 +172,8 @@ void main() {
     expect(applies, 1);
     final write = requests.last;
     expect(write['action'], 'reviewPlain');
+    expect(write.containsKey('sourceLocation'), isFalse);
+    expect(write.containsKey('destination'), isFalse);
     expect(write['expectedActorId'], 'qa-rb');
     expect(write['units'], [
       {'id': 'one', 'revision': 'qa-revision'},

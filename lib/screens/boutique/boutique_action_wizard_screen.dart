@@ -26,8 +26,8 @@ class BoutiqueActionWizardScreen extends StatefulWidget {
 const boutiqueBatchActions = {
   'move': 'Déplacer vers un autre lieu',
   'dispatch': 'Confier un transport / point d’enlèvement',
-  'prepareJim': 'Préparer le départ chez Jim',
-  'confirmJim': 'Confirmer l’arrivée chez Jim',
+  'prepareJim': 'Préparer la broderie',
+  'confirmJim': 'En fabrication',
   'finishJim': 'Broderie terminée chez Jim',
   'reviewPlain': 'Contrôler les articles sans broderie',
 };
@@ -35,9 +35,11 @@ const boutiqueBatchActions = {
 /// Conservative display hints only. The server preview remains authoritative
 /// for linked order requirements, revisions, permissions and every transition.
 String? boutiqueBatchBlockedReason(
-    BoutiquePhysicalUnit unit, String action, String source) {
+    BoutiquePhysicalUnit unit, String action, String? source) {
   if (unit.sold) return 'Déjà remis au client';
-  if (unit.location != source) return 'Se trouve à ${unit.location}';
+  if (source != null && unit.location != source) {
+    return 'Se trouve à ${unit.location}';
+  }
   if (unit.data['transportMissionId'] != null) {
     return 'Transport en cours : réceptionner d’abord';
   }
@@ -56,7 +58,7 @@ String? boutiqueBatchBlockedReason(
       if (unit.data['workshopReady'] == true) return 'Broderie déjà terminée';
     case 'reviewPlain':
       if (unit.finish != 'unembroidered') return 'Déjà contrôlé ou autre étape';
-      if (unit.data['requiresEmbroidery'] != false) {
+      if (unit.data['requiresEmbroidery'] == true) {
         return 'Besoin de broderie à vérifier avant ce contrôle';
       }
     case 'dispatch':
@@ -98,15 +100,16 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       _selected.map((id) => _units[id]!).toList();
   bool get _locked => _busy || _pendingApply;
   int get _maxPieces => _action == 'move' ? 100 : 50;
-  bool get _needsDestination =>
-      ['move', 'dispatch', 'confirmJim'].contains(_action);
+  bool get _usesLocation => _category == 'move';
+  bool get _needsDestination => ['move', 'dispatch'].contains(_action);
   bool get _needsNote =>
-      ['confirmJim', 'finishJim', 'reviewPlain'].contains(_action) ||
+      (_usesLocation &&
+          ['confirmJim', 'finishJim', 'reviewPlain'].contains(_action)) ||
       (_action == 'dispatch' && _destination.text.trim() == _source);
   List<String> get _locations =>
       _units.values.map((u) => u.location).toSet().toList()..sort();
-  String? _reason(BoutiquePhysicalUnit unit) =>
-      boutiqueBatchBlockedReason(unit, _action!, _source!);
+  String? _reason(BoutiquePhysicalUnit unit) => boutiqueBatchBlockedReason(
+      unit, _action!, _usesLocation ? _source : null);
 
   @override
   void initState() {
@@ -219,8 +222,10 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   }
 
   String? _valuesError() {
-    if (_action == null || _source == null) {
-      return 'Choisissez une action et le lieu actuel.';
+    if (_action == null || (_usesLocation && _source == null)) {
+      return _usesLocation
+          ? 'Choisissez une action et le lieu actuel.'
+          : 'Choisissez une action.';
     }
     final dest = _destination.text.trim();
     if (_needsDestination && (dest.isEmpty || dest.length > 160)) {
@@ -292,13 +297,13 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
             builder: (_) => receipt
                 ? BoutiqueReceiptSelectionScreen(
                     clubId: widget.clubId,
-                    location: _source!,
+                    location: _usesLocation ? _source : null,
                     service: widget.service,
                     selectionOnly: true,
                     maximum: _maxPieces)
                 : BoutiqueOrderSelectionScreen(
                     clubId: widget.clubId,
-                    location: _source!,
+                    location: _usesLocation ? _source : null,
                     service: widget.service)));
     if (!mounted ||
         units == null ||
@@ -330,7 +335,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     }
     final generation = _generation;
     final parser =
-        BoutiqueScanSelection(clubId: widget.clubId, location: _source!);
+        BoutiqueScanSelection(clubId: widget.clubId, location: _source ?? '');
     final id = parser.parse(value);
     if (_selected.contains(id)) {
       throw const FormatException('Cette pièce est déjà sélectionnée.');
@@ -393,9 +398,9 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       final request = <String, dynamic>{
         'expectedActorId': actor.userId,
         'units': refreshed.map((u) => u.selection).toList(),
-        'sourceLocation': _source,
+        if (_usesLocation) 'sourceLocation': _source,
         'idempotencyKey': BoutiqueOperationsService.confirmationKey(),
-        'confirmed': true,
+        if (_usesLocation) 'confirmed': true,
         if (_needsDestination) 'destination': _destination.text.trim(),
         if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
         if (_action == 'dispatch') ...{
@@ -485,12 +490,11 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                     ? 'Votre action'
                     : boutiqueBatchActions[_action]!,
                 style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (_source != null)
+            if (_usesLocation && _source != null)
               Text(_needsDestination && _destination.text.trim().isNotEmpty
                   ? '$_source → ${_destination.text.trim()}'
                   : 'Lieu actuel : $_source'),
-            Text(
-                '${_selected.length} pièce(s) sélectionnée(s) · lieu et finition suivis séparément'),
+            Text('${_selected.length} pièce(s) sélectionnée(s)'),
           ])));
 
   Widget _values() =>
@@ -498,43 +502,79 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         Text('Précisez votre action',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-            key: ValueKey('action-$_category-$_action'),
-            initialValue: _action,
-            isExpanded: true,
-            decoration: const InputDecoration(
-                labelText: 'Action', border: OutlineInputBorder()),
-            items: boutiqueBatchActions.entries
-                .where((e) => _category == 'move'
-                    ? ['move', 'dispatch'].contains(e.key)
-                    : !['move', 'dispatch'].contains(e.key))
-                .map((e) => DropdownMenuItem(
-                    value: e.key,
-                    child: Text(e.value, overflow: TextOverflow.ellipsis)))
-                .toList(),
-            onChanged: _locked ? null : (v) => _setAction(v!)),
-        const SizedBox(height: 16),
-        if (_loading) const LinearProgressIndicator(),
-        if (!_loading && _locations.isEmpty)
-          const Text('Aucun lieu chargé. Réessayez le chargement.'),
-        DropdownButtonFormField<String>(
-            key: ValueKey('source-$_source-${_locations.join('|')}'),
-            initialValue: _source != null && _locations.contains(_source)
-                ? _source
-                : null,
-            decoration: const InputDecoration(
-                labelText: 'Lieu actuel des pièces',
-                border: OutlineInputBorder()),
-            items: _locations
-                .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-                .toList(),
-            onChanged: _locked
-                ? null
-                : (v) => setState(() {
-                      _source = v;
-                      _presence = false;
-                      _invalidate();
-                    })),
+        if (_category == 'finish') ...[
+          DropdownButtonFormField<String>(
+              key: ValueKey('finish-mode-$_action'),
+              initialValue: _action == 'prepareJim' ? 'prepare' : 'manual',
+              isExpanded: true,
+              decoration: const InputDecoration(
+                  labelText: 'Action', border: OutlineInputBorder()),
+              items: const [
+                DropdownMenuItem(
+                    value: 'prepare', child: Text('Préparer la broderie')),
+                DropdownMenuItem(value: 'manual', child: Text('Autre statut')),
+              ],
+              onChanged: _locked
+                  ? null
+                  : (value) => _setAction(
+                      value == 'prepare' ? 'prepareJim' : 'confirmJim')),
+          if (_action != 'prepareJim') ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+                key: ValueKey('finish-action-$_action'),
+                initialValue: _action,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Statut', border: OutlineInputBorder()),
+                items: boutiqueBatchActions.entries
+                    .where((entry) => ['confirmJim', 'finishJim', 'reviewPlain']
+                        .contains(entry.key))
+                    .map((entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child:
+                            Text(entry.value, overflow: TextOverflow.ellipsis)))
+                    .toList(),
+                onChanged: _locked ? null : (value) => _setAction(value!)),
+          ],
+        ] else ...[
+          DropdownButtonFormField<String>(
+              key: ValueKey('action-$_category-$_action'),
+              initialValue: _action,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                  labelText: 'Action', border: OutlineInputBorder()),
+              items: boutiqueBatchActions.entries
+                  .where((entry) => ['move', 'dispatch'].contains(entry.key))
+                  .map((entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child:
+                          Text(entry.value, overflow: TextOverflow.ellipsis)))
+                  .toList(),
+              onChanged: _locked ? null : (value) => _setAction(value!)),
+          const SizedBox(height: 16),
+          if (_loading) const LinearProgressIndicator(),
+          if (!_loading && _locations.isEmpty)
+            const Text('Aucun lieu chargé. Réessayez le chargement.'),
+          DropdownButtonFormField<String>(
+              key: ValueKey('source-$_source-${_locations.join('|')}'),
+              initialValue: _source != null && _locations.contains(_source)
+                  ? _source
+                  : null,
+              decoration: const InputDecoration(
+                  labelText: 'Lieu actuel des pièces',
+                  border: OutlineInputBorder()),
+              items: _locations
+                  .map((value) =>
+                      DropdownMenuItem(value: value, child: Text(value)))
+                  .toList(),
+              onChanged: _locked
+                  ? null
+                  : (value) => setState(() {
+                        _source = value;
+                        _presence = false;
+                        _invalidate();
+                      })),
+        ],
         if (_needsDestination) ...[
           const SizedBox(height: 16),
           TextField(
@@ -570,7 +610,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
           'prepareJim' =>
             'Prépare le départ en broderie. Les pièces restent au lieu actuel.',
           'confirmJim' =>
-            'Confirme la réception réelle chez Jim et le début de la broderie.',
+            'Confirme le début de la broderie. Le lieu reste inchangé.',
           'finishJim' =>
             'Marque la broderie terminée chez Jim. Aucun déplacement ni message client.',
           'reviewPlain' =>
@@ -653,7 +693,11 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   Widget _packages() {
     final groups = <String, List<BoutiquePhysicalUnit>>{};
     for (final unit in _units.values) {
-      if (unit.location != _source && !_selected.contains(unit.id)) continue;
+      if (_usesLocation &&
+          unit.location != _source &&
+          !_selected.contains(unit.id)) {
+        continue;
+      }
       if (!'${unit.name} ${unit.variant} ${unit.customerName} ${unit.data['orderNumber'] ?? ''} ${unit.data['supplierOrderReference'] ?? ''}'
           .toLowerCase()
           .contains(_search)) {
@@ -668,8 +712,27 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Choisissez les paquets',
           style: Theme.of(context).textTheme.titleLarge),
-      const Text(
-          'Cochez une commande ou ouvrez-la pour choisir ses pièces. Rien n’est encore enregistré.'),
+      const Text('Scannez les articles ou choisissez-les dans la liste.'),
+      const SizedBox(height: 12),
+      FilledButton.icon(
+          key: const Key('wizard-scan'),
+          onPressed: _locked
+              ? null
+              : () => Navigator.push(
+                  context,
+                  boutiqueAccessGuardedRoute(
+                      sourceContext: context,
+                      requiredSection: 'gestion',
+                      builder: (_) =>
+                          widget.scannerBuilder?.call(_scan) ??
+                          BoutiqueQrScanScreen(
+                              title: 'Ajouter des pièces au lot',
+                              instruction: _usesLocation
+                                  ? 'Scannez les pièces présentes à $_source.'
+                                  : 'Scannez les pièces à traiter.',
+                              onScan: _scan))),
+          icon: const Icon(Icons.qr_code_scanner),
+          label: const Text('Scanner les articles')),
       const SizedBox(height: 12),
       TextField(
           decoration: const InputDecoration(
@@ -680,15 +743,18 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       Wrap(spacing: 8, children: [
         TextButton(
             onPressed: _locked ? null : () => _toggleMany(visible, true),
-            child: const Text('Tout sélectionner · liste affichée')),
+            child: const Text('Tout sélectionner')),
         TextButton(
             onPressed: _locked ? null : () => _toggleMany(_selection, false),
-            child: const Text('Tout désélectionner'))
+            child: const Text('Désélectionner'))
       ]),
       for (final entry in groups.entries)
         Card(
             child: ExpansionTile(
           key: PageStorageKey('package-${entry.key}'),
+          dense: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+          childrenPadding: EdgeInsets.zero,
           leading: Checkbox(
               tristate: true,
               value: entry.value.every((u) => _selected.contains(u.id))
@@ -710,9 +776,12 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
           children: entry.value.map((u) {
             final reason = _reason(u);
             return CheckboxListTile(
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 title: Text(u.name),
                 subtitle: Text(
-                    '${u.variant} · ${u.stage}\n${reason ?? 'Compatible · contrôle final requis'}'),
+                    '${u.variant} · ${u.stage}${reason == null ? '' : ' · $reason'}'),
                 value: _selected.contains(u.id),
                 onChanged:
                     _locked || (reason != null && !_selected.contains(u.id))
@@ -730,23 +799,6 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
           onPressed: _locked ? null : () => _chooseOrder(receipt: true),
           icon: const Icon(Icons.checklist),
           label: const Text('Ajouter une réception fournisseur')),
-      OutlinedButton.icon(
-          onPressed: _locked
-              ? null
-              : () => Navigator.push(
-                  context,
-                  boutiqueAccessGuardedRoute(
-                      sourceContext: context,
-                      requiredSection: 'gestion',
-                      builder: (_) =>
-                          widget.scannerBuilder?.call(_scan) ??
-                          BoutiqueQrScanScreen(
-                              title: 'Ajouter des pièces au lot',
-                              instruction:
-                                  'Action : ${boutiqueBatchActions[_action]}. Scannez les pièces présentes à $_source.',
-                              onScan: _scan))),
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Scanner des pièces · facultatif')),
     ]);
   }
 
@@ -755,12 +807,13 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         Text('Vérifiez avant de confirmer',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
-        ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Lieu'),
-            subtitle: Text(_needsDestination
-                ? '$_source → ${_destination.text.trim()}'
-                : '$_source · inchangé')),
+        if (_usesLocation)
+          ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Lieu'),
+              subtitle: Text(_needsDestination
+                  ? '$_source → ${_destination.text.trim()}'
+                  : '$_source · inchangé')),
         ListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Finition / broderie'),
