@@ -146,27 +146,23 @@ class LocalBoutiqueWizardStore {
       fail('Sélection invalide.');
     }
     final dest = input['destination'] as String?;
-    if ((['move', 'dispatch'].contains(action) ||
-            (action == 'confirmJim' && input['sourceLocation'] != null)) &&
+    if (['move', 'dispatch'].contains(action) &&
         (dest == null || dest.trim().isEmpty)) {
       fail('Destination obligatoire.');
     }
     if (action == 'move' && dest == input['sourceLocation']) {
       fail('Choisissez un autre lieu.');
     }
-    if (input['sourceLocation'] != null &&
-        ['finishJim', 'confirmJim', 'reviewPlain'].contains(action) &&
-        (input['note'] as String? ?? '').trim().length < 3) {
-      fail('Contrôle obligatoire.');
-    }
     final result = <String, dynamic>{
       'count': selected.length,
-      'destination': dest ?? input['sourceLocation'],
+      'destination': ['move', 'dispatch'].contains(action)
+          ? dest ?? input['sourceLocation']
+          : null,
       'notificationCount': 0,
       'heldOrders': []
     };
     if (input['preview'] == true) return result;
-    if ((input['sourceLocation'] != null && input['confirmed'] != true) ||
+    if ((['move', 'dispatch'].contains(action) && input['confirmed'] != true) ||
         input['expectedActorId'] != 'demo-rb') {
       fail('Confirmation requise.');
     }
@@ -178,9 +174,6 @@ class LocalBoutiqueWizardStore {
           u['finish'] = 'to_jim';
         case 'confirmJim':
           u['finish'] = 'at_jim';
-          if (dest != null && input['sourceLocation'] != null) {
-            u['location'] = dest;
-          }
         case 'finishJim':
           u['workshopReady'] = true;
         case 'reviewPlain':

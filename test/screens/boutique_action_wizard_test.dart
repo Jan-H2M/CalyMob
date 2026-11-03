@@ -454,6 +454,30 @@ void main() {
     expect(find.textContaining('1 pièce(s) sélectionnée(s)'), findsOneWidget);
     expect(store.applied, 0);
   });
+  test('synthetic service preserves location for old status payloads',
+      () async {
+    final store = LocalBoutiqueWizardStore();
+    Future<Map<String, dynamic>> status(String action, String key,
+            {String? destination}) =>
+        store.call({
+          'clubId': 'synthetic-boutique',
+          'action': action,
+          'expectedActorId': 'demo-rb',
+          'idempotencyKey': key,
+          'sourceLocation': 'Piscine',
+          if (destination != null) 'destination': destination,
+          'units': [
+            {'id': 'polo-p', 'revision': store.units['polo-p']!['revision']}
+          ],
+        });
+    await status('prepareJim', 'key-prepare');
+    final result =
+        await status('confirmJim', 'key-confirm', destination: 'Jim');
+    expect(result['destination'], isNull);
+    expect(store.units['polo-p']!['location'], 'Piscine');
+    expect(store.units['polo-p']!['finish'], 'at_jim');
+  });
+
   test('unknown stock embroidery is available for server review', () {
     final unit = BoutiquePhysicalUnit({
       'id': 'x',
