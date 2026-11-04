@@ -1,0 +1,9 @@
+# COM-162 / MOB-055 — pool attendance
+
+The live read-only probe on4November reproduced FAILED_PRECONDITION/code9 for a session-scoped `attendees.where(memberId == fictional-nonexistent-id)` query. The legacy `membre_id` query succeeds. The explicit memberId field override retained COLLECTION_GROUP ASCENDING but removed COLLECTION ASCENDING. Unregister aborts before its deletion batch; QR duplicate detection also needs this scope. Existing1.28.0/537,1.29.1/539 and currentDEV retain the affected code/configuration.
+
+Restore only COLLECTION ASCENDING for attendees.memberId, retaining COLLECTION_GROUP history. No Rules, Functions, attendance records or extra validation changed. The COM-162 attachment is a CalyMob screen despite the card's web classification; the canonical index configuration is owned by CalyCompta and mirrored in CalyMob.
+
+MOB-055 shows a callable failed-precondition behind the scanner sheet. Its precise server cause cannot be concluded: existing jan@h2m.ai gcloud log access needs reauthentication. The existing server also rejects sessions over36hours away; the other attachment shows10November while captured4November. That policy is preserved, not guessed away. Client feedback now displays the actual rejection inside the scanner sheet; no successful presence is fabricated.
+
+Tests: index contract must fail before the patch and pass after it. Firebase emulators do not enforce production indexes, so their success cannot prove a real cloud index has finished building. DEV delivery is the source-bound manifest artifact plus fictional client QA. Production requires a separately approved, scoped single-field index update, then READY/read-only verification. Do not deploy the whole DEV index/rules/functions manifest. Native feedback needs a later grouped app release; no stores or production writes authorized here.

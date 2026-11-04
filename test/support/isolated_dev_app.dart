@@ -25,6 +25,7 @@ import 'bank_transfer_dev_scenario.dart';
 import 'thread_colors_dev_scenario.dart';
 import 'loan_liability_dev_scenario.dart';
 import 'medical_expiry_dev_scenario.dart';
+import 'pool_attendance_dev_scenario.dart';
 
 const devSource = String.fromEnvironment('ISOLATED_DEV_SOURCE');
 const devEnabled = bool.fromEnvironment('ISOLATED_DEV');
@@ -64,6 +65,7 @@ Future<void> main() async {
     'thread-colors': 8,
     'medical-expiry': 9,
     'loan-liability': 10,
+    'pool-scan-feedback': 11,
   };
   final scenario = Uri.base.queryParameters['scenario'] ?? 'students';
   if (!pages.containsKey(scenario)) throw ArgumentError('Unknown DEV scenario');
@@ -293,6 +295,7 @@ class _DevHomeState extends State<_DevHome> {
                         (8, 'MOB-052 · Couleur de broderie'),
                         (9, 'AV-MED-001 · Échéance médicale'),
                         (10, 'AV-LOAN-001 · Responsabilité de prêt'),
+                        (11, 'MOB-055 · Retour du scanner piscine'),
                       ])
                         DropdownMenuItem(value: index, child: Text(label)),
                     ],
@@ -315,7 +318,8 @@ class _DevHomeState extends State<_DevHome> {
                       7 => const FictionalBankTransfer(),
                       8 => const FictionalThreadColors(),
                       9 => const FictionalMedicalExpiry(),
-                      _ => const FictionalLoanLiability(),
+                      10 => const FictionalLoanLiability(),
+                      _ => const FictionalPoolScannerFeedback(),
                     },
                   ),
                 ),

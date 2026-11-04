@@ -1,0 +1,34 @@
+name: Pool attendance indexes
+on:
+  pull_request:
+    branches: [dev]
+    paths: ['firestore.indexes.json', 'scripts/test-pool-attendance-index.cjs', '.github/workflows/pool-attendance-index.yml', 'lib/widgets/scanner_modal_sheet.dart', 'lib/widgets/scanner_error_banner.dart', 'test/widgets/scanner_error_banner_test.dart', 'test/support/isolated_dev_app.dart', 'test/support/pool_attendance_dev_scenario.dart', 'test/dev/pool_scan_feedback_dev_test.dart']
+  push:
+    branches: [dev]
+    paths: ['firestore.indexes.json', 'scripts/test-pool-attendance-index.cjs', '.github/workflows/pool-attendance-index.yml', 'lib/widgets/scanner_modal_sheet.dart', 'lib/widgets/scanner_error_banner.dart', 'test/widgets/scanner_error_banner_test.dart', 'test/support/isolated_dev_app.dart', 'test/support/pool_attendance_dev_scenario.dart', 'test/dev/pool_scan_feedback_dev_test.dart']
+permissions:
+  contents: read
+jobs:
+  attendance-indexes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: node --test scripts/test-pool-attendance-index.cjs
+      - uses: subosito/flutter-action@v2
+        with: {flutter-version: '3.38.9', channel: stable, cache: true}
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test test/services/piscine_session_service_test.dart test/widgets/scanner_error_banner_test.dart test/utils/scanner_lifecycle_test.dart test/widgets/manual_attendee_routing_test.dart
+      - name: Real Chrome feedback test with fictional data
+        run: flutter test --platform chrome test/dev/pool_scan_feedback_dev_test.dart
+      - name: Build separate isolated DEV target
+        run: node scripts/isolated-dev/build.mjs
+      - name: Deliver the reviewed DEV index manifest (no cloud deployment)
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pool-attendance-dev
+          path: |
+            firestore.indexes.json
+            build/isolated-dev
