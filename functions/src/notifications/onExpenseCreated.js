@@ -96,10 +96,13 @@ async function ensureRemReference(db, clubId, demandeId, demande) {
 
   const year = getReferenceYear(demande.date_depense || demande.date_demande || demande.created_at);
   const paymentReference = await generateNextRemReference(db, clubId, year);
+  // A supplier invoice may already provide its own payment communication.
+  // Generate the internal REM reference without replacing that communication.
+  const hasCommunication = typeof demande.communication_qr === 'string' && demande.communication_qr.trim() !== '';
   const paymentReferencePatch = {
     payment_reference: paymentReference,
     payment_reference_key: `+++${paymentReference}+++`,
-    communication_qr: buildRemCommunication(paymentReference, demande),
+    ...(!hasCommunication ? { communication_qr: buildRemCommunication(paymentReference, demande) } : {}),
     updated_at: admin.firestore.FieldValue.serverTimestamp(),
   };
 
@@ -123,7 +126,7 @@ async function ensureRemReference(db, clubId, demandeId, demande) {
     writes.push(canonicalRef.set({
       payment_reference: paymentReference,
       payment_reference_key: paymentReferencePatch.payment_reference_key,
-      payment_qr_message: paymentReferencePatch.communication_qr,
+      ...(!hasCommunication ? { payment_qr_message: paymentReferencePatch.communication_qr } : {}),
       updated_at: paymentReferencePatch.updated_at,
     }, { merge: true }));
   }
