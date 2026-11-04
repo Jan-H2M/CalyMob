@@ -37,6 +37,8 @@ async function executeQrAttendance(db, uid, data, now = Date.now()) {
       throw new HttpsError('failed-precondition', 'Scan uniquement pour une séance piscine actuelle.');
     const member = await tx.get(club.collection('members').doc(memberId));
     if (!member.exists) throw new HttpsError('not-found', 'Membre introuvable.');
+    if (!isActiveMember(member.data()))
+      throw new HttpsError('failed-precondition', 'Membre non actif.');
     const duplicate = await tx.get(attendees.where(Filter.or(
       Filter.where('memberId', '==', memberId), Filter.where('membre_id', '==', memberId))));
     const canonical = await tx.get(attendees.doc(memberId));
