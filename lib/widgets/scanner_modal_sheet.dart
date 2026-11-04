@@ -9,13 +9,13 @@ import '../models/member_profile.dart';
 import '../models/piscine_attendee.dart';
 import '../models/participant_operation.dart';
 import '../providers/auth_provider.dart';
+import '../pool_scan/pool_scan.dart';
 import '../services/member_service.dart';
 import '../services/piscine_session_service.dart';
 import '../services/operation_service.dart';
 import '../screens/piscine/add_attendee_dialog.dart';
 import '../utils/scanner_lifecycle.dart';
 import 'alarm_overlay.dart';
-import 'scanner_error_banner.dart';
 
 /// Scanner modal that shows compact scanner + live attendee list
 /// With validation for medical certificate and cotisation
@@ -445,7 +445,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   void _showErrorToast(Object error) {
     if (!mounted) return;
     setState(() {
-      _actionError = scannerActionErrorMessage(error);
+      _actionError = poolScanErrorMessage(error);
       _successMessage = null;
     });
   }
@@ -612,7 +612,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
         children: [
           // Header with close button and title
           _buildHeader(),
-          if (_actionError != null) ScannerErrorBanner(message: _actionError!),
+          if (_actionError != null) PoolScanErrorBanner(message: _actionError!),
 
           // Compact scanner; member search now lives in the manual-add dialog.
           Expanded(

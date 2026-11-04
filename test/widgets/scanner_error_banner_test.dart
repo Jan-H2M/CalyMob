@@ -1,4 +1,4 @@
-import 'package:calymob/widgets/scanner_error_banner.dart';
+import 'package:calymob/pool_scan/pool_scan.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -10,13 +10,13 @@ void main() {
       () {
     const reason = 'Scan uniquement pour une séance piscine actuelle.';
     expect(
-        scannerActionErrorMessage(FirebaseFunctionsException(
+        poolScanErrorMessage(FirebaseFunctionsException(
             code: 'failed-precondition', message: reason)),
         reason);
   });
 
   test('index failures do not expose a console link or claim success', () {
-    final text = scannerActionErrorMessage(FirebaseException(
+    final text = poolScanErrorMessage(FirebaseException(
         plugin: 'cloud_firestore',
         code: 'failed-precondition',
         message:
@@ -27,7 +27,7 @@ void main() {
   });
 
   test('ambiguous callable transport failure asks to check the list', () {
-    final text = scannerActionErrorMessage(
+    final text = poolScanErrorMessage(
         FirebaseFunctionsException(code: 'internal', message: 'INTERNAL'));
     expect(text, contains('Vérifiez la liste'));
     expect(text, isNot(contains('INTERNAL')));

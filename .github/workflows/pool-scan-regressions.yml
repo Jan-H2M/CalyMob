@@ -26,6 +26,7 @@ jobs:
           filters: |
             pool_scan:
               - '.github/workflows/pool-scan-regressions.yml'
+              - 'lib/pool_scan/**'
               - 'lib/widgets/scanner_*.dart'
               - 'lib/screens/scanner/**'
               - 'lib/services/piscine_session_service.dart'
@@ -34,6 +35,7 @@ jobs:
               - 'functions/package-lock.json'
               - 'firestore.rules'
               - 'scripts/test-pool-scan-flow-emulator.cjs'
+              - 'scripts/check-pool-scan-fence.cjs'
               - 'test/services/piscine_session_service_test.dart'
               - 'test/utils/scanner_lifecycle_test.dart'
               - 'test/widgets/manual_attendee_routing_test.dart'
@@ -43,6 +45,9 @@ jobs:
       - name: No pool-scan paths changed
         if: steps.changes.outputs.pool_scan != 'true'
         run: echo 'No pool-scan regression paths changed; required check passes.'
+      - name: Pinned module files and public API
+        if: steps.changes.outputs.pool_scan == 'true'
+        run: node scripts/check-pool-scan-fence.cjs
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.changes.outputs.pool_scan == 'true'
         with:
