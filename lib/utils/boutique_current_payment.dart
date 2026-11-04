@@ -14,9 +14,9 @@ Map<String, dynamic>? boutiqueCurrentPayment(Map<String, dynamic> order) {
     Map<String, dynamic>? request;
     var received = 0, reported = 0;
     var revision = 'legacy';
-    var communication =
-        (order['structuredCommunication'] ?? payment['communication'] ?? number)
-            as String;
+    var communication = (order['structuredCommunication'] ??
+        payment['communication'] ??
+        number) as String;
     if (communication != '+++$number+++' && communication != number) {
       return null;
     }
@@ -57,11 +57,17 @@ Map<String, dynamic>? boutiqueCurrentPayment(Map<String, dynamic> order) {
           pendingSupplements++;
         }
         // V1 requests without a reference retain their already-issued base text.
+        final digest =
+            sha256.convert(utf8.encode('$number:$id')).toString().toUpperCase();
         final expected = row['kind'] == 'initial'
             ? '+++$number+++'
-            : '+++$number-S${sha256.convert(utf8.encode('$number:$id')).toString().substring(0, 24).toUpperCase()}+++';
+            : '+++$number-S${digest.substring(0, 12)}+++';
+        final previous = row['kind'] == 'initial'
+            ? expected
+            : '+++$number-S${digest.substring(0, 24)}+++';
         if (row.containsKey('reference') &&
-            (row['reference'] != expected || !references.add(expected))) {
+            ((row['reference'] != expected && row['reference'] != previous) ||
+                !references.add(row['reference'] as String))) {
           return null;
         }
         if (row['status'] == 'pending' && row['reportedSent'] == true) {
@@ -93,9 +99,8 @@ Map<String, dynamic>? boutiqueCurrentPayment(Map<String, dynamic> order) {
       received = _cents(payment['matchedAmount'] ?? total / 100);
     }
     final amount = request == null ? 0.0 : _cents(request['amount']) / 100;
-    final iban = (payment['iban'] as String)
-        .replaceAll(RegExp(r'\s'), '')
-        .toUpperCase();
+    final iban =
+        (payment['iban'] as String).replaceAll(RegExp(r'\s'), '').toUpperCase();
     final beneficiary = payment['beneficiary'] as String;
     if ([
       iban,
