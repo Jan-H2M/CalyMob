@@ -3,25 +3,10 @@ name: Pool scan regressions
 on:
   pull_request:
     branches: [dev]
-    paths:
-      - '.github/workflows/pool-scan-regressions.yml'
-      - 'lib/widgets/scanner_*.dart'
-      - 'lib/screens/scanner/**'
-      - 'lib/services/piscine_session_service.dart'
-      - 'lib/utils/scanner_lifecycle.dart'
-      - 'functions/src/training/**'
-      - 'functions/package-lock.json'
-      - 'firestore.rules'
-      - 'scripts/test-pool-scan-flow-emulator.cjs'
-      - 'test/services/piscine_session_service_test.dart'
-      - 'test/utils/scanner_lifecycle_test.dart'
-      - 'test/widgets/manual_attendee_routing_test.dart'
-      - 'test/widgets/scanner_modal_sheet_feedback_test.dart'
-      - 'package-lock.json'
-      - 'pubspec.lock'
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: pool-scan-regressions-${{ github.event.pull_request.number }}
@@ -35,7 +20,31 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - uses: dorny/paths-filter@15192bc058cc28a13dbf6cde61f19e18988b7af6 # v3
+        id: changes
+        with:
+          filters: |
+            pool_scan:
+              - '.github/workflows/pool-scan-regressions.yml'
+              - 'lib/widgets/scanner_*.dart'
+              - 'lib/screens/scanner/**'
+              - 'lib/services/piscine_session_service.dart'
+              - 'lib/utils/scanner_lifecycle.dart'
+              - 'functions/src/training/**'
+              - 'functions/package-lock.json'
+              - 'firestore.rules'
+              - 'scripts/test-pool-scan-flow-emulator.cjs'
+              - 'test/services/piscine_session_service_test.dart'
+              - 'test/utils/scanner_lifecycle_test.dart'
+              - 'test/widgets/manual_attendee_routing_test.dart'
+              - 'test/widgets/scanner_modal_sheet_feedback_test.dart'
+              - 'package-lock.json'
+              - 'pubspec.lock'
+      - name: No pool-scan paths changed
+        if: steps.changes.outputs.pool_scan != 'true'
+        run: echo 'No pool-scan regression paths changed; required check passes.'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.changes.outputs.pool_scan == 'true'
         with:
           node-version: '22'
           cache: npm
@@ -43,20 +52,24 @@ jobs:
             package-lock.json
             functions/package-lock.json
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        if: steps.changes.outputs.pool_scan == 'true'
         with:
           distribution: temurin
           java-version: '21'
       - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        if: steps.changes.outputs.pool_scan == 'true'
         with:
           flutter-version: '3.38.9'
           channel: stable
           cache: true
       - name: Install locked dependencies
+        if: steps.changes.outputs.pool_scan == 'true'
         run: |
           flutter pub get --enforce-lockfile
           npm ci --ignore-scripts
           npm ci --ignore-scripts --prefix functions
       - name: Scanner sheet, service, lifecycle, and manual routing
+        if: steps.changes.outputs.pool_scan == 'true'
         run: >-
           flutter test
           test/widgets/scanner_modal_sheet_feedback_test.dart
@@ -64,12 +77,15 @@ jobs:
           test/utils/scanner_lifecycle_test.dart
           test/widgets/manual_attendee_routing_test.dart
       - name: Callable refusal and success contracts
+        if: steps.changes.outputs.pool_scan == 'true'
         run: npm test --prefix functions -- --runInBand src/training/poolQrAttendance.test.js
       - name: Synthetic scan, check-out, rescan, manual add, and rules journey
+        if: steps.changes.outputs.pool_scan == 'true'
         run: >-
           npx --yes firebase-tools@15.12.0 emulators:exec
           --only firestore
           --project demo-calymob-pool-scan-flow
           "node scripts/test-pool-scan-flow-emulator.cjs"
       - name: Lockfiles unchanged
+        if: steps.changes.outputs.pool_scan == 'true'
         run: git diff --exit-code -- pubspec.lock package-lock.json functions/package-lock.json
