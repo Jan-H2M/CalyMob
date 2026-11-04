@@ -1101,6 +1101,10 @@
       "fieldPath": "memberId",
       "indexes": [
         {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
           "queryScope": "COLLECTION_GROUP",
           "order": "ASCENDING"
         }

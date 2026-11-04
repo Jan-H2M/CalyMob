@@ -14,6 +14,7 @@ import '../services/operation_service.dart';
 import '../screens/piscine/add_attendee_dialog.dart';
 import '../utils/scanner_lifecycle.dart';
 import 'alarm_overlay.dart';
+import 'scanner_error_banner.dart';
 
 /// Scanner modal that shows compact scanner + live attendee list
 /// With validation for medical certificate and cotisation
@@ -79,6 +80,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   String? _successMessage;
   String? _lastAddedName;
   String? _scannerError;
+  String? _actionError;
 
   @override
   void initState() {
@@ -178,13 +180,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
     setState(() {
       _isProcessing = true;
+      _actionError = null;
       _lastScannedId = code;
     });
 
     try {
       await _processScannedMember(code, qrScan: true);
     } catch (e) {
-      _showErrorToast(e.toString());
+      _showErrorToast(e);
     } finally {
       if (mounted) {
         setState(() => _isProcessing = false);
@@ -199,6 +202,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   Future<void> _processScannedMember(String memberId,
       {bool qrScan = false}) async {
+    _clearActionError();
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
     final displayName = authProvider.displayName ?? 'Inconnu';
@@ -320,6 +324,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   void _showSuccessToast(String memberName) {
     setState(() {
+      _actionError = null;
       _successMessage = 'Enregistré!';
       _lastAddedName = memberName;
     });
@@ -373,6 +378,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   /// Ouvrir le dialog pour ajouter un invité (non-membre)
   Future<void> _showAddAttendeeDialog() async {
+    _clearActionError();
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
 
@@ -413,22 +419,21 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
           },
         );
       } catch (e) {
-        _showErrorToast(e.toString());
+        _showErrorToast(e);
       }
     }
   }
 
-  void _showErrorToast(String error) {
+  void _clearActionError() {
+    if (mounted && _actionError != null) setState(() => _actionError = null);
+  }
+
+  void _showErrorToast(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(error),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    setState(() {
+      _actionError = scannerActionErrorMessage(error);
+      _successMessage = null;
+    });
   }
 
   // ========== UITSCHRIJVEN (correction d'erreur de scan) ==========
@@ -475,6 +480,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   /// donc on saute directement à l'action.
   Future<void> _unregisterPiscineAttendee(PiscineAttendee attendee) async {
     if (!mounted) return;
+    _clearActionError();
 
     PiscineAttendeeRemovalSnapshot? removalSnapshot;
     try {
@@ -484,7 +490,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
         attendeeId: attendee.id,
       );
     } catch (e) {
-      if (mounted) _showErrorToast('Erreur: ${e.toString()}');
+      if (mounted) _showErrorToast(e);
       return;
     }
 
@@ -504,6 +510,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             label: 'Annuler',
             textColor: Colors.white,
             onPressed: () async {
+              _clearActionError();
               try {
                 await _piscineService.restoreRemovedAttendee(
                   clubId: widget.clubId,
@@ -529,6 +536,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     final displayName = name.isEmpty ? 'ce participant' : name;
 
     if (!mounted) return;
+    _clearActionError();
 
     UnmarkPresentResult result;
     try {
@@ -538,7 +546,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
         memberId: participant.membreId,
       );
     } catch (e) {
-      if (mounted) _showErrorToast('Erreur: ${e.toString()}');
+      if (mounted) _showErrorToast(e);
       return;
     }
 
@@ -562,6 +570,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             label: 'Annuler',
             textColor: Colors.white,
             onPressed: () async {
+              _clearActionError();
               try {
                 await _operationService.restoreFromUnmark(
                   clubId: widget.clubId,
@@ -589,6 +598,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
         children: [
           // Header with close button and title
           _buildHeader(),
+          if (_actionError != null) ScannerErrorBanner(message: _actionError!),
 
           // Compact scanner; member search now lives in the manual-add dialog.
           Expanded(
