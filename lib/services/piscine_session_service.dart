@@ -4,6 +4,12 @@ import 'package:flutter/foundation.dart';
 import '../models/piscine_session.dart';
 import '../models/piscine_attendee.dart';
 
+typedef RecordPoolQr = Future<void> Function({
+  required String region,
+  required String functionName,
+  required Map<String, dynamic> data,
+});
+
 class PiscineAttendeeRemovalDocument {
   final String id;
   final Map<String, dynamic> data;
@@ -30,16 +36,14 @@ class PiscineAttendeeRemovalSnapshot {
 /// Service voor het beheren van piscine sessies
 class PiscineSessionService {
   final FirebaseFirestore _firestore;
-  final Future<void> Function(Map<String, dynamic>) _recordQr;
+  final RecordPoolQr _recordQr;
 
-  PiscineSessionService(
-      {FirebaseFirestore? firestore,
-      Future<void> Function(Map<String, dynamic>)? recordQr})
+  PiscineSessionService({FirebaseFirestore? firestore, RecordPoolQr? recordQr})
       : _firestore = firestore ?? FirebaseFirestore.instance,
         _recordQr = recordQr ??
-            ((data) async {
-              await FirebaseFunctions.instanceFor(region: 'europe-west1')
-                  .httpsCallable('recordPoolQrAttendance')
+            (({required region, required functionName, required data}) async {
+              await FirebaseFunctions.instanceFor(region: region)
+                  .httpsCallable(functionName)
                   .call(data);
             });
 
@@ -324,7 +328,10 @@ class PiscineSessionService {
             'theorie';
     if (!isGuest && qrScan && !isTheory) {
       await _recordQr(
-          {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId});
+        region: 'europe-west1',
+        functionName: 'recordPoolQrAttendance',
+        data: {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId},
+      );
       return;
     }
 
