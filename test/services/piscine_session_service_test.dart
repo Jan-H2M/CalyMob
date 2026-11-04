@@ -25,12 +25,17 @@ void main() {
     });
 
     test(
-        'real member QR delegates to the server without local attendance writes',
+        'real member QR uses the exact deployed callable contract without local writes',
         () async {
       Map<String, dynamic>? sent;
+      String? sentRegion;
+      String? sentFunctionName;
       service = PiscineSessionService(
           firestore: firestore,
-          recordQr: (data) async {
+          recordQr: (
+              {required region, required functionName, required data}) async {
+            sentRegion = region;
+            sentFunctionName = functionName;
             sent = data;
           });
       await service.addAttendee(
@@ -42,9 +47,34 @@ void main() {
         qrScan: true,
       );
 
+      expect(sentRegion, 'europe-west1');
+      expect(sentFunctionName, 'recordPoolQrAttendance');
       expect(sent,
           {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId});
+      expect(sent!.keys.toSet(), {'clubId', 'sessionId', 'memberId'});
       expect((await attendees.get()).docs, isEmpty);
+    });
+
+    test('manual member attendance never calls the QR function', () async {
+      var calls = 0;
+      service = PiscineSessionService(
+        firestore: firestore,
+        recordQr: (
+            {required region, required functionName, required data}) async {
+          calls += 1;
+        },
+      );
+
+      await service.addAttendee(
+        clubId: clubId,
+        sessionId: sessionId,
+        memberId: memberId,
+        memberName: 'Alice Exemple',
+        scannedBy: 'accueil',
+      );
+
+      expect(calls, 0);
+      expect((await attendees.doc(memberId).get()).exists, isTrue);
     });
 
     test('keeps guests on independent generated documents', () async {
