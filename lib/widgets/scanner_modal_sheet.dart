@@ -202,6 +202,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   Future<void> _processScannedMember(String memberId,
       {bool qrScan = false}) async {
+    _clearActionError();
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
     final displayName = authProvider.displayName ?? 'Inconnu';
@@ -377,6 +378,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   /// Ouvrir le dialog pour ajouter un invité (non-membre)
   Future<void> _showAddAttendeeDialog() async {
+    _clearActionError();
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
 
@@ -420,6 +422,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
         _showErrorToast(e);
       }
     }
+  }
+
+  void _clearActionError() {
+    if (mounted && _actionError != null) setState(() => _actionError = null);
   }
 
   void _showErrorToast(Object error) {
@@ -474,6 +480,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   /// donc on saute directement à l'action.
   Future<void> _unregisterPiscineAttendee(PiscineAttendee attendee) async {
     if (!mounted) return;
+    _clearActionError();
 
     PiscineAttendeeRemovalSnapshot? removalSnapshot;
     try {
@@ -503,6 +510,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             label: 'Annuler',
             textColor: Colors.white,
             onPressed: () async {
+              _clearActionError();
               try {
                 await _piscineService.restoreRemovedAttendee(
                   clubId: widget.clubId,
@@ -528,6 +536,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     final displayName = name.isEmpty ? 'ce participant' : name;
 
     if (!mounted) return;
+    _clearActionError();
 
     UnmarkPresentResult result;
     try {
@@ -561,6 +570,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             label: 'Annuler',
             textColor: Colors.white,
             onPressed: () async {
+              _clearActionError();
               try {
                 await _operationService.restoreFromUnmark(
                   clubId: widget.clubId,
