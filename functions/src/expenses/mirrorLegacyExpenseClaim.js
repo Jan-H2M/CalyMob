@@ -57,13 +57,13 @@ exports.mirrorLegacyExpenseClaim = onDocumentWritten(
         const current = canonicalSnap.exists ? canonicalSnap.data() : null;
         if (current && changedFields(expected, current).length === 0) return 'unchanged';
 
-        // Keep the existing full-projection and sync-metadata semantics.
+        // Update every projected field, while retaining canonical-only data.
         const payload = tagSync(expected, {
           origin: 'legacy-mirror',
           version: Date.now(),
           sourceId: demandeId,
         });
-        transaction.set(canonicalRef, payload);
+        transaction.set(canonicalRef, payload, { merge: true });
         return 'synced';
       });
       if (outcome !== 'unchanged') console.log(`🔁 [mirror L→C] ${outcome} ${clubId}/${demandeId}`);

@@ -28,16 +28,16 @@ function fakeDb(documents, onRetry) {
         const pending = [];
         const result = await callback({
           get: (reference) => reference.get(),
-          set: (reference, value) => pending.push({ reference, value }),
+          set: (reference, value, options) => pending.push({ reference, value, options }),
           delete: (reference) => pending.push({ reference, remove: true }),
         });
         return { result, pending };
       };
       let attempt = await run();
       if (onRetry) { onRetry(documents); attempt = await run(); }
-      for (const { reference, value, remove } of attempt.pending) {
+      for (const { reference, value, options, remove } of attempt.pending) {
         if (remove) delete documents[reference.path];
-        else documents[reference.path] = value;
+        else documents[reference.path] = options?.merge ? { ...documents[reference.path], ...value } : value;
         writes += 1;
       }
       return attempt.result;
@@ -67,6 +67,21 @@ test('a delayed legacy event projects the current OGM and name instead of its ol
   expect(docs[canonicalPath].description).toBe('Isabel Ponto');
   expect(docs[canonicalPath].amount).toBe(4.84);
   expect(docs[canonicalPath].payment_reference).toBe('REM-2026-0397');
+});
+
+test('keeps canonical-only invoice data while updating and clearing projected fields', async () => {
+  const current = { ...legacy(ogm), description: null };
+  const docs = { [legacyPath]: current, [canonicalPath]: {
+    ...buildCanonicalFromLegacy(legacy('old'), 'expense-1'),
+    invoice_number: '2026271614', document_hash: 'synthetic-hash', source_communication_entry_id: 'entry-1',
+  } };
+  mockDb = fakeDb(docs);
+  await mirrorLegacyExpenseClaim(event(legacy('old')));
+  expect(docs[canonicalPath].payment_qr_message).toBe(ogm);
+  expect(docs[canonicalPath].description).toBeNull();
+  expect(docs[canonicalPath].invoice_number).toBe('2026271614');
+  expect(docs[canonicalPath].document_hash).toBe('synthetic-hash');
+  expect(docs[canonicalPath].source_communication_entry_id).toBe('entry-1');
 });
 
 test('a concurrent update on transaction retry uses the newest documents', async () => {
