@@ -1,33 +1,7 @@
-import 'package:calymob/widgets/scanner_error_banner.dart';
+import 'package:calymob/widgets/scanner_modal_sheet.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-class _FakeScannerSheet extends StatefulWidget {
-  const _FakeScannerSheet();
-
-  @override
-  State<_FakeScannerSheet> createState() => _FakeScannerSheetState();
-}
-
-class _FakeScannerSheetState extends State<_FakeScannerSheet> {
-  String? _refusal;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      const Text('Scanner Présence'),
-      if (_refusal != null) ScannerErrorBanner(message: _refusal!),
-      TextButton(
-        onPressed: () => setState(() {
-          _refusal = 'Scan uniquement pour une séance piscine actuelle.';
-        }),
-        child: const Text('Simuler un refus'),
-      ),
-      const Text('Présents : 0'),
-    ],
-  );
-}
 
 void main() {
   testWidgets('a refusal is visible inside the scanner bottom sheet', (
@@ -40,7 +14,20 @@ void main() {
             builder: (context) => TextButton(
               onPressed: () => showModalBottomSheet<void>(
                 context: context,
-                builder: (_) => const _FakeScannerSheet(),
+                isScrollControlled: true,
+                builder: (_) => ScannerModalSheet(
+                  clubId: 'calypso',
+                  operationId: 'session-test',
+                  operationTitle: 'Session test',
+                  isPiscine: true,
+                  scanForTesting: () async {
+                    throw FirebaseFunctionsException(
+                      code: 'failed-precondition',
+                      message:
+                          'Scan uniquement pour une séance piscine actuelle.',
+                    );
+                  },
+                ),
               ),
               child: const Text('Ouvrir le scanner'),
             ),

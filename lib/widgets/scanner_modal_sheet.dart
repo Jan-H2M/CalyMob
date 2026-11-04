@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
@@ -30,6 +31,11 @@ class ScannerModalSheet extends StatefulWidget {
   /// reste toujours possible.
   final DateTime? eventEndDate;
 
+  /// Test seam for exercising the real sheet feedback path without a camera
+  /// or Firebase connection. Production callers must leave this null.
+  @visibleForTesting
+  final Future<void> Function()? scanForTesting;
+
   const ScannerModalSheet({
     super.key,
     required this.clubId,
@@ -37,6 +43,7 @@ class ScannerModalSheet extends StatefulWidget {
     required this.operationTitle,
     this.isPiscine = false,
     this.eventEndDate,
+    this.scanForTesting,
   });
 
   /// Show the scanner modal as a bottom sheet
@@ -68,9 +75,9 @@ class ScannerModalSheet extends StatefulWidget {
 
 class _ScannerModalSheetState extends State<ScannerModalSheet>
     with WidgetsBindingObserver {
-  final MemberService _memberService = MemberService();
-  final PiscineSessionService _piscineService = PiscineSessionService();
-  final OperationService _operationService = OperationService();
+  late final MemberService _memberService;
+  late final PiscineSessionService _piscineService;
+  late final OperationService _operationService;
 
   late final MobileScannerController _scannerController;
   StreamSubscription<BarcodeCapture>? _barcodeSubscription;
@@ -86,13 +93,20 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.scanForTesting == null) {
+      _memberService = MemberService();
+      _piscineService = PiscineSessionService();
+      _operationService = OperationService();
+    }
     _scannerController = MobileScannerController(
       autoStart: false,
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
       torchEnabled: false,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner());
+    if (widget.scanForTesting == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner());
+    }
   }
 
   @override
@@ -677,6 +691,21 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   }
 
   Widget _buildCompactScanner() {
+    if (widget.scanForTesting != null) {
+      return Center(
+        child: TextButton(
+          onPressed: () async {
+            try {
+              await widget.scanForTesting!();
+            } catch (error) {
+              _showErrorToast(error);
+            }
+          },
+          child: const Text('Simuler un refus'),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         // Camera
@@ -864,6 +893,13 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   }
 
   Widget _buildDividerWithCount() {
+    if (widget.scanForTesting != null) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('Présents : 0'),
+      );
+    }
+
     return StreamBuilder(
       stream: widget.isPiscine
           ? _piscineService.getAttendeesStream(
@@ -918,6 +954,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   }
 
   Widget _buildAttendeeList() {
+    if (widget.scanForTesting != null) return _buildEmptyState();
+
     if (widget.isPiscine) {
       return StreamBuilder<List<PiscineAttendee>>(
         stream: _piscineService.getAttendeesStream(
