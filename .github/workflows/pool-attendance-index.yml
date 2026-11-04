@@ -2,10 +2,10 @@ name: Pool attendance indexes
 on:
   pull_request:
     branches: [dev]
-    paths: ['firestore.indexes.json', 'scripts/test-pool-attendance-index.cjs', '.github/workflows/pool-attendance-index.yml', 'lib/widgets/scanner_modal_sheet.dart', 'lib/widgets/scanner_error_banner.dart', 'test/widgets/scanner_error_banner_test.dart', 'test/support/isolated_dev_app.dart', 'test/support/pool_attendance_dev_scenario.dart', 'test/dev/pool_scan_feedback_dev_test.dart']
+    paths: ['firestore.indexes.json', 'scripts/test-pool-attendance-index.cjs', '.github/workflows/pool-attendance-index.yml', 'lib/widgets/scanner_modal_sheet.dart', 'lib/pool_scan/**', 'test/widgets/scanner_error_banner_test.dart', 'test/support/isolated_dev_app.dart', 'test/support/pool_attendance_dev_scenario.dart', 'test/dev/pool_scan_feedback_dev_test.dart']
   push:
     branches: [dev]
-    paths: ['firestore.indexes.json', 'scripts/test-pool-attendance-index.cjs', '.github/workflows/pool-attendance-index.yml', 'lib/widgets/scanner_modal_sheet.dart', 'lib/widgets/scanner_error_banner.dart', 'test/widgets/scanner_error_banner_test.dart', 'test/support/isolated_dev_app.dart', 'test/support/pool_attendance_dev_scenario.dart', 'test/dev/pool_scan_feedback_dev_test.dart']
+    paths: ['firestore.indexes.json', 'scripts/test-pool-attendance-index.cjs', '.github/workflows/pool-attendance-index.yml', 'lib/widgets/scanner_modal_sheet.dart', 'lib/pool_scan/**', 'test/widgets/scanner_error_banner_test.dart', 'test/support/isolated_dev_app.dart', 'test/support/pool_attendance_dev_scenario.dart', 'test/dev/pool_scan_feedback_dev_test.dart']
 permissions:
   contents: read
 jobs:

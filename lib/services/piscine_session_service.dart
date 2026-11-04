@@ -1,14 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/piscine_session.dart';
 import '../models/piscine_attendee.dart';
-
-typedef RecordPoolQr = Future<void> Function({
-  required String region,
-  required String functionName,
-  required Map<String, dynamic> data,
-});
+import '../pool_scan/pool_scan.dart';
 
 class PiscineAttendeeRemovalDocument {
   final String id;
@@ -36,16 +30,14 @@ class PiscineAttendeeRemovalSnapshot {
 /// Service voor het beheren van piscine sessies
 class PiscineSessionService {
   final FirebaseFirestore _firestore;
-  final RecordPoolQr _recordQr;
+  final PoolScanCallable? _recordQr;
 
-  PiscineSessionService({FirebaseFirestore? firestore, RecordPoolQr? recordQr})
+  PiscineSessionService({
+    FirebaseFirestore? firestore,
+    PoolScanCallable? recordQr,
+  })
       : _firestore = firestore ?? FirebaseFirestore.instance,
-        _recordQr = recordQr ??
-            (({required region, required functionName, required data}) async {
-              await FirebaseFunctions.instanceFor(region: region)
-                  .httpsCallable(functionName)
-                  .call(data);
-            });
+        _recordQr = recordQr;
 
   /// Collectie referentie voor piscine sessies
   CollectionReference<Map<String, dynamic>> _sessionsCollection(String clubId) {
@@ -327,10 +319,11 @@ class PiscineSessionService {
                 .data()?['type'] ==
             'theorie';
     if (!isGuest && qrScan && !isTheory) {
-      await _recordQr(
-        region: 'europe-west1',
-        functionName: 'recordPoolQrAttendance',
-        data: {'clubId': clubId, 'sessionId': sessionId, 'memberId': memberId},
+      await recordPoolQrAttendance(
+        clubId: clubId,
+        sessionId: sessionId,
+        memberId: memberId,
+        call: _recordQr,
       );
       return;
     }

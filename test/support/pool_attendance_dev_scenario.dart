@@ -1,4 +1,4 @@
-import 'package:calymob/widgets/scanner_error_banner.dart';
+import 'package:calymob/pool_scan/pool_scan.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -28,10 +28,10 @@ class _FictionalPoolScannerFeedbackState
                         Column(mainAxisSize: MainAxisSize.min, children: [
                           const Text('Scanner Présence'),
                           if (message != null)
-                            ScannerErrorBanner(message: message!),
+                            PoolScanErrorBanner(message: message!),
                           TextButton(
                               onPressed: () => setSheetState(() => message =
-                                  scannerActionErrorMessage(FirebaseException(
+                                  poolScanErrorMessage(FirebaseException(
                                       plugin: 'cloud_firestore',
                                       code: 'failed-precondition',
                                       message:
@@ -39,7 +39,7 @@ class _FictionalPoolScannerFeedbackState
                               child: const Text('Simuler index absent')),
                           TextButton(
                               onPressed: () => setSheetState(() => message =
-                                  scannerActionErrorMessage(
+                                  poolScanErrorMessage(
                                       FirebaseFunctionsException(
                                           code: 'failed-precondition',
                                           message:
