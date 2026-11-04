@@ -26,6 +26,7 @@ class BoutiquePhysicalUnit {
             : 'En cours chez Jim',
         'returned_embroidered' => 'Broderie terminée',
         'not_required_reviewed' => 'Sans broderie · contrôlé',
+        'shipped_from_jim' => 'Expédié par Jim',
         _ => 'Préparation à vérifier',
       };
 }
