@@ -62,47 +62,7 @@ const OPEN_UNPAID_STATUSES = new Set([
   'a_verifier_paiement',
 ]);
 
-async function generateNextRemReference(db, clubId, year) {
-  const counterRef = db
-    .collection('clubs')
-    .doc(clubId)
-    .collection('settings')
-    .doc(`rem_reference_counter_${year}`);
-
-  const nextCounter = await db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(counterRef);
-    const current = snapshot.exists ? Number(snapshot.data().counter || 0) : 0;
-    const next = current + 1;
-
-    transaction.set(counterRef, {
-      counter: next,
-      year,
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    return next;
-  });
-
-  return `REM-${year}-${String(nextCounter).padStart(4, '0')}`;
-}
-
-async function ensureRemReference(db, clubId, demandeId, demande) {
-  if (demande.transaction_id || demande.payment_reference) {
-    return demande.payment_reference || null;
-  }
-  if (!OPEN_UNPAID_STATUSES.has(String(demande.statut || ''))) {
-    return null;
-  }
-
-  const year = getReferenceYear(demande.date_depense || demande.date_demande || demande.created_at);
-  const paymentReference = await generateNextRemReference(db, clubId, year);
-  const paymentReferencePatch = {
-    payment_reference: paymentReference,
-    payment_reference_key: `+++${paymentReference}+++`,
-    communication_qr: buildRemCommunication(paymentReference, demande),
-    updated_at: admin.firestore.FieldValue.serverTimestamp(),
-  };
-
+async function ensureRemReference(db, clubId, demandeId) {
   const legacyRef = db
     .collection('clubs')
     .doc(clubId)
@@ -114,23 +74,37 @@ async function ensureRemReference(db, clubId, demandeId, demande) {
     .collection('expense_claims')
     .doc(demandeId);
 
-  const canonicalSnap = await canonicalRef.get();
-  const writes = [
-    legacyRef.set(paymentReferencePatch, { merge: true }),
-  ];
+  return db.runTransaction(async (transaction) => {
+    // A creation event may be delivered after a later communication edit.
+    const legacySnap = await transaction.get(legacyRef);
+    const canonicalSnap = await transaction.get(canonicalRef);
+    if (!legacySnap.exists) return null;
+    const demande = legacySnap.data();
+    if (demande.transaction_id || demande.payment_reference) return demande.payment_reference || null;
+    if (!OPEN_UNPAID_STATUSES.has(String(demande.statut || ''))) return null;
 
-  if (canonicalSnap.exists) {
-    writes.push(canonicalRef.set({
-      payment_reference: paymentReference,
-      payment_reference_key: paymentReferencePatch.payment_reference_key,
-      payment_qr_message: paymentReferencePatch.communication_qr,
-      updated_at: paymentReferencePatch.updated_at,
-    }, { merge: true }));
-  }
-
-  await Promise.all(writes);
-
-  return paymentReference;
+    const year = getReferenceYear(demande.date_depense || demande.date_demande || demande.created_at);
+    const counterRef = db.collection('clubs').doc(clubId).collection('settings').doc(`rem_reference_counter_${year}`);
+    const counterSnap = await transaction.get(counterRef);
+    const next = (counterSnap.exists ? Number(counterSnap.data().counter || 0) : 0) + 1;
+    const paymentReference = `REM-${year}-${String(next).padStart(4, '0')}`;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const hasCommunication = (value) => typeof value === 'string' && value.trim() !== '';
+    const legacyCommunication = demande.communication_qr;
+    const canonicalCommunication = canonicalSnap.exists ? canonicalSnap.data().payment_qr_message : null;
+    // Preserve both populated copies if they differ: neither can safely be
+    // identified as newer from a delayed creation event.
+    const legacyValue = hasCommunication(legacyCommunication) ? legacyCommunication
+      : hasCommunication(canonicalCommunication) ? canonicalCommunication : buildRemCommunication(paymentReference, demande);
+    const canonicalValue = hasCommunication(canonicalCommunication) ? canonicalCommunication : legacyValue;
+    const common = { payment_reference: paymentReference, payment_reference_key: `+++${paymentReference}+++`, updated_at: now };
+    transaction.set(counterRef, { counter: next, year, updated_at: now }, { merge: true });
+    transaction.set(legacyRef, { ...common, communication_qr: legacyValue }, { merge: true });
+    if (canonicalSnap.exists) {
+      transaction.set(canonicalRef, { ...common, payment_qr_message: canonicalValue }, { merge: true });
+    }
+    return paymentReference;
+  });
 }
 
 /**
@@ -173,7 +147,7 @@ exports.onExpenseCreated = onDocumentCreated(
     const db = admin.firestore();
 
     try {
-      const paymentReference = await ensureRemReference(db, clubId, demandeId, demande);
+      const paymentReference = await ensureRemReference(db, clubId, demandeId);
       if (paymentReference) {
         console.log(`✅ [onExpenseCreated] REM reference ready: ${paymentReference}`);
       }

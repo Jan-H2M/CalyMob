@@ -31,48 +31,42 @@ exports.mirrorLegacyExpenseClaim = onDocumentWritten(
     const flags = await getMigrationFlags(db, clubId);
     if (!flags['sync.enabled'] || !flags['sync.legacyToCanonical']) return null;
 
-    const afterSnap = event.data && event.data.after;
-    const legacyExists = afterSnap && afterSnap.exists;
+    const legacyRef = db
+      .collection('clubs').doc(clubId)
+      .collection('demandes_remboursement').doc(demandeId);
     const canonicalRef = db
       .collection('clubs').doc(clubId)
       .collection('expense_claims').doc(demandeId);
 
-    // Deletion -> remove the canonical mirror too.
-    if (!legacyExists) {
-      try {
-        await canonicalRef.delete();
-        console.log(`🗑️ [mirror L→C] Deleted canonical mirror ${clubId}/${demandeId}`);
-      } catch (error) {
-        console.warn(`⚠️ [mirror L→C] Canonical delete soft-failure ${demandeId}:`, error);
-      }
-      return null;
-    }
-
-    const legacyData = afterSnap.data() || {};
-
-    // Loop-guard: negeer legacy-writes die door de omgekeerde mirror gemaakt zijn.
-    if (legacyData._sync && legacyData._sync.origin === 'canonical-mirror') {
-      return null;
-    }
-
     try {
-      const expected = buildCanonicalFromLegacy(legacyData, demandeId);
-      const currentSnap = await canonicalRef.get();
-      const current = currentSnap.exists ? currentSnap.data() : null;
+      const outcome = await db.runTransaction(async (transaction) => {
+        // Events may arrive late or out of order. Read both current documents
+        // in the same transaction before deciding what to mirror or delete.
+        const legacySnap = await transaction.get(legacyRef);
+        const canonicalSnap = await transaction.get(canonicalRef);
+        if (!legacySnap.exists) {
+          if (canonicalSnap.exists) transaction.delete(canonicalRef);
+          return canonicalSnap.exists ? 'deleted' : 'unchanged';
+        }
 
-      // Change-detection: sla redundante writes over (negeert _sync + key-volgorde).
-      if (current && changedFields(expected, current).length === 0) {
-        return null;
-      }
+        const legacyData = legacySnap.data() || {};
+        // Ignore writes originating from the reverse mirror, as before.
+        if (legacyData._sync && legacyData._sync.origin === 'canonical-mirror') return 'unchanged';
 
-      // Volledige projectie (canonical = afgeleide van legacy) + server-owned _sync.
-      const payload = tagSync(expected, {
-        origin: 'legacy-mirror',
-        version: Date.now(),
-        sourceId: demandeId,
+        const expected = buildCanonicalFromLegacy(legacyData, demandeId);
+        const current = canonicalSnap.exists ? canonicalSnap.data() : null;
+        if (current && changedFields(expected, current).length === 0) return 'unchanged';
+
+        // Update every projected field, while retaining canonical-only data.
+        const payload = tagSync(expected, {
+          origin: 'legacy-mirror',
+          version: Date.now(),
+          sourceId: demandeId,
+        });
+        transaction.set(canonicalRef, payload, { merge: true });
+        return 'synced';
       });
-      await canonicalRef.set(payload);
-      console.log(`🔁 [mirror L→C] Synced ${clubId}/${demandeId} (status=${expected.status}, amount=${expected.amount})`);
+      if (outcome !== 'unchanged') console.log(`🔁 [mirror L→C] ${outcome} ${clubId}/${demandeId}`);
     } catch (error) {
       console.error(`❌ [mirror L→C] Failed to sync ${demandeId}:`, error);
       throw error;
