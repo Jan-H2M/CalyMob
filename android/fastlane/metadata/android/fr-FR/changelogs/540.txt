@@ -1,0 +1,1 @@
+Correction du scan des présences piscine et amélioration de l’affichage des erreurs lors du scan.
