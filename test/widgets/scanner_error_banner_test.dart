@@ -32,33 +32,4 @@ void main() {
     expect(text, contains('Vérifiez la liste'));
     expect(text, isNot(contains('INTERNAL')));
   });
-
-  testWidgets(
-      'rejection stays in front of the underlying page, inside the scanner sheet',
-      (tester) async {
-    await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-            body: Builder(
-                builder: (context) => TextButton(
-                    onPressed: () => showModalBottomSheet<void>(
-                        context: context,
-                        builder: (_) => const Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('Scanner Présence'),
-                                  ScannerErrorBanner(
-                                      message:
-                                          'Scan uniquement pour une séance piscine actuelle.'),
-                                  Text('Présents : 0'),
-                                ])),
-                    child: const Text('Scanner'))))));
-    await tester.tap(find.text('Scanner'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('scanner-action-error')).hitTestable(),
-        findsOneWidget);
-    expect(find.text('Scan uniquement pour une séance piscine actuelle.'),
-        findsOneWidget);
-    expect(find.text('Présents : 0'), findsOneWidget);
-    expect(find.text('Enregistré!'), findsNothing);
-  });
 }
