@@ -123,13 +123,17 @@ test('refuses an inactive member', async () => {
   }, 'failed-precondition');
 });
 
-test('refuses a session more than 36 hours from now', async () => {
-  await expectRefusal({
+test('allows administrative attendance entry outside the former 36-hour window', async () => {
+  const { db, data, request } = fixture({
     session: {
       type: 'piscine',
       date: { toMillis: () => NOW + 37 * 60 * 60 * 1000 },
     },
-  }, 'failed-precondition');
+  });
+
+  await expect(executeQrAttendance(db, 'scanner', request, NOW))
+    .resolves.toEqual({ registered: true });
+  expect(data.get(attendeePath)?.memberId).toBe('member');
 });
 
 test('refuses a theory session', async () => {
