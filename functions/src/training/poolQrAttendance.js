@@ -31,10 +31,8 @@ async function executeQrAttendance(db, uid, data, now = Date.now()) {
     if (!scanner.exists || !mayScan(scanner.data()))
       throw new HttpsError('permission-denied', 'Fonction scanner autorisée requise.');
     const session = await tx.get(sessionRef);
-    const date = session.exists && session.data().date;
-    if (session.data()?.type === 'theorie' || !date?.toMillis ||
-        !Number.isFinite(date.toMillis()) || Math.abs(date.toMillis() - now) > 36 * 60 * 60 * 1000)
-      throw new HttpsError('failed-precondition', 'Scan uniquement pour une séance piscine actuelle.');
+    if (!session.exists || session.data()?.type === 'theorie')
+      throw new HttpsError('failed-precondition', 'Scan réservé à une séance piscine existante.');
     const member = await tx.get(club.collection('members').doc(memberId));
     if (!member.exists) throw new HttpsError('not-found', 'Membre introuvable.');
     if (!isActiveMember(member.data()))
