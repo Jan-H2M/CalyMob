@@ -934,7 +934,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                                                   widget.handoverBuilder!))),
                                 _choice(
                                     'Déplacer',
-                                    'Changer de lieu ou organiser un transport.',
+                                    'Changer le lieu des pièces.',
                                     Icons.local_shipping_outlined,
                                     () => _setCategory('move')),
                                 _choice(
