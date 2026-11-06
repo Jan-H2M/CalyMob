@@ -7,7 +7,7 @@ const { memberDisplayName } = require('../utils/memberName');
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'damageJim', 'manualDeliver', 'salePrepare', 'saleComplete', 'saleCancel', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
-const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'saleEvents']);
+const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'saleEvents', 'salePending']);
 const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'expectedReplacement', 'expectedReplacementUnitId', 'eventId']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
@@ -40,7 +40,7 @@ function validate(input, actor) {
   if (!id(actor?.uid)) fail('unauthenticated', 'Connectez-vous à CalyMob.');
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
-  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
+  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'salePending'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
   if (input.eventId !== undefined && (!id(input.eventId) || input.action !== 'salePrepare')) fail('invalid-argument', 'Événement invalide.');
   if (input.expectedReplacement !== undefined && (input.action !== 'damageJim' || !['club_stock', 'supplier'].includes(input.expectedReplacement))) fail('invalid-argument', 'Remplacement invalide.');
   if (input.expectedReplacementUnitId !== undefined && (input.action !== 'damageJim' || !id(input.expectedReplacementUnitId))) fail('invalid-argument', 'Pièce de remplacement invalide.');
@@ -143,6 +143,16 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       // Preserve the unfiltered cursor: excluded rows must not hide later pages.
       return { units: docs.filter(s => !s.data().inventoryExcluded).map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
     }
+    if (input.action === 'salePending') {
+      if (!manager) fail('permission-denied','Fonction Responsable boutique obligatoire.');
+      const base=club.collection('orders').orderBy(admin.firestore.FieldPath.documentId());
+      const page=await tx.get((input.cursor?base.startAfter(input.cursor):base).limit(51)),docs=page.docs.slice(0,50),sales=[];
+      for(const doc of docs){const order=doc.data(),ids=Array.isArray(order.items)?order.items.flatMap(line=>line.physicalStockUnitIds||[]):[];
+        if(order.directSale?.kind!=='event'||order.directSale.handoverConfirmedAt||!['awaiting_payment','paid'].includes(order.status)||!['pending','paid'].includes(order.payment?.status)||!id(order.buyer?.userId)||!ids.length||ids.length>30||ids.some(value=>!id(value))||unique(ids).length!==ids.length||typeof order.payment.epcPayload!=='string')continue;
+        sales.push({orderId:doc.id,orderNumber:order.orderNumber||'',buyerId:order.buyer.userId,buyerName:order.buyer.displayName||'Membre',ids,total:order.pricing?.total,communication:order.structuredCommunication||'',epcPayload:order.payment.epcPayload,paymentStatus:order.payment.status});
+      }
+      return {sales,hasMore:page.size>50,nextCursor:page.size>50?docs.at(-1).id:null};
+    }
     if (input.action === 'saleMembers') {
       if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
       const base=club.collection('members').orderBy(admin.firestore.FieldPath.documentId());
@@ -151,8 +161,8 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     }
     if (input.action === 'saleEvents') {
       if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
-      const page=await tx.get(club.collection('operations').where('type','==','evenement').where('date_debut','>=',admin.firestore.Timestamp.fromMillis(time-14*86400000)).where('date_debut','<=',admin.firestore.Timestamp.fromMillis(time+14*86400000)).orderBy('date_debut').limit(100));
-      return {events:page.docs.map(d=>({id:d.id,name:text(d.data().titre,160),date:new Date(ms(d.data().date_debut)).toISOString()}))};
+      const page=await tx.get(club.collection('operations').where('date_debut','>=',admin.firestore.Timestamp.fromMillis(time-14*86400000)).where('date_debut','<=',admin.firestore.Timestamp.fromMillis(time+14*86400000)).orderBy('date_debut').limit(500));
+      return {events:page.docs.filter(d=>d.data().type==='evenement').map(d=>({id:d.id,name:text(d.data().titre,160),date:new Date(ms(d.data().date_debut)).toISOString()}))};
     }
     if (input.action === 'saleCatalog') {
       if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
@@ -540,11 +550,11 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       for(const unit of selected){
         if(unit.handover||unit.saleStatus!=='sale_ready'||unit.transportMissionId||unit.pickupMissionId)fail('failed-precondition','La pièce ne peut plus être libérée.');
         if(!products.has(unit.productId)){const snap=await tx.get(club.collection('products').doc(unit.productId));if(!snap.exists)fail('failed-precondition','Produit introuvable.');products.set(unit.productId,{ref:snap.ref,data:snap.data(),variants:(snap.data().variants||[]).map(v=>({...v}))});}
-        const product=products.get(unit.productId),variant=product.variants.find(v=>v.id===unit.variantId);if(!variant)fail('failed-precondition','Variante introuvable.');
-        if((product.data.inventoryMode||'tracked')==='tracked'){if(!Number.isInteger(variant.stockCount))fail('failed-precondition','Stock à vérifier.');variant.stockCount++;}
+        const product=products.get(unit.productId),variant=product.variants.find(v=>v.id===unit.variantId),line=order.items.find(item=>item.lineId===unit.customerLineId);if(!variant||!line||![0,1].includes(line.productSnapshot?.reservedQty))fail('failed-precondition','Variante ou réservation à vérifier.');
+        if(line.productSnapshot.reservedQty===1){if(!Number.isInteger(variant.stockCount))fail('failed-precondition','Stock à vérifier.');variant.stockCount++;product.changed=true;}
       }
       const result={applied:input.preview!==true,action:input.action,count:selected.length,orderId:order.id};if(input.preview===true)return result;
-      for(const product of products.values())if((product.data.inventoryMode||'tracked')==='tracked')tx.update(product.ref,{variants:product.variants,updatedAt:now});
+      for(const product of products.values())if(product.changed)tx.update(product.ref,{variants:product.variants,updatedAt:now});
       for(let i=0;i<selected.length;i++){const unit=selected[i];tx.update(club.collection('boutique_physical_stock_units').doc(unit.id),{destination:'free',customerOrderId:null,customerLineId:null,customerName:null,updatedAt:now,history:[...(unit.history||[]),{kind:'destination_changed',at:now,by:actor.uid,from:'customer_reserved',to:'free',note:'Vente directe annulée avant remise'}]});tx.create(club.collection('inventoryMutations').doc(`${requestId}_release_${i}`),{productId:unit.productId,variantId:unit.variantId,change:1,reason:'release',orderId:order.id,unitId:unit.id,byUserId:actor.uid,timestamp:now,createdAt:now,updatedAt:now});}
       tx.update(club.collection('orders').doc(order.id),{status:'cancelled',payment:{...order.payment,status:'cancelled'},cancellationReason:'Vente directe annulée avant remise',cancelledAt:now,cancelledBy:actor.uid,updatedAt:now});
       tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`),{action:'boutique.mobile.saleCancel',userId:actor.uid,targetId:order.id,targetType:'boutique_order',clubId:input.clubId,timestamp:now,details:{unitIds:wanted}});

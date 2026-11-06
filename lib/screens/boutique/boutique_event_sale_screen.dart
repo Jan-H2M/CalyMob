@@ -19,10 +19,13 @@ class BoutiqueEventSaleScreen extends StatefulWidget {
 
 class _State extends State<BoutiqueEventSaleScreen> {
   final _selected = <String, Map<String, dynamic>>{};
-  List<Map<String, dynamic>> _units = [], _members = [], _events = [];
+  List<Map<String, dynamic>> _units = [],
+      _members = [],
+      _events = [],
+      _pendingSales = [];
   Map<String, dynamic>? _buyer, _event, _active;
   String _productQuery = '', _memberQuery = '';
-  String? _error, _key;
+  String? _error, _key, _lastAction;
   bool _loading = true, _busy = false, _checked = false;
   int _step = 0;
   @override
@@ -70,11 +73,16 @@ class _State extends State<BoutiqueEventSaleScreen> {
       final saved = prefs.getString(_key!);
       if (saved != null) {
         _active = Map<String, dynamic>.from(jsonDecode(saved) as Map);
+        if (mounted) setState(() => _step = 2);
+        return;
       }
       final all = await Future.wait([
         _pages('saleCatalog', 'units'),
         _pages('saleMembers', 'members'),
-        widget.service.call(widget.clubId, 'saleEvents')
+        widget.service
+            .call(widget.clubId, 'saleEvents')
+            .catchError((_) => <String, dynamic>{'events': []}),
+        _pages('salePending', 'sales')
       ]);
       if (!mounted) return;
       setState(() {
@@ -83,7 +91,7 @@ class _State extends State<BoutiqueEventSaleScreen> {
         _events = ((all[2] as Map)['events'] as List)
             .map((v) => Map<String, dynamic>.from(v as Map))
             .toList();
-        if (_active != null) _step = 2;
+        _pendingSales = all[3] as List<Map<String, dynamic>>;
       });
     } catch (e) {
       if (mounted) {
@@ -154,11 +162,42 @@ class _State extends State<BoutiqueEventSaleScreen> {
   }
 
   Future<void> _resumePrepare() async {
-    final req = Map<String, dynamic>.from(_active!['request'] as Map);
-    final result = await widget.service.call(widget.clubId, 'salePrepare', req);
-    _active!['result'] = result;
+    try {
+      final req = Map<String, dynamic>.from(_active!['request'] as Map);
+      final result =
+          await widget.service.call(widget.clubId, 'salePrepare', req);
+      _active!['result'] = result;
+      await _save();
+      if (mounted) setState(() => _step = 2);
+    } catch (e) {
+      if (BoutiqueOperationsService.definitiveFailure(e)) {
+        _active = null;
+        await _save();
+        if (mounted) {
+          setState(() {
+            _step = 0;
+            _selected.clear();
+          });
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _resumeSale(Map<String, dynamic> sale) async {
+    _active = {
+      'request': {'recipientMemberId': sale['buyerId']},
+      'buyerName': sale['buyerName'],
+      'ids': sale['ids'],
+      'result': sale
+    };
     await _save();
-    if (mounted) setState(() => _step = 2);
+    if (mounted) {
+      setState(() {
+        _step = 2;
+        _checked = sale['paymentStatus'] == 'paid';
+      });
+    }
   }
 
   Future<void> _finish(String action) async {
@@ -195,7 +234,12 @@ class _State extends State<BoutiqueEventSaleScreen> {
           Map<String, dynamic>.from(_active!['finishRequest'] as Map));
       _active = null;
       await _save();
-      if (mounted) setState(() => _step = 3);
+      if (mounted) {
+        setState(() {
+          _lastAction = savedAction;
+          _step = 3;
+        });
+      }
     } catch (e) {
       if (_active != null && BoutiqueOperationsService.definitiveFailure(e)) {
         _active!.remove('finishRequest');
@@ -233,6 +277,20 @@ class _State extends State<BoutiqueEventSaleScreen> {
               Text(_error!,
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (_step == 0) ...[
+              if (_pendingSales.isNotEmpty)
+                ExpansionTile(
+                    title: Text('Ventes à reprendre · ${_pendingSales.length}'),
+                    children: [
+                      for (final sale in _pendingSales)
+                        ListTile(
+                            title: Text(
+                                '${sale['orderNumber']} · ${sale['buyerName']}'),
+                            subtitle: Text(sale['paymentStatus'] == 'paid'
+                                ? 'Paiement reçu · remise à confirmer'
+                                : 'Paiement et remise à vérifier'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => _resumeSale(sale))
+                    ]),
               const Text('Choisissez les pièces disponibles.'),
               TextField(
                   onChanged: (v) =>
@@ -332,8 +390,9 @@ class _State extends State<BoutiqueEventSaleScreen> {
                   child: QrImageView(
                       data: result['epcPayload'] as String, size: 220)),
               Text('Communication : ${result['communication']}'),
-              const Text(
-                  'Vérifiez la confirmation du paiement dans l’application bancaire de l’acheteur.'),
+              Text(result['paymentStatus'] == 'paid'
+                  ? 'Paiement reçu par la banque.'
+                  : 'Vérifiez la confirmation du paiement dans l’application bancaire de l’acheteur.'),
               CheckboxListTile(
                   value: _checked,
                   onChanged: _busy
@@ -350,7 +409,9 @@ class _State extends State<BoutiqueEventSaleScreen> {
                       ? 'Vérifier la confirmation en attente'
                       : 'Confirmer la remise')),
               TextButton(
-                  onPressed: _busy || _active!['finishRequest'] != null
+                  onPressed: _busy ||
+                          _active!['finishRequest'] != null ||
+                          result['paymentStatus'] == 'paid'
                       ? null
                       : () async {
                           final yes = await showDialog<bool>(
@@ -375,7 +436,9 @@ class _State extends State<BoutiqueEventSaleScreen> {
                   child: const Text('Annuler la vente'))
             ],
             if (_step == 3) ...[
-              const Text('Opération enregistrée.'),
+              Text(_lastAction == 'saleCancel'
+                  ? 'Vente annulée. Les pièces sont de nouveau disponibles.'
+                  : 'Remise enregistrée. La vente est inscrite dans le stock et la réception bancaire sera liée automatiquement.'),
               FilledButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Terminer'))

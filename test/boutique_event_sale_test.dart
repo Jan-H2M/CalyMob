@@ -37,6 +37,8 @@ void main() {
             ],
             'hasMore': false
           };
+        case 'salePending':
+          return {'sales': [], 'hasMore': false};
         case 'saleEvents':
           return {'events': []};
         case 'salePrepare':
@@ -84,9 +86,85 @@ void main() {
     await tester.ensureVisible(find.text('Confirmer la remise'));
     await tester.tap(find.text('Confirmer la remise'));
     await tester.pumpAndSettle();
-    expect(find.text('Opération enregistrée.'), findsOneWidget);
+    expect(find.textContaining('Remise enregistrée.'), findsOneWidget);
     final complete = calls.singleWhere((v) => v['action'] == 'saleComplete');
     expect(complete['confirmed'], true);
     expect(complete['recipientMemberId'], 'buyer');
+  });
+
+  testWidgets('saved sale opens even if catalog and events are unavailable',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'boutique_event_sale_demo_rb':
+          '{"request":{"recipientMemberId":"buyer"},"buyerName":"Alex","ids":["piece"],"result":{"total":25,"communication":"BTQ-1","epcPayload":"BCD\\n002"}}'
+    });
+    final calls = <String>[];
+    final service = BoutiqueOperationsService(transport: (r) async {
+      calls.add(r['action'] as String);
+      throw StateError('offline');
+    });
+    final access = BoutiqueAccessService(
+        firestore: FakeFirebaseFirestore(),
+        authUserIds: () => Stream.value('rb'));
+    await tester.pumpWidget(BoutiqueAccessScope(
+        accessService: access,
+        clubId: 'demo',
+        userId: 'rb',
+        child: MaterialApp(
+            home: BoutiqueEventSaleScreen(clubId: 'demo', service: service))));
+    await tester.pumpAndSettle();
+    expect(find.text('Alex'), findsOneWidget);
+    expect(find.textContaining('BTQ-1'), findsOneWidget);
+    expect(calls, isEmpty);
+  });
+
+  testWidgets(
+      'another responsible can resume an interrupted sale from the server',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final service = BoutiqueOperationsService(transport: (r) async {
+      switch (r['action']) {
+        case 'saleCatalog':
+          return {'units': [], 'hasMore': false};
+        case 'saleMembers':
+          return {'members': [], 'hasMore': false};
+        case 'saleEvents':
+          return {'events': []};
+        case 'salePending':
+          return {
+            'sales': [
+              {
+                'orderId': 'o1',
+                'orderNumber': 'BTQ-1',
+                'buyerId': 'buyer',
+                'buyerName': 'Alex',
+                'ids': ['piece'],
+                'total': 25,
+                'communication': 'BTQ-1',
+                'epcPayload': 'BCD',
+                'paymentStatus': 'pending'
+              }
+            ],
+            'hasMore': false
+          };
+        default:
+          throw StateError('unexpected');
+      }
+    });
+    final access = BoutiqueAccessService(
+        firestore: FakeFirebaseFirestore(),
+        authUserIds: () => Stream.value('second'));
+    await tester.pumpWidget(BoutiqueAccessScope(
+        accessService: access,
+        clubId: 'demo',
+        userId: 'second',
+        child: MaterialApp(
+            home: BoutiqueEventSaleScreen(clubId: 'demo', service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ventes à reprendre · 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('BTQ-1 · Alex'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Communication : BTQ-1'), findsOneWidget);
   });
 }

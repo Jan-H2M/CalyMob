@@ -125,3 +125,17 @@ test('a bank-paid event sale cannot be cancelled and can still be handed over',a
  await call('saleComplete',await request('saleComplete','paid-piece',{recipientMemberId:'sale-buyer',confirmed:true}));
  const order=(await club.collection('orders').doc(started.orderId).get()).data();assert.equal(order.status,'delivered');assert.equal(order.payment.status,'paid');
 });
+test('pending sale can be recovered by another RB and cancellation restores the originally reserved catalog stock',async()=>{
+ await club.collection('members').doc('second-rb').set({member_status:'active',clubStatuten:['RB']});
+ for (const [initial,current,initialCount,expectedCount] of [['tracked','preorder',2,2],['preorder','tracked',2,2]]) {
+  const product=`mode-${initial}`,piece=`piece-${initial}`;
+  await club.collection('products').doc(product).set({name:'Polo',visibility:'published',inventoryMode:initial,pricing:{salePrice:15},variants:[{id:'M',stockCount:initialCount}]});
+  await club.collection('boutique_physical_stock_units').doc(piece).set({productId:product,variantId:'M',productName:'Polo',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free'});
+  const started=await call('salePrepare',await request('salePrepare',piece,{recipientMemberId:'sale-buyer'}));
+  const pending=await run(db,{uid:'second-rb',clubClaim:clubId},{clubId,action:'salePending'});assert.ok(pending.sales.some(s=>s.orderId===started.orderId&&s.ids.includes(piece)));
+  await club.collection('products').doc(product).update({inventoryMode:current});
+  const selected=(await call('lookup',{unitId:piece})).unit;
+  await run(db,{uid:'second-rb',clubClaim:clubId},{clubId,action:'saleCancel',expectedActorId:'second-rb',units:[{id:piece,revision:selected.revision}],confirmed:true,idempotencyKey:`cancel-mode-${initial}-unique`});
+  assert.equal((await club.collection('products').doc(product).get()).data().variants[0].stockCount,expectedCount);
+ }
+});
