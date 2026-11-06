@@ -139,3 +139,13 @@ test('pending sale can be recovered by another RB and cancellation restores the 
   assert.equal((await club.collection('products').doc(product).get()).data().variants[0].stockCount,expectedCount);
  }
 });
+test('sale lookup checks current payment and closed status for recovery',async()=>{
+ await club.collection('products').doc('lookup-product').set({name:'Polo',visibility:'published',inventoryMode:'tracked',pricing:{salePrice:15},variants:[{id:'M',stockCount:1}]});
+ await club.collection('boutique_physical_stock_units').doc('lookup-piece').set({productId:'lookup-product',variantId:'M',productName:'Polo',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free'});
+ const sale=await call('salePrepare',await request('salePrepare','lookup-piece',{recipientMemberId:'sale-buyer'}));
+ assert.equal((await call('saleLookup',{orderId:sale.orderId})).paymentStatus,'pending');
+ await club.collection('orders').doc(sale.orderId).update({status:'paid','payment.status':'paid'});
+ assert.equal((await call('saleLookup',{orderId:sale.orderId})).paymentStatus,'paid');
+ await call('saleComplete',await request('saleComplete','lookup-piece',{recipientMemberId:'sale-buyer',confirmed:true}));
+ assert.deepEqual(await call('saleLookup',{orderId:sale.orderId}),{open:false});
+});

@@ -7,7 +7,7 @@ const { memberDisplayName } = require('../utils/memberName');
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'damageJim', 'manualDeliver', 'salePrepare', 'saleComplete', 'saleCancel', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
-const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'saleEvents', 'salePending']);
+const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'saleEvents', 'salePending', 'saleLookup']);
 const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'expectedReplacement', 'expectedReplacementUnitId', 'eventId']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
@@ -44,7 +44,7 @@ function validate(input, actor) {
   if (input.eventId !== undefined && (!id(input.eventId) || input.action !== 'salePrepare')) fail('invalid-argument', 'Événement invalide.');
   if (input.expectedReplacement !== undefined && (input.action !== 'damageJim' || !['club_stock', 'supplier'].includes(input.expectedReplacement))) fail('invalid-argument', 'Remplacement invalide.');
   if (input.expectedReplacementUnitId !== undefined && (input.action !== 'damageJim' || !id(input.expectedReplacementUnitId))) fail('invalid-argument', 'Pièce de remplacement invalide.');
-  if (input.orderId !== undefined && (!id(input.orderId) || input.action !== 'orderSelection')) fail('invalid-argument', 'Commande invalide.');
+  if (input.orderId !== undefined && (!id(input.orderId) || !['orderSelection','saleLookup'].includes(input.action))) fail('invalid-argument', 'Commande invalide.');
   if (input.action === 'orderSelection' && (!id(input.orderId) || (input.sourceLocation !== undefined && (typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))))) fail('invalid-argument', 'Commande ou lieu invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
   if (input.verificationMethod !== undefined && (!['deliver', 'manualDeliver'].includes(input.action) || input.verificationMethod !== 'manual')) fail('invalid-argument', 'Mode de remise invalide.');
@@ -142,6 +142,17 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const docs = units.docs.slice(0, 200), hasMore = units.size > 200;
       // Preserve the unfiltered cursor: excluded rows must not hide later pages.
       return { units: docs.filter(s => !s.data().inventoryExcluded).map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
+    }
+    if (input.action === 'saleLookup') {
+      if (!manager) fail('permission-denied','Fonction Responsable boutique obligatoire.');
+      if (!id(input.orderId)) fail('invalid-argument','Vente invalide.');
+      const snap=await tx.get(club.collection('orders').doc(input.orderId));const order=snap.data();
+      if(!snap.exists||order?.directSale?.kind!=='event')fail('not-found','Vente introuvable.');
+      const open=!order.directSale.handoverConfirmedAt&&['awaiting_payment','paid'].includes(order.status)&&['pending','paid'].includes(order.payment?.status);
+      if(!open)return {open:false};
+      const ids=Array.isArray(order.items)?order.items.flatMap(line=>line.physicalStockUnitIds||[]):[];
+      if(!id(order.buyer?.userId)||!ids.length||ids.length>30||ids.some(value=>!id(value))||unique(ids).length!==ids.length||typeof order.payment?.epcPayload!=='string')fail('failed-precondition','Vente à vérifier.');
+      return {open:true,orderId:snap.id,orderNumber:order.orderNumber||'',buyerId:order.buyer.userId,buyerName:order.buyer.displayName||'Membre',ids,total:order.pricing?.total,communication:order.structuredCommunication||'',epcPayload:order.payment.epcPayload,paymentStatus:order.payment.status};
     }
     if (input.action === 'salePending') {
       if (!manager) fail('permission-denied','Fonction Responsable boutique obligatoire.');

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,8 +27,19 @@ class _State extends State<BoutiqueEventSaleScreen> {
   Map<String, dynamic>? _buyer, _event, _active;
   String _productQuery = '', _memberQuery = '';
   String? _error, _key, _lastAction;
-  bool _loading = true, _busy = false, _checked = false;
+  bool _loading = true,
+      _busy = false,
+      _checked = false,
+      _verified = false,
+      _checking = false;
+  Timer? _timer;
   int _step = 0;
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -74,14 +86,16 @@ class _State extends State<BoutiqueEventSaleScreen> {
       if (saved != null) {
         _active = Map<String, dynamic>.from(jsonDecode(saved) as Map);
         if (mounted) setState(() => _step = 2);
+        if (_active!['result'] != null) await _verify();
         return;
       }
       try {
         final pending = await _pages('salePending', 'sales');
         if (mounted) setState(() => _pendingSales = pending);
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           setState(() => _error = BoutiqueOperationsService.message(e));
+        }
       }
       final all = await Future.wait([
         _pages('saleCatalog', 'units'),
@@ -174,6 +188,7 @@ class _State extends State<BoutiqueEventSaleScreen> {
       _active!['result'] = result;
       await _save();
       if (mounted) setState(() => _step = 2);
+      await _verify();
     } catch (e) {
       if (BoutiqueOperationsService.definitiveFailure(e)) {
         _active = null;
@@ -201,8 +216,54 @@ class _State extends State<BoutiqueEventSaleScreen> {
     if (mounted) {
       setState(() {
         _step = 2;
-        _checked = sale['paymentStatus'] == 'paid';
+        _verified = false;
       });
+    }
+    await _verify();
+  }
+
+  Future<void> _verify() async {
+    if (_checking || _active == null || _active!['result'] == null) return;
+    _checking = true;
+    try {
+      final orderId = (_active!['result'] as Map)['orderId'] as String;
+      final fresh = await widget.service
+          .call(widget.clubId, 'saleLookup', {'orderId': orderId});
+      if (fresh['open'] != true) {
+        _timer?.cancel();
+        _active = null;
+        await _save();
+        if (mounted) {
+          setState(() {
+            _verified = false;
+            _step = 3;
+            _lastAction = 'closed';
+          });
+        }
+        return;
+      }
+      _active!['result'] = fresh;
+      _active!['buyerName'] = fresh['buyerName'];
+      await _save();
+      if (mounted) {
+        setState(() {
+          _verified = true;
+          if (fresh['paymentStatus'] == 'paid') _checked = true;
+        });
+      }
+      _timer ??= Timer.periodic(const Duration(seconds: 10), (_) {
+        if (!_busy) _verify();
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _verified = false;
+          _error =
+              'Impossible de vérifier la vente. Réessayez avant de montrer le QR.';
+        });
+      }
+    } finally {
+      _checking = false;
     }
   }
 
@@ -214,6 +275,8 @@ class _State extends State<BoutiqueEventSaleScreen> {
     });
     try {
       if (_active!['finishRequest'] == null) {
+        await _verify();
+        if (!_verified || _active == null) return;
         final ids = List<String>.from(_active!['ids'] as List);
         final units = <Map<String, dynamic>>[];
         for (final id in ids) {
@@ -392,9 +455,14 @@ class _State extends State<BoutiqueEventSaleScreen> {
               Text('${_active!['buyerName']}',
                   style: Theme.of(context).textTheme.titleLarge),
               Text('${(result['total'] as num).toStringAsFixed(2)} €'),
-              Center(
-                  child: QrImageView(
-                      data: result['epcPayload'] as String, size: 220)),
+              if (!_verified)
+                TextButton(
+                    onPressed: _busy ? null : _verify,
+                    child: const Text('Vérifier la vente')),
+              if (_verified && result['paymentStatus'] != 'paid')
+                Center(
+                    child: QrImageView(
+                        data: result['epcPayload'] as String, size: 220)),
               Text('Communication : ${result['communication']}'),
               Text(result['paymentStatus'] == 'paid'
                   ? 'Paiement reçu par la banque.'
@@ -407,15 +475,17 @@ class _State extends State<BoutiqueEventSaleScreen> {
                   title: const Text(
                       'J’ai vérifié la confirmation chez l’acheteur')),
               FilledButton(
-                  onPressed:
-                      _busy || (!_checked && _active!['finishRequest'] == null)
-                          ? null
-                          : () => _finish('saleComplete'),
+                  onPressed: _busy ||
+                          (!_verified && _active!['finishRequest'] == null) ||
+                          (!_checked && _active!['finishRequest'] == null)
+                      ? null
+                      : () => _finish('saleComplete'),
                   child: Text(_active!['finishRequest'] != null
                       ? 'Vérifier la confirmation en attente'
                       : 'Confirmer la remise')),
               TextButton(
                   onPressed: _busy ||
+                          !_verified ||
                           _active!['finishRequest'] != null ||
                           result['paymentStatus'] == 'paid'
                       ? null
@@ -444,7 +514,9 @@ class _State extends State<BoutiqueEventSaleScreen> {
             if (_step == 3) ...[
               Text(_lastAction == 'saleCancel'
                   ? 'Vente annulée. Les pièces sont de nouveau disponibles.'
-                  : 'Remise enregistrée. La vente est inscrite dans le stock et la réception bancaire sera liée automatiquement.'),
+                  : _lastAction == 'closed'
+                      ? 'Cette vente est déjà terminée ou annulée.'
+                      : 'Remise enregistrée. La vente est inscrite dans le stock et la réception bancaire sera liée automatiquement.'),
               FilledButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Terminer'))

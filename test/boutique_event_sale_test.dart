@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -42,6 +43,18 @@ void main() {
           return {'sales': [], 'hasMore': false};
         case 'saleEvents':
           return {'events': []};
+        case 'saleLookup':
+          return {
+            'open': true,
+            'orderId': 'o1',
+            'buyerName': 'Alex',
+            'buyerId': 'buyer',
+            'ids': ['piece'],
+            'total': 25,
+            'communication': '+++BTQ-2026-1000+++',
+            'epcPayload': 'BCD',
+            'paymentStatus': 'pending'
+          };
         case 'salePrepare':
           return {
             'total': 25,
@@ -97,7 +110,7 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({
       'boutique_event_sale_demo_rb':
-          '{"request":{"recipientMemberId":"buyer"},"buyerName":"Alex","ids":["piece"],"result":{"total":25,"communication":"BTQ-1","epcPayload":"BCD\\n002"}}'
+          '{"request":{"recipientMemberId":"buyer"},"buyerName":"Alex","ids":["piece"],"result":{"orderId":"o1","total":25,"communication":"BTQ-1","epcPayload":"BCD\\n002"}}'
     });
     final calls = <String>[];
     final service = BoutiqueOperationsService(transport: (r) async {
@@ -116,7 +129,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Alex'), findsOneWidget);
     expect(find.textContaining('BTQ-1'), findsOneWidget);
-    expect(calls, isEmpty);
+    expect(calls, ['saleLookup']);
   });
 
   testWidgets(
@@ -131,6 +144,18 @@ void main() {
           return {'members': [], 'hasMore': false};
         case 'saleEvents':
           return {'events': []};
+        case 'saleLookup':
+          return {
+            'open': true,
+            'orderId': 'o1',
+            'buyerName': 'Alex',
+            'buyerId': 'buyer',
+            'ids': ['piece'],
+            'total': 25,
+            'communication': 'BTQ-1',
+            'epcPayload': 'BCD',
+            'paymentStatus': 'pending'
+          };
         case 'salePending':
           return {
             'sales': [
@@ -173,10 +198,23 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final service = BoutiqueOperationsService(transport: (r) async {
+      if (r['action'] == 'saleLookup')
+        return {
+          'open': true,
+          'orderId': 'o2',
+          'buyerName': 'Alex',
+          'buyerId': 'buyer',
+          'ids': ['piece'],
+          'total': 25,
+          'communication': 'BTQ-2',
+          'epcPayload': 'BCD',
+          'paymentStatus': 'pending'
+        };
       if (r['action'] == 'salePending')
         return {
           'sales': [
             {
+              'orderId': 'o2',
               'orderNumber': 'BTQ-2',
               'buyerId': 'buyer',
               'buyerName': 'Alex',
@@ -260,4 +298,42 @@ void main() {
             .getString('boutique_event_sale_demo_rb'),
         isNull);
   });
+
+  for (final payment in ['paid', 'closed']) {
+    testWidgets('a $payment sale never displays a payment QR after recovery',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'boutique_event_sale_demo_rb':
+            '{"request":{"recipientMemberId":"buyer"},"buyerName":"Alex","ids":["piece"],"result":{"orderId":"o1","total":25,"communication":"BTQ-1","epcPayload":"BCD"}}'
+      });
+      final service = BoutiqueOperationsService(
+          transport: (r) async => payment == 'closed'
+              ? {'open': false}
+              : {
+                  'open': true,
+                  'orderId': 'o1',
+                  'buyerName': 'Alex',
+                  'buyerId': 'buyer',
+                  'ids': ['piece'],
+                  'total': 25,
+                  'communication': 'BTQ-1',
+                  'epcPayload': 'BCD',
+                  'paymentStatus': 'paid'
+                });
+      final access = BoutiqueAccessService(
+          firestore: FakeFirebaseFirestore(),
+          authUserIds: () => Stream.value('rb'));
+      await tester.pumpWidget(BoutiqueAccessScope(
+          accessService: access,
+          clubId: 'demo',
+          userId: 'rb',
+          child: MaterialApp(
+              home:
+                  BoutiqueEventSaleScreen(clubId: 'demo', service: service))));
+      await tester.pumpAndSettle();
+      expect(find.byType(QrImageView), findsNothing);
+      if (payment == 'paid')
+        expect(find.text('Paiement reçu par la banque.'), findsOneWidget);
+    });
+  }
 }
