@@ -219,24 +219,24 @@ void main() {
     expect(store.applied, 0);
   });
   testWidgets(
-      'finishing needs no location or note; incompatible pieces remain excluded; no move',
+      'free status applies to all available pieces without changing their state',
       (tester) async {
     await open(tester);
     await tap(tester, find.text('Statut / finition'));
-    await select(tester, 'Action', 'Autre statut');
-    await select(tester, 'Statut', 'Broderie terminée chez Jim');
-    expect(find.text('Lieu actuel des pièces'), findsNothing);
+    await select(tester, 'Action', 'Statut libre');
+    await tester.enterText(
+        find.byKey(const Key('wizard-custom-status')), 'À vérifier');
     await tap(tester, find.byKey(const Key('wizard-next')));
     await selectAll(tester);
-    expect(find.textContaining('2 pièce(s) sélectionnée(s)'), findsOneWidget);
+    expect(find.textContaining('8 pièce(s) sélectionnée(s)'), findsOneWidget);
     await review(tester);
-    expect(find.text('Lieu'), findsNothing);
     await tap(tester, find.byKey(const Key('wizard-next')));
     expect(store.applied, 1);
-    expect(store.units['polo-a']!['workshopReady'], isTrue);
-    expect(store.units['polo-a']!['location'], 'Jim');
-    expect(store.units['polo-a']!['finish'], 'at_jim');
-    expect(store.units['transit-b']!['workshopReady'], isFalse);
+    expect(store.units['transit-b']!['customStatus'], 'À vérifier');
+    expect(store.units['transit-b']!['transportMissionId'], 'demo-transport');
+    expect(store.units['bonnet-b']!['finish'], 'at_jim');
+    expect(store.units['bonnet-b']!['workshopReady'], isTrue);
+    expect(store.units['sold-b']!['customStatus'], isNull);
   });
   testWidgets(
       'default embroidery preparation scans and selects across locations without moving',
@@ -406,16 +406,16 @@ void main() {
       (tester) async {
     await open(tester);
     await tap(tester, find.text('Statut / finition'));
-    await select(tester, 'Action', 'Autre statut');
-    await select(tester, 'Statut', 'Broderie terminée chez Jim');
-    await tester.enterText(find.byKey(const Key('wizard-note')), 'Contrôlé');
+    await select(tester, 'Action', 'Statut libre');
+    await tester.enterText(
+        find.byKey(const Key('wizard-custom-status')), 'Contrôlé');
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     await tap(tester, find.text('Statut / finition'));
-    expect(find.text('Broderie terminée chez Jim'), findsWidgets);
+    expect(find.text('Statut libre'), findsWidgets);
     expect(
         tester
-            .widget<TextField>(find.byKey(const Key('wizard-note')))
+            .widget<TextField>(find.byKey(const Key('wizard-custom-status')))
             .controller!
             .text,
         'Contrôlé');

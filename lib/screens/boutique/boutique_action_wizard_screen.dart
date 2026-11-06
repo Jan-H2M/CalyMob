@@ -32,6 +32,7 @@ const boutiqueBatchActions = {
   'confirmJim': 'En fabrication',
   'finishJim': 'Broderie terminée chez Jim',
   'reviewPlain': 'Contrôler les articles sans broderie',
+  'setCustomStatus': 'Statut libre',
 };
 
 /// Conservative display hints only. The server preview remains authoritative
@@ -39,6 +40,7 @@ const boutiqueBatchActions = {
 String? boutiqueBatchBlockedReason(
     BoutiquePhysicalUnit unit, String action, String? source) {
   if (unit.sold) return 'Déjà remis au client';
+  if (action == 'setCustomStatus') return null;
   if (source != null && unit.location != source) {
     return 'Se trouve à ${unit.location}';
   }
@@ -81,7 +83,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   int _step = 0;
   int _generation = 0;
   String? _category, _action, _source;
-  final _sourceInput = TextEditingController(),
+  final _customStatus = TextEditingController(),
+      _sourceInput = TextEditingController(),
       _destination = TextEditingController(),
       _note = TextEditingController(),
       _window = TextEditingController();
@@ -130,6 +133,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
 
   @override
   void dispose() {
+    _customStatus.dispose();
     _sourceInput.dispose();
     _destination.dispose();
     _note.dispose();
@@ -241,6 +245,11 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       return _usesLocation
           ? 'Choisissez une action et le lieu actuel.'
           : 'Choisissez une action.';
+    }
+    if (_action == 'setCustomStatus' &&
+        (_customStatus.text.trim().isEmpty ||
+            _customStatus.text.trim().length > 120)) {
+      return 'Indiquez un statut libre de 120 caractères maximum.';
     }
     final dest = _destination.text.trim();
     if (_needsDestination && (dest.isEmpty || dest.length > 160)) {
@@ -418,6 +427,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         if (_usesLocation) 'confirmed': true,
         if (_needsDestination) 'destination': _destination.text.trim(),
         if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
+        if (_action == 'setCustomStatus')
+          'customStatus': _customStatus.text.trim(),
         if (_action == 'dispatch') ...{
           'assigneeIds': _helpers.toList(),
           'pickupPoint': _pickup,
@@ -522,37 +533,30 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         const SizedBox(height: 16),
         if (_category == 'finish') ...[
           DropdownButtonFormField<String>(
-              key: ValueKey('finish-mode-$_action'),
-              initialValue: _action == 'prepareJim' ? 'prepare' : 'manual',
+              key: const Key('finish-mode'),
+              initialValue: _action == 'setCustomStatus' ? 'custom' : 'prepare',
               isExpanded: true,
               decoration: const InputDecoration(
                   labelText: 'Action', border: OutlineInputBorder()),
               items: const [
                 DropdownMenuItem(
                     value: 'prepare', child: Text('Préparer la broderie')),
-                DropdownMenuItem(value: 'manual', child: Text('Autre statut')),
+                DropdownMenuItem(value: 'custom', child: Text('Statut libre')),
               ],
               onChanged: _locked
                   ? null
                   : (value) => _setAction(
-                      value == 'prepare' ? 'prepareJim' : 'confirmJim')),
-          if (_action != 'prepareJim') ...[
+                      value == 'custom' ? 'setCustomStatus' : 'prepareJim')),
+          if (_action == 'setCustomStatus') ...[
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-                key: ValueKey('finish-action-$_action'),
-                initialValue: _action,
-                isExpanded: true,
+            TextField(
+                key: const Key('wizard-custom-status'),
+                controller: _customStatus,
+                enabled: !_locked,
+                maxLength: 120,
                 decoration: const InputDecoration(
-                    labelText: 'Statut', border: OutlineInputBorder()),
-                items: boutiqueBatchActions.entries
-                    .where((entry) => ['confirmJim', 'finishJim', 'reviewPlain']
-                        .contains(entry.key))
-                    .map((entry) => DropdownMenuItem(
-                        value: entry.key,
-                        child:
-                            Text(entry.value, overflow: TextOverflow.ellipsis)))
-                    .toList(),
-                onChanged: _locked ? null : (value) => _setAction(value!)),
+                    labelText: 'Statut libre', border: OutlineInputBorder()),
+                onChanged: (_) => _invalidate()),
           ],
         ] else ...[
           if (_loading) const LinearProgressIndicator(),
@@ -624,6 +628,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
             'Marque la broderie terminée chez Jim. Aucun déplacement ni message client.',
           'reviewPlain' =>
             'Uniquement les articles confirmés sans broderie. Aucun besoin de broderie ne peut être contourné.',
+          'setCustomStatus' =>
+            'Ce statut est ajouté à côté du statut existant.',
           _ =>
             'Le transport et la réception sont distincts. Le départ seul n’avertit pas les acheteurs.',
         }),
@@ -790,7 +796,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 title: Text(u.name),
                 subtitle: Text(
-                    '${u.variant} · ${u.stage}${reason == null ? '' : ' · $reason'}'),
+                    '${u.variant} · ${u.stage}${(u.data['customStatus'] as String? ?? '').isNotEmpty ? ' · ${u.data['customStatus']}' : ''}${reason == null ? '' : ' · $reason'}'),
                 value: _selected.contains(u.id),
                 onChanged:
                     _locked || (reason != null && !_selected.contains(u.id))
@@ -840,6 +846,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         if ((_preview?['heldOrders'] as List? ?? []).isNotEmpty)
           Text(
               '${(_preview!['heldOrders'] as List).length} commande(s) restent en attente de préparation ou de paiement.'),
+        if (_action == 'setCustomStatus')
+          Text('Statut libre : ${_customStatus.text.trim()}'),
         if (_note.text.trim().isNotEmpty)
           Text('Contrôle / note : ${_note.text.trim()}'),
         if (_action == 'dispatch')

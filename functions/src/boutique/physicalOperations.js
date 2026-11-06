@@ -6,9 +6,9 @@ const { REGION, hasBoutiqueResponsibility, buildEpcQrPayload } = require('./shar
 const { memberDisplayName } = require('../utils/memberName');
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'damageJim', 'manualDeliver', 'salePrepare', 'saleComplete', 'saleCancel', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
+const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'setCustomStatus', 'damageJim', 'manualDeliver', 'salePrepare', 'saleComplete', 'saleCancel', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
 const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'saleEvents', 'salePending', 'saleLookup']);
-const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'expectedReplacement', 'expectedReplacementUnitId', 'eventId']);
+const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'customStatus', 'expectedReplacement', 'expectedReplacementUnitId', 'eventId']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
 const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -33,7 +33,7 @@ function lineNeedsProduction(line) {
 }
 const revision = (snap) => snap.updateTime ? `${snap.updateTime.seconds}:${snap.updateTime.nanoseconds}` : hash(snap.data());
 const asUnit = (snap) => ({ ...snap.data(), id: snap.id, revision: revision(snap) });
-const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','supplierBatchId','supplierOrderReference','requiresEmbroidery','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)], ['workshopDispatched', Boolean(unit.workshopDispatchedAt)]]));
+const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','supplierBatchId','supplierOrderReference','requiresEmbroidery','customStatus','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)], ['workshopDispatched', Boolean(unit.workshopDispatchedAt)]]));
 
 function validate(input, actor) {
   if (!input || Array.isArray(input) || typeof input !== 'object' || Object.keys(input).some(k => !ALLOWED.has(k)) || !id(input.clubId) || (!READS.has(input.action) && !MUTATIONS.has(input.action))) fail('invalid-argument', 'Demande Boutique invalide.');
@@ -41,6 +41,7 @@ function validate(input, actor) {
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
   if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'salePending'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
+  if (input.customStatus !== undefined && (input.action !== 'setCustomStatus' || !text(input.customStatus, 120))) fail('invalid-argument', 'Statut libre invalide.');
   if (input.eventId !== undefined && (!id(input.eventId) || input.action !== 'salePrepare')) fail('invalid-argument', 'Événement invalide.');
   if (input.expectedReplacement !== undefined && (input.action !== 'damageJim' || !['club_stock', 'supplier'].includes(input.expectedReplacement))) fail('invalid-argument', 'Remplacement invalide.');
   if (input.expectedReplacementUnitId !== undefined && (input.action !== 'damageJim' || !id(input.expectedReplacementUnitId))) fail('invalid-argument', 'Pièce de remplacement invalide.');
@@ -347,7 +348,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (!['arrive','deliver'].includes(input.action) && ((['move','dispatch'].includes(input.action) && !text(input.sourceLocation, 160)) || (input.sourceLocation !== undefined && unit.location !== input.sourceLocation))) fail('failed-precondition', 'Toutes les pièces doivent être au lieu de cette session.');
     }
     const orderMap = new Map();
-    for (const orderId of unique(selected.map(u => u.customerOrderId).filter(Boolean))) {
+    if (input.action !== 'setCustomStatus') for (const orderId of unique(selected.map(u => u.customerOrderId).filter(Boolean))) {
       if (!id(orderId)) fail('failed-precondition', 'Réservation client invalide.');
       const snap = await tx.get(club.collection('orders').doc(orderId));
       if (!snap.exists) fail('failed-precondition', 'Commande client introuvable.');
@@ -362,7 +363,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (!snap.exists) fail('failed-precondition', 'Une pièce réservée est introuvable.');
       unitMap.set(unitId, asUnit(snap));
     }
-    for (const unit of selected.filter(u => u.customerOrderId)) {
+    for (const unit of selected.filter(u => u.customerOrderId && input.action !== 'setCustomStatus')) {
       const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
       if (!line || !(line.physicalStockUnitIds || []).includes(unit.id) || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation de cette pièce a changé.');
     }
@@ -515,6 +516,13 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (dispatched === Boolean(unit.workshopDispatchedAt)) continue;
       updateUnit(unit, dispatched ? { workshopDispatchedAt: now, workshopDispatchedBy: actor.uid } : { workshopDispatchedAt: null, workshopDispatchedBy: null }, [event(dispatched ? 'atelier_dispatched' : 'atelier_dispatch_reopened', dispatched ? { to: 'Expédié' } : { from: 'Expédié', to: 'À expédier' })]);
     }
+    if (input.action === 'setCustomStatus') {
+      const status = text(input.customStatus, 120);
+      if (!status) fail('invalid-argument', 'Indiquez un statut libre.');
+      for (const unit of selected) {
+        updateUnit(unit, {customStatus:status,customStatusAt:now,customStatusBy:actor.uid}, [event('custom_status_changed', {from:unit.customStatus||'',to:status})]);
+      }
+    }
     if (input.action === 'commentJim') {
       if (!note) fail('invalid-argument', 'Ajoutez un commentaire atelier.');
       for (const unit of selected) updateUnit(unit, { atelierComment: note, atelierCommentAt: now, atelierCommentBy: actor.uid }, [event('atelier_comment', { to: 'Commentaire atelier' })]);
@@ -610,7 +618,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     }
     // Recompute affected customer lines from physical truth without changing money.
     for (const order of orderMap.values()) {
-      if (input.action === 'saleComplete' || !paid(order)) continue;
+      if (['saleComplete','setCustomStatus'].includes(input.action) || !paid(order)) continue;
       const items = order.items.map(line => {
         const ids = line.physicalStockUnitIds || [];
         if (!ids.some(k => stagedUnits.has(k))) return line;

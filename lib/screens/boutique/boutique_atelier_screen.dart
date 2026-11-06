@@ -343,7 +343,7 @@ class _State extends State<BoutiqueAtelierScreen> {
                               : null,
                           title: Text(u.name),
                           subtitle: Text(
-                              '${u.variant} · ${u.customerName}\n${displayStatus(u)}'),
+                              '${u.variant} · ${u.customerName}\n${displayStatus(u)}${(u.data['customStatus'] as String? ?? '').isNotEmpty ? ' · ${u.data['customStatus']}' : ''}'),
                           isThreeLine: true,
                           trailing: const Icon(Icons.chevron_right),
                           onTap: locked ? null : () => _detail(u)),

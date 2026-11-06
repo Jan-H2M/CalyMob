@@ -149,3 +149,28 @@ test('sale lookup checks current payment and closed status for recovery',async()
  await call('saleComplete',await request('saleComplete','lookup-piece',{recipientMemberId:'sale-buyer',confirmed:true}));
  assert.deepEqual(await call('saleLookup',{orderId:sale.orderId}),{open:false});
 });
+test('free status is stored alongside the existing state without changing the order or location',async()=>{
+ const unit={productName:'Polo',location:'Jim',finish:'at_jim',saleStatus:'not_ready',destination:'customer_reserved',customerOrderId:'custom-order',customerLineId:'l',requiresEmbroidery:true};
+ const order={status:'paid',payment:{status:'paid'},buyer:{userId:'sale-buyer'},items:[{lineId:'l',qty:1,fulfillmentStatus:'pending',physicalStockUnitIds:['custom-piece']}]};
+ await club.collection('orders').doc('custom-order').set(order);await club.collection('boutique_physical_stock_units').doc('custom-piece').set(unit);
+ const req=await request('setCustomStatus','custom-piece',{customStatus:'En attente du logo'});await call('setCustomStatus',{...req,preview:true});assert.equal((await club.collection('boutique_physical_stock_units').doc('custom-piece').get()).data().customStatus,undefined);
+ await call('setCustomStatus',req);assert.equal((await call('setCustomStatus',req)).replayed,true);
+ const piece=(await club.collection('boutique_physical_stock_units').doc('custom-piece').get()).data();assert.equal(piece.customStatus,'En attente du logo');assert.equal(piece.finish,'at_jim');assert.equal(piece.location,'Jim');assert.equal(piece.saleStatus,'not_ready');
+ assert.deepEqual((await club.collection('orders').doc('custom-order').get()).data(),order);assert.equal((await call('atelierList')).units.find(u=>u.id==='custom-piece').customStatus,'En attente du logo');
+});
+
+test('free status works for pieces in transport and pickup without altering missions',async()=>{
+ for(const [id,mission] of [['custom-transit',{transportMissionId:'transport-1'}],['custom-pickup',{pickupMissionId:'pickup-1'}]]) {
+  const initial={productName:'Polo',location:'Jan',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free',...mission};
+  const ref=club.collection('boutique_physical_stock_units').doc(id);await ref.set(initial);
+  const req=await request('setCustomStatus',id,{customStatus:'À vérifier'});await call('setCustomStatus',req);
+  const piece=(await ref.get()).data();for(const [key,value] of Object.entries(initial))assert.equal(piece[key],value);assert.equal(piece.customStatus,'À vérifier');
+ }
+});
+
+test('free status does not depend on incomplete historical orders',async()=>{
+ const ref=club.collection('boutique_physical_stock_units').doc('custom-orphan');
+ await ref.set({productName:'Polo',location:'Jan',finish:'unembroidered',saleStatus:'not_ready',destination:'customer_reserved',customerOrderId:'missing-order',customerLineId:'l'});
+ const req=await request('setCustomStatus','custom-orphan',{customStatus:'À vérifier'});await call('setCustomStatus',req);
+ const piece=(await ref.get()).data();assert.equal(piece.customStatus,'À vérifier');assert.equal(piece.finish,'unembroidered');assert.equal(piece.customerOrderId,'missing-order');
+});
