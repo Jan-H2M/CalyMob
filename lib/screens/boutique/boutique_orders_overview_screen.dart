@@ -75,6 +75,7 @@ class _State extends State<BoutiqueOrdersOverviewScreen> {
   String lineStatus(String v) => switch (v) {
         'awaiting_restock' => 'En attente de stock',
         'delivered' => 'Remis',
+        'partially_delivered' => 'Partiellement remis',
         'ready' => 'Prêt à remettre',
         'preparing' => 'En préparation',
         'pending' => 'En attente',

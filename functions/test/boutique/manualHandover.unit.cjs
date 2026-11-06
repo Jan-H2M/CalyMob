@@ -54,7 +54,7 @@ for (const hasStock of [true,false]) test(`damaged embroidery creates one ${hasS
  await assert.rejects(run(db,{uid:'rb'},{...req,note:'',preview:true}),{code:'invalid-argument'});
  assert.equal((await run(db,{uid:'rb'},{...req,preview:true})).replacement,hasStock?'club_stock':'supplier');
  assert.equal(db.docs.get(`${root}/boutique_physical_stock_units/damaged`).inventoryExcluded,undefined);
- await assert.rejects(run(db,{uid:'rb'},{...req,expectedReplacement:hasStock?'supplier':'club_stock'}),{code:'aborted'});
+ await assert.rejects(run(db,{uid:'rb'},{...req,expectedReplacement:hasStock?'supplier':'club_stock',...(hasStock?{}:{expectedReplacementUnitId:'replacement'})}),{code:'aborted'});
  assert.equal(db.docs.get(`${root}/boutique_physical_stock_units/damaged`).inventoryExcluded,undefined);
  await run(db,{uid:'rb'},req); assert.equal(db.docs.get(`${root}/boutique_physical_stock_units/damaged`).inventoryExcluded,true);
  const order=db.docs.get(`${root}/orders/o1`); assert.deepEqual(order.items[0].physicalStockUnitIds,hasStock?['replacement']:[]);

@@ -1,0 +1,40 @@
+'use strict';
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8087' || process.env.GCLOUD_PROJECT !== 'demo-boutique-qr') throw Error('Demo emulator only');
+const admin = require('firebase-admin'); admin.initializeApp({projectId:'demo-boutique-qr'});
+const db=admin.firestore(), {executePhysicalOperation:run}=require('../../src/boutique/physicalOperations');
+const clubId=`qa_mobile_${Date.now()}`, club=db.collection('clubs').doc(clubId), actor={uid:'rb',clubClaim:clubId};
+const call=(action,params={})=>run(db,actor,{clubId,action,...params});
+let counter=0;
+async function request(action, unitId, extra={}) {const {unit}=await call('lookup',{unitId});return {expectedActorId:'rb',units:[{id:unit.id,revision:unit.revision}],idempotencyKey:`mobile-integration-${String(++counter).padStart(5,'0')}`, ...extra};}
+before(async()=>{await club.collection('settings').doc('feature_flags').set({boutiqueQrEnabled:true,boutiqueMobileEnabled:true,boutiqueAccess:'tous'});await club.collection('members').doc('rb').set({member_status:'active',clubStatuten:['RB']});});
+after(async()=>{await db.recursiveDelete(club);await admin.app().delete();});
+test('moving a customer piece to Jim prepares it for finishing without losing its order',async()=>{
+ const unit={productId:'p',variantId:'v',productName:'Polo',variantLabel:'M',location:'Jan',finish:'unembroidered',saleStatus:'not_ready',destination:'customer_reserved',customerOrderId:'o',customerLineId:'l',requiresEmbroidery:true};
+ await club.collection('boutique_physical_stock_units').doc('move').set(unit);await club.collection('orders').doc('o').set({orderNumber:'DEMO',status:'paid',payment:{status:'paid'},buyer:{userId:'buyer'},items:[{lineId:'l',qty:1,fulfillmentStatus:'pending',physicalStockUnitIds:['move']}]});
+ const move=await request('move','move',{sourceLocation:'Jan',destination:'Jim'});await call('move',{...move,preview:true});await call('move',move);
+ let piece=(await club.collection('boutique_physical_stock_units').doc('move').get()).data();assert.equal(piece.finish,'at_jim');assert.equal(piece.location,'Jim');
+ const finish=await request('finishJim','move');await call('finishJim',finish);piece=(await club.collection('boutique_physical_stock_units').doc('move').get()).data();assert.ok(piece.workshopReadyAt);assert.equal((await club.collection('orders').doc('o').get()).data().items[0].productionStatus,'in_progress');
+});
+test('moving a piece belonging to a pickup mission is refused without altering either',async()=>{
+ await club.collection('boutique_physical_stock_units').doc('owned').set({productName:'Bonnet',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free',pickupMissionId:'mission'});
+ const move=await request('move','owned',{sourceLocation:'Club',destination:'Jim'});await assert.rejects(call('move',move),{code:'failed-precondition'});
+ const piece=(await club.collection('boutique_physical_stock_units').doc('owned').get()).data();assert.equal(piece.pickupMissionId,'mission');assert.equal(piece.location,'Club');
+});
+test('damage replacement is transactional, requires an accepted choice and remains idempotent',async()=>{
+ await club.collection('boutique_physical_stock_units').doc('damage').set({productId:'p2',variantId:'v',productName:'Bonnet',variantLabel:'OS',location:'Jim',finish:'at_jim',saleStatus:'not_ready',destination:'customer_reserved',customerOrderId:'d',customerLineId:'l'});
+ await club.collection('orders').doc('d').set({orderNumber:'DEMO2',status:'paid',payment:{status:'paid'},buyer:{userId:'buyer'},items:[{lineId:'l',qty:1,physicalStockUnitIds:['damage']}]});
+ await club.collection('products').doc('p2').set({supplierId:'supplier'});await club.collection('fournisseurs').doc('supplier').set({nom:'Wordans'});
+ const base=await request('damageJim','damage',{note:'Fil cassé'});assert.equal((await call('damageJim',{...base,preview:true})).replacement,'supplier');
+ await assert.rejects(call('damageJim',base),{code:'invalid-argument'});const approved={...base,expectedReplacement:'supplier'};
+ await call('damageJim',approved);assert.equal((await call('damageJim',approved)).replayed,true);
+ const piece=(await club.collection('boutique_physical_stock_units').doc('damage').get()).data();assert.equal(piece.inventoryExcluded,true);
+ const purchases=await club.collection('boutique_stock_purchase_orders').get();assert.equal(purchases.size,1);assert.equal(purchases.docs[0].data().lines[0].embroideryRecovery.orderId,'d');
+});
+test('reopening embroidery also clears a dispatched status',async()=>{
+ await club.collection('boutique_physical_stock_units').doc('reopen').set({productName:'Polo',location:'Jim',finish:'at_jim',saleStatus:'not_ready',destination:'free',workshopReadyAt:admin.firestore.Timestamp.now(),workshopDispatchedAt:admin.firestore.Timestamp.now()});
+ const req=await request('reopenJim','reopen');await call('reopenJim',req);
+ const piece=(await club.collection('boutique_physical_stock_units').doc('reopen').get()).data();assert.equal(piece.workshopReadyAt,null);assert.equal(piece.workshopDispatchedAt,null);
+ assert.deepEqual(piece.history.map(h=>h.kind),['atelier_dispatch_reopened','workshop_reopened']);
+});

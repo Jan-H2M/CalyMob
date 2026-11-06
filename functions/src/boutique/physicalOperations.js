@@ -165,19 +165,28 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const orders = docs.map(snap => {
         const order = snap.data();
         const payment = order.payment || {};
+        // Historical order statuses do not prove the physical pieces are ready.
+        // Show partial handovers explicitly and require verification for old
+        // ready/delivered states lacking complete per-piece proof.
+        const projectLine = line => {
+          const qty = Number.isInteger(line.qty) && line.qty > 0 ? line.qty : 0;
+          const count = Number.isInteger(line.deliveredQty) ? line.deliveredQty : 0;
+          let status = String(line.fulfillmentStatus || '');
+          if (count > 0 && count < qty) status = 'partially_delivered';
+          else if (status === 'delivered' && (count !== qty || !['manual_confirmed', 'qr_confirmed', 'signed', 'paper_signed'].includes(line.signatureStatus))) status = 'review';
+          else if (status === 'ready') status = 'review';
+          return { name: String(line.productSnapshot?.name || line.name || 'Article'), variant: String(line.productSnapshot?.variantLabel || ''), qty, status };
+        };
+        const lines = (Array.isArray(order.items) ? order.items : []).map(projectLine);
+        const status = ['ready', 'delivered'].includes(order.status) && (order.status === 'ready' || !lines.length || lines.some(line => line.status !== 'delivered')) ? 'review' : String(order.status || '');
         return {
           id: snap.id,
           orderNumber: String(order.orderNumber || snap.id),
           customerName: String(order.buyer?.displayName || 'Membre'),
-          status: String(order.status || ''),
+          status,
           paymentStatus: payment.lastMatchError || order.paymentAdjustment?.type === 'additional_payment_due' || order.additional_payment_due === true ? 'review' : String(payment.status || ''),
           total: Number.isFinite(order.pricing?.total) ? order.pricing.total : null,
-          items: (Array.isArray(order.items) ? order.items : []).map(line => ({
-            name: String(line.productSnapshot?.name || line.name || 'Article'),
-            variant: String(line.productSnapshot?.variantLabel || ''),
-            qty: Number.isInteger(line.qty) && line.qty > 0 ? line.qty : 0,
-            status: String(line.fulfillmentStatus || ''),
-          })),
+          items: lines,
         };
       });
       return { orders, hasMore: page.size > 30, nextCursor: page.size > 30 ? docs.at(-1).id : null };
@@ -290,7 +299,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const line = order?.items.find(item => item.lineId === damaged.customerLineId);
       if (!order || !paid(order) || !line || line.fulfillmentStatus === 'delivered' || damaged.destination !== 'customer_reserved'
           || damaged.embroideryDamage || damaged.transportMissionId || damaged.pickupMissionId || damaged.handover
-          || !['to_jim', 'at_jim'].includes(damaged.finish) || !/^(chez |atelier )?jim$/i.test(String(damaged.location || '').trim().replace(/\s+/g, ' ')) || damaged.workshopDispatchedAt
+          || !['unembroidered', 'to_jim', 'at_jim'].includes(damaged.finish) || !/^(chez |atelier )?jim$/i.test(String(damaged.location || '').trim().replace(/\s+/g, ' ')) || damaged.workshopDispatchedAt
           || !id(damaged.productId) || !id(damaged.variantId)
           || (line.physicalStockUnitIds || []).filter(value => value === damaged.id).length !== 1) {
         fail('failed-precondition', 'Cette pièce ne peut plus être déclarée comme broderie ratée.');
@@ -312,7 +321,8 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       }
       const result = { applied: input.preview !== true, action: input.action, count: 1, replacement: replacement ? 'club_stock' : 'supplier', ...(replacement ? { replacementUnitId: replacement.id } : {}) };
       if (input.preview === true) return result;
-      if (input.expectedReplacement && (input.expectedReplacement !== result.replacement || (replacement && input.expectedReplacementUnitId !== replacement.id))) fail('aborted', 'Le remplacement disponible a changé. Actualisez et confirmez à nouveau.');
+      if (!input.expectedReplacement || (input.expectedReplacement === 'club_stock' && !input.expectedReplacementUnitId)) fail('invalid-argument', 'Confirmez le remplacement proposé.');
+      if (input.expectedReplacement !== result.replacement || (replacement && input.expectedReplacementUnitId !== replacement.id)) fail('aborted', 'Le remplacement disponible a changé. Actualisez et confirmez à nouveau.');
       const reason = text(input.note, 500), purchaseId = requestId;
       const history = [...(damaged.history || []), { kind: 'inventory_excluded', at: now, by: actor.uid, to: 'Broderie ratée', note: reason }];
       tx.update(club.collection('boutique_physical_stock_units').doc(damaged.id), { inventoryExcluded: true, embroideryDamage: { reason, at: now, by: actor.uid, replacement: result.replacement, ...(replacement ? { replacementUnitId: replacement.id } : { stockPurchaseOrderId: purchaseId }) }, atelierComment: reason, atelierCommentAt: now, atelierCommentBy: actor.uid, updatedAt: now, history });
@@ -356,8 +366,11 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (['move','dispatch'].includes(input.action) && !text(input.destination, 160)) fail('invalid-argument', 'Choisissez le lieu de destination.');
     if (input.action === 'move') for (const unit of selected) {
       if (unit.location === input.destination) fail('failed-precondition', 'Choisissez un autre emplacement.');
-      if (unit.transportMissionId) fail('failed-precondition', 'Réceptionnez ou retirez d’abord la mission de transport.');
-      updateUnit(unit, { location: input.destination, pickupMissionId: null, ...(['returned_embroidered','not_required_reviewed'].includes(unit.finish) ? { saleStatus: unit.destination === 'demo' || (needsProduction(unit) && unit.finish !== 'returned_embroidered') ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: input.destination })]);
+      if (unit.transportMissionId || unit.pickupMissionId) fail('failed-precondition', 'Cette pièce appartient à une mission. Terminez ou retirez d’abord la mission.');
+      const arrivingAtJim = /^(chez |atelier )?jim$/i.test(input.destination.trim().replace(/\s+/g, ' '))
+        && ['unembroidered', 'to_jim'].includes(unit.finish) && needsProduction(unit);
+      if (arrivingAtJim && unit.customerOrderId && !paid(orderMap.get(unit.customerOrderId))) fail('failed-precondition', 'Le paiement doit être confirmé avant la broderie.');
+      updateUnit(unit, { location: input.destination, ...(arrivingAtJim ? { finish: 'at_jim', saleStatus: 'not_ready' } : {}), ...(['returned_embroidered','not_required_reviewed'].includes(unit.finish) ? { saleStatus: unit.destination === 'demo' || (needsProduction(unit) && unit.finish !== 'returned_embroidered') ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: input.destination }), ...(arrivingAtJim ? [event('finish_changed', { from: unit.finish, to: 'at_jim' })] : [])]);
     }
     if (input.action === 'prepareJim' || input.action === 'confirmJim') for (const unit of selected) {
       const required = input.action === 'prepareJim' ? 'unembroidered' : 'to_jim', finish = input.action === 'prepareJim' ? 'to_jim' : 'at_jim';
@@ -365,12 +378,13 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       updateUnit(unit, { finish }, [event('finish_changed', { from: unit.finish, to: finish })]);
     }
     if (input.action === 'finishJim') for (const unit of selected) {
-      if (unit.finish !== 'at_jim' || unit.workshopReadyAt || unit.transportMissionId) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
-      updateUnit(unit, { workshopReadyAt: now, workshopReadyBy: actor.uid }, [event('workshop_ready', { to: unit.location })]);
+      const atJim = /^(chez |atelier )?jim$/i.test(String(unit.location || '').trim().replace(/\s+/g, ' '));
+      if (!atJim || !['unembroidered','to_jim','at_jim'].includes(unit.finish) || !needsProduction(unit) || unit.workshopReadyAt || unit.transportMissionId || unit.pickupMissionId || (unit.customerOrderId && !paid(orderMap.get(unit.customerOrderId)))) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
+      updateUnit(unit, { finish: 'at_jim', workshopReadyAt: now, workshopReadyBy: actor.uid }, [...(unit.finish !== 'at_jim' ? [event('finish_changed', { from: unit.finish, to: 'at_jim' })] : []), event('workshop_ready', { to: unit.location })]);
     }
     if (input.action === 'reopenJim') for (const unit of selected) {
       if (unit.finish !== 'at_jim' || !unit.workshopReadyAt || unit.transportMissionId || unit.saleStatus === 'sold') fail('failed-precondition', 'La broderie ne peut plus être rouverte.');
-      updateUnit(unit, { workshopReadyAt: null, workshopReadyBy: null }, [event('workshop_reopened', { from: 'Terminée', to: 'En fabrication' })]);
+      updateUnit(unit, { workshopReadyAt: null, workshopReadyBy: null, ...(unit.workshopDispatchedAt ? { workshopDispatchedAt: null, workshopDispatchedBy: null } : {}) }, [...(unit.workshopDispatchedAt ? [event('atelier_dispatch_reopened', { from: 'Expédié', to: 'À expédier' })] : []), event('workshop_reopened', { from: 'Terminée', to: 'En fabrication' })]);
     }
     if (input.action === 'sendJim' || input.action === 'unsendJim') for (const unit of selected) {
       if (unit.transportMissionId || unit.saleStatus === 'sold' || unit.finish === 'returned_embroidered') fail('failed-precondition', 'La pièce a quitté le suivi atelier.');

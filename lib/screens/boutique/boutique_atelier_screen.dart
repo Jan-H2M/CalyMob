@@ -33,7 +33,9 @@ class _State extends State<BoutiqueAtelierScreen> {
     if (u.data['damaged'] == true) return 'damaged';
     if (u.data['workshopDispatched'] == true ||
         u.data['transportMissionId'] != null ||
-        u.data['finish'] == 'returned_embroidered') return 'done';
+        u.data['finish'] == 'returned_embroidered') {
+      return 'done';
+    }
     if (u.data['customerOrderId'] == null &&
         ['free', 'demo'].contains(u.data['destination'])) {
       return 'stock';
@@ -230,7 +232,7 @@ class _State extends State<BoutiqueAtelierScreen> {
                               child: const Text('Enregistrer le commentaire')),
                           if (unit.data['customerOrderId'] != null &&
                               unit.data['workshopDispatched'] != true &&
-                              ['to_jim', 'at_jim']
+                              ['unembroidered', 'to_jim', 'at_jim']
                                   .contains(unit.data['finish']))
                             OutlinedButton.icon(
                                 onPressed: () => Navigator.pop(ctx, (

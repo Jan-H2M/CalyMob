@@ -22,3 +22,9 @@ test('overview requires responsible boutique and returns minimal status projecti
  const noRole=makeDb({member_status:'active',clubStatuten:[]},[['order1',order]]);
  await assert.rejects(executePhysicalOperation(noRole,{uid:'rb'},{clubId:'demo',action:'orderOverview'}),{code:'permission-denied'});
 });
+test('overview never presents partial or unverified historic statuses as complete',async()=>{
+ const rows=[['partial',{status:'delivered',items:[{qty:2,deliveredQty:1,fulfillmentStatus:'delivered'}]}],['old',{status:'ready',items:[{qty:1,fulfillmentStatus:'ready',customizations:{clubLogo:{enabled:true}}}]}],['complete',{status:'delivered',items:[{qty:1,deliveredQty:1,signatureStatus:'manual_confirmed',fulfillmentStatus:'delivered'}]}]];
+ const result=await executePhysicalOperation(makeDb({member_status:'active',clubStatuten:['RB']},rows),{uid:'rb'},{clubId:'demo',action:'orderOverview'});
+ assert.equal(result.orders[0].status,'review');assert.equal(result.orders[0].items[0].status,'partially_delivered');
+ assert.equal(result.orders[1].status,'review');assert.equal(result.orders[1].items[0].status,'review');assert.equal(result.orders[2].status,'delivered');
+});
