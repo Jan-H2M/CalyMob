@@ -257,6 +257,10 @@ class _State extends State<BoutiqueEventSaleScreen> {
       if (mounted) {
         setState(() {
           _verified = true;
+          if (_error ==
+              'Impossible de vérifier la vente. Réessayez avant de montrer le QR.') {
+            _error = null;
+          }
           if (fresh['paymentStatus'] == 'paid') _checked = true;
         });
       }
