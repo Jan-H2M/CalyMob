@@ -76,13 +76,19 @@ class _State extends State<BoutiqueEventSaleScreen> {
         if (mounted) setState(() => _step = 2);
         return;
       }
+      try {
+        final pending = await _pages('salePending', 'sales');
+        if (mounted) setState(() => _pendingSales = pending);
+      } catch (e) {
+        if (mounted)
+          setState(() => _error = BoutiqueOperationsService.message(e));
+      }
       final all = await Future.wait([
         _pages('saleCatalog', 'units'),
         _pages('saleMembers', 'members'),
         widget.service
             .call(widget.clubId, 'saleEvents')
-            .catchError((_) => <String, dynamic>{'events': []}),
-        _pages('salePending', 'sales')
+            .catchError((_) => <String, dynamic>{'events': []})
       ]);
       if (!mounted) return;
       setState(() {
@@ -91,7 +97,6 @@ class _State extends State<BoutiqueEventSaleScreen> {
         _events = ((all[2] as Map)['events'] as List)
             .map((v) => Map<String, dynamic>.from(v as Map))
             .toList();
-        _pendingSales = all[3] as List<Map<String, dynamic>>;
       });
     } catch (e) {
       if (mounted) {
@@ -178,6 +183,7 @@ class _State extends State<BoutiqueEventSaleScreen> {
             _step = 0;
             _selected.clear();
           });
+          await _load();
         }
       }
       rethrow;

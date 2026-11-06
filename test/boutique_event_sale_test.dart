@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -166,5 +167,97 @@ void main() {
     await tester.tap(find.text('BTQ-1 · Alex'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Communication : BTQ-1'), findsOneWidget);
+  });
+
+  testWidgets('server recovery remains available when catalog loading fails',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final service = BoutiqueOperationsService(transport: (r) async {
+      if (r['action'] == 'salePending')
+        return {
+          'sales': [
+            {
+              'orderNumber': 'BTQ-2',
+              'buyerId': 'buyer',
+              'buyerName': 'Alex',
+              'ids': ['piece'],
+              'total': 25,
+              'communication': 'BTQ-2',
+              'epcPayload': 'BCD',
+              'paymentStatus': 'pending'
+            }
+          ],
+          'hasMore': false
+        };
+      throw StateError('catalog unavailable');
+    });
+    final access = BoutiqueAccessService(
+        firestore: FakeFirebaseFirestore(),
+        authUserIds: () => Stream.value('second'));
+    await tester.pumpWidget(BoutiqueAccessScope(
+        accessService: access,
+        clubId: 'demo',
+        userId: 'second',
+        child: MaterialApp(
+            home: BoutiqueEventSaleScreen(clubId: 'demo', service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ventes à reprendre · 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('BTQ-2 · Alex'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Communication : BTQ-2'), findsOneWidget);
+  });
+  testWidgets(
+      'stale saved preparation clears pending and reloads available items',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'boutique_event_sale_demo_rb':
+          '{"request":{"recipientMemberId":"buyer"},"buyerName":"Alex","ids":["piece"]}'
+    });
+    final service = BoutiqueOperationsService(transport: (r) async {
+      switch (r['action']) {
+        case 'salePrepare':
+          throw FirebaseFunctionsException(code: 'aborted', message: 'Changed');
+        case 'salePending':
+          return {'sales': [], 'hasMore': false};
+        case 'saleCatalog':
+          return {
+            'units': [
+              {
+                'id': 'new',
+                'revision': 'r2',
+                'productName': 'Nouveau polo',
+                'variantLabel': 'M',
+                'location': 'Club',
+                'price': 25
+              }
+            ],
+            'hasMore': false
+          };
+        case 'saleMembers':
+          return {'members': [], 'hasMore': false};
+        case 'saleEvents':
+          return {'events': []};
+        default:
+          throw StateError('unexpected');
+      }
+    });
+    final access = BoutiqueAccessService(
+        firestore: FakeFirebaseFirestore(),
+        authUserIds: () => Stream.value('rb'));
+    await tester.pumpWidget(BoutiqueAccessScope(
+        accessService: access,
+        clubId: 'demo',
+        userId: 'rb',
+        child: MaterialApp(
+            home: BoutiqueEventSaleScreen(clubId: 'demo', service: service))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Retrouver la vente'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nouveau polo'), findsOneWidget);
+    expect(
+        (await SharedPreferences.getInstance())
+            .getString('boutique_event_sale_demo_rb'),
+        isNull);
   });
 }
