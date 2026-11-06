@@ -60,7 +60,16 @@ void main() {
     // The Boutique hub deliberately runs a continuous ocean animation.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Atelier Jim'), findsNothing);
+    expect(find.text('Commandes clients'), findsNothing);
     await tester.tap(find.text('Gestion Boutique'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Atelier Jim'), findsOneWidget);
+    expect(find.text('Commandes clients'), findsOneWidget);
+    await tester.ensureVisible(find.text('Autres actions'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Autres actions'));
     await tester.pumpAndSettle();
   }
 
@@ -95,6 +104,10 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.text('Que voulez-vous faire ?'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Atelier Jim'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));

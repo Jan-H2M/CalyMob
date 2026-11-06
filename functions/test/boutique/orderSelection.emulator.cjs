@@ -113,3 +113,22 @@ test('order selection without a place can include pieces at different locations'
   const selected = await call('orderSelection', { orderId: 'multiplace' });
   assert.deepEqual(new Set(selected.units.map(unit => unit.location)), new Set(['Jim', 'Piscine']));
 });
+
+test('RB order overview exposes minimal payment and progress, not contact details; helpers are denied', async () => {
+  await seed('overview');
+  await club.collection('orders').doc('overview').update({pricing:{total:42}, items:[{lineId:'line',qty:1,fulfillmentStatus:'preparing',productSnapshot:{name:'Polo fictif',variantLabel:'M'}}]});
+  const page=await call('orderOverview');
+  const row=page.orders.find(o=>o.id==='overview');
+  assert.equal(row.paymentStatus,'paid');
+  assert.equal(row.status,'preparing');
+  assert.equal(row.items[0].name,'Polo fictif');
+  assert.equal(row.items[0].qty,1);
+  assert.equal(row.total,42);
+  assert.equal('buyer' in row,false);
+  assert.equal('email' in row,false);
+  assert.equal('payment' in row,false);
+  await assert.rejects(call('orderOverview',{},'helper'),{code:'permission-denied'});
+  await club.collection('orders').doc('overview').update({additional_payment_due:true});
+  const updated=await call('orderOverview');
+  assert.equal(updated.orders.find(o=>o.id==='overview').paymentStatus,'review');
+});

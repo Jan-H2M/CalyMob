@@ -6,9 +6,9 @@ const { REGION, hasBoutiqueResponsibility } = require('./shared');
 const { memberDisplayName } = require('../utils/memberName');
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
-const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection']);
-const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId']);
+const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'damageJim', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
+const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList']);
+const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'expectedReplacement', 'expectedReplacementUnitId']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
 const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -32,17 +32,20 @@ function lineNeedsProduction(line) {
 }
 const revision = (snap) => snap.updateTime ? `${snap.updateTime.seconds}:${snap.updateTime.nanoseconds}` : hash(snap.data());
 const asUnit = (snap) => ({ ...snap.data(), id: snap.id, revision: revision(snap) });
-const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','supplierBatchId','supplierOrderReference','requiresEmbroidery','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)]]));
+const publicUnit = (unit) => Object.fromEntries(['id','revision','productName','variantLabel','location','destination','finish','saleStatus','customerOrderId','customerLineId','customerName','supplierBatchId','supplierOrderReference','requiresEmbroidery','pickupMissionId','transportMissionId'].map(k => [k, unit[k] ?? null]).concat([['workshopReady', Boolean(unit.workshopReadyAt)], ['workshopDispatched', Boolean(unit.workshopDispatchedAt)]]));
 
 function validate(input, actor) {
   if (!input || Array.isArray(input) || typeof input !== 'object' || Object.keys(input).some(k => !ALLOWED.has(k)) || !id(input.clubId) || (!READS.has(input.action) && !MUTATIONS.has(input.action))) fail('invalid-argument', 'Demande Boutique invalide.');
   if (!id(actor?.uid)) fail('unauthenticated', 'Connectez-vous à CalyMob.');
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
-  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
+  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders', 'orderOverview', 'atelierList'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
+  if (input.expectedReplacement !== undefined && (input.action !== 'damageJim' || !['club_stock', 'supplier'].includes(input.expectedReplacement))) fail('invalid-argument', 'Remplacement invalide.');
+  if (input.expectedReplacementUnitId !== undefined && (input.action !== 'damageJim' || !id(input.expectedReplacementUnitId))) fail('invalid-argument', 'Pièce de remplacement invalide.');
   if (input.orderId !== undefined && (!id(input.orderId) || input.action !== 'orderSelection')) fail('invalid-argument', 'Commande invalide.');
   if (input.action === 'orderSelection' && (!id(input.orderId) || (input.sourceLocation !== undefined && (typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))))) fail('invalid-argument', 'Commande ou lieu invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
+  if (input.verificationMethod !== undefined && (input.action !== 'deliver' || !['manual', 'member_qr'].includes(input.verificationMethod))) fail('invalid-argument', 'Mode de remise invalide.');
   if (!MUTATIONS.has(input.action)) return;
   if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
   if (!id(input.idempotencyKey) || input.idempotencyKey.length < 16) fail('invalid-argument', 'Identifiant de confirmation obligatoire.');
@@ -138,6 +141,47 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       // Preserve the unfiltered cursor: excluded rows must not hide later pages.
       return { units: docs.filter(s => !s.data().inventoryExcluded).map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
     }
+    if (input.action === 'atelierList') {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const base = club.collection('boutique_physical_stock_units').orderBy(admin.firestore.FieldPath.documentId());
+      const page = await tx.get((input.cursor ? base.startAfter(input.cursor) : base).limit(201));
+      const docs = page.docs.slice(0, 200);
+      const jimLocation = value => /^(chez |atelier )?jim$/i.test(String(value || '').trim().replace(/\s+/g, ' '));
+      const units = docs.map(asUnit).filter(unit => {
+        if (unit.inventoryExcluded && !unit.embroideryDamage) return false;
+        if (unit.saleStatus === 'sold' && !unit.embroideryDamage) return false;
+        return jimLocation(unit.location) || Boolean(unit.embroideryDamage || unit.workshopDispatchedAt || unit.workshopReadyAt || unit.transportMissionId)
+          || (Array.isArray(unit.history) && unit.history.some(event => ['transport_assigned', 'workshop_ready', 'arrival_confirmed'].includes(event.kind) || (event.kind === 'moved' && jimLocation(event.to))));
+      });
+      return { units: units.map(unit => ({ ...publicUnit(unit), atelierComment: unit.atelierComment || '', damaged: Boolean(unit.embroideryDamage), damageReason: unit.embroideryDamage?.reason || null, replacement: unit.embroideryDamage?.replacement || null })), hasMore: page.size > 200, nextCursor: page.size > 200 ? docs.at(-1).id : null };
+    }
+    // Read-only management overview. Keep this separate from the minimal order
+    // selection response: only an active RB may see other members' orders.
+    if (input.action === 'orderOverview') {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const base = club.collection('orders').orderBy(admin.firestore.FieldPath.documentId());
+      const page = await tx.get((input.cursor ? base.startAfter(input.cursor) : base).limit(31));
+      const docs = page.docs.slice(0, 30);
+      const orders = docs.map(snap => {
+        const order = snap.data();
+        const payment = order.payment || {};
+        return {
+          id: snap.id,
+          orderNumber: String(order.orderNumber || snap.id),
+          customerName: String(order.buyer?.displayName || 'Membre'),
+          status: String(order.status || ''),
+          paymentStatus: payment.lastMatchError || order.paymentAdjustment?.type === 'additional_payment_due' || order.additional_payment_due === true ? 'review' : String(payment.status || ''),
+          total: Number.isFinite(order.pricing?.total) ? order.pricing.total : null,
+          items: (Array.isArray(order.items) ? order.items : []).map(line => ({
+            name: String(line.productSnapshot?.name || line.name || 'Article'),
+            variant: String(line.productSnapshot?.variantLabel || ''),
+            qty: Number.isInteger(line.qty) && line.qty > 0 ? line.qty : 0,
+            status: String(line.fulfillmentStatus || ''),
+          })),
+        };
+      });
+      return { orders, hasMore: page.size > 30, nextCursor: page.size > 30 ? docs.at(-1).id : null };
+    }
     // Selection only: RB-scoped reads, never an inventory/order mutation. Do not
     // derive a whole order from the management screen's truncated 200-unit list.
     if (['orders', 'orderSelection'].includes(input.action)) {
@@ -169,7 +213,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
         if (unit.inventoryExcluded) fail('failed-precondition', 'Une pièce a été retirée du stock par correction. Vérifiez la commande dans CalyCompta.');
         if (unit.customerOrderId !== input.orderId || unit.customerLineId !== line.lineId || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation d’une pièce a changé. Actualisez la commande.');
         if (unit.saleStatus === 'sold') {
-          if (unit.handover?.type !== 'member_qr' || !id(order.buyer?.userId) || unit.handover?.recipientMemberId !== order.buyer.userId || !id(unit.handover?.operationId) || !ms(unit.handover?.confirmedAt)) fail('failed-precondition', 'Une remise de cette commande est à vérifier.');
+          if (!['member_qr', 'manual'].includes(unit.handover?.type) || !id(order.buyer?.userId) || unit.handover?.recipientMemberId !== order.buyer.userId || !id(unit.handover?.operationId) || !ms(unit.handover?.confirmedAt)) fail('failed-precondition', 'Une remise de cette commande est à vérifier.');
           continue;
         }
         if (!['not_ready', 'sale_ready'].includes(unit.saleStatus) || (input.sourceLocation !== undefined && unit.location !== input.sourceLocation) || unit.transportMissionId) fail('failed-precondition', 'Toutes les pièces restantes ne sont pas présentes au lieu de cette session. Scannez uniquement les pièces présentes individuellement.');
@@ -237,6 +281,49 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
       if (!line || !(line.physicalStockUnitIds || []).includes(unit.id) || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation de cette pièce a changé.');
     }
+    // One damaged customer piece is written off and replaced atomically. A
+    // bounded stock search fails closed if it cannot prove no stock exists.
+    if (input.action === 'damageJim') {
+      if (selected.length !== 1 || !text(input.note, 500)) fail('invalid-argument', 'Sélectionnez une pièce et expliquez la broderie ratée.');
+      const damaged = selected[0];
+      const order = orderMap.get(damaged.customerOrderId);
+      const line = order?.items.find(item => item.lineId === damaged.customerLineId);
+      if (!order || !paid(order) || !line || line.fulfillmentStatus === 'delivered' || damaged.destination !== 'customer_reserved'
+          || damaged.embroideryDamage || damaged.transportMissionId || damaged.pickupMissionId || damaged.handover
+          || !['to_jim', 'at_jim'].includes(damaged.finish) || !/^(chez |atelier )?jim$/i.test(String(damaged.location || '').trim().replace(/\s+/g, ' ')) || damaged.workshopDispatchedAt
+          || !id(damaged.productId) || !id(damaged.variantId)
+          || (line.physicalStockUnitIds || []).filter(value => value === damaged.id).length !== 1) {
+        fail('failed-precondition', 'Cette pièce ne peut plus être déclarée comme broderie ratée.');
+      }
+      const stock = await tx.get(club.collection('boutique_physical_stock_units').where('productId', '==', damaged.productId).limit(201));
+      if (stock.size > 200) fail('failed-precondition', 'Trop de pièces à vérifier : utilisez CalyCompta pour cette broderie ratée.');
+      const replacement = stock.docs.map(asUnit).find(unit => unit.id !== damaged.id && unit.variantId === damaged.variantId
+        && !unit.inventoryExcluded && !unit.transportMissionId && !unit.pickupMissionId && !unit.handover
+        && unit.destination === 'free' && unit.saleStatus === 'not_ready' && unit.finish === 'unembroidered');
+      let supplierName = '', supplierId = '', supplierReference = '';
+      if (!replacement) {
+        const product = await tx.get(club.collection('products').doc(damaged.productId));
+        supplierId = product.data()?.supplierId || '';
+        supplierReference = product.data()?.supplierReference || '';
+        if (!id(supplierId)) fail('failed-precondition', 'Fournisseur du produit introuvable.');
+        const supplier = await tx.get(club.collection('fournisseurs').doc(supplierId));
+        supplierName = text(supplier.data()?.nom, 160);
+        if (!supplierName) fail('failed-precondition', 'Fournisseur introuvable : vérifiez le catalogue.');
+      }
+      const result = { applied: input.preview !== true, action: input.action, count: 1, replacement: replacement ? 'club_stock' : 'supplier', ...(replacement ? { replacementUnitId: replacement.id } : {}) };
+      if (input.preview === true) return result;
+      if (input.expectedReplacement && (input.expectedReplacement !== result.replacement || (replacement && input.expectedReplacementUnitId !== replacement.id))) fail('aborted', 'Le remplacement disponible a changé. Actualisez et confirmez à nouveau.');
+      const reason = text(input.note, 500), purchaseId = requestId;
+      const history = [...(damaged.history || []), { kind: 'inventory_excluded', at: now, by: actor.uid, to: 'Broderie ratée', note: reason }];
+      tx.update(club.collection('boutique_physical_stock_units').doc(damaged.id), { inventoryExcluded: true, embroideryDamage: { reason, at: now, by: actor.uid, replacement: result.replacement, ...(replacement ? { replacementUnitId: replacement.id } : { stockPurchaseOrderId: purchaseId }) }, atelierComment: reason, atelierCommentAt: now, atelierCommentBy: actor.uid, updatedAt: now, history });
+      if (replacement) tx.update(club.collection('boutique_physical_stock_units').doc(replacement.id), { destination: 'customer_reserved', requiresEmbroidery: true, customerOrderId: order.id, customerLineId: line.lineId, customerName: order.buyer?.displayName || '', updatedAt: now, history: [...(replacement.history || []), { kind: 'destination_changed', at: now, by: actor.uid, from: 'free', to: 'customer_reserved', note: `Remplacement après broderie ratée · ${order.orderNumber}` }] });
+      else tx.create(club.collection('boutique_stock_purchase_orders').doc(purchaseId), { id: purchaseId, supplierId, supplierName, status: 'queued', totalQty: 1, queuedAt: now, createdAt: now, updatedAt: now, createdBy: actor.uid, updatedBy: actor.uid, lines: [{ lineId: `${damaged.productId}:${damaged.variantId}`, productId: damaged.productId, variantId: damaged.variantId, productName: damaged.productName, variantLabel: damaged.variantLabel, ...(supplierReference ? { productSupplierReference: supplierReference } : {}), qty: 1, supplierStatus: 'queued', supplierQueuedAt: now, embroideryRecovery: { orderId: order.id, orderNumber: order.orderNumber, lineId: line.lineId, damagedUnitId: damaged.id, reason } }] });
+      const remainingIds = line.physicalStockUnitIds.filter(value => value !== damaged.id);
+      tx.update(club.collection('orders').doc(order.id), { items: order.items.map(item => item.lineId === line.lineId ? { ...item, physicalStockUnitIds: replacement ? [...remainingIds, replacement.id] : remainingIds, fulfillmentStatus: 'preparing', productionStatus: 'queued' } : item), status: 'preparing', updatedAt: now });
+      tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`), { action: 'boutique.mobile.damageJim', userId: actor.uid, targetId: damaged.id, targetType: 'boutique_physical_session', clubId: input.clubId, timestamp: now, details: { replacement: result.replacement } });
+      tx.create(receiptRef, { actorId: actor.uid, action: input.action, requestHash, result, createdAt: now });
+      return result;
+    }
     function needsProduction(unit) {
       const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
       return unit.requiresEmbroidery !== false || lineNeedsProduction(line);
@@ -281,6 +368,21 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (unit.finish !== 'at_jim' || unit.workshopReadyAt || unit.transportMissionId) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
       updateUnit(unit, { workshopReadyAt: now, workshopReadyBy: actor.uid }, [event('workshop_ready', { to: unit.location })]);
     }
+    if (input.action === 'reopenJim') for (const unit of selected) {
+      if (unit.finish !== 'at_jim' || !unit.workshopReadyAt || unit.transportMissionId || unit.saleStatus === 'sold') fail('failed-precondition', 'La broderie ne peut plus être rouverte.');
+      updateUnit(unit, { workshopReadyAt: null, workshopReadyBy: null }, [event('workshop_reopened', { from: 'Terminée', to: 'En fabrication' })]);
+    }
+    if (input.action === 'sendJim' || input.action === 'unsendJim') for (const unit of selected) {
+      if (unit.transportMissionId || unit.saleStatus === 'sold' || unit.finish === 'returned_embroidered') fail('failed-precondition', 'La pièce a quitté le suivi atelier.');
+      const dispatched = input.action === 'sendJim';
+      if (dispatched && (!unit.workshopReadyAt || unit.finish !== 'at_jim')) fail('failed-precondition', 'Marquez d’abord la broderie comme terminée.');
+      if (dispatched === Boolean(unit.workshopDispatchedAt)) continue;
+      updateUnit(unit, dispatched ? { workshopDispatchedAt: now, workshopDispatchedBy: actor.uid } : { workshopDispatchedAt: null, workshopDispatchedBy: null }, [event(dispatched ? 'atelier_dispatched' : 'atelier_dispatch_reopened', dispatched ? { to: 'Expédié' } : { from: 'Expédié', to: 'À expédier' })]);
+    }
+    if (input.action === 'commentJim') {
+      if (!note) fail('invalid-argument', 'Ajoutez un commentaire atelier.');
+      for (const unit of selected) updateUnit(unit, { atelierComment: note, atelierCommentAt: now, atelierCommentBy: actor.uid }, [event('atelier_comment', { to: 'Commentaire atelier' })]);
+    }
     if (input.action === 'reviewPlain') for (const unit of selected) {
       const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
       const confirmsPlainStock = unit.requiresEmbroidery === undefined && Boolean(unit.stockPurchaseOrderId) && !lineNeedsProduction(line);
@@ -316,14 +418,14 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       nextMission.status = nextMission.arrivedUnitIds.length === mission.unitIds.length ? 'received' : 'transit';
     }
     if (input.action === 'deliver') {
-      if (!id(input.recipientMemberId) || (input.preview !== true && input.confirmed !== true)) fail('invalid-argument', 'Scannez le QR du membre et confirmez la remise physique.');
+      if (!id(input.recipientMemberId) || (input.preview !== true && input.confirmed !== true)) fail('invalid-argument', 'Choisissez le destinataire et confirmez la remise physique.');
       const recipient = await tx.get(club.collection('members').doc(input.recipientMemberId));
       if (!recipient.exists) fail('not-found', 'Membre destinataire introuvable dans ce club.');
       for (const unit of selected) {
         const order = orderMap.get(unit.customerOrderId), state = order ? availability(order, mission.destination) : null;
         if (!order || !paid(order) || order.buyer?.userId !== input.recipientMemberId || !readyForReservation(unit) || unit.location !== mission.destination || unit.pickupMissionId !== mission.id || !mission.arrivedUnitIds.includes(unit.id) || !state.handoutEligible || (!mission.allowPartial && (!state.all || state.pending.some(u => !wanted.includes(u.id))))) fail('failed-precondition', 'Vérifiez le destinataire, le paiement et la disponibilité de ces pièces.');
-        const proof = { type: 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, operationId: requestId };
-        updateUnit(unit, { saleStatus: 'sold', handover: proof }, [event('sale_changed', { from: unit.saleStatus, to: 'sold' }), event('handover_confirmed', { to: input.recipientMemberId, note: 'QR du membre vérifié et remise physique confirmée.' })]);
+        const proof = { type: input.verificationMethod === 'manual' ? 'manual' : 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, operationId: requestId };
+        updateUnit(unit, { saleStatus: 'sold', handover: proof }, [event('sale_changed', { from: unit.saleStatus, to: 'sold' }), event('handover_confirmed', { to: input.recipientMemberId, note: input.verificationMethod === 'manual' ? 'Remise physique confirmée sans scan QR.' : 'QR du membre vérifié et remise physique confirmée.' })]);
       }
       nextMission.deliveredUnitIds = unique([...mission.deliveredUnitIds, ...wanted]);
       nextMission.status = nextMission.deliveredUnitIds.length === mission.unitIds.length ? 'closed' : mission.status;
@@ -339,7 +441,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
         if (peers.some(u => !u || u.customerOrderId !== order.id || u.customerLineId !== line.lineId)) fail('failed-precondition', 'La réservation client est incohérente.');
         const delivered = peers.filter(u => u.saleStatus === 'sold');
         const allReady = ids.length === line.qty && peers.every(u => readyForReservation(u) || u.saleStatus === 'sold');
-        return { ...line, fulfillmentStatus: delivered.length === line.qty ? 'delivered' : allReady ? 'ready' : 'preparing', productionStatus: allReady ? ((lineNeedsProduction(line) || peers.some(u => u.requiresEmbroidery !== false)) ? 'done' : 'not_required') : peers.some(u => u.finish === 'at_jim') ? 'in_progress' : line.productionStatus || 'queued', ...(delivered.length > 0 && delivered.some(u => u.handover?.type === 'member_qr') ? { deliveredQty: delivered.length, deliveredPhysicalUnitIds: delivered.map(u => u.id), handoverProofType: 'member_qr', ...(delivered.length === line.qty ? { deliveredAt: now, signatureStatus: 'qr_confirmed' } : {}) } : {}) };
+        return { ...line, fulfillmentStatus: delivered.length === line.qty ? 'delivered' : allReady ? 'ready' : 'preparing', productionStatus: allReady ? ((lineNeedsProduction(line) || peers.some(u => u.requiresEmbroidery !== false)) ? 'done' : 'not_required') : peers.some(u => u.finish === 'at_jim') ? 'in_progress' : line.productionStatus || 'queued', ...(delivered.length > 0 && delivered.some(u => ['member_qr', 'manual'].includes(u.handover?.type)) ? { deliveredQty: delivered.length, deliveredPhysicalUnitIds: delivered.map(u => u.id), handoverProofType: delivered.every(u => u.handover?.type === 'member_qr') ? 'member_qr' : 'manual', ...(delivered.length === line.qty ? { deliveredAt: now, signatureStatus: delivered.every(u => u.handover?.type === 'member_qr') ? 'qr_confirmed' : 'manual_confirmed' } : {}) } : {}) };
       });
       if (JSON.stringify(items) !== JSON.stringify(order.items)) {
         const next = { ...order, items, status: items.every(i => i.fulfillmentStatus === 'delivered') ? 'delivered' : items.every(i => ['ready','delivered'].includes(i.fulfillmentStatus)) ? 'ready' : 'preparing', updatedAt: now };
@@ -373,7 +475,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       tx.create(entry.historyRef, { title, body, type: data.type, category: 'Boutique', data, created_at: now, read: false, read_at: null });
       tx.create(club.collection('boutique_pickup_notifications').doc(entry.notificationId), { status: 'pending', recipientId: entry.order.buyer.userId, orderId: entry.order.id, unitIds: entry.unitIds, missionId: nextMission.id, title, body, data, createdAt: now });
     }
-    if (input.action === 'deliver') tx.create(club.collection('boutique_handover_receipts').doc(requestId), { type: 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, unitIds: wanted, orderIds: [...orderMap.keys()], note });
+    if (input.action === 'deliver') tx.create(club.collection('boutique_handover_receipts').doc(requestId), { type: input.verificationMethod === 'manual' ? 'manual' : 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, unitIds: wanted, orderIds: [...orderMap.keys()], note });
     tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`), { action: `boutique.mobile.${input.action}`, userId: actor.uid, targetId: nextMission?.id || requestId, targetType: 'boutique_physical_session', clubId: input.clubId, timestamp: now, details: { unitIds: wanted, location: result.destination, notificationCount: notifications.length } });
     tx.create(receiptRef, { actorId: actor.uid, action: input.action, requestHash, result, createdAt: now });
     return result;

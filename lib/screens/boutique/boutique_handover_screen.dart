@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../widgets/boutique/boutique_operations_scaffold.dart';
 import '../../models/boutique/boutique_physical_unit.dart';
-import '../../models/boutique/boutique_unit_qr.dart';
 import '../../services/boutique/boutique_operations_service.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
-import 'boutique_qr_scan_screen.dart';
+import '../../widgets/boutique/boutique_operations_scaffold.dart';
 
+/// Records a physical handover for an existing authorized pickup mission.
 class BoutiqueHandoverScreen extends StatefulWidget {
   final String clubId, missionId;
   final Map<String, dynamic> packet;
@@ -23,84 +22,43 @@ class BoutiqueHandoverScreen extends StatefulWidget {
 }
 
 class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
-  final _scanned = <String, BoutiquePhysicalUnit>{};
-  String? _recipient, _error;
-  bool _confirmed = false, _busy = false;
+  final _selected = <String, BoutiquePhysicalUnit>{};
+  String? _error;
+  bool _busy = false;
   Map<String, dynamic>? _pending;
-  String get _section => widget.manager ? 'gestion' : 'remises';
-  Future<String> _scanArticle(String value) async {
-    final qr = BoutiqueUnitQr.parse(value);
-    if (qr == null || qr.clubId != widget.clubId) {
-      throw const FormatException('Scannez une fiche article de ce club.');
-    }
-    if (_scanned.containsKey(qr.unitId)) {
-      throw const FormatException('Cette pièce est déjà scannée.');
-    }
-    if (!(widget.packet['units'] as List).any((u) => u['id'] == qr.unitId)) {
-      throw const FormatException('Cette pièce appartient à un autre colis.');
-    }
-    final unit = await widget.service
-        .lookup(widget.clubId, qr.unitId, missionId: widget.missionId);
-    if (unit.sold || unit.data['pickupMissionId'] != widget.missionId) {
-      throw const FormatException(
-          'Cette pièce n’est plus disponible dans ce lot.');
-    }
-    if (!mounted) throw const FormatException('Remise fermée.');
-    setState(() {
-      _scanned[unit.id] = unit;
-      _confirmed = false;
-    });
-    return '${_scanned.length} pièce(s) vérifiée(s) pour ${widget.packet['buyerName']}';
-  }
-
-  Future<String> _scanMember(String value) async {
-    final id = BoutiqueUnitQr.memberId(value);
-    if (id == null || id != widget.packet['buyerId']) {
-      throw const FormatException(
-          'Ce QR ne correspond pas à l’acheteur. Aucune remise enregistrée.');
-    }
-    if (mounted) {
-      setState(() {
-        _recipient = id;
-        _confirmed = false;
-      });
-    }
-    return 'Membre correspondant';
-  }
-
+  List<BoutiquePhysicalUnit> get _units => (widget.packet['units'] as List)
+      .map((value) =>
+          BoutiquePhysicalUnit(Map<String, dynamic>.from(value as Map)))
+      .toList();
   Future<void> _submit() async {
+    if (_busy || _selected.isEmpty) return;
+    final scope = BoutiqueAccessScope.maybeOf(context);
+    if (scope == null) {
+      setState(() => _error = 'Accès Boutique à vérifier.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       if (_pending == null) {
-        final request = {
-          'expectedActorId': BoutiqueAccessScope.maybeOf(context)!.userId,
+        final request = <String, dynamic>{
+          'expectedActorId': scope.userId,
           'missionId': widget.missionId,
-          'units': _scanned.values.map((u) => u.selection).toList(),
-          'recipientMemberId': _recipient,
+          'units': _selected.values.map((u) => u.selection).toList(),
+          'recipientMemberId': widget.packet['buyerId'],
+          'verificationMethod': 'manual',
           'confirmed': true,
           'idempotencyKey': BoutiqueOperationsService.confirmationKey()
         };
-        final p = await widget.service
+        final preview = await widget.service
             .call(widget.clubId, 'deliver', {...request, 'preview': true});
         if (!mounted) return;
-        final yes = await showDialog<bool>(
-            context: context,
-            builder: (c) => AlertDialog(
-                    title: const Text('Confirmer la remise physique'),
-                    content: Text(
-                        '${p['count']} pièce(s) à ${widget.packet['buyerName']}, à ${p['destination']}.\n\nLe QR identifie le membre. Votre confirmation enregistre qui a réellement effectué cette remise.'),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(c, false),
-                          child: const Text('Revoir')),
-                      FilledButton(
-                          onPressed: () => Navigator.pop(c, true),
-                          child: const Text('Articles remis'))
-                    ]));
-        if (!mounted || yes != true) return;
+        if (preview['count'] != _selected.length) {
+          throw const FormatException(
+              'La sélection a changé. Actualisez avant de confirmer.');
+        }
         _pending = request;
       }
       final result =
@@ -111,13 +69,11 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
               'Remise confirmée : ${result['count']} pièce(s) à ${result['recipientName']}.')));
       Navigator.pop(context, result);
     } catch (e) {
-      if (BoutiqueOperationsService.definitiveFailure(e)) {
-        _pending = null;
-        _scanned.clear();
-        _confirmed = false;
-      }
       if (mounted) {
-        setState(() => _error = BoutiqueOperationsService.message(e));
+        setState(() {
+          if (BoutiqueOperationsService.definitiveFailure(e)) _pending = null;
+          _error = BoutiqueOperationsService.message(e);
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -126,105 +82,62 @@ class _BoutiqueHandoverScreenState extends State<BoutiqueHandoverScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final locked = _busy || _pending != null;
-    final remaining = (widget.packet['units'] as List).length - _scanned.length;
-    final enoughArticles = _scanned.isNotEmpty &&
-        (widget.packet['allowPartial'] == true || remaining == 0);
+    final units = _units, locked = _busy || _pending != null;
+    final allowed = _selected.isNotEmpty &&
+        (widget.packet['allowPartial'] == true ||
+            _selected.length == units.length);
     return BoutiqueOperationsScaffold(
         title: 'Remettre au membre',
         body: ListView(padding: const EdgeInsets.all(16), children: [
           Text('${widget.packet['buyerName']}',
               style: Theme.of(context).textTheme.headlineSmall),
           Text('${widget.packet['orderNumber']}'),
-          const SizedBox(height: 20),
-          const Text('1. Vérifier les articles du colis'),
-          ...(widget.packet['units'] as List).map((u) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${u['productName']}'),
-              subtitle: Text('${u['variantLabel']}'),
-              leading: Icon(_scanned.containsKey(u['id'])
-                  ? Icons.check_circle
-                  : Icons.radio_button_unchecked),
-              trailing: _scanned.containsKey(u['id'])
-                  ? IconButton(
-                      tooltip: 'Retirer de la remise',
-                      onPressed: locked
-                          ? null
-                          : () => setState(() {
-                                _scanned.remove(u['id']);
-                                _confirmed = false;
-                              }),
-                      icon: const Icon(Icons.close))
-                  : null)),
-          FilledButton.icon(
+          const SizedBox(height: 16),
+          const Text('Sélectionnez les pièces que vous remettez maintenant.'),
+          TextButton(
               onPressed: locked
                   ? null
-                  : () => Navigator.push(
-                      context,
-                      boutiqueAccessGuardedRoute(
-                          sourceContext: context,
-                          requiredSection: _section,
-                          builder: (_) => BoutiqueQrScanScreen(
-                              title: 'Vérifier les articles',
-                              instruction:
-                                  'Scannez chaque fiche du colis de ${widget.packet['buyerName']}.',
-                              onScan: _scanArticle))),
-              icon: const Icon(Icons.qr_code_scanner),
-              label:
-                  Text('Scanner les articles · ${_scanned.length} vérifié(s)')),
-          if (remaining > 0 && widget.packet['allowPartial'] != true)
-            Text('Encore $remaining fiche(s) à scanner pour ce colis.'),
-          const SizedBox(height: 24),
-          const Text('2. Identifier l’acheteur'),
-          OutlinedButton.icon(
-              onPressed: locked
-                  ? null
-                  : () => Navigator.push(
-                      context,
-                      boutiqueAccessGuardedRoute(
-                          sourceContext: context,
-                          requiredSection: _section,
-                          builder: (_) => BoutiqueQrScanScreen(
-                              title: 'QR du membre',
-                              instruction:
-                                  'Demandez à ${widget.packet['buyerName']} d’afficher son QR personnel CalyMob.',
-                              onScan: _scanMember,
-                              closeAfterScan: true))),
-              icon: const Icon(Icons.person_search_outlined),
-              label: Text(_recipient == null
-                  ? 'Scanner le QR du membre'
-                  : 'Membre vérifié · ${widget.packet['buyerName']}')),
-          const SizedBox(height: 24),
-          const Text('3. Confirmer la remise'),
-          CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                  'J’ai physiquement remis les articles scannés à ce membre'),
-              subtitle: const Text(
-                  'Le QR identifie le membre ; il ne remplace pas votre vérification de la personne présente.'),
-              value: _confirmed,
-              onChanged: locked || _recipient == null || !enoughArticles
-                  ? null
-                  : (v) => setState(() => _confirmed = v == true)),
+                  : () => setState(() {
+                        for (final u in units) {
+                          _selected[u.id] = u;
+                        }
+                      }),
+              child: const Text('Tout sélectionner')),
+          for (final u in units)
+            CheckboxListTile(
+                value: _selected.containsKey(u.id),
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(u.name),
+                subtitle: Text(u.variant),
+                onChanged: locked
+                    ? null
+                    : (v) => setState(() {
+                          if (v == true) {
+                            _selected[u.id] = u;
+                          } else {
+                            _selected.remove(u.id);
+                          }
+                        })),
+          if (_selected.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+                '${_selected.length} pièce(s) pour ${widget.packet['buyerName']}',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            if (!allowed)
+              const Text('Cette mission ne permet pas une remise partielle.'),
+            TextButton(
+                onPressed: locked ? null : () => setState(_selected.clear),
+                child: const Text('Effacer la sélection')),
+            FilledButton(
+                onPressed:
+                    _busy || (_pending == null && !allowed) ? null : _submit,
+                child: Text(_pending == null
+                    ? 'Confirmer la remise'
+                    : 'Vérifier la confirmation en attente'))
+          ],
           if (_error != null)
             Text(_error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          if (_pending != null)
-            const Text(
-                'Une confirmation est en attente. Réessayez pour vérifier son résultat ; aucun double enregistrement ne sera créé.'),
-          FilledButton(
-              onPressed: _busy ||
-                      (_pending == null &&
-                          (!_confirmed ||
-                              _recipient == null ||
-                              !enoughArticles))
-                  ? null
-                  : _submit,
-              child: Text(_busy
-                  ? 'Vérification…'
-                  : _pending != null
-                      ? 'Vérifier la confirmation en attente'
-                      : 'Confirmer la remise')),
         ]));
   }
 }
