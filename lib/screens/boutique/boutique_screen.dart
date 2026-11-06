@@ -23,6 +23,8 @@ import 'boutique_action_management_screen.dart';
 import 'boutique_locations_screen.dart';
 import 'boutique_atelier_screen.dart';
 import 'boutique_orders_overview_screen.dart';
+import 'boutique_direct_handover_screen.dart';
+import 'boutique_event_sale_screen.dart';
 import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
@@ -97,6 +99,20 @@ class _BoutiqueGestionMenu extends StatelessWidget {
                     title: 'Localisation des pièces',
                     subtitle: 'Rechercher ou déplacer des pièces.',
                     onTap: () => open(BoutiqueLocationsScreen(
+                        clubId: clubId, service: service))),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                    icon: Icons.point_of_sale_outlined,
+                    title: 'Vente directe',
+                    subtitle: 'Vendre et remettre sur place.',
+                    onTap: () => open(BoutiqueEventSaleScreen(
+                        clubId: clubId, service: service))),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                    icon: Icons.handshake_outlined,
+                    title: 'Remise aux membres',
+                    subtitle: 'Remettre directement des pièces disponibles.',
+                    onTap: () => open(BoutiqueDirectHandoverScreen(
                         clubId: clubId, service: service))),
                 const SizedBox(height: 12),
                 _BoutiqueHomeCard(

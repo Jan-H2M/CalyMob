@@ -71,3 +71,57 @@ test('partial handover refuses an old sold piece without its own proof',async()=
  assert.equal((await club.collection('boutique_physical_stock_units').doc('new-ready').get()).data().saleStatus,'sale_ready');
  assert.equal((await club.collection('orders').doc('mixed-old').get()).data().items[0].deliveredQty,undefined);
 });
+test('direct manual handover lists only paid ready pieces and records one receipt without a mission',async()=>{
+ const buyer='buyer-free';await club.collection('members').doc(buyer).set({member_status:'active'});
+ await club.collection('orders').doc('direct-hand').set({orderNumber:'BTQ-DEMO',status:'ready',payment:{status:'paid'},buyer:{userId:buyer,displayName:'Membre fictif'},items:[{lineId:'line',qty:1,deliveryMode:'in_person',fulfillmentStatus:'ready',physicalStockUnitIds:['direct-piece']}]});
+ await club.collection('boutique_physical_stock_units').doc('direct-piece').set({productName:'Polo',variantLabel:'M',location:'Jan',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'customer_reserved',customerOrderId:'direct-hand',customerLineId:'line',requiresEmbroidery:true});
+ const candidates=await call('handoverCandidates');assert.ok(candidates.units.some(u=>u.id==='direct-piece'&&u.buyerId===buyer));
+ const req=await request('manualDeliver','direct-piece',{recipientMemberId:buyer,verificationMethod:'manual',confirmed:true});
+ await assert.rejects(call('manualDeliver',{...req,recipientMemberId:'rb'}),{code:'failed-precondition'});
+ assert.equal((await call('manualDeliver',{...req,preview:true})).count,1);assert.equal((await club.collection('boutique_physical_stock_units').doc('direct-piece').get()).data().saleStatus,'sale_ready');
+ await call('manualDeliver',req);assert.equal((await call('manualDeliver',req)).replayed,true);
+ const piece=(await club.collection('boutique_physical_stock_units').doc('direct-piece').get()).data();assert.equal(piece.saleStatus,'sold');assert.equal(piece.handover.type,'manual');assert.equal(piece.handover.missionId,undefined);
+ const order=(await club.collection('orders').doc('direct-hand').get()).data();assert.equal(order.status,'delivered');assert.equal(order.items[0].signatureStatus,'manual_confirmed');
+});
+test('event sale reserves once, issues an EPC reference, and posts a negative sale on handover',async()=>{
+ await club.collection('members').doc('sale-buyer').set({member_status:'active',display_name:'Alex Example',email:'alex@example.invalid'});
+ await club.collection('settings').doc('bank').set({iban:'BE68539007547034',beneficiaryName:'Club fictif'});
+ await club.collection('products').doc('sale-product').set({name:'Polo',visibility:'published',inventoryMode:'tracked',pricing:{salePrice:25},variants:[{id:'M',label:'M',stockCount:2}]});
+ await club.collection('boutique_physical_stock_units').doc('sale-piece').set({productId:'sale-product',variantId:'M',productName:'Polo',variantLabel:'M',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free',requiresEmbroidery:true});
+ const req=await request('salePrepare','sale-piece',{recipientMemberId:'sale-buyer'});
+ const quote=await call('salePrepare',{...req,preview:true});assert.equal(quote.total,25);assert.match(quote.epcPayload,/BCD/);assert.match(quote.communication,/BTQ-/);
+ const started=await call('salePrepare',req);assert.equal((await call('salePrepare',req)).replayed,true);
+ assert.equal((await club.collection('products').doc('sale-product').get()).data().variants[0].stockCount,1);
+ const done=await request('saleComplete','sale-piece',{recipientMemberId:'sale-buyer',confirmed:true});
+ await call('saleComplete',done);assert.equal((await call('saleComplete',done)).replayed,true);
+ const order=(await club.collection('orders').doc(started.orderId).get()).data(),piece=(await club.collection('boutique_physical_stock_units').doc('sale-piece').get()).data();
+ assert.equal(order.status,'delivered');assert.equal(order.payment.status,'pending');assert.equal(order.directSale.kind,'event');assert.equal(piece.saleStatus,'sold');assert.equal(piece.handover.recipientMemberId,'sale-buyer');
+ const mutations=(await club.collection('inventoryMutations').where('orderId','==',started.orderId).get()).docs.map(d=>d.data());
+ assert.equal(mutations.reduce((a,v)=>a+v.change,0),-1);assert.equal(mutations.filter(v=>v.reason==='sale'&&v.change===-1).length,1);
+});
+test('abandoned event sale restores its reservation once and cannot cancel after bank settlement',async()=>{
+ await club.collection('products').doc('cancel-product').set({name:'Bonnet',visibility:'published',inventoryMode:'tracked',pricing:{salePrice:20},variants:[{id:'M',stockCount:1}]});
+ await club.collection('boutique_physical_stock_units').doc('cancel-piece').set({productId:'cancel-product',variantId:'M',productName:'Bonnet',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free'});
+ const req=await request('salePrepare','cancel-piece',{recipientMemberId:'sale-buyer'});const started=await call('salePrepare',req);
+ const cancel=await request('saleCancel','cancel-piece',{confirmed:true});await call('saleCancel',cancel);assert.equal((await call('saleCancel',cancel)).replayed,true);
+ assert.equal((await club.collection('products').doc('cancel-product').get()).data().variants[0].stockCount,1);
+ assert.equal((await club.collection('boutique_physical_stock_units').doc('cancel-piece').get()).data().destination,'free');
+ assert.equal((await club.collection('orders').doc(started.orderId).get()).data().status,'cancelled');
+ const rows=(await club.collection('inventoryMutations').where('orderId','==',started.orderId).get()).docs.map(d=>d.data());assert.equal(rows.reduce((a,v)=>a+v.change,0),0);
+});
+test('concurrent event sales cannot reserve the same piece twice',async()=>{
+ await club.collection('products').doc('race-product').set({name:'Polo',visibility:'published',inventoryMode:'tracked',pricing:{salePrice:15},variants:[{id:'M',stockCount:1}]});
+ await club.collection('boutique_physical_stock_units').doc('race-piece').set({productId:'race-product',variantId:'M',productName:'Polo',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free'});
+ const first=await request('salePrepare','race-piece',{recipientMemberId:'sale-buyer'}),second={...first,idempotencyKey:'sale-race-confirmation-12345'};
+ const outcomes=await Promise.allSettled([call('salePrepare',first),call('salePrepare',second)]);assert.equal(outcomes.filter(o=>o.status==='fulfilled').length,1);
+ assert.equal((await club.collection('products').doc('race-product').get()).data().variants[0].stockCount,0);
+});
+test('a bank-paid event sale cannot be cancelled and can still be handed over',async()=>{
+ await club.collection('products').doc('paid-product').set({name:'Polo',visibility:'published',inventoryMode:'tracked',pricing:{salePrice:15},variants:[{id:'M',stockCount:1}]});
+ await club.collection('boutique_physical_stock_units').doc('paid-piece').set({productId:'paid-product',variantId:'M',productName:'Polo',location:'Club',finish:'returned_embroidered',saleStatus:'sale_ready',destination:'free'});
+ const started=await call('salePrepare',await request('salePrepare','paid-piece',{recipientMemberId:'sale-buyer'}));
+ await club.collection('orders').doc(started.orderId).update({status:'paid','payment.status':'paid','payment.bankRef':'demo-payment'});
+ await assert.rejects(call('saleCancel',await request('saleCancel','paid-piece',{confirmed:true})),{code:'failed-precondition'});
+ await call('saleComplete',await request('saleComplete','paid-piece',{recipientMemberId:'sale-buyer',confirmed:true}));
+ const order=(await club.collection('orders').doc(started.orderId).get()).data();assert.equal(order.status,'delivered');assert.equal(order.payment.status,'paid');
+});

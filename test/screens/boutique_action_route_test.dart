@@ -67,7 +67,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Atelier Jim'), findsOneWidget);
     expect(find.text('Commandes clients'), findsOneWidget);
-    await tester.ensureVisible(find.text('Autres actions'));
+    await tester.scrollUntilVisible(find.text('Autres actions'), 300,
+        scrollable: find.byType(Scrollable).last);
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Autres actions'));
     await tester.pumpAndSettle();
@@ -107,6 +108,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    await tester.scrollUntilVisible(find.text('Atelier Jim'), -300, scrollable: find.byType(Scrollable).last);
     expect(find.text('Atelier Jim'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pump();

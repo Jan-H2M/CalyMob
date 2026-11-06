@@ -2,13 +2,13 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { createHash } = require('node:crypto');
-const { REGION, hasBoutiqueResponsibility } = require('./shared');
+const { REGION, hasBoutiqueResponsibility, buildEpcQrPayload } = require('./shared');
 const { memberDisplayName } = require('../utils/memberName');
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'damageJim', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
-const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList']);
-const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'expectedReplacement', 'expectedReplacementUnitId']);
+const MUTATIONS = new Set(['move', 'prepareJim', 'confirmJim', 'finishJim', 'reopenJim', 'sendJim', 'unsendJim', 'commentJim', 'damageJim', 'manualDeliver', 'salePrepare', 'saleComplete', 'saleCancel', 'reviewPlain', 'dispatch', 'arrive', 'deliver', 'revoke']);
+const READS = new Set(['access', 'list', 'lookup', 'missions', 'mission', 'orders', 'orderSelection', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers', 'saleEvents']);
+const ALLOWED = new Set(['action', 'clubId', 'unitId', 'units', 'sourceLocation', 'destination', 'note', 'assigneeIds', 'missionId', 'recipientMemberId', 'verificationMethod', 'confirmed', 'allowPartial', 'pickupPoint', 'pickupWindow', 'idempotencyKey', 'preview', 'expectedActorId', 'cursor', 'orderId', 'expectedReplacement', 'expectedReplacementUnitId', 'eventId']);
 const MAX_UNITS = 50;
 const MAX_PEERS = 250;
 const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -19,6 +19,7 @@ const ms = (value) => value?.toMillis?.() ?? value?.toDate?.()?.getTime() ?? (va
 const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])])) : value;
 const active = (member) => member?.member_status === 'active' && member.has_app_access !== false && (!member.app_status || member.app_status === 'active') && member.isActive !== false && member.actif !== false;
+const saleBuyerActive = (member) => member?.member_status === 'active' && (!member.app_status || member.app_status === 'active') && member.isActive !== false && member.actif !== false;
 const ready = (unit) => !unit.inventoryExcluded && ['returned_embroidered', 'not_required_reviewed'].includes(unit.finish) && unit.saleStatus === 'sale_ready';
 const paid = (order) => order?.payment?.status === 'paid' && !order.payment.lastMatchError && order.paymentAdjustment?.type !== 'additional_payment_due' && order.additional_payment_due !== true && ['paid', 'preparing', 'ready', 'delivered'].includes(order.status);
 // Keep the existing Calypso line customization semantics, including historic
@@ -39,13 +40,14 @@ function validate(input, actor) {
   if (!id(actor?.uid)) fail('unauthenticated', 'Connectez-vous à CalyMob.');
   if (Object.hasOwn(actor, 'clubClaim') && actor.clubClaim !== input.clubId) fail('permission-denied', 'Le club ne correspond pas au compte connecté.');
   if (['lookup'].includes(input.action) && !id(input.unitId)) fail('invalid-argument', 'Pièce invalide.');
-  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders', 'orderOverview', 'atelierList'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
+  if (input.cursor !== undefined && (!id(input.cursor) || !['missions', 'list', 'orders', 'orderOverview', 'atelierList', 'handoverCandidates', 'saleCatalog', 'saleMembers'].includes(input.action))) fail('invalid-argument', 'Page Boutique invalide.');
+  if (input.eventId !== undefined && (!id(input.eventId) || input.action !== 'salePrepare')) fail('invalid-argument', 'Événement invalide.');
   if (input.expectedReplacement !== undefined && (input.action !== 'damageJim' || !['club_stock', 'supplier'].includes(input.expectedReplacement))) fail('invalid-argument', 'Remplacement invalide.');
   if (input.expectedReplacementUnitId !== undefined && (input.action !== 'damageJim' || !id(input.expectedReplacementUnitId))) fail('invalid-argument', 'Pièce de remplacement invalide.');
   if (input.orderId !== undefined && (!id(input.orderId) || input.action !== 'orderSelection')) fail('invalid-argument', 'Commande invalide.');
   if (input.action === 'orderSelection' && (!id(input.orderId) || (input.sourceLocation !== undefined && (typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))))) fail('invalid-argument', 'Commande ou lieu invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
-  if (input.verificationMethod !== undefined && (input.action !== 'deliver' || input.verificationMethod !== 'manual')) fail('invalid-argument', 'Mode de remise invalide.');
+  if (input.verificationMethod !== undefined && (!['deliver', 'manualDeliver'].includes(input.action) || input.verificationMethod !== 'manual')) fail('invalid-argument', 'Mode de remise invalide.');
   if (!MUTATIONS.has(input.action)) return;
   if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
   if (!id(input.idempotencyKey) || input.idempotencyKey.length < 16) fail('invalid-argument', 'Identifiant de confirmation obligatoire.');
@@ -140,6 +142,44 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const docs = units.docs.slice(0, 200), hasMore = units.size > 200;
       // Preserve the unfiltered cursor: excluded rows must not hide later pages.
       return { units: docs.filter(s => !s.data().inventoryExcluded).map(s => publicUnit(asUnit(s))), hasMore, nextCursor: hasMore ? docs.at(-1).id : null, assignees: members ? members.docs.filter(s => active(s.data())).map(s => ({ id: s.id, name: memberDisplayName(s.data()), accueil: (s.data().clubStatuten || []).some(v => ['a','accueil'].includes(String(v).toLowerCase())) })) : [] };
+    }
+    if (input.action === 'saleMembers') {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const base=club.collection('members').orderBy(admin.firestore.FieldPath.documentId());
+      const page=await tx.get((input.cursor?base.startAfter(input.cursor):base).limit(101)),docs=page.docs.slice(0,100);
+      return {members:docs.filter(d=>saleBuyerActive(d.data())).map(d=>({id:d.id,name:memberDisplayName(d.data())})),hasMore:page.size>100,nextCursor:page.size>100?docs.at(-1).id:null};
+    }
+    if (input.action === 'saleEvents') {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const page=await tx.get(club.collection('operations').where('type','==','evenement').where('date_debut','>=',admin.firestore.Timestamp.fromMillis(time-14*86400000)).where('date_debut','<=',admin.firestore.Timestamp.fromMillis(time+14*86400000)).orderBy('date_debut').limit(100));
+      return {events:page.docs.map(d=>({id:d.id,name:text(d.data().titre,160),date:new Date(ms(d.data().date_debut)).toISOString()}))};
+    }
+    if (input.action === 'saleCatalog') {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const base=club.collection('boutique_physical_stock_units').where('saleStatus','==','sale_ready').orderBy(admin.firestore.FieldPath.documentId());
+      const page=await tx.get((input.cursor?base.startAfter(input.cursor):base).limit(51)),docs=page.docs.slice(0,50),cache=new Map(),units=[];
+      for(const snap of docs){const unit=asUnit(snap);if(!ready(unit)||unit.destination!=='free'||unit.transportMissionId||unit.pickupMissionId||unit.handover||(unit.requiresEmbroidery===true&&unit.finish!=='returned_embroidered')||!id(unit.productId)||!id(unit.variantId))continue;
+        if(!cache.has(unit.productId)){const product=await tx.get(club.collection('products').doc(unit.productId));cache.set(unit.productId,product.data()||null);}
+        const product=cache.get(unit.productId),variant=product?.variants?.find(v=>v.id===unit.variantId),price=variant?.salePriceOverride??product?.pricing?.salePriceOverride??product?.pricing?.salePrice;
+        if(product?.visibility!=='published'||!variant||!Number.isFinite(Number(price))||Number(price)<=0)continue;
+        units.push({...publicUnit(unit),price:Number(price)});
+      }
+      return {units,hasMore:page.size>50,nextCursor:page.size>50?docs.at(-1).id:null};
+    }
+    if (input.action === 'handoverCandidates') {
+      if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
+      const base = club.collection('boutique_physical_stock_units').where('saleStatus', '==', 'sale_ready').orderBy(admin.firestore.FieldPath.documentId());
+      const page = await tx.get((input.cursor ? base.startAfter(input.cursor) : base).limit(51));
+      const docs = page.docs.slice(0, 50), cache = new Map(), units = [];
+      for (const snap of docs) {
+        const unit = asUnit(snap);
+        if (!ready(unit) || unit.destination !== 'customer_reserved' || unit.transportMissionId || unit.pickupMissionId || !id(unit.customerOrderId) || !id(unit.customerLineId)) continue;
+        if (!cache.has(unit.customerOrderId)) { const doc = await tx.get(club.collection('orders').doc(unit.customerOrderId)); cache.set(unit.customerOrderId, doc.exists ? doc.data() : null); }
+        const order = cache.get(unit.customerOrderId), line = order?.items?.find(item => item.lineId === unit.customerLineId);
+        if (!paid(order) || !id(order?.buyer?.userId) || !line || !['pool_pickup','in_person'].includes(line.deliveryMode) || line.fulfillmentStatus === 'delivered' || !(line.physicalStockUnitIds || []).includes(unit.id) || ((unit.requiresEmbroidery !== false || lineNeedsProduction(line)) && unit.finish !== 'returned_embroidered')) continue;
+        units.push({ ...publicUnit(unit), buyerId: order.buyer.userId, buyerName: order.buyer.displayName || 'Membre', orderNumber: order.orderNumber || '' });
+      }
+      return {units, hasMore:page.size>50, nextCursor:page.size>50?docs.at(-1).id:null};
     }
     if (input.action === 'atelierList') {
       if (!manager) fail('permission-denied', 'Fonction Responsable boutique obligatoire.');
@@ -305,6 +345,55 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const line = orderMap.get(unit.customerOrderId)?.items.find(i => i.lineId === unit.customerLineId);
       if (!line || !(line.physicalStockUnitIds || []).includes(unit.id) || unit.destination !== 'customer_reserved') fail('failed-precondition', 'La réservation de cette pièce a changé.');
     }
+    if (input.action === 'salePrepare') {
+      if (!id(input.recipientMemberId) || selected.length > 30) fail('invalid-argument', 'Choisissez un membre et 1 à 30 pièces.');
+      const buyerSnap = await tx.get(club.collection('members').doc(input.recipientMemberId));
+      const buyer = buyerSnap.data();
+      if (!buyerSnap.exists || !saleBuyerActive(buyer)) fail('failed-precondition', 'Membre acheteur indisponible.');
+      const buyerName = memberDisplayName(buyer), buyerEmail = text(buyer.email, 200);
+      if (!buyerName || !buyerEmail) fail('failed-precondition', 'Le nom et l’adresse du membre sont requis.');
+      let event = null;
+      if (input.eventId) {
+        const snap = await tx.get(club.collection('operations').doc(input.eventId)); const data = snap.data();
+        if (!snap.exists || data?.type !== 'evenement' || !ms(data.date_debut) || Math.abs(ms(data.date_debut)-time)>14*86400000) fail('failed-precondition', 'Choisissez un événement proche de la vente.');
+        event = {id:input.eventId, name:text(data.titre,160)};
+      }
+      const bankSnap=await tx.get(club.collection('settings').doc('bank'));
+      const infoSnap=await tx.get(club.collection('settings').doc('club_info'));
+      const generalSnap=await tx.get(club.collection('settings').doc('general'));
+      const bank=bankSnap.data()||{},info=infoSnap.data()||{},general=generalSnap.data()||{};
+      const iban=String(info.iban||bank.iban||process.env.CLUB_IBAN||'').replace(/\s/g,'').toUpperCase();
+      const beneficiary=String(info.beneficiaryName||info.beneficiary||bank.beneficiaryName||general.clubName||'Calypso').trim();
+      if (!iban || !beneficiary) fail('failed-precondition', 'Coordonnées bancaires du club indisponibles.');
+      const year=new Date(time).getUTCFullYear(), counterRef=club.collection('settings').doc(`boutique_order_counter_${year}`);
+      const counterSnap=await tx.get(counterRef), prefix=`BTQ-${year}-`;
+      const existing=await tx.get(club.collection('orders').where('orderNumber','>=',prefix).where('orderNumber','<=',`${prefix}\uf8ff`));
+      const highest=existing.docs.reduce((n,doc)=>{const m=String(doc.data().orderNumber||'').match(new RegExp(`^BTQ-${year}-(\\d{4,})$`));return Math.max(n,m?Number(m[1]):0);},0);
+      const number=Math.max(highest,Number(counterSnap.data()?.counter||0))+1, orderNumber=`BTQ-${year}-${String(number).padStart(4,'0')}`;
+      const products=new Map(),lines=[]; let totalCents=0;
+      for(const unit of selected){
+        if(!ready(unit)||unit.destination!=='free'||unit.transportMissionId||unit.pickupMissionId||unit.handover||(unit.requiresEmbroidery===true&&unit.finish!=='returned_embroidered')||!id(unit.productId)||!id(unit.variantId)) fail('failed-precondition','Une pièce n’est plus disponible à la vente.');
+        if(!products.has(unit.productId)){const snap=await tx.get(club.collection('products').doc(unit.productId));if(!snap.exists)fail('failed-precondition','Produit introuvable.');products.set(unit.productId,{ref:snap.ref,data:snap.data(),variants:(snap.data().variants||[]).map(v=>({...v}))});}
+        const product=products.get(unit.productId),index=product.variants.findIndex(v=>v.id===unit.variantId),variant=product.variants[index];
+        if(index<0||product.data.visibility!=='published')fail('failed-precondition','Produit non disponible.');
+        const price=variant.salePriceOverride??product.data.pricing?.salePriceOverride??product.data.pricing?.salePrice;
+        const cents=Math.round(Number(price)*100);if(!Number.isFinite(Number(price))||cents<=0||Math.abs(cents/100-Number(price))>0.001)fail('failed-precondition','Prix du produit invalide.');
+        if((product.data.inventoryMode||'tracked')==='tracked'){if(!Number.isInteger(variant.stockCount)||variant.stockCount<1)fail('failed-precondition','Le stock catalogue doit être vérifié.');variant.stockCount--;}
+        totalCents+=cents;const lineId=hash(['sale-line',unit.id]);
+        lines.push({lineId,productId:unit.productId,variantId:unit.variantId,qty:1,unitPrice:cents/100,lineTotal:cents/100,supplierId:product.data.supplierId||'',deliveryMode:'in_person',fulfillmentStatus:'pending',productionStatus:'done',physicalStockUnitIds:[unit.id],productSnapshot:{name:unit.productName||product.data.name||'Article',variantLabel:unit.variantLabel||variant.label||'',inventoryMode:product.data.inventoryMode||'tracked',reservedQty:(product.data.inventoryMode||'tracked')==='tracked'?1:0}});
+      }
+      const communication=`+++${orderNumber}+++`,total=totalCents/100,epcPayload=buildEpcQrPayload({iban,beneficiary,amount:total,communication});
+      const result={applied:input.preview!==true,orderId:`sale_${requestId}`,orderNumber,total,communication,epcPayload,buyerName};
+      if(input.preview===true)return result;
+      const orderRef=club.collection('orders').doc(result.orderId);
+      tx.set(counterRef,{counter:number,year,updatedAt:now},{merge:true});
+      for(const product of products.values()) if((product.data.inventoryMode||'tracked')==='tracked')tx.update(product.ref,{variants:product.variants,updatedAt:now});
+      tx.create(orderRef,{orderNumber,structuredCommunication:communication,paymentCommunication:communication,buyer:{userId:input.recipientMemberId,memberId:input.recipientMemberId,displayName:buyerName,email:buyerEmail},items:lines,pricing:{itemsSubtotal:total,deliverySurcharges:0,total,currency:'EUR'},payment:{method:'qr_transfer',status:'pending',iban,beneficiary,amount:total,structuredCommunication:communication,paymentCommunication:communication,epcPayload},status:'awaiting_payment',directSale:{kind:'event',createdBy:actor.uid,createdAt:now,...(event?{event}: {})},buyerNotifications:[],supplierNotifications:[],accountingEntries:[],createdAt:now,updatedAt:now});
+      for(let i=0;i<selected.length;i++){const unit=selected[i],line=lines[i];tx.update(club.collection('boutique_physical_stock_units').doc(unit.id),{destination:'customer_reserved',customerOrderId:result.orderId,customerLineId:line.lineId,customerName:buyerName,updatedAt:now,history:[...(unit.history||[]),{kind:'destination_changed',at:now,by:actor.uid,from:'free',to:'customer_reserved',note:`Vente directe ${orderNumber}`}]});tx.create(club.collection('inventoryMutations').doc(`${requestId}_${i}`),{productId:unit.productId,variantId:unit.variantId,change:-1,reason:'reservation',orderId:result.orderId,unitId:unit.id,buyerId:input.recipientMemberId,...(event?{eventId:event.id}:{}),byUserId:actor.uid,timestamp:now,createdAt:now,updatedAt:now});}
+      tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`),{action:'boutique.mobile.salePrepare',userId:actor.uid,targetId:result.orderId,targetType:'boutique_order',clubId:input.clubId,timestamp:now,details:{unitIds:wanted,buyerId:input.recipientMemberId}});
+      tx.create(receiptRef,{actorId:actor.uid,action:input.action,requestHash,result,createdAt:now});
+      return result;
+    }
     // One damaged customer piece is written off and replaced atomically. A
     // bounded stock search fails closed if it cannot prove no stock exists.
     if (input.action === 'damageJim') {
@@ -443,6 +532,48 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       nextMission.arrivedUnitIds = unique([...mission.arrivedUnitIds, ...wanted]);
       nextMission.status = nextMission.arrivedUnitIds.length === mission.unitIds.length ? 'received' : 'transit';
     }
+    if (input.action === 'saleCancel') {
+      if(input.confirmed!==true||orderMap.size!==1)fail('invalid-argument','Confirmez l’annulation.');
+      const order=[...orderMap.values()][0],allIds=order.items.flatMap(item=>item.physicalStockUnitIds||[]);
+      if(order.directSale?.kind!=='event'||order.directSale.handoverConfirmedAt||order.status!=='awaiting_payment'||order.payment?.status!=='pending'||order.payment?.bankRef||order.payment?.lastMatchError||allIds.length!==selected.length||unique(allIds).length!==allIds.length||allIds.some(id=>!wanted.includes(id)))fail('failed-precondition','Cette vente ne peut plus être annulée ici.');
+      const products=new Map();
+      for(const unit of selected){
+        if(unit.handover||unit.saleStatus!=='sale_ready'||unit.transportMissionId||unit.pickupMissionId)fail('failed-precondition','La pièce ne peut plus être libérée.');
+        if(!products.has(unit.productId)){const snap=await tx.get(club.collection('products').doc(unit.productId));if(!snap.exists)fail('failed-precondition','Produit introuvable.');products.set(unit.productId,{ref:snap.ref,data:snap.data(),variants:(snap.data().variants||[]).map(v=>({...v}))});}
+        const product=products.get(unit.productId),variant=product.variants.find(v=>v.id===unit.variantId);if(!variant)fail('failed-precondition','Variante introuvable.');
+        if((product.data.inventoryMode||'tracked')==='tracked'){if(!Number.isInteger(variant.stockCount))fail('failed-precondition','Stock à vérifier.');variant.stockCount++;}
+      }
+      const result={applied:input.preview!==true,action:input.action,count:selected.length,orderId:order.id};if(input.preview===true)return result;
+      for(const product of products.values())if((product.data.inventoryMode||'tracked')==='tracked')tx.update(product.ref,{variants:product.variants,updatedAt:now});
+      for(let i=0;i<selected.length;i++){const unit=selected[i];tx.update(club.collection('boutique_physical_stock_units').doc(unit.id),{destination:'free',customerOrderId:null,customerLineId:null,customerName:null,updatedAt:now,history:[...(unit.history||[]),{kind:'destination_changed',at:now,by:actor.uid,from:'customer_reserved',to:'free',note:'Vente directe annulée avant remise'}]});tx.create(club.collection('inventoryMutations').doc(`${requestId}_release_${i}`),{productId:unit.productId,variantId:unit.variantId,change:1,reason:'release',orderId:order.id,unitId:unit.id,byUserId:actor.uid,timestamp:now,createdAt:now,updatedAt:now});}
+      tx.update(club.collection('orders').doc(order.id),{status:'cancelled',payment:{...order.payment,status:'cancelled'},cancellationReason:'Vente directe annulée avant remise',cancelledAt:now,cancelledBy:actor.uid,updatedAt:now});
+      tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`),{action:'boutique.mobile.saleCancel',userId:actor.uid,targetId:order.id,targetType:'boutique_order',clubId:input.clubId,timestamp:now,details:{unitIds:wanted}});
+      tx.create(receiptRef,{actorId:actor.uid,action:input.action,requestHash,result,createdAt:now});return result;
+    }
+    if (input.action === 'saleComplete') {
+      if (input.confirmed !== true || !id(input.recipientMemberId) || orderMap.size !== 1) fail('invalid-argument','Confirmez le paiement affiché par l’acheteur et la remise.');
+      const order=[...orderMap.values()][0];
+      const allIds=order.items.flatMap(item=>item.physicalStockUnitIds||[]);
+      if(order.directSale?.kind!=='event'||order.directSale.handoverConfirmedAt||order.buyer?.userId!==input.recipientMemberId||!['awaiting_payment','paid'].includes(order.status)||!['pending','paid'].includes(order.payment?.status)||allIds.length!==selected.length||unique(allIds).length!==allIds.length||allIds.some(id=>!wanted.includes(id)))fail('failed-precondition','Cette vente a changé. Vérifiez la commande.');
+      for(const unit of selected){
+        if(!ready(unit)||unit.transportMissionId||unit.pickupMissionId||unit.handover||unit.destination!=='customer_reserved')fail('failed-precondition','Une pièce n’est plus disponible.');
+        const proof={type:'manual',recipientMemberId:input.recipientMemberId,confirmedBy:actor.uid,confirmedByName:memberDisplayName(member),confirmedAt:now,location:unit.location,operationId:requestId};
+        updateUnit(unit,{saleStatus:'sold',handover:proof},[event('sale_changed',{from:'sale_ready',to:'sold'}),event('handover_confirmed',{to:input.recipientMemberId,note:'Paiement vérifié chez l’acheteur et remise confirmée.'})]);
+      }
+      const items=order.items.map(line=>({...line,fulfillmentStatus:'delivered',deliveredQty:line.qty,deliveredPhysicalUnitIds:line.physicalStockUnitIds,signatureStatus:'manual_confirmed',handoverProofType:'manual',deliveredAt:now}));
+      stagedOrders.set(order.id,{...order,items,status:'delivered',directSale:{...order.directSale,handoverConfirmedAt:now,handoverConfirmedBy:actor.uid},updatedAt:now});
+    }
+    if (input.action === 'manualDeliver') {
+      if (!id(input.recipientMemberId) || (input.preview !== true && input.confirmed !== true)) fail('invalid-argument', 'Choisissez le destinataire et confirmez la remise physique.');
+      const recipient = await tx.get(club.collection('members').doc(input.recipientMemberId));
+      if (!recipient.exists) fail('not-found', 'Membre destinataire introuvable dans ce club.');
+      for (const unit of selected) {
+        const order = orderMap.get(unit.customerOrderId), line = order?.items.find(item => item.lineId === unit.customerLineId);
+        if (!order || !paid(order) || order.buyer?.userId !== input.recipientMemberId || !line || !['pool_pickup','in_person'].includes(line.deliveryMode) || line.fulfillmentStatus === 'delivered' || !readyForReservation(unit) || unit.transportMissionId || unit.pickupMissionId || !text(unit.location,160)) fail('failed-precondition', 'Vérifiez le destinataire, le paiement et la disponibilité de ces pièces.');
+        const proof = {type:'manual',recipientMemberId:input.recipientMemberId,confirmedBy:actor.uid,confirmedByName:memberDisplayName(member),confirmedAt:now,location:unit.location,operationId:requestId};
+        updateUnit(unit,{saleStatus:'sold',handover:proof},[event('sale_changed',{from:unit.saleStatus,to:'sold'}),event('handover_confirmed',{to:input.recipientMemberId,note:'Remise physique confirmée par le responsable.'})]);
+      }
+    }
     if (input.action === 'deliver') {
       if (!id(input.recipientMemberId) || (input.preview !== true && input.confirmed !== true)) fail('invalid-argument', 'Choisissez le destinataire et confirmez la remise physique.');
       const recipient = await tx.get(club.collection('members').doc(input.recipientMemberId));
@@ -458,7 +589,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     }
     // Recompute affected customer lines from physical truth without changing money.
     for (const order of orderMap.values()) {
-      if (!paid(order)) continue;
+      if (input.action === 'saleComplete' || !paid(order)) continue;
       const items = order.items.map(line => {
         const ids = line.physicalStockUnitIds || [];
         if (!ids.some(k => stagedUnits.has(k))) return line;
@@ -489,10 +620,10 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       if (existing.exists) continue;
       notifications.push({ notificationId, historyRef, order, unitIds: available.map(u => u.id), partial: !complete, remaining: Math.max(0, state.pendingTotal - available.length) });
     }
-    const result = { applied: input.preview !== true, action: input.action, count: wanted.length, missionId: nextMission?.id || null, missionClosed: nextMission?.status === 'closed', notificationCount: notifications.length, heldOrders: held, recipientName: input.action === 'deliver' ? orderMap.values().next().value?.buyer?.displayName || 'Membre' : null, destination: nextMission?.destination || (['move', 'dispatch'].includes(input.action) ? input.destination || input.sourceLocation : null) || null, expiresAt: nextMission ? new Date(ms(nextMission.expiresAt)).toISOString() : null };
+    const result = { applied: input.preview !== true, action: input.action, count: wanted.length, missionId: nextMission?.id || null, missionClosed: nextMission?.status === 'closed', notificationCount: notifications.length, heldOrders: held, recipientName: ['deliver','manualDeliver'].includes(input.action) ? orderMap.values().next().value?.buyer?.displayName || 'Membre' : null, destination: nextMission?.destination || (['move', 'dispatch'].includes(input.action) ? input.destination || input.sourceLocation : null) || null, expiresAt: nextMission ? new Date(ms(nextMission.expiresAt)).toISOString() : null };
     if (input.preview === true) return result;
     for (const unit of stagedUnits.values()) { const { id: unitId, revision: unused, ...data } = unit; tx.set(club.collection('boutique_physical_stock_units').doc(unitId), data); }
-    for (const order of stagedOrders.values()) tx.update(club.collection('orders').doc(order.id), { items: order.items, status: order.status, updatedAt: now });
+    for (const order of stagedOrders.values()) tx.update(club.collection('orders').doc(order.id), { items: order.items, status: order.status, ...(input.action === 'saleComplete' ? {directSale:order.directSale} : {}), updatedAt: now });
     if (nextMission) { const { id: missionId, ...data } = nextMission; tx.set(club.collection('boutique_pickup_missions').doc(missionId), { ...data, updatedAt: now }); }
     for (const entry of notifications) {
       const title = entry.partial ? 'Boutique · une partie de votre commande est prête' : 'Boutique · votre commande est prête';
@@ -504,6 +635,16 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       tx.create(entry.historyRef, { title, body, type: data.type, category: 'Boutique', data, created_at: now, read: false, read_at: null });
       tx.create(club.collection('boutique_pickup_notifications').doc(entry.notificationId), { status: 'pending', recipientId: entry.order.buyer.userId, orderId: entry.order.id, unitIds: entry.unitIds, missionId: nextMission.id, title, body, data, createdAt: now });
     }
+    if (input.action === 'saleComplete') {
+      const order=[...orderMap.values()][0];
+      selected.forEach((unit,i)=>{
+        const common={productId:unit.productId,variantId:unit.variantId,orderId:order.id,unitId:unit.id,buyerId:input.recipientMemberId,...(order.directSale.event?.id?{eventId:order.directSale.event.id}:{}),byUserId:actor.uid,timestamp:now,createdAt:now,updatedAt:now};
+        tx.create(club.collection('inventoryMutations').doc(`${requestId}_release_${i}`),{...common,change:1,reason:'release'});
+        tx.create(club.collection('inventoryMutations').doc(`${requestId}_sale_${i}`),{...common,change:-1,reason:'sale'});
+      });
+      tx.create(club.collection('boutique_handover_receipts').doc(requestId),{type:'manual',recipientMemberId:input.recipientMemberId,confirmedBy:actor.uid,confirmedByName:memberDisplayName(member),confirmedAt:now,unitIds:wanted,orderIds:[order.id],note:'Paiement vérifié chez l’acheteur.'});
+    }
+    if (input.action === 'manualDeliver') tx.create(club.collection('boutique_handover_receipts').doc(requestId), {type:'manual',recipientMemberId:input.recipientMemberId,confirmedBy:actor.uid,confirmedByName:memberDisplayName(member),confirmedAt:now,unitIds:wanted,orderIds:[...orderMap.keys()],note});
     if (input.action === 'deliver') tx.create(club.collection('boutique_handover_receipts').doc(requestId), { type: 'manual', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, unitIds: wanted, orderIds: [...orderMap.keys()], note });
     tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`), { action: `boutique.mobile.${input.action}`, userId: actor.uid, targetId: nextMission?.id || requestId, targetType: 'boutique_physical_session', clubId: input.clubId, timestamp: now, details: { unitIds: wanted, location: result.destination, notificationCount: notifications.length } });
     tx.create(receiptRef, { actorId: actor.uid, action: input.action, requestHash, result, createdAt: now });
