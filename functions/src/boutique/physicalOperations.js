@@ -391,7 +391,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     }
     if (input.action === 'finishJim') for (const unit of selected) {
       const atJim = /^(chez |atelier )?jim$/i.test(String(unit.location || '').trim().replace(/\s+/g, ' '));
-      if ((!atJim && unit.finish !== 'at_jim') || !['unembroidered','to_jim','at_jim'].includes(unit.finish) || !needsProduction(unit) || unit.workshopReadyAt || unit.transportMissionId || unit.pickupMissionId) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
+      if (!atJim || !['unembroidered','to_jim','at_jim'].includes(unit.finish) || !needsProduction(unit) || unit.workshopReadyAt || unit.transportMissionId || unit.pickupMissionId || (unit.customerOrderId && !paid(orderMap.get(unit.customerOrderId)))) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
       updateUnit(unit, { finish: 'at_jim', workshopReadyAt: now, workshopReadyBy: actor.uid }, [...(unit.finish !== 'at_jim' ? [event('finish_changed', { from: unit.finish, to: 'at_jim' })] : []), event('workshop_ready', { to: unit.location })]);
     }
     if (input.action === 'reopenJim') for (const unit of selected) {
@@ -401,7 +401,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (input.action === 'sendJim' || input.action === 'unsendJim') for (const unit of selected) {
       if (unit.transportMissionId || unit.saleStatus === 'sold' || unit.finish === 'returned_embroidered') fail('failed-precondition', 'La pièce a quitté le suivi atelier.');
       const dispatched = input.action === 'sendJim';
-      if (dispatched && (!unit.workshopReadyAt || unit.finish !== 'at_jim')) fail('failed-precondition', 'Marquez d’abord la broderie comme terminée.');
+      if (dispatched && (!unit.workshopReadyAt || unit.finish !== 'at_jim' || !/^(chez |atelier )?jim$/i.test(String(unit.location || '').trim().replace(/\s+/g, ' ')) || (unit.customerOrderId && !paid(orderMap.get(unit.customerOrderId))))) fail('failed-precondition', 'Marquez d’abord la broderie comme terminée.');
       if (dispatched === Boolean(unit.workshopDispatchedAt)) continue;
       updateUnit(unit, dispatched ? { workshopDispatchedAt: now, workshopDispatchedBy: actor.uid } : { workshopDispatchedAt: null, workshopDispatchedBy: null }, [event(dispatched ? 'atelier_dispatched' : 'atelier_dispatch_reopened', dispatched ? { to: 'Expédié' } : { from: 'Expédié', to: 'À expédier' })]);
     }

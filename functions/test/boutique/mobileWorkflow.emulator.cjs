@@ -51,3 +51,11 @@ test('order overview verifies ready pieces and withholds unverified readiness',a
  let order=(await call('orderOverview')).orders.find(o=>o.id==='verified-ready');assert.equal(order.status,'ready');assert.equal(order.items[0].status,'ready');
  await ref.update({finish:'at_jim',saleStatus:'not_ready'});order=(await call('orderOverview')).orders.find(o=>o.id==='verified-ready');assert.equal(order.status,'review');assert.equal(order.items[0].status,'review');
 });
+test('finish and dispatch reject stale Jim location and unpaid customer orders',async()=>{
+ for (const [name,loc,status,readyFlag,action] of [['wrong-place','Jan','paid',false,'finishJim'],['unpaid','Jim','pending',false,'finishJim'],['wrong-dispatch','Jan','paid',true,'sendJim'],['unpaid-dispatch','Jim','pending',true,'sendJim']]) {
+  const id=`piece-${name}`, orderId=`order-${name}`;
+  await club.collection('orders').doc(orderId).set({status:'preparing',payment:{status},items:[{lineId:'l',qty:1,physicalStockUnitIds:[id]}]});
+  await club.collection('boutique_physical_stock_units').doc(id).set({productName:'Polo',location:loc,finish:'at_jim',saleStatus:'not_ready',destination:'customer_reserved',customerOrderId:orderId,customerLineId:'l',requiresEmbroidery:true,...(readyFlag?{workshopReadyAt:admin.firestore.Timestamp.now()}:{})});
+  const req=await request(action,id);await assert.rejects(call(action,req),{code:'failed-precondition'});
+ }
+});

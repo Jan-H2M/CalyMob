@@ -30,7 +30,9 @@ after(async () => { await db.recursiveDelete(club); await admin.app().delete(); 
 let missionId;
 test('25 scans: workshop completion preserves Jim; departure sends nothing; arrival notifies only eight complete paid buyers', async () => {
   const ns=Array.from({length:25},(_,i)=>i);
-  await mutate('rb','finishJim',ns,{note:'Broderies contrôlées'});
+  await mutate('rb','finishJim',ns.slice(0,24),{note:'Broderies contrôlées'});
+  // Historical unpaid piece was already finished before payment became pending.
+  await club.collection('boutique_physical_stock_units').doc('u24').update({workshopReadyAt:admin.firestore.Timestamp.now()});
   assert.equal((await piece(0)).location,'Jim'); assert.equal((await piece(0)).saleStatus,'not_ready');
   assert.equal(await count('boutique_pickup_notifications'),0);
   const request={clubId,action:'dispatch',units:await selection(ns),idempotencyKey:key(),sourceLocation:'Jim',destination:'Piscine',assigneeIds:['helper1','helper2'],pickupPoint:true,pickupWindow:'Vendredi 19h–21h'};
@@ -280,8 +282,8 @@ test('count-excluded pieces are hidden from active lists and blocked at lookup a
     sourceLocation: 'Piscine', destination: 'Réserve', idempotencyKey: key() }), { code: 'failed-precondition' });
 });
 
-test('finishing across locations never moves pieces and needs no place, note or separate confirmation', async () => {
-  for (const [number, location, needsEmbroidery] of [[901, 'Piscine', true], [902, 'Réserve', true], [903, 'Bureau', false]]) {
+test('finishing pieces at Jim never moves pieces and needs no place, note or separate confirmation', async () => {
+  for (const [number, location, needsEmbroidery] of [[901, 'Chez Jim', true], [902, 'Atelier Jim', true], [903, 'Bureau', false]]) {
     await club.collection('boutique_physical_stock_units').doc(`u${number}`).set({
       productName: 'Article fictif', variantLabel: 'M', location, destination: 'free', finish: 'unembroidered',
       saleStatus: 'not_ready', requiresEmbroidery: needsEmbroidery, history: []
@@ -298,7 +300,7 @@ test('finishing across locations never moves pieces and needs no place, note or 
   await perform('confirmJim', [901, 902]);
   await perform('finishJim', [901, 902]);
   await perform('reviewPlain', [903]);
-  for (const [number, location] of [[901, 'Piscine'], [902, 'Réserve'], [903, 'Bureau']]) {
+  for (const [number, location] of [[901, 'Chez Jim'], [902, 'Atelier Jim'], [903, 'Bureau']]) {
     const actual = await piece(number);
     assert.equal(actual.location, location);
     assert.equal(actual.destination, 'free');
