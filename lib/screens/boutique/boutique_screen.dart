@@ -22,7 +22,6 @@ import 'boutique_action_management_screen.dart';
 import 'boutique_locations_screen.dart';
 import 'boutique_atelier_screen.dart';
 import 'boutique_orders_overview_screen.dart';
-import 'boutique_direct_handover_screen.dart';
 import 'boutique_event_sale_screen.dart';
 import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
@@ -108,25 +107,9 @@ class _BoutiqueGestionMenu extends StatelessWidget {
                         clubId: clubId, service: service))),
                 const SizedBox(height: 12),
                 _BoutiqueHomeCard(
-                    icon: Icons.handshake_outlined,
-                    title: 'Remise aux membres',
-                    subtitle: 'Remettre directement des pièces disponibles.',
-                    onTap: () => open(BoutiqueDirectHandoverScreen(
-                        clubId: clubId, service: service))),
-                const SizedBox(height: 12),
-                _BoutiqueHomeCard(
                     icon: Icons.assignment_turned_in_outlined,
-                    title: 'Transports et remises',
-                    subtitle: 'Suivre les lots et remettre les pièces.',
-                    onTap: () => open(BoutiqueManagementScreen(
-                        manager: true,
-                        showStockPreparation: false,
-                        service: service))),
-                const SizedBox(height: 12),
-                _BoutiqueHomeCard(
-                    icon: Icons.inventory_2_outlined,
-                    title: 'Autres actions',
-                    subtitle: 'Préparer et organiser les lots.',
+                    title: 'Remise et actions',
+                    subtitle: 'Remettre, déplacer ou changer un statut.',
                     onTap: () =>
                         open(BoutiqueActionManagementScreen(service: service))),
               ]))),

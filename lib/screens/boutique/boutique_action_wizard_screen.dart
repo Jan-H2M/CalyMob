@@ -13,12 +13,14 @@ class BoutiqueActionWizardScreen extends StatefulWidget {
   final BoutiqueOperationsService service;
   final Widget Function(Future<String> Function(String))? scannerBuilder;
   final WidgetBuilder? missionsBuilder;
+  final WidgetBuilder? handoverBuilder;
   const BoutiqueActionWizardScreen(
       {super.key,
       required this.clubId,
       required this.service,
       this.scannerBuilder,
-      this.missionsBuilder});
+      this.missionsBuilder,
+      this.handoverBuilder});
   @override
   State<BoutiqueActionWizardScreen> createState() => _WizardState();
 }
@@ -928,8 +930,20 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                                         .textTheme
                                         .headlineSmall),
                                 const Text(
-                                    'Une action commune pour plusieurs paquets. Aucun changement avant la dernière confirmation.'),
+                                    'Choisissez l’action à effectuer. Aucun changement avant la confirmation.'),
                                 const SizedBox(height: 16),
+                                if (widget.handoverBuilder != null)
+                                  _choice(
+                                      'Remettre au membre',
+                                      'Choisir un membre et confirmer la remise.',
+                                      Icons.handshake_outlined,
+                                      () => Navigator.push(
+                                          context,
+                                          boutiqueAccessGuardedRoute<void>(
+                                              sourceContext: context,
+                                              requiredSection: 'gestion',
+                                              builder:
+                                                  widget.handoverBuilder!))),
                                 _choice(
                                     'Déplacer',
                                     'Changer de lieu ou organiser un transport.',
