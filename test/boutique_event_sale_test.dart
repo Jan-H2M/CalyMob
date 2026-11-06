@@ -35,7 +35,8 @@ void main() {
         case 'saleMembers':
           return {
             'members': [
-              {'id': 'buyer', 'name': 'Alex'}
+              {'id': 'buyer', 'name': 'Alex'},
+              {'id': 'buyer2', 'name': 'Camille'}
             ],
             'hasMore': false
           };
@@ -86,9 +87,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Continuer'));
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'Alex'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Camille'), findsOneWidget);
     await tester.enterText(
         find.widgetWithText(TextField, 'Rechercher un membre'), 'Alex');
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'Camille'), findsNothing);
     await tester.tap(find.widgetWithText(ListTile, 'Alex'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Afficher le QR de paiement'));

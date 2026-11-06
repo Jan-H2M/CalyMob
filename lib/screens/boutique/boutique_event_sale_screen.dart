@@ -108,6 +108,9 @@ class _State extends State<BoutiqueEventSaleScreen> {
       setState(() {
         _units = all[0] as List<Map<String, dynamic>>;
         _members = all[1] as List<Map<String, dynamic>>;
+        _members.sort((a, b) => '${a['name']}'
+            .toLowerCase()
+            .compareTo('${b['name']}'.toLowerCase()));
         _events = ((all[2] as Map)['events'] as List)
             .map((v) => Map<String, dynamic>.from(v as Map))
             .toList();
@@ -410,11 +413,27 @@ class _State extends State<BoutiqueEventSaleScreen> {
                 ListTile(
                     leading: const Icon(Icons.check_circle),
                     title: Text('${_buyer!['name']}')),
-              if (_buyer == null && _memberQuery.isNotEmpty)
-                for (final m in members)
-                  ListTile(
-                      title: Text('${m['name']}'),
-                      onTap: () => setState(() => _buyer = m)),
+              if (_buyer == null)
+                SizedBox(
+                  height: 220,
+                  child: members.isEmpty
+                      ? const Center(child: Text('Aucun membre trouvé.'))
+                      : ListView.builder(
+                          itemCount: members.length,
+                          itemBuilder: (context, index) {
+                            final member = members[index];
+                            final name = '${member['name']}';
+                            return ListTile(
+                              leading: CircleAvatar(
+                                  child: Text(name.isEmpty
+                                      ? '?'
+                                      : name[0].toUpperCase())),
+                              title: Text(name),
+                              onTap: () => setState(() => _buyer = member),
+                            );
+                          },
+                        ),
+                ),
               DropdownButtonFormField<String>(
                   initialValue: _event?['id'] as String?,
                   decoration: const InputDecoration(
