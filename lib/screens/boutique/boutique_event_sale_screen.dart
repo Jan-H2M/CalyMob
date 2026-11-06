@@ -27,11 +27,8 @@ class _State extends State<BoutiqueEventSaleScreen> {
   Map<String, dynamic>? _buyer, _event, _active;
   String _productQuery = '', _memberQuery = '';
   String? _error, _key, _lastAction;
-  bool _loading = true,
-      _busy = false,
-      _checked = false,
-      _verified = false,
-      _checking = false;
+  bool _loading = true, _busy = false, _checked = false, _verified = false;
+  Future<void>? _verification;
   Timer? _timer;
   int _step = 0;
   @override
@@ -225,13 +222,22 @@ class _State extends State<BoutiqueEventSaleScreen> {
     await _verify();
   }
 
-  Future<void> _verify() async {
-    if (_checking || _active == null || _active!['result'] == null) return;
-    _checking = true;
+  Future<void> _verify() {
+    if (_verification != null) return _verification!;
+    if (_active == null || _active!['result'] == null) return Future.value();
+    final future = _verifyCurrent();
+    _verification = future;
+    return future.whenComplete(() {
+      if (identical(_verification, future)) _verification = null;
+    });
+  }
+
+  Future<void> _verifyCurrent() async {
+    if (mounted) setState(() => _verified = false);
     try {
       final orderId = (_active!['result'] as Map)['orderId'] as String;
-      final fresh = await widget.service
-          .call(widget.clubId, 'saleLookup', {'orderId': orderId});
+      final fresh = await widget.service.call(widget.clubId, 'saleLookup',
+          {'orderId': orderId}).timeout(const Duration(seconds: 8));
       if (fresh['open'] != true) {
         _timer?.cancel();
         _active = null;
@@ -265,8 +271,6 @@ class _State extends State<BoutiqueEventSaleScreen> {
               'Impossible de vérifier la vente. Réessayez avant de montrer le QR.';
         });
       }
-    } finally {
-      _checking = false;
     }
   }
 

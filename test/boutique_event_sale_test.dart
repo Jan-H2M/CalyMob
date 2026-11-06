@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -340,4 +341,54 @@ void main() {
         expect(find.text('Paiement reçu par la banque.'), findsOneWidget);
     });
   }
+
+  testWidgets(
+      'hides payment QR during a delayed status refresh and prevents confirmation',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'boutique_event_sale_demo_rb':
+          '{"request":{"recipientMemberId":"buyer"},"buyerName":"Alex","ids":["piece"],"result":{"orderId":"o1","total":25,"communication":"BTQ-1","epcPayload":"BCD"}}'
+    });
+    var count = 0;
+    final delayed = Completer<Map<String, dynamic>>();
+    final service = BoutiqueOperationsService(transport: (r) async {
+      if (r['action'] == 'saleLookup') {
+        count++;
+        if (count == 1)
+          return {
+            'open': true,
+            'orderId': 'o1',
+            'buyerName': 'Alex',
+            'buyerId': 'buyer',
+            'ids': ['piece'],
+            'total': 25,
+            'communication': 'BTQ-1',
+            'epcPayload': 'BCD',
+            'paymentStatus': 'pending'
+          };
+        return delayed.future;
+      }
+      throw StateError('unexpected');
+    });
+    final access = BoutiqueAccessService(
+        firestore: FakeFirebaseFirestore(),
+        authUserIds: () => Stream.value('rb'));
+    await tester.pumpWidget(BoutiqueAccessScope(
+        accessService: access,
+        clubId: 'demo',
+        userId: 'rb',
+        child: MaterialApp(
+            home: BoutiqueEventSaleScreen(clubId: 'demo', service: service))));
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsOneWidget);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+    expect(find.byType(QrImageView), findsNothing);
+    final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Confirmer la remise'));
+    expect(button.onPressed, isNull);
+    delayed.complete({'open': false});
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsNothing);
+  });
 }
