@@ -466,6 +466,9 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
         const peers = ids.map(k => unitMap.get(k));
         if (peers.some(u => !u || u.customerOrderId !== order.id || u.customerLineId !== line.lineId)) fail('failed-precondition', 'La réservation client est incohérente.');
         const delivered = peers.filter(u => u.saleStatus === 'sold');
+        if (delivered.some(u => !['member_qr', 'manual'].includes(u.handover?.type)
+          || !id(order.buyer?.userId) || u.handover?.recipientMemberId !== order.buyer.userId
+          || !id(u.handover?.operationId) || !ms(u.handover?.confirmedAt))) fail('failed-precondition', 'Une remise précédente de cette commande est à vérifier.');
         const allReady = ids.length === line.qty && peers.every(u => readyForReservation(u) || u.saleStatus === 'sold');
         return { ...line, fulfillmentStatus: delivered.length === line.qty ? 'delivered' : allReady ? 'ready' : 'preparing', productionStatus: allReady ? ((lineNeedsProduction(line) || peers.some(u => u.requiresEmbroidery !== false)) ? 'done' : 'not_required') : peers.some(u => u.finish === 'at_jim') ? 'in_progress' : line.productionStatus || 'queued', ...(delivered.length > 0 && delivered.some(u => ['member_qr', 'manual'].includes(u.handover?.type)) ? { deliveredQty: delivered.length, deliveredPhysicalUnitIds: delivered.map(u => u.id), handoverProofType: delivered.every(u => u.handover?.type === 'member_qr') ? 'member_qr' : 'manual', ...(delivered.length === line.qty ? { deliveredAt: now, signatureStatus: delivered.every(u => u.handover?.type === 'member_qr') ? 'qr_confirmed' : 'manual_confirmed' } : {}) } : {}) };
       });

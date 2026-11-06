@@ -59,3 +59,15 @@ test('finish and dispatch reject stale Jim location and unpaid customer orders',
   const req=await request(action,id);await assert.rejects(call(action,req),{code:'failed-precondition'});
  }
 });
+test('partial handover refuses an old sold piece without its own proof',async()=>{
+ await club.collection('members').doc('buyer').set({member_status:'active'});
+ await club.collection('orders').doc('mixed-old').set({status:'ready',payment:{status:'paid'},buyer:{userId:'buyer',displayName:'Alex'},items:[{lineId:'line',qty:2,deliveryMode:'pool_pickup',fulfillmentStatus:'ready',physicalStockUnitIds:['old-sold','new-ready']}]});
+ const common={location:'Club',finish:'returned_embroidered',destination:'customer_reserved',customerOrderId:'mixed-old',customerLineId:'line'};
+ await club.collection('boutique_physical_stock_units').doc('old-sold').set({...common,saleStatus:'sold'});
+ await club.collection('boutique_physical_stock_units').doc('new-ready').set({...common,saleStatus:'sale_ready',pickupMissionId:'old-mission'});
+ await club.collection('boutique_pickup_missions').doc('old-mission').set({status:'received',expiresAt:admin.firestore.Timestamp.fromMillis(Date.now()+600000),unitIds:['new-ready'],arrivedUnitIds:['new-ready'],deliveredUnitIds:[],destination:'Club',sourceLocation:'Club',assigneeIds:['rb'],createdBy:'rb',allowPartial:true});
+ const req=await request('deliver','new-ready',{missionId:'old-mission',recipientMemberId:'buyer',verificationMethod:'manual',confirmed:true});
+ await assert.rejects(call('deliver',req),{code:'failed-precondition'});
+ assert.equal((await club.collection('boutique_physical_stock_units').doc('new-ready').get()).data().saleStatus,'sale_ready');
+ assert.equal((await club.collection('orders').doc('mixed-old').get()).data().items[0].deliveredQty,undefined);
+});
