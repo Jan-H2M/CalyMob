@@ -104,13 +104,7 @@ void main() {
       );
       await tester.scrollUntilVisible(find.text('Produits'), 120);
       expectSections(visible: true);
-      expect(find.text('Ouvrir CalyCompta'), findsOneWidget);
-      expect(
-        find.text(
-          'Gérer le catalogue, les commandes et le stock dans CalyCompta.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Ouvrir CalyCompta'), findsNothing);
       await tester.scrollUntilVisible(find.text('Mes commandes'), 120);
       expect(find.text('Mes commandes'), findsOneWidget);
 
@@ -127,7 +121,7 @@ void main() {
       await memberRef.update({'member_status': 'active'});
       await pumpAccessEvent(tester);
       expectSections(visible: true);
-      expect(find.text('Ouvrir CalyCompta'), findsOneWidget);
+      expect(find.text('Ouvrir CalyCompta'), findsNothing);
 
       // Removing the responsibility immediately hides every card.
       await memberRef.update({'clubStatuten': <String>[]});

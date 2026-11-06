@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -147,8 +146,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
         bool showSection(String key) => access.canAccessSection(key);
         final showMaterialLoans = showSection('pretsMateriel');
         final canOpenReturns = _canOpenMaterialReturns(access.member);
-        final canManageBoutique =
-            BoutiqueAccessPolicy.hasBoutiqueResponsibility(access.member);
 
         return Scaffold(
           extendBodyBehindAppBar: true,
@@ -253,16 +250,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  if (canManageBoutique) ...[
-                    _BoutiqueHomeCard(
-                      icon: Icons.open_in_new_outlined,
-                      title: 'Ouvrir CalyCompta',
-                      subtitle:
-                          'Gérer le catalogue, les commandes et le stock dans CalyCompta.',
-                      onTap: _openBoutiqueManagement,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
                   if (showSection('cotisation')) ...[
                     _BoutiqueHomeCard(
                       icon: Icons.card_membership_outlined,
@@ -356,18 +343,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
   bool _canOpenMaterialReturns(Map<String, dynamic>? member) {
     final statuten = member?['clubStatuten'];
     return statuten is Iterable && ClubRoleUtils.hasGonflageRole(statuten);
-  }
-
-  Future<void> _openBoutiqueManagement() async {
-    final opened = await launchUrl(
-      Uri.https('caly.club', '/stock/boutique'),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CalyCompta kon niet worden geopend.')),
-      );
-    }
   }
 }
 
