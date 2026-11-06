@@ -94,6 +94,9 @@ void main() {
     expect(find.text('Je suis à…'), findsNothing);
     expect(calls, ['list']);
     await tap(tester, find.text('Déplacer'));
+    expect(find.widgetWithText(DropdownButtonFormField<String>, 'Action'),
+        findsNothing);
+    expect(find.text('Déplacer des pièces'), findsOneWidget);
     await tap(
         tester,
         find.widgetWithText(
@@ -105,7 +108,7 @@ void main() {
     expect(find.text('Choisissez les paquets'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('Précisez votre action'), findsOneWidget);
+    expect(find.text('Déplacer des pièces'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.text('Que voulez-vous faire ?'), findsOneWidget);

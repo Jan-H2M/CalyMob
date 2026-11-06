@@ -196,7 +196,7 @@ void main() {
     await startMove(tester);
     await selectAll(tester);
     await tap(tester, find.widgetWithText(OutlinedButton, 'Retour'));
-    expect(find.text('Précisez votre action'), findsOneWidget);
+    expect(find.text('Déplacer des pièces'), findsOneWidget);
     expect(
         tester
             .widget<TextField>(find.byKey(const Key('wizard-destination')))
@@ -208,7 +208,7 @@ void main() {
     await review(tester);
     for (final title in [
       'Choisissez les paquets',
-      'Précisez votre action',
+      'Déplacer des pièces',
       'Que voulez-vous faire ?',
       'QA home'
     ]) {

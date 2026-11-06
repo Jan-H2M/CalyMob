@@ -501,7 +501,10 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
 
   Widget _values() =>
       Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('Précisez votre action',
+        Text(
+            _category == 'move'
+                ? 'Déplacer des pièces'
+                : 'Précisez votre action',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
         if (_category == 'finish') ...[
@@ -539,21 +542,6 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                 onChanged: _locked ? null : (value) => _setAction(value!)),
           ],
         ] else ...[
-          DropdownButtonFormField<String>(
-              key: ValueKey('action-$_category-$_action'),
-              initialValue: _action,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Action', border: OutlineInputBorder()),
-              items: boutiqueBatchActions.entries
-                  .where((entry) => ['move', 'dispatch'].contains(entry.key))
-                  .map((entry) => DropdownMenuItem(
-                      value: entry.key,
-                      child:
-                          Text(entry.value, overflow: TextOverflow.ellipsis)))
-                  .toList(),
-              onChanged: _locked ? null : (value) => _setAction(value!)),
-          const SizedBox(height: 16),
           if (_loading) const LinearProgressIndicator(),
           if (!_loading && _locations.isEmpty)
             const Text('Aucun lieu chargé. Réessayez le chargement.'),
