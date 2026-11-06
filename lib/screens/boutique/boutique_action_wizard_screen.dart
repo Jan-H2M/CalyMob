@@ -109,6 +109,16 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       (_usesLocation &&
           ['confirmJim', 'finishJim', 'reviewPlain'].contains(_action)) ||
       (_action == 'dispatch' && _destination.text.trim() == _source);
+  String? _resolveSource(String input) {
+    final value = input.trim();
+    if (value.isEmpty) return null;
+    final places = _units.values.map((u) => u.location).toSet();
+    if (places.contains(value)) return value;
+    final matches =
+        places.where((v) => v.toLowerCase() == value.toLowerCase()).toList();
+    return matches.length == 1 ? matches.single : value;
+  }
+
   String? _reason(BoutiquePhysicalUnit unit) => boutiqueBatchBlockedReason(
       unit, _action!, _usesLocation ? _source : null);
 
@@ -551,7 +561,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                   labelText: 'Lieu actuel des pièces',
                   border: OutlineInputBorder()),
               onChanged: (value) => setState(() {
-                    _source = value.trim().isEmpty ? null : value.trim();
+                    _source = _resolveSource(value);
                     _presence = false;
                     _invalidate();
                   })),

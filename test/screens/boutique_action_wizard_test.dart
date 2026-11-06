@@ -82,7 +82,7 @@ void main() {
 
   Future<void> startMove(WidgetTester tester) async {
     await tap(tester, find.text('Déplacer'));
-    await tester.enterText(find.byKey(const Key('wizard-source')), 'Jim');
+    await tester.enterText(find.byKey(const Key('wizard-source')), 'jim');
     await tester.enterText(
         find.byKey(const Key('wizard-destination')), 'Piscine');
     await tap(tester, find.byKey(const Key('wizard-next')));
