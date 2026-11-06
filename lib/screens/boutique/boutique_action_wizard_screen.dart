@@ -175,6 +175,9 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         _units.clear();
         _units.addAll(retained);
         _units.addAll(loaded);
+        if (_sourceInput.text.trim().isNotEmpty) {
+          _source = _resolveSource(_sourceInput.text);
+        }
         _assignees = (data['assignees'] as List? ?? [])
             .map((a) => Map<String, dynamic>.from(a as Map))
             .toList();
@@ -574,7 +577,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                         ? null
                         : () => setState(() {
                               _sourceInput.text = value;
-                              _source = value;
+                              _source = _resolveSource(value);
                               _presence = false;
                               _invalidate();
                             })))
