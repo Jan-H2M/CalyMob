@@ -81,7 +81,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   int _step = 0;
   int _generation = 0;
   String? _category, _action, _source;
-  final _destination = TextEditingController(),
+  final _sourceInput = TextEditingController(),
+      _destination = TextEditingController(),
       _note = TextEditingController(),
       _window = TextEditingController();
   final _units = <String, BoutiquePhysicalUnit>{};
@@ -108,8 +109,6 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       (_usesLocation &&
           ['confirmJim', 'finishJim', 'reviewPlain'].contains(_action)) ||
       (_action == 'dispatch' && _destination.text.trim() == _source);
-  List<String> get _locations =>
-      _units.values.map((u) => u.location).toSet().toList()..sort();
   String? _reason(BoutiquePhysicalUnit unit) => boutiqueBatchBlockedReason(
       unit, _action!, _usesLocation ? _source : null);
 
@@ -121,6 +120,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
 
   @override
   void dispose() {
+    _sourceInput.dispose();
     _destination.dispose();
     _note.dispose();
     _window.dispose();
@@ -543,27 +543,33 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
           ],
         ] else ...[
           if (_loading) const LinearProgressIndicator(),
-          if (!_loading && _locations.isEmpty)
-            const Text('Aucun lieu chargé. Réessayez le chargement.'),
-          DropdownButtonFormField<String>(
-              key: ValueKey('source-$_source-${_locations.join('|')}'),
-              initialValue: _source != null && _locations.contains(_source)
-                  ? _source
-                  : null,
+          TextField(
+              key: const Key('wizard-source'),
+              controller: _sourceInput,
+              enabled: !_locked,
               decoration: const InputDecoration(
                   labelText: 'Lieu actuel des pièces',
                   border: OutlineInputBorder()),
-              items: _locations
-                  .map((value) =>
-                      DropdownMenuItem(value: value, child: Text(value)))
-                  .toList(),
-              onChanged: _locked
-                  ? null
-                  : (value) => setState(() {
-                        _source = value;
-                        _presence = false;
-                        _invalidate();
-                      })),
+              onChanged: (value) => setState(() {
+                    _source = value.trim().isEmpty ? null : value.trim();
+                    _presence = false;
+                    _invalidate();
+                  })),
+          Wrap(
+            spacing: 8,
+            children: ['Jan', 'Jim', 'Piscine']
+                .map((value) => ActionChip(
+                    label: Text(value),
+                    onPressed: _locked
+                        ? null
+                        : () => setState(() {
+                              _sourceInput.text = value;
+                              _source = value;
+                              _presence = false;
+                              _invalidate();
+                            })))
+                .toList(),
+          ),
         ],
         if (_needsDestination) ...[
           const SizedBox(height: 16),
@@ -580,7 +586,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                   })),
           Wrap(
               spacing: 8,
-              children: _locations
+              children: ['Jan', 'Jim', 'Piscine']
                   .where((v) => v != _source)
                   .map((v) => ActionChip(
                       label: Text(v),

@@ -97,11 +97,17 @@ void main() {
     expect(find.widgetWithText(DropdownButtonFormField<String>, 'Action'),
         findsNothing);
     expect(find.text('Déplacer des pièces'), findsOneWidget);
-    await tap(
-        tester,
-        find.widgetWithText(
-            DropdownButtonFormField<String>, 'Lieu actuel des pièces'));
-    await tap(tester, find.text('Jim').last);
+    expect(find.widgetWithText(ActionChip, 'Club'), findsNothing);
+    expect(find.widgetWithText(ActionChip, 'Piscine'), findsWidgets);
+    await tester.enterText(
+        find.byKey(const Key('wizard-source')), 'Autre lieu');
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('wizard-source')))
+            .controller!
+            .text,
+        'Autre lieu');
+    await tester.enterText(find.byKey(const Key('wizard-source')), 'Jim');
     await tester.enterText(
         find.byKey(const Key('wizard-destination')), 'Piscine');
     await tap(tester, find.byKey(const Key('wizard-next')));
