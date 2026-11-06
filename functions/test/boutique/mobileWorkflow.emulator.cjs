@@ -14,7 +14,7 @@ test('moving a customer piece to Jim prepares it for finishing without losing it
  const unit={productId:'p',variantId:'v',productName:'Polo',variantLabel:'M',location:'Jan',finish:'unembroidered',saleStatus:'not_ready',destination:'customer_reserved',customerOrderId:'o',customerLineId:'l',requiresEmbroidery:true};
  await club.collection('boutique_physical_stock_units').doc('move').set(unit);await club.collection('orders').doc('o').set({orderNumber:'DEMO',status:'paid',payment:{status:'paid'},buyer:{userId:'buyer'},items:[{lineId:'l',qty:1,fulfillmentStatus:'pending',physicalStockUnitIds:['move']}]});
  const move=await request('move','move',{sourceLocation:'Jan',destination:'Jim'});await call('move',{...move,preview:true});await call('move',move);
- let piece=(await club.collection('boutique_physical_stock_units').doc('move').get()).data();assert.equal(piece.finish,'at_jim');assert.equal(piece.location,'Jim');
+ let piece=(await club.collection('boutique_physical_stock_units').doc('move').get()).data();assert.equal(piece.finish,'unembroidered');assert.equal(piece.location,'Jim');
  const finish=await request('finishJim','move');await call('finishJim',finish);piece=(await club.collection('boutique_physical_stock_units').doc('move').get()).data();assert.ok(piece.workshopReadyAt);assert.equal((await club.collection('orders').doc('o').get()).data().items[0].productionStatus,'in_progress');
 });
 test('moving a piece belonging to a pickup mission is refused without altering either',async()=>{
@@ -37,4 +37,17 @@ test('reopening embroidery also clears a dispatched status',async()=>{
  const req=await request('reopenJim','reopen');await call('reopenJim',req);
  const piece=(await club.collection('boutique_physical_stock_units').doc('reopen').get()).data();assert.equal(piece.workshopReadyAt,null);assert.equal(piece.workshopDispatchedAt,null);
  assert.deepEqual(piece.history.map(h=>h.kind),['atelier_dispatch_reopened','workshop_reopened']);
+});
+test('an existing unembroidered club piece at Jim can be finished',async()=>{
+ await club.collection('boutique_physical_stock_units').doc('legacy-jim').set({productName:'Polo',location:'Chez Jim',finish:'unembroidered',saleStatus:'not_ready',destination:'free',requiresEmbroidery:true});
+ const req=await request('finishJim','legacy-jim');await call('finishJim',req);
+ const piece=(await club.collection('boutique_physical_stock_units').doc('legacy-jim').get()).data();assert.equal(piece.finish,'at_jim');assert.ok(piece.workshopReadyAt);
+});
+test('order overview verifies ready pieces and withholds unverified readiness',async()=>{
+ const line={lineId:'line',qty:1,fulfillmentStatus:'ready',physicalStockUnitIds:['ready-piece'],productSnapshot:{name:'Polo'}};
+ await club.collection('orders').doc('verified-ready').set({orderNumber:'READY',status:'ready',payment:{status:'paid'},buyer:{displayName:'Test'},items:[line]});
+ const ref=club.collection('boutique_physical_stock_units').doc('ready-piece');
+ await ref.set({productName:'Polo',customerOrderId:'verified-ready',customerLineId:'line',destination:'customer_reserved',finish:'returned_embroidered',saleStatus:'sale_ready',requiresEmbroidery:true});
+ let order=(await call('orderOverview')).orders.find(o=>o.id==='verified-ready');assert.equal(order.status,'ready');assert.equal(order.items[0].status,'ready');
+ await ref.update({finish:'at_jim',saleStatus:'not_ready'});order=(await call('orderOverview')).orders.find(o=>o.id==='verified-ready');assert.equal(order.status,'review');assert.equal(order.items[0].status,'review');
 });

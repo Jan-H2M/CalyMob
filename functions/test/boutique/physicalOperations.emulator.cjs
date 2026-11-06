@@ -52,7 +52,7 @@ test('handover requires correct member and explicit confirmation; shared mission
   await assert.rejects(mutate('helper1','deliver',[0,1,2],{...params,recipientMemberId:'buyer0',confirmed:false}),{code:'invalid-argument'});
   const request={clubId,action:'deliver',units:await selection([0,1,2]),missionId,recipientMemberId:'buyer0',confirmed:true,idempotencyKey:key()};
   await run(db,actor('helper1'),request); assert.equal((await piece(0)).saleStatus,'sold');
-  const order=(await club.collection('orders').doc('o0').get()).data(); assert.equal(order.status,'delivered'); assert.equal(order.items[0].signatureStatus,'qr_confirmed');
+  const order=(await club.collection('orders').doc('o0').get()).data(); assert.equal(order.status,'delivered'); assert.equal(order.items[0].signatureStatus,'manual_confirmed');
   assert.equal((await call('helper2','mission',{missionId})).mission.delivered,3);
   await run(db,actor('helper1'),request); assert.equal(await count('boutique_handover_receipts'),1);
   await assert.rejects(mutate('helper2','deliver',[0],{missionId,recipientMemberId:'buyer0',confirmed:true}),{code:'failed-precondition'});
@@ -181,7 +181,7 @@ test('qty2 with only one received piece reports one missing article and records 
   const notice=(await club.collection('boutique_pickup_notifications').where('orderId','==','o12').get()).docs[0].data();assert.match(notice.body,/1 pièce\(s\) encore en attente/);
   assert.equal((await call('helper1','mission',{missionId:task.missionId})).packets[0].remaining,1);
   await mutate('helper1','deliver',[41],{missionId:task.missionId,recipientMemberId:'buyer12',confirmed:true});
-  const partial=(await club.collection('orders').doc('o12').get()).data();assert.equal(partial.items[0].deliveredQty,1);assert.equal(partial.items[0].handoverProofType,'member_qr');assert.equal(partial.items[0].fulfillmentStatus,'preparing');
+  const partial=(await club.collection('orders').doc('o12').get()).data();assert.equal(partial.items[0].deliveredQty,1);assert.equal(partial.items[0].handoverProofType,'manual');assert.equal(partial.items[0].fulfillmentStatus,'preparing');
   // The later real receipt appends a physical ID, preserving existing handover.
   await club.collection('boutique_physical_stock_units').doc('u42').set(u);
   await club.collection('orders').doc('o12').update({items:[{...partial.items[0],physicalStockUnitIds:['u41','u42']}]});

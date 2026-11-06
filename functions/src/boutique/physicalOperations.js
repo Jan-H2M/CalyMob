@@ -45,7 +45,7 @@ function validate(input, actor) {
   if (input.orderId !== undefined && (!id(input.orderId) || input.action !== 'orderSelection')) fail('invalid-argument', 'Commande invalide.');
   if (input.action === 'orderSelection' && (!id(input.orderId) || (input.sourceLocation !== undefined && (typeof input.sourceLocation !== 'string' || !text(input.sourceLocation, 160))))) fail('invalid-argument', 'Commande ou lieu invalide.');
   if (input.missionId !== undefined && !id(input.missionId)) fail('invalid-argument', 'Mission invalide.');
-  if (input.verificationMethod !== undefined && (input.action !== 'deliver' || !['manual', 'member_qr'].includes(input.verificationMethod))) fail('invalid-argument', 'Mode de remise invalide.');
+  if (input.verificationMethod !== undefined && (input.action !== 'deliver' || input.verificationMethod !== 'manual')) fail('invalid-argument', 'Mode de remise invalide.');
   if (!MUTATIONS.has(input.action)) return;
   if (!id(input.expectedActorId) || input.expectedActorId !== actor.uid) fail('permission-denied', 'Le compte a changé depuis l’ouverture de cette confirmation. Recommencez la session.');
   if (!id(input.idempotencyKey) || input.idempotencyKey.length < 16) fail('invalid-argument', 'Identifiant de confirmation obligatoire.');
@@ -162,24 +162,39 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       const base = club.collection('orders').orderBy(admin.firestore.FieldPath.documentId());
       const page = await tx.get((input.cursor ? base.startAfter(input.cursor) : base).limit(31));
       const docs = page.docs.slice(0, 30);
-      const orders = docs.map(snap => {
+      let remainingEvidenceReads = 250;
+      const orders = [];
+      for (const snap of docs) {
         const order = snap.data();
         const payment = order.payment || {};
         // Historical order statuses do not prove the physical pieces are ready.
         // Show partial handovers explicitly and require verification for old
         // ready/delivered states lacking complete per-piece proof.
-        const projectLine = line => {
+        const projectLine = async line => {
           const qty = Number.isInteger(line.qty) && line.qty > 0 ? line.qty : 0;
           const count = Number.isInteger(line.deliveredQty) ? line.deliveredQty : 0;
           let status = String(line.fulfillmentStatus || '');
           if (count > 0 && count < qty) status = 'partially_delivered';
           else if (status === 'delivered' && (count !== qty || !['manual_confirmed', 'qr_confirmed', 'signed', 'paper_signed'].includes(line.signatureStatus))) status = 'review';
-          else if (status === 'ready') status = 'review';
+          else if (status === 'ready') {
+            const ids = line.physicalStockUnitIds;
+            if (!paid(order) || !Array.isArray(ids) || ids.length !== qty || !qty || unique(ids).length !== qty || ids.some(value => !id(value)) || remainingEvidenceReads < qty) status = 'review';
+            else {
+              remainingEvidenceReads -= qty;
+              const snapshots = await Promise.all(ids.map(value => tx.get(club.collection('boutique_physical_stock_units').doc(value))));
+              const valid = snapshots.every(piece => {
+                if (!piece.exists) return false;
+                const unit = piece.data();
+                return unit.customerOrderId === snap.id && unit.customerLineId === line.lineId && unit.destination === 'customer_reserved' && !unit.transportMissionId && ready(unit) && (!(unit.requiresEmbroidery !== false || lineNeedsProduction(line)) || unit.finish === 'returned_embroidered');
+              });
+              if (!valid) status = 'review';
+            }
+          }
           return { name: String(line.productSnapshot?.name || line.name || 'Article'), variant: String(line.productSnapshot?.variantLabel || ''), qty, status };
         };
-        const lines = (Array.isArray(order.items) ? order.items : []).map(projectLine);
-        const status = ['ready', 'delivered'].includes(order.status) && (order.status === 'ready' || !lines.length || lines.some(line => line.status !== 'delivered')) ? 'review' : String(order.status || '');
-        return {
+        const lines = await Promise.all((Array.isArray(order.items) ? order.items : []).map(projectLine));
+        const status = order.status === 'ready' && (!lines.length || lines.some(line => !['ready','delivered'].includes(line.status))) ? 'review' : order.status === 'delivered' && (!lines.length || lines.some(line => line.status !== 'delivered')) ? 'review' : String(order.status || '');
+        orders.push({
           id: snap.id,
           orderNumber: String(order.orderNumber || snap.id),
           customerName: String(order.buyer?.displayName || 'Membre'),
@@ -187,8 +202,8 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
           paymentStatus: payment.lastMatchError || order.paymentAdjustment?.type === 'additional_payment_due' || order.additional_payment_due === true ? 'review' : String(payment.status || ''),
           total: Number.isFinite(order.pricing?.total) ? order.pricing.total : null,
           items: lines,
-        };
-      });
+        });
+      }
       return { orders, hasMore: page.size > 30, nextCursor: page.size > 30 ? docs.at(-1).id : null };
     }
     // Selection only: RB-scoped reads, never an inventory/order mutation. Do not
@@ -367,10 +382,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     if (input.action === 'move') for (const unit of selected) {
       if (unit.location === input.destination) fail('failed-precondition', 'Choisissez un autre emplacement.');
       if (unit.transportMissionId || unit.pickupMissionId) fail('failed-precondition', 'Cette pièce appartient à une mission. Terminez ou retirez d’abord la mission.');
-      const arrivingAtJim = /^(chez |atelier )?jim$/i.test(input.destination.trim().replace(/\s+/g, ' '))
-        && ['unembroidered', 'to_jim'].includes(unit.finish) && needsProduction(unit);
-      if (arrivingAtJim && unit.customerOrderId && !paid(orderMap.get(unit.customerOrderId))) fail('failed-precondition', 'Le paiement doit être confirmé avant la broderie.');
-      updateUnit(unit, { location: input.destination, ...(arrivingAtJim ? { finish: 'at_jim', saleStatus: 'not_ready' } : {}), ...(['returned_embroidered','not_required_reviewed'].includes(unit.finish) ? { saleStatus: unit.destination === 'demo' || (needsProduction(unit) && unit.finish !== 'returned_embroidered') ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: input.destination }), ...(arrivingAtJim ? [event('finish_changed', { from: unit.finish, to: 'at_jim' })] : [])]);
+      updateUnit(unit, { location: input.destination, ...(['returned_embroidered','not_required_reviewed'].includes(unit.finish) ? { saleStatus: unit.destination === 'demo' || (needsProduction(unit) && unit.finish !== 'returned_embroidered') ? 'not_ready' : 'sale_ready' } : {}) }, [event('moved', { from: unit.location, to: input.destination })]);
     }
     if (input.action === 'prepareJim' || input.action === 'confirmJim') for (const unit of selected) {
       const required = input.action === 'prepareJim' ? 'unembroidered' : 'to_jim', finish = input.action === 'prepareJim' ? 'to_jim' : 'at_jim';
@@ -379,7 +391,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
     }
     if (input.action === 'finishJim') for (const unit of selected) {
       const atJim = /^(chez |atelier )?jim$/i.test(String(unit.location || '').trim().replace(/\s+/g, ' '));
-      if (!atJim || !['unembroidered','to_jim','at_jim'].includes(unit.finish) || !needsProduction(unit) || unit.workshopReadyAt || unit.transportMissionId || unit.pickupMissionId || (unit.customerOrderId && !paid(orderMap.get(unit.customerOrderId)))) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
+      if ((!atJim && unit.finish !== 'at_jim') || !['unembroidered','to_jim','at_jim'].includes(unit.finish) || !needsProduction(unit) || unit.workshopReadyAt || unit.transportMissionId || unit.pickupMissionId) fail('failed-precondition', 'Cette pièce doit être chez Jim et encore à contrôler.');
       updateUnit(unit, { finish: 'at_jim', workshopReadyAt: now, workshopReadyBy: actor.uid }, [...(unit.finish !== 'at_jim' ? [event('finish_changed', { from: unit.finish, to: 'at_jim' })] : []), event('workshop_ready', { to: unit.location })]);
     }
     if (input.action === 'reopenJim') for (const unit of selected) {
@@ -438,8 +450,8 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       for (const unit of selected) {
         const order = orderMap.get(unit.customerOrderId), state = order ? availability(order, mission.destination) : null;
         if (!order || !paid(order) || order.buyer?.userId !== input.recipientMemberId || !readyForReservation(unit) || unit.location !== mission.destination || unit.pickupMissionId !== mission.id || !mission.arrivedUnitIds.includes(unit.id) || !state.handoutEligible || (!mission.allowPartial && (!state.all || state.pending.some(u => !wanted.includes(u.id))))) fail('failed-precondition', 'Vérifiez le destinataire, le paiement et la disponibilité de ces pièces.');
-        const proof = { type: input.verificationMethod === 'manual' ? 'manual' : 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, operationId: requestId };
-        updateUnit(unit, { saleStatus: 'sold', handover: proof }, [event('sale_changed', { from: unit.saleStatus, to: 'sold' }), event('handover_confirmed', { to: input.recipientMemberId, note: input.verificationMethod === 'manual' ? 'Remise physique confirmée sans scan QR.' : 'QR du membre vérifié et remise physique confirmée.' })]);
+        const proof = { type: 'manual', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, operationId: requestId };
+        updateUnit(unit, { saleStatus: 'sold', handover: proof }, [event('sale_changed', { from: unit.saleStatus, to: 'sold' }), event('handover_confirmed', { to: input.recipientMemberId, note: 'Remise physique confirmée par le responsable.' })]);
       }
       nextMission.deliveredUnitIds = unique([...mission.deliveredUnitIds, ...wanted]);
       nextMission.status = nextMission.deliveredUnitIds.length === mission.unitIds.length ? 'closed' : mission.status;
@@ -489,7 +501,7 @@ async function executePhysicalOperation(db, actor, input, clock = Date.now) {
       tx.create(entry.historyRef, { title, body, type: data.type, category: 'Boutique', data, created_at: now, read: false, read_at: null });
       tx.create(club.collection('boutique_pickup_notifications').doc(entry.notificationId), { status: 'pending', recipientId: entry.order.buyer.userId, orderId: entry.order.id, unitIds: entry.unitIds, missionId: nextMission.id, title, body, data, createdAt: now });
     }
-    if (input.action === 'deliver') tx.create(club.collection('boutique_handover_receipts').doc(requestId), { type: input.verificationMethod === 'manual' ? 'manual' : 'member_qr', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, unitIds: wanted, orderIds: [...orderMap.keys()], note });
+    if (input.action === 'deliver') tx.create(club.collection('boutique_handover_receipts').doc(requestId), { type: 'manual', recipientMemberId: input.recipientMemberId, confirmedBy: actor.uid, confirmedByName: memberDisplayName(member), confirmedAt: now, location: mission.destination, missionId: mission.id, unitIds: wanted, orderIds: [...orderMap.keys()], note });
     tx.create(club.collection('audit_logs').doc(`boutique_${requestId}`), { action: `boutique.mobile.${input.action}`, userId: actor.uid, targetId: nextMission?.id || requestId, targetType: 'boutique_physical_session', clubId: input.clubId, timestamp: now, details: { unitIds: wanted, location: result.destination, notificationCount: notifications.length } });
     tx.create(receiptRef, { actorId: actor.uid, action: input.action, requestHash, result, createdAt: now });
     return result;

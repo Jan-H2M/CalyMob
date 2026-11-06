@@ -41,7 +41,9 @@ test('mixed QR and manual partial handovers retain truthful per-piece proof and 
  const db=dbFrom({[`${root}/members/rb`]:{member_status:'active',clubStatuten:['RB']},[`${root}/members/buyer`]:{member_status:'active'},[`${root}/settings/feature_flags`]:{boutiqueQrEnabled:true,boutiqueMobileEnabled:true,boutiqueAccess:'tous'},[`${root}/boutique_pickup_missions/m2`]:{status:'received',expiresAt:new Date(Date.now()+600000),unitIds:['a','b'],arrivedUnitIds:['a','b'],deliveredUnitIds:[],destination:'Club',sourceLocation:'Club',assigneeIds:['rb'],createdBy:'rb',allowPartial:true},[`${root}/orders/o2`]:{orderNumber:'DEMO-2',status:'ready',buyer:{userId:'buyer',displayName:'Camille'},payment:{status:'paid'},items:[{lineId:'l1',qty:2,deliveryMode:'pool_pickup',fulfillmentStatus:'ready',physicalStockUnitIds:['a','b']}]},[`${root}/boutique_physical_stock_units/a`]:a,[`${root}/boutique_physical_stock_units/b`]:b});
  const req={clubId:'demo',action:'deliver',expectedActorId:'rb',missionId:'m2',recipientMemberId:'buyer',confirmed:true};
  await run(db,{uid:'rb'},{...req,units:[{id:'a',revision:hash(a)}],idempotencyKey:'mixed-handover-qr-001'});
- let order=db.docs.get(`${root}/orders/o2`);assert.equal(order.items[0].deliveredQty,1);assert.equal(order.items[0].handoverProofType,'member_qr');
+ let order=db.docs.get(`${root}/orders/o2`);assert.equal(order.items[0].deliveredQty,1);assert.equal(order.items[0].handoverProofType,'manual');
+ // Model an earlier verified QR handover to test mixed historical proof.
+ db.docs.get(`${root}/boutique_physical_stock_units/a`).handover.type='member_qr';
  await run(db,{uid:'rb'},{...req,units:[{id:'b',revision:hash(b)}],verificationMethod:'manual',idempotencyKey:'mixed-handover-manual-002'});
  order=db.docs.get(`${root}/orders/o2`);assert.equal(order.items[0].deliveredQty,2);assert.equal(order.items[0].handoverProofType,'manual');assert.equal(order.items[0].signatureStatus,'manual_confirmed');assert.equal(db.docs.get(`${root}/boutique_physical_stock_units/a`).handover.type,'member_qr');assert.equal(db.docs.get(`${root}/boutique_physical_stock_units/b`).handover.type,'manual');
 });
