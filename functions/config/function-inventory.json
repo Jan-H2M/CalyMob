@@ -1797,6 +1797,11 @@
   ],
   "repoOnlyFunctions": [
     {
+      "name": "onEventSettingsUpdated",
+      "sourcePath": "functions/src/audit/onEventSettingsUpdated.js",
+      "reason": "New event settings audit trigger, not present in the recorded live inventory."
+    },
+    {
       "name": "dailyMedicalExpiryReminder",
       "sourcePath": "functions/src/notifications/dailyMedicalExpiryReminder.js",
       "reason": "Present on dev, absent from the live inventory; no activation authorized by COM-155."

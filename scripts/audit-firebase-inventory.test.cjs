@@ -16,9 +16,9 @@ test('all DEV exports have source files; Gen1 remains separately owned', () => {
   assert.equal(summary.live, 127);
   assert.equal(summary.firebase, 126);
   assert.equal(summary.external, 1);
-  assert.equal(summary.repoExports, 127);
+  assert.equal(summary.repoExports, 128);
   assert.equal(summary.missingFromMainAtAudit.length, 15);
-  assert.deepEqual(summary.repoOnly, ['dailyMedicalExpiryReminder']);
+  assert.deepEqual(summary.repoOnly, ['onEventSettingsUpdated', 'dailyMedicalExpiryReminder']);
 });
 
 test('missing, new, remapped or externally adopted exports fail', () => {
