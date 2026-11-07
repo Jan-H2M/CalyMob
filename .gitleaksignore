@@ -35,3 +35,6 @@ c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.js
 c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:898
 c37e7e09ce6f1001921afcaac0da570082799c8a:functions/src/training/apnee/catalog.json:generic-api-key:910
 91065758d92817da8b0698e0688ce28f50003e2c:scripts/qa/live-preview-login.cjs:gcp-api-key:157
+
+# False positive: deterministic idempotency value in a fictional damage-recovery unit test.
+b991541aa00467f767265ccd0c9e5faa407796da:functions/test/boutique/manualHandover.unit.cjs:generic-api-key:53
