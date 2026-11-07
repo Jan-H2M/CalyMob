@@ -1,1 +1,1 @@
-Correction du scan des présences piscine et amélioration de l’affichage des erreurs lors du scan.
+Gestion Boutique : suivi des commandes, atelier, déplacements, remise aux membres et vente directe. Corrections et améliorations.

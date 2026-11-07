@@ -1,0 +1,1 @@
+Gestion Boutique : suivi des commandes, atelier, déplacements, remise aux membres et vente directe. Corrections et améliorations.
