@@ -5,12 +5,14 @@ class Supplement {
   final String name;
   final double price;
   final int displayOrder;
+  final Map<String, dynamic> storedFields;
 
   Supplement({
     required this.id,
     required this.name,
     required this.price,
     this.displayOrder = 0,
+    this.storedFields = const {},
   });
 
   factory Supplement.fromMap(Map<String, dynamic> data) {
@@ -19,11 +21,13 @@ class Supplement {
       name: data['name'] ?? '',
       price: (data['price'] ?? 0).toDouble(),
       displayOrder: data['display_order'] ?? 0,
+      storedFields: Map<String, dynamic>.from(data),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
+      ...storedFields,
       'id': id,
       'name': name,
       'price': price,

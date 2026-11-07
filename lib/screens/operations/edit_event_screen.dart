@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/operation_service.dart';
 import '../../utils/member_name.dart';
+import '../../utils/event_edit_safety.dart';
 import 'payment_rules_section.dart';
 
 /// Écran d'édition d'un événement existant
@@ -56,6 +57,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   late int _paymentDeadlineDays;
   bool _saving = false;
   bool _hasChanges = false;
+  late final Map<String, dynamic> _originalValues;
+  late final DateTime _initialDisplayedStart;
 
   // Responsable (organisateur) — can be reassigned by admins or the original
   // creator. When updated, we rewrite both organisateur_id and
@@ -81,6 +84,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     );
 
     _dateDebut = op.dateDebut ?? DateTime.now();
+    _initialDisplayedStart = _dateDebut;
     _dateFin = op.dateFin;
     _registrationDeadline = op.registrationDeadline;
     _statut = op.statut;
@@ -101,6 +105,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _supplements = op.supplements
         .map((s) => _EditableSupplement.fromSupplement(s))
         .toList();
+    _originalValues = eventEditableValues(op);
 
     // Listeners pour détecter les changements
     _titreController.addListener(_markChanged);
@@ -343,7 +348,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   void _updateTariffPrice(int index, String priceStr) {
-    _tariffs[index].price = double.tryParse(priceStr) ?? 0;
+    final parsed = parseEventPriceInput(priceStr);
+    _tariffs[index].validPriceInput = parsed != null;
+    if (parsed != null) _tariffs[index].price = parsed;
     _markChanged();
   }
 
@@ -365,6 +372,19 @@ class _EditEventScreenState extends State<EditEventScreen> {
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final capacityText = _capaciteController.text.trim();
+    final capacityValue = int.tryParse(capacityText);
+    if ((capacityText.isNotEmpty &&
+            (capacityValue == null || capacityValue < 0)) ||
+        _tariffs.any((t) => !t.validPriceInput) ||
+        _supplements.any((s) => !s.validPriceInput)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vérifiez la capacité et les prix saisis.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
     // Validation dates
     if (_dateFin != null && _dateFin!.isBefore(_dateDebut)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -382,8 +402,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
       // Construire les tarifs pour Firestore — bewaar de is_guest_tariff
       // flag zodat de "Invité" markering correct in Firestore terechtkomt.
       final tariffsData = _tariffs
-          .where((t) => t.label.trim().isNotEmpty)
+          .where((t) => t.label.trim().isNotEmpty || t.storedFields.isNotEmpty)
           .map((t) => {
+                ...t.storedFields,
                 'id': t.id,
                 'label': t.label.trim(),
                 'category': t.category,
@@ -391,13 +412,17 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 'is_default': t.isDefault,
                 'is_guest_tariff': t.isGuestTariff,
                 'display_order': t.displayOrder,
+                'self_selectable': t.selfSelectable,
+                'requires_admin_validation': t.requiresAdminValidation,
+                'installment_amounts': t.installmentAmounts,
               })
           .toList();
 
       // Construire les suppléments pour Firestore
       final supplementsData = _supplements
-          .where((s) => s.name.trim().isNotEmpty)
+          .where((s) => s.name.trim().isNotEmpty || s.storedFields.isNotEmpty)
           .map((s) => {
+                ...s.storedFields,
                 'id': s.id,
                 'name': s.name.trim(),
                 'price': s.price,
@@ -407,7 +432,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
       // Calculer budget prévisionnel — alleen op niet-gast-tarieven, want
       // gasten zijn pas bevestigd zodra een lid hen toevoegt.
-      final capacity = int.tryParse(_capaciteController.text);
+      final capacity = capacityValue;
       final tariffObjects = _tariffs
           .where((t) => t.label.trim().isNotEmpty && !t.isGuestTariff)
           .map((t) => Tariff(
@@ -422,12 +447,16 @@ class _EditEventScreenState extends State<EditEventScreen> {
       final budget =
           OperationService.computeBudgetPrevu(tariffObjects, capacity);
 
-      final data = <String, dynamic>{
+      final methods = _allowedPaymentMethods.toList()..sort();
+      final edited = <String, dynamic>{
         'titre': _titreController.text.trim(),
         'description': _descriptionController.text.trim().isNotEmpty
             ? _descriptionController.text.trim()
             : null,
-        'date_debut': Timestamp.fromDate(_dateDebut),
+        'date_debut': widget.operation.dateDebut == null &&
+                _dateDebut == _initialDisplayedStart
+            ? null
+            : _dateDebut,
         'statut': _statut,
         'event_tariffs': tariffsData,
         'supplements': supplementsData,
@@ -435,11 +464,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
         'allow_guests': _allowGuests,
         'allow_waitlist': _allowWaitlist,
         'payment_required': _paymentRequired,
-        'allowed_payment_methods': _allowedPaymentMethods.toList(),
+        'allowed_payment_methods': methods,
         'registration_confirmation_policy': _registrationConfirmationPolicy,
         'payment_deadline_days': _paymentDeadlineDays,
-        'auto_cancel_unpaid': false,
-        'montant_prevu': budget,
         'communication': _communicationController.text.trim().isNotEmpty
             ? _communicationController.text.trim()
             : null,
@@ -448,12 +475,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
       // Date butoir d'inscription — null = geen deadline gezet (Firestore
       // rule valt dan terug op date_debut - 24u). Schrijf delete weg
       // wanneer leeg zodat het veld effectief verdwijnt uit het doc.
-      if (_registrationDeadline != null) {
-        data['registration_deadline'] =
-            Timestamp.fromDate(_registrationDeadline!);
-      } else {
-        data['registration_deadline'] = FieldValue.delete();
-      }
+      edited['registration_deadline'] = _registrationDeadline;
 
       // Persist organisateur change only if we have a valid id — and always
       // rewrite id + nom together so the phone-number lookup (keyed on id)
@@ -463,28 +485,27 @@ class _EditEventScreenState extends State<EditEventScreen> {
       if (_canEditResponsable &&
           _organisateurId != null &&
           _organisateurId!.isNotEmpty) {
-        data['organisateur_id'] = _organisateurId;
-        data['organisateur_nom'] = _organisateurNom ?? '';
+        edited['organisateur_id'] = _organisateurId;
+        edited['organisateur_nom'] = _organisateurNom;
       }
 
       // Date fin optionnelle
-      if (_dateFin != null) {
-        data['date_fin'] = Timestamp.fromDate(_dateFin!);
-      } else {
-        data['date_fin'] = FieldValue.delete();
-      }
+      edited['date_fin'] = _dateFin;
 
       // Capacité optionnelle
-      if (_capaciteController.text.isNotEmpty) {
-        data['capacite_max'] = int.tryParse(_capaciteController.text);
-      } else {
-        data['capacite_max'] = FieldValue.delete();
+      edited['capacite_max'] = capacity;
+
+      final changes = changedEventValues(_originalValues, edited);
+      if (changes.containsKey('event_tariffs') ||
+          changes.containsKey('capacite_max')) {
+        changes['montant_prevu'] = budget;
       }
 
-      await _operationService.updateOperation(
+      await _operationService.updateEventSettingsSafely(
         clubId: widget.clubId,
         operationId: widget.operation.id,
-        data: data,
+        original: _originalValues,
+        changes: changes,
       );
 
       if (mounted) {
@@ -498,6 +519,21 @@ class _EditEventScreenState extends State<EditEventScreen> {
           ),
         );
         Navigator.of(context).pop(true); // true = changes saved
+      }
+    } on EventSettingsInvalid catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } on EventSettingsConflict catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Cette activité a été modifiée ailleurs. Rouvrez-la avant de réessayer.'),
+          backgroundColor: AppColors.error,
+        ));
       }
     } catch (e) {
       if (mounted) {
@@ -1008,8 +1044,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   void _updateSupplementPrice(int index, String priceStr) {
-    _supplements[index].price =
-        double.tryParse(priceStr.replaceAll(',', '.')) ?? 0;
+    final parsed = parseEventPriceInput(priceStr);
+    _supplements[index].validPriceInput = parsed != null;
+    if (parsed != null) _supplements[index].price = parsed;
     _markChanged();
   }
 
@@ -1662,6 +1699,11 @@ class _EditableTariff {
   bool isDefault;
   bool isGuestTariff;
   int displayOrder;
+  bool selfSelectable;
+  bool requiresAdminValidation;
+  Map<String, double> installmentAmounts;
+  Map<String, dynamic> storedFields;
+  bool validPriceInput = true;
 
   _EditableTariff({
     required this.id,
@@ -1671,6 +1713,10 @@ class _EditableTariff {
     this.isDefault = false,
     this.isGuestTariff = false,
     this.displayOrder = 0,
+    this.selfSelectable = true,
+    this.requiresAdminValidation = false,
+    this.installmentAmounts = const {},
+    this.storedFields = const {},
   });
 
   factory _EditableTariff.fromTariff(Tariff t) {
@@ -1682,6 +1728,10 @@ class _EditableTariff {
       isDefault: t.isDefault,
       isGuestTariff: t.isGuestTariff,
       displayOrder: t.displayOrder,
+      selfSelectable: t.selfSelectable,
+      requiresAdminValidation: t.requiresAdminValidation,
+      installmentAmounts: t.installmentAmounts,
+      storedFields: t.storedFields,
     );
   }
 }
@@ -1694,12 +1744,15 @@ class _EditableSupplement {
   String name;
   double price;
   int displayOrder;
+  Map<String, dynamic> storedFields;
+  bool validPriceInput = true;
 
   _EditableSupplement({
     required this.id,
     required this.name,
     required this.price,
     this.displayOrder = 0,
+    this.storedFields = const {},
   });
 
   factory _EditableSupplement.fromSupplement(Supplement s) {
@@ -1708,6 +1761,7 @@ class _EditableSupplement {
       name: s.name,
       price: s.price,
       displayOrder: s.displayOrder,
+      storedFields: s.storedFields,
     );
   }
 }
