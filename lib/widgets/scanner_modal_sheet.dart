@@ -17,6 +17,23 @@ import '../screens/piscine/add_attendee_dialog.dart';
 import '../utils/scanner_lifecycle.dart';
 import 'alarm_overlay.dart';
 
+@visibleForTesting
+SnackBar poolRemovalSnackBar(String memberName, VoidCallback onUndo,
+        {required bool accessibleNavigation}) =>
+    SnackBar(
+      content: Text('$memberName désinscrit'),
+      backgroundColor: Colors.orange,
+      duration: Duration(seconds: accessibleNavigation ? 10 : 5),
+      persist: false,
+      behavior: SnackBarBehavior.floating,
+      showCloseIcon: true,
+      closeIconColor: Colors.white,
+      margin: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      action: SnackBarAction(
+          label: 'Annuler', textColor: Colors.white, onPressed: onUndo),
+    );
+
 /// Scanner modal that shows compact scanner + live attendee list
 /// With validation for medical certificate and cotisation
 class ScannerModalSheet extends StatefulWidget {
@@ -511,33 +528,18 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${attendee.memberName} désinscrit'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 5),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.all(16),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          action: SnackBarAction(
-            label: 'Annuler',
-            textColor: Colors.white,
-            onPressed: () async {
-              _clearActionError();
-              try {
-                await _piscineService.restoreRemovedAttendee(
-                  clubId: widget.clubId,
-                  sessionId: widget.operationId,
-                  snapshot: removalSnapshot!,
-                );
-              } catch (e) {
-                if (mounted) _showErrorToast('Impossible d\'annuler: $e');
-              }
-            },
-          ),
-        ),
-      );
+      ..showSnackBar(poolRemovalSnackBar(attendee.memberName, () async {
+        _clearActionError();
+        try {
+          await _piscineService.restoreRemovedAttendee(
+            clubId: widget.clubId,
+            sessionId: widget.operationId,
+            snapshot: removalSnapshot!,
+          );
+        } catch (e) {
+          if (mounted) _showErrorToast('Impossible d\'annuler: $e');
+        }
+      }, accessibleNavigation: MediaQuery.accessibleNavigationOf(context)));
   }
 
   /// Désinscription d'un participant événement avec undo.
