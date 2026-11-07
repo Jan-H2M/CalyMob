@@ -13,6 +13,7 @@ import '../models/supplement.dart';
 import '../models/tariff.dart';
 import '../models/user_event_registration.dart';
 import '../utils/tariff_utils.dart';
+import '../utils/event_edit_safety.dart';
 import 'refund_service.dart';
 
 // Number.MAX_SAFE_INTEGER. It sorts invalid/missing waitlist dates last while
@@ -1772,6 +1773,51 @@ class OperationService {
       debugPrint('❌ Erreur mise à jour opération: $e');
       rethrow;
     }
+  }
+
+  /// Reject stale edits to a field instead of overwriting another editor.
+  /// No registration, payment or notification is changed by this operation.
+  Future<void> updateEventSettingsSafely({
+    required String clubId,
+    required String operationId,
+    required Map<String, dynamic> original,
+    required Map<String, dynamic> changes,
+  }) async {
+    if (changes.isEmpty) return;
+    final ref =
+        _firestore.collection('clubs/$clubId/operations').doc(operationId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      if (!snapshot.exists) throw StateError('Cette activité n’existe plus.');
+      final latest = eventEditableValues(Operation.fromFirestore(snapshot));
+      final guarded = <String>{...changes.keys};
+      if (changes.containsKey('montant_prevu')) {
+        guarded.addAll(['event_tariffs', 'capacite_max']);
+      }
+      final conflicts = conflictingEventFields(original, latest, guarded);
+      if (conflicts.isNotEmpty) throw EventSettingsConflict(conflicts);
+      if (changes.keys.any((key) => const {
+            'event_tariffs',
+            'supplements',
+            'allow_guests',
+            'payment_required',
+            'price_tbd'
+          }.contains(key))) {
+        validateEventSettings({...latest, ...changes});
+      }
+      final updates = <String, dynamic>{};
+      for (final entry in changes.entries) {
+        if (entry.value == null &&
+            const {'date_fin', 'registration_deadline', 'capacite_max'}
+                .contains(entry.key)) {
+          updates[entry.key] = FieldValue.delete();
+        } else {
+          updates[entry.key] = entry.value;
+        }
+      }
+      updates['updated_at'] = FieldValue.serverTimestamp();
+      transaction.update(ref, updates);
+    });
   }
 
   /// Annuler une opération sans supprimer son contexte ni ses sous-collections.

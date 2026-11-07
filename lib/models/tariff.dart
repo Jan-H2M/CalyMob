@@ -16,6 +16,9 @@ class Tariff {
   final bool requiresAdminValidation;
   final Map<String, double> installmentAmounts;
 
+  /// Preserve fields that the mobile editor does not understand yet.
+  final Map<String, dynamic> storedFields;
+
   Tariff({
     required this.id,
     required this.label,
@@ -27,6 +30,7 @@ class Tariff {
     this.selfSelectable = true,
     this.requiresAdminValidation = false,
     this.installmentAmounts = const {},
+    this.storedFields = const {},
   });
 
   /// Convertir depuis Firestore
@@ -46,6 +50,7 @@ class Tariff {
       selfSelectable: data['self_selectable'] != false,
       requiresAdminValidation: data['requires_admin_validation'] == true,
       installmentAmounts: _parseInstallmentAmounts(data['installment_amounts']),
+      storedFields: Map<String, dynamic>.from(data),
     );
   }
 
@@ -80,6 +85,7 @@ class Tariff {
   /// Convertir vers Firestore
   Map<String, dynamic> toMap() {
     return {
+      ...storedFields,
       'id': id,
       'label': label,
       'category': category,
