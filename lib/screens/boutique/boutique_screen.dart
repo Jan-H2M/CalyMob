@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -20,6 +19,10 @@ import 'mes_commandes_screen.dart';
 import 'member_missions_screen.dart';
 import 'boutique_management_screen.dart';
 import 'boutique_action_management_screen.dart';
+import 'boutique_locations_screen.dart';
+import 'boutique_atelier_screen.dart';
+import 'boutique_orders_overview_screen.dart';
+import 'boutique_event_sale_screen.dart';
 import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
@@ -42,6 +45,78 @@ class BoutiqueScreen extends StatefulWidget {
   State<BoutiqueScreen> createState() => _BoutiqueScreenState();
 }
 
+class _BoutiqueGestionMenu extends StatelessWidget {
+  const _BoutiqueGestionMenu({required this.clubId, required this.service});
+  final String clubId;
+  final BoutiqueOperationsService service;
+
+  @override
+  Widget build(BuildContext context) {
+    void open(Widget page) => Navigator.push(
+        context,
+        boutiqueAccessGuardedRoute(
+            sourceContext: context,
+            requiredSection: 'gestion',
+            builder: (_) => page));
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+          title: const Text('Gestion Boutique',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white)),
+      body: OceanGradientBackground(
+          creatures: CreatureSet.fishAndBubbles,
+          child: SafeArea(
+              child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                  children: [
+                Text('Choisissez ce que vous souhaitez gérer.',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.84),
+                        fontSize: 15,
+                        height: 1.35)),
+                const SizedBox(height: 22),
+                _BoutiqueHomeCard(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Commandes clients',
+                    subtitle: 'Consulter le paiement et le suivi.',
+                    onTap: () => open(BoutiqueOrdersOverviewScreen(
+                        clubId: clubId, service: service))),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                    icon: Icons.content_cut_outlined,
+                    title: 'Atelier Jim',
+                    subtitle: 'Suivre les pièces et la broderie.',
+                    onTap: () => open(BoutiqueAtelierScreen(
+                        clubId: clubId, service: service))),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                    icon: Icons.place_outlined,
+                    title: 'Localisation des pièces',
+                    subtitle: 'Rechercher ou déplacer des pièces.',
+                    onTap: () => open(BoutiqueLocationsScreen(
+                        clubId: clubId, service: service))),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                    icon: Icons.point_of_sale_outlined,
+                    title: 'Vente directe',
+                    subtitle: 'Vendre et remettre sur place.',
+                    onTap: () => open(BoutiqueEventSaleScreen(
+                        clubId: clubId, service: service))),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                    icon: Icons.assignment_turned_in_outlined,
+                    title: 'Remise et actions',
+                    subtitle: 'Remettre, déplacer ou changer un statut.',
+                    onTap: () =>
+                        open(BoutiqueActionManagementScreen(service: service))),
+              ]))),
+    );
+  }
+}
+
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
   @override
   Widget build(BuildContext context) {
@@ -54,8 +129,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
         bool showSection(String key) => access.canAccessSection(key);
         final showMaterialLoans = showSection('pretsMateriel');
         final canOpenReturns = _canOpenMaterialReturns(access.member);
-        final canManageBoutique =
-            BoutiqueAccessPolicy.hasBoutiqueResponsibility(access.member);
 
         return Scaffold(
           extendBodyBehindAppBar: true,
@@ -108,15 +181,15 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     _BoutiqueHomeCard(
                       icon: Icons.inventory_2_outlined,
                       title: 'Gestion Boutique',
-                      subtitle:
-                          'Choisir une action, préciser les valeurs, sélectionner les paquets et confirmer.',
+                      subtitle: 'Commandes, atelier, localisations et remises.',
                       emphasized: true,
                       onTap: () => Navigator.push(
                         context,
                         boutiqueAccessGuardedRoute(
                           sourceContext: context,
                           requiredSection: 'gestion',
-                          builder: (_) => BoutiqueActionManagementScreen(
+                          builder: (_) => _BoutiqueGestionMenu(
+                            clubId: widget.clubId,
                             service: widget.operationsService,
                           ),
                         ),
@@ -157,16 +230,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                           ),
                         );
                       },
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (canManageBoutique) ...[
-                    _BoutiqueHomeCard(
-                      icon: Icons.open_in_new_outlined,
-                      title: 'Ouvrir CalyCompta',
-                      subtitle:
-                          'Gérer le catalogue, les commandes et le stock dans CalyCompta.',
-                      onTap: _openBoutiqueManagement,
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -264,18 +327,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
     final statuten = member?['clubStatuten'];
     return statuten is Iterable && ClubRoleUtils.hasGonflageRole(statuten);
   }
-
-  Future<void> _openBoutiqueManagement() async {
-    final opened = await launchUrl(
-      Uri.https('caly.club', '/stock/boutique'),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CalyCompta kon niet worden geopend.')),
-      );
-    }
-  }
 }
 
 class BoutiqueProductsScreen extends StatefulWidget {
@@ -362,10 +413,10 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
               final filteredProducts = _selectedCategory == null
                   ? products
                   : products
-                        .where(
-                          (product) => product.category == _selectedCategory,
-                        )
-                        .toList();
+                      .where(
+                        (product) => product.category == _selectedCategory,
+                      )
+                      .toList();
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,20 +433,19 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                     ),
                   ),
                   _CategoryFilter(
-                    categories:
-                        products
-                            .map((product) => product.category)
-                            .toSet()
-                            .where(
-                              (category) =>
-                                  category != BoutiqueProductCategory.autre,
-                            )
-                            .toList()
-                          ..sort(
-                            (a, b) => boutiqueCategoryLabel(
-                              a,
-                            ).compareTo(boutiqueCategoryLabel(b)),
-                          ),
+                    categories: products
+                        .map((product) => product.category)
+                        .toSet()
+                        .where(
+                          (category) =>
+                              category != BoutiqueProductCategory.autre,
+                        )
+                        .toList()
+                      ..sort(
+                        (a, b) => boutiqueCategoryLabel(
+                          a,
+                        ).compareTo(boutiqueCategoryLabel(b)),
+                      ),
                     selectedCategory: _selectedCategory,
                     onSelected: (category) {
                       setState(() => _selectedCategory = category);
@@ -418,8 +468,8 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
                                       requiredSection: 'produits',
                                       builder: (_) =>
                                           BoutiqueProductDetailScreen(
-                                            product: product,
-                                          ),
+                                        product: product,
+                                      ),
                                     ),
                                   );
                                 },

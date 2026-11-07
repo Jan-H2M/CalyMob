@@ -168,6 +168,8 @@ class LocalBoutiqueWizardStore {
     }
     for (final u in selected) {
       switch (action) {
+        case 'setCustomStatus':
+          u['customStatus'] = input['customStatus'];
         case 'move':
           u['location'] = dest;
         case 'prepareJim':

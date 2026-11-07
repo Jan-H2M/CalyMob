@@ -50,6 +50,10 @@ void main() {
       accessService: access,
       operationsService: BoutiqueOperationsService(transport: (request) {
         calls.add(request['action'] as String);
+        if (request['action'] == 'handoverCandidates') {
+          return Future.value(
+              {'units': <Map<String, dynamic>>[], 'hasMore': false});
+        }
         if (request['action'] == 'missions') {
           return Future.value(
               {'missions': <Map<String, dynamic>>[], 'hasMore': false});
@@ -60,7 +64,17 @@ void main() {
     // The Boutique hub deliberately runs a continuous ocean animation.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Atelier Jim'), findsNothing);
+    expect(find.text('Commandes clients'), findsNothing);
     await tester.tap(find.text('Gestion Boutique'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Atelier Jim'), findsOneWidget);
+    expect(find.text('Commandes clients'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Remise et actions'), 300,
+        scrollable: find.byType(Scrollable).last);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Remise et actions'));
     await tester.pumpAndSettle();
   }
 
@@ -80,21 +94,36 @@ void main() {
     expect(find.text('Je suis à…'), findsNothing);
     expect(calls, ['list']);
     await tap(tester, find.text('Déplacer'));
-    await tap(
-        tester,
-        find.widgetWithText(
-            DropdownButtonFormField<String>, 'Lieu actuel des pièces'));
-    await tap(tester, find.text('Jim').last);
+    expect(find.widgetWithText(DropdownButtonFormField<String>, 'Action'),
+        findsNothing);
+    expect(find.text('Déplacer des pièces'), findsOneWidget);
+    expect(find.widgetWithText(ActionChip, 'Club'), findsNothing);
+    expect(find.widgetWithText(ActionChip, 'Piscine'), findsWidgets);
+    await tester.enterText(
+        find.byKey(const Key('wizard-source')), 'Autre lieu');
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('wizard-source')))
+            .controller!
+            .text,
+        'Autre lieu');
+    await tester.enterText(find.byKey(const Key('wizard-source')), 'Jim');
     await tester.enterText(
         find.byKey(const Key('wizard-destination')), 'Piscine');
     await tap(tester, find.byKey(const Key('wizard-next')));
     expect(find.text('Choisissez les paquets'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('Précisez votre action'), findsOneWidget);
+    expect(find.text('Déplacer des pièces'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.text('Que voulez-vous faire ?'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.scrollUntilVisible(find.text('Atelier Jim'), -300,
+        scrollable: find.byType(Scrollable).last);
+    expect(find.text('Atelier Jim'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -102,15 +131,28 @@ void main() {
     expect(store.applied, 0);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('direct handover opens from the unified actions menu',
+      (tester) async {
+    await open(tester);
+    await tap(tester, find.text('Remettre au membre'));
+    expect(find.text('Remise aux membres'), findsOneWidget);
+    expect(find.text('Aucune pièce disponible à remettre.'), findsOneWidget);
+    expect(calls, contains('handoverCandidates'));
+  });
   testWidgets(
       'shared missions remain reachable with the same service and guarded scope',
       (tester) async {
     await open(tester);
+    await tester.scrollUntilVisible(
+        find.text('Transports et remises partagés'), 200,
+        scrollable: find.byType(Scrollable).last);
     await tap(tester, find.text('Transports et remises partagés'));
     expect(find.text('Aucune mission en cours.'), findsOneWidget);
     expect(find.text('Sélectionner un lot'), findsNothing);
     expect(calls, ['list', 'missions']);
     await tap(tester, find.byType(BackButton));
+    await tester.scrollUntilVisible(find.text('Que voulez-vous faire ?'), -200,
+        scrollable: find.byType(Scrollable).last);
     expect(find.text('Que voulez-vous faire ?'), findsOneWidget);
     expect(store.applied, 0);
   });
@@ -118,6 +160,9 @@ void main() {
       'revoking RB access disposes the real entry and its mission route',
       (tester) async {
     await open(tester);
+    await tester.scrollUntilVisible(
+        find.text('Transports et remises partagés'), 200,
+        scrollable: find.byType(Scrollable).last);
     await tap(tester, find.text('Transports et remises partagés'));
     access.states.add(const BoutiqueAccessState(
         canAccess: false,

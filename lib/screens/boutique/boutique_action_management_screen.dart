@@ -3,6 +3,7 @@ import '../../services/boutique/boutique_operations_service.dart';
 import '../../widgets/boutique/boutique_access_guard.dart';
 import 'boutique_action_wizard_screen.dart';
 import 'boutique_management_screen.dart';
+import 'boutique_direct_handover_screen.dart';
 
 /// Production entry: the same guarded service is used for the wizard and the
 /// existing shared transport/handover screens. No inventory write on entry.
@@ -21,6 +22,8 @@ class BoutiqueActionManagementScreen extends StatelessWidget {
     return BoutiqueActionWizardScreen(
       clubId: scope.clubId,
       service: service,
+      handoverBuilder: (_) =>
+          BoutiqueDirectHandoverScreen(clubId: scope.clubId, service: service),
       missionsBuilder: (_) => BoutiqueManagementScreen(
           manager: true, showStockPreparation: false, service: service),
     );

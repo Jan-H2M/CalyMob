@@ -241,7 +241,8 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Android system back unwinds a failed order picker and its parents',
+  testWidgets(
+      'Android system back unwinds a failed order picker and its parents',
       (tester) async {
     rejectOrders = true;
     await open(tester);
@@ -263,7 +264,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('iOS edge back unwinds a failed order picker without an operation',
+  testWidgets(
+      'iOS edge back unwinds a failed order picker without an operation',
       (tester) async {
     rejectOrders = true;
     await open(tester, platform: TargetPlatform.iOS);
@@ -302,12 +304,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Remettre au membre'), findsOneWidget);
     expectVisibleNavigation(tester);
+    // The confirmation appears only after at least one piece is selected.
+    expect(
+        find.widgetWithText(FilledButton, 'Confirmer la remise'), findsNothing);
+    await tester.tap(find.text('Tout sélectionner'));
+    await tester.pumpAndSettle();
     expect(
         tester
             .widget<FilledButton>(
                 find.widgetWithText(FilledButton, 'Confirmer la remise'))
             .onPressed,
-        isNull);
+        isNotNull);
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
     expect(find.text('Transport et remises'), findsOneWidget);

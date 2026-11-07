@@ -95,6 +95,15 @@ class BoutiqueOperationsService {
         'aborted',
         'already-exists'
       }.contains(error.code);
+  /// The two new read endpoints require the corresponding server release.
+  static String messageForNewRead(Object error) {
+    if (error is FirebaseFunctionsException && error.code == 'invalid-argument' &&
+        error.message == 'Demande Boutique invalide.') {
+      return 'Cette rubrique nécessite une mise à jour du service Boutique.';
+    }
+    return message(error);
+  }
+
   static String message(Object error) => error is FirebaseFunctionsException
       ? error.message ?? 'Action impossible. Actualisez le lot.'
       : error is FormatException

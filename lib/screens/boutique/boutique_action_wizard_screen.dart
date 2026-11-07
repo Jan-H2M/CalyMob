@@ -13,12 +13,14 @@ class BoutiqueActionWizardScreen extends StatefulWidget {
   final BoutiqueOperationsService service;
   final Widget Function(Future<String> Function(String))? scannerBuilder;
   final WidgetBuilder? missionsBuilder;
+  final WidgetBuilder? handoverBuilder;
   const BoutiqueActionWizardScreen(
       {super.key,
       required this.clubId,
       required this.service,
       this.scannerBuilder,
-      this.missionsBuilder});
+      this.missionsBuilder,
+      this.handoverBuilder});
   @override
   State<BoutiqueActionWizardScreen> createState() => _WizardState();
 }
@@ -30,6 +32,7 @@ const boutiqueBatchActions = {
   'confirmJim': 'En fabrication',
   'finishJim': 'Broderie terminée chez Jim',
   'reviewPlain': 'Contrôler les articles sans broderie',
+  'setCustomStatus': 'Statut libre',
 };
 
 /// Conservative display hints only. The server preview remains authoritative
@@ -37,6 +40,7 @@ const boutiqueBatchActions = {
 String? boutiqueBatchBlockedReason(
     BoutiquePhysicalUnit unit, String action, String? source) {
   if (unit.sold) return 'Déjà remis au client';
+  if (action == 'setCustomStatus') return null;
   if (source != null && unit.location != source) {
     return 'Se trouve à ${unit.location}';
   }
@@ -79,7 +83,9 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
   int _step = 0;
   int _generation = 0;
   String? _category, _action, _source;
-  final _destination = TextEditingController(),
+  final _customStatus = TextEditingController(),
+      _sourceInput = TextEditingController(),
+      _destination = TextEditingController(),
       _note = TextEditingController(),
       _window = TextEditingController();
   final _units = <String, BoutiquePhysicalUnit>{};
@@ -106,8 +112,16 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       (_usesLocation &&
           ['confirmJim', 'finishJim', 'reviewPlain'].contains(_action)) ||
       (_action == 'dispatch' && _destination.text.trim() == _source);
-  List<String> get _locations =>
-      _units.values.map((u) => u.location).toSet().toList()..sort();
+  String? _resolveSource(String input) {
+    final value = input.trim();
+    if (value.isEmpty) return null;
+    final places = _units.values.map((u) => u.location).toSet();
+    if (places.contains(value)) return value;
+    final matches =
+        places.where((v) => v.toLowerCase() == value.toLowerCase()).toList();
+    return matches.length == 1 ? matches.single : value;
+  }
+
   String? _reason(BoutiquePhysicalUnit unit) => boutiqueBatchBlockedReason(
       unit, _action!, _usesLocation ? _source : null);
 
@@ -119,6 +133,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
 
   @override
   void dispose() {
+    _customStatus.dispose();
+    _sourceInput.dispose();
     _destination.dispose();
     _note.dispose();
     _window.dispose();
@@ -163,6 +179,9 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         _units.clear();
         _units.addAll(retained);
         _units.addAll(loaded);
+        if (_sourceInput.text.trim().isNotEmpty) {
+          _source = _resolveSource(_sourceInput.text);
+        }
         _assignees = (data['assignees'] as List? ?? [])
             .map((a) => Map<String, dynamic>.from(a as Map))
             .toList();
@@ -226,6 +245,11 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
       return _usesLocation
           ? 'Choisissez une action et le lieu actuel.'
           : 'Choisissez une action.';
+    }
+    if (_action == 'setCustomStatus' &&
+        (_customStatus.text.trim().isEmpty ||
+            _customStatus.text.trim().length > 120)) {
+      return 'Indiquez un statut libre de 120 caractères maximum.';
     }
     final dest = _destination.text.trim();
     if (_needsDestination && (dest.isEmpty || dest.length > 160)) {
@@ -403,6 +427,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         if (_usesLocation) 'confirmed': true,
         if (_needsDestination) 'destination': _destination.text.trim(),
         if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
+        if (_action == 'setCustomStatus')
+          'customStatus': _customStatus.text.trim(),
         if (_action == 'dispatch') ...{
           'assigneeIds': _helpers.toList(),
           'pickupPoint': _pickup,
@@ -499,81 +525,68 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
 
   Widget _values() =>
       Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('Précisez votre action',
+        Text(
+            _category == 'move'
+                ? 'Déplacer des pièces'
+                : 'Précisez votre action',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
         if (_category == 'finish') ...[
           DropdownButtonFormField<String>(
-              key: ValueKey('finish-mode-$_action'),
-              initialValue: _action == 'prepareJim' ? 'prepare' : 'manual',
+              key: const Key('finish-mode'),
+              initialValue: _action == 'setCustomStatus' ? 'custom' : 'prepare',
               isExpanded: true,
               decoration: const InputDecoration(
                   labelText: 'Action', border: OutlineInputBorder()),
               items: const [
                 DropdownMenuItem(
                     value: 'prepare', child: Text('Préparer la broderie')),
-                DropdownMenuItem(value: 'manual', child: Text('Autre statut')),
+                DropdownMenuItem(value: 'custom', child: Text('Statut libre')),
               ],
               onChanged: _locked
                   ? null
                   : (value) => _setAction(
-                      value == 'prepare' ? 'prepareJim' : 'confirmJim')),
-          if (_action != 'prepareJim') ...[
+                      value == 'custom' ? 'setCustomStatus' : 'prepareJim')),
+          if (_action == 'setCustomStatus') ...[
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-                key: ValueKey('finish-action-$_action'),
-                initialValue: _action,
-                isExpanded: true,
+            TextField(
+                key: const Key('wizard-custom-status'),
+                controller: _customStatus,
+                enabled: !_locked,
+                maxLength: 120,
                 decoration: const InputDecoration(
-                    labelText: 'Statut', border: OutlineInputBorder()),
-                items: boutiqueBatchActions.entries
-                    .where((entry) => ['confirmJim', 'finishJim', 'reviewPlain']
-                        .contains(entry.key))
-                    .map((entry) => DropdownMenuItem(
-                        value: entry.key,
-                        child:
-                            Text(entry.value, overflow: TextOverflow.ellipsis)))
-                    .toList(),
-                onChanged: _locked ? null : (value) => _setAction(value!)),
+                    labelText: 'Statut libre', border: OutlineInputBorder()),
+                onChanged: (_) => _invalidate()),
           ],
         ] else ...[
-          DropdownButtonFormField<String>(
-              key: ValueKey('action-$_category-$_action'),
-              initialValue: _action,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Action', border: OutlineInputBorder()),
-              items: boutiqueBatchActions.entries
-                  .where((entry) => ['move', 'dispatch'].contains(entry.key))
-                  .map((entry) => DropdownMenuItem(
-                      value: entry.key,
-                      child:
-                          Text(entry.value, overflow: TextOverflow.ellipsis)))
-                  .toList(),
-              onChanged: _locked ? null : (value) => _setAction(value!)),
-          const SizedBox(height: 16),
           if (_loading) const LinearProgressIndicator(),
-          if (!_loading && _locations.isEmpty)
-            const Text('Aucun lieu chargé. Réessayez le chargement.'),
-          DropdownButtonFormField<String>(
-              key: ValueKey('source-$_source-${_locations.join('|')}'),
-              initialValue: _source != null && _locations.contains(_source)
-                  ? _source
-                  : null,
+          TextField(
+              key: const Key('wizard-source'),
+              controller: _sourceInput,
+              enabled: !_locked,
               decoration: const InputDecoration(
                   labelText: 'Lieu actuel des pièces',
                   border: OutlineInputBorder()),
-              items: _locations
-                  .map((value) =>
-                      DropdownMenuItem(value: value, child: Text(value)))
-                  .toList(),
-              onChanged: _locked
-                  ? null
-                  : (value) => setState(() {
-                        _source = value;
-                        _presence = false;
-                        _invalidate();
-                      })),
+              onChanged: (value) => setState(() {
+                    _source = _resolveSource(value);
+                    _presence = false;
+                    _invalidate();
+                  })),
+          Wrap(
+            spacing: 8,
+            children: ['Jan', 'Jim', 'Piscine']
+                .map((value) => ActionChip(
+                    label: Text(value),
+                    onPressed: _locked
+                        ? null
+                        : () => setState(() {
+                              _sourceInput.text = value;
+                              _source = _resolveSource(value);
+                              _presence = false;
+                              _invalidate();
+                            })))
+                .toList(),
+          ),
         ],
         if (_needsDestination) ...[
           const SizedBox(height: 16),
@@ -590,7 +603,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                   })),
           Wrap(
               spacing: 8,
-              children: _locations
+              children: ['Jan', 'Jim', 'Piscine']
                   .where((v) => v != _source)
                   .map((v) => ActionChip(
                       label: Text(v),
@@ -615,6 +628,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
             'Marque la broderie terminée chez Jim. Aucun déplacement ni message client.',
           'reviewPlain' =>
             'Uniquement les articles confirmés sans broderie. Aucun besoin de broderie ne peut être contourné.',
+          'setCustomStatus' =>
+            'Ce statut est ajouté à côté du statut existant.',
           _ =>
             'Le transport et la réception sont distincts. Le départ seul n’avertit pas les acheteurs.',
         }),
@@ -781,7 +796,7 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 title: Text(u.name),
                 subtitle: Text(
-                    '${u.variant} · ${u.stage}${reason == null ? '' : ' · $reason'}'),
+                    '${u.variant} · ${u.stage}${(u.data['customStatus'] as String? ?? '').isNotEmpty ? ' · ${u.data['customStatus']}' : ''}${reason == null ? '' : ' · $reason'}'),
                 value: _selected.contains(u.id),
                 onChanged:
                     _locked || (reason != null && !_selected.contains(u.id))
@@ -831,6 +846,8 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
         if ((_preview?['heldOrders'] as List? ?? []).isNotEmpty)
           Text(
               '${(_preview!['heldOrders'] as List).length} commande(s) restent en attente de préparation ou de paiement.'),
+        if (_action == 'setCustomStatus')
+          Text('Statut libre : ${_customStatus.text.trim()}'),
         if (_note.text.trim().isNotEmpty)
           Text('Contrôle / note : ${_note.text.trim()}'),
         if (_action == 'dispatch')
@@ -928,11 +945,23 @@ class _WizardState extends State<BoutiqueActionWizardScreen> {
                                         .textTheme
                                         .headlineSmall),
                                 const Text(
-                                    'Une action commune pour plusieurs paquets. Aucun changement avant la dernière confirmation.'),
+                                    'Choisissez l’action à effectuer. Aucun changement avant la confirmation.'),
                                 const SizedBox(height: 16),
+                                if (widget.handoverBuilder != null)
+                                  _choice(
+                                      'Remettre au membre',
+                                      'Choisir un membre et confirmer la remise.',
+                                      Icons.handshake_outlined,
+                                      () => Navigator.push(
+                                          context,
+                                          boutiqueAccessGuardedRoute<void>(
+                                              sourceContext: context,
+                                              requiredSection: 'gestion',
+                                              builder:
+                                                  widget.handoverBuilder!))),
                                 _choice(
                                     'Déplacer',
-                                    'Changer de lieu ou organiser un transport.',
+                                    'Changer le lieu des pièces.',
                                     Icons.local_shipping_outlined,
                                     () => _setCategory('move')),
                                 _choice(
