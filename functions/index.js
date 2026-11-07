@@ -206,6 +206,7 @@ exports.cleanupOldMessages = cleanupOldMessages;
 // Push notification when a new outdoor event/dive is created
 const { onNewOperation } = require('./src/notifications/onNewOperation');
 exports.onNewOperation = onNewOperation;
+exports.onEventSettingsUpdated = require('./src/audit/onEventSettingsUpdated').onEventSettingsUpdated;
 
 // Push notification when a member self-declares a LIFRAS exercise from CalyMob
 // NOTE 2026-04-30: realtime push DISABLED via kill switch inside the function —
