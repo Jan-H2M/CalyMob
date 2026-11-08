@@ -16,7 +16,9 @@ describe('amount for a direct event payment QR', () => {
   test('fails closed for bank review and ambiguous transactions', () => {
     expect(() => amountForRegistration({ prix: 15, payment_status: 'manual_review' }, null)).toThrow();
     expect(() => amountForRegistration({ prix: 15, transaction_id: 'pending' }, null)).toThrow();
+    expect(() => amountForRegistration({ prix: 15, payment_status: 'partial', amount_paid: 5 }, null)).toThrow();
     expect(() => amountForRegistration({ installment_payments: { a: { status: 'unpaid', amount_due: 5, transaction_id: 'pending' } } }, 'a')).toThrow();
+    expect(() => amountForRegistration({ installment_payments: { a: { status: 'unpaid', amount_due: 5, amount_paid: 2 } } }, 'a')).toThrow();
   });
   test('rejects missing installments and invalid amounts', () => {
     expect(() => amountForRegistration({ installment_payments: {} }, 'missing')).toThrow();
