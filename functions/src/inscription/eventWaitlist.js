@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { hasPendingDispatch } = require('../payment/paymentEmailDispatch');
 
 const REGION = 'europe-west1';
 const ACTIVE_STATUSES = new Set(['confirmed', 'pending_payment']);
@@ -1178,6 +1179,11 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
         throw new HttpsError('permission-denied', 'Invité non modifiable.');
       }
     }
+    const guestDispatches = await Promise.all(guestIdsToRemove.map(id => transaction.get(
+      operationRef.collection('payment_email_dispatches').doc(id),
+    )));
+    const paymentEmailMayHaveBeenSent = guestDispatches.some(snapshot =>
+      snapshot.exists && hasPendingDispatch(snapshot.data(), now.toMillis()));
 
     const retainedGuests = linkedGuests.filter(doc => !guestIdsToRemove.includes(doc.id));
     if (newGuests.length > 0) {
@@ -1361,6 +1367,7 @@ const updateEventRegistration = onCall({ region: REGION }, async request => {
       operationTitle: cleanAuditText(operation.titre, 'Événement', 160),
       addedGuestIds,
       removedGuestIds: guestIdsToRemove,
+      paymentEmailMayHaveBeenSent,
       promotedIds: nextEntries.map(entry => entry.id),
       idempotent: false,
     };
@@ -1580,6 +1587,12 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
     if (guests.length > 0 && effectiveGuestAction === null) {
       throw new HttpsError('failed-precondition', 'Choisissez le traitement des invités.');
     }
+    const affected = [ownEntry, ...(effectiveGuestAction === 'delete' ? guests : [])];
+    const dispatches = await Promise.all(affected.map(entry => transaction.get(
+      operationRef.collection('payment_email_dispatches').doc(entry.id),
+    )));
+    const paymentEmailMayHaveBeenSent = dispatches.some(snapshot =>
+      snapshot.exists && hasPendingDispatch(snapshot.data(), now.toMillis()));
     const removedEntries = [ownEntry];
     if (effectiveGuestAction === 'delete') {
       for (const guest of guests) {
@@ -1650,17 +1663,18 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       source: cleanAuditText(source, 'calymob', 40),
       app_version: cleanAuditText(appVersion, null, 40),
       reason: cleanAuditText(reason, isElevated && !ownsRegistration ? 'admin_cancellation' : 'self_withdrawal', 240),
+      payment_email_may_have_been_sent: paymentEmailMayHaveBeenSent,
     });
 
     if (wasWaitlisted) {
-      return { status: 'canceled', promoted: [], notifications: [] };
+      return { status: 'canceled', promoted: [], notifications: [], paymentEmailMayHaveBeenSent };
     }
     const nextEntries = promotionCandidatesAfterWithdrawal(
       operation,
       inscriptionsSnap.docs,
       removedEntries.map(entry => entry.id),
     );
-    if (nextEntries.length === 0) return { status: 'canceled', promoted: [], notifications: [] };
+    if (nextEntries.length === 0) return { status: 'canceled', promoted: [], notifications: [], paymentEmailMayHaveBeenSent };
     const promotedStatus = registrationStatusAfterPromotion(operation);
     for (const nextEntry of nextEntries) {
       transaction.update(nextEntry.ref, {
@@ -1693,6 +1707,7 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       status: 'canceled',
       promoted: nextEntries.map(entry => entry.id),
       promotedStatus,
+      paymentEmailMayHaveBeenSent,
       notifications: nextEntries.map(entry => ({ operation, memberId: entry.data().membre_id })),
     };
   });

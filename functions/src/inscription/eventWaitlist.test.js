@@ -1222,13 +1222,16 @@ describe('unregisterFromEvent callable', () => {
     return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
   }
 
-  function setupDb(attemptDocs, actorRole = 'membre', operationOverrides = {}) {
+  function setupDb(attemptDocs, actorRole = 'membre', operationOverrides = {}, pendingDispatchIds = []) {
     const notifications = [];
     const operationRef = {
       path: 'clubs/calypso/operations/event-1',
       collection: jest.fn(name => {
         if (name === 'inscriptions') return inscriptionsRef;
         if (name === 'waitlist_audit') return auditRef;
+        if (name === 'payment_email_dispatches') return {
+          doc: id => ({ path: `dispatch/${id}`, dispatchId: id }),
+        };
         throw new Error(`unexpected operation collection ${name}`);
       }),
     };
@@ -1278,6 +1281,9 @@ describe('unregisterFromEvent callable', () => {
                 };
               }
               if (ref === inscriptionsRef) return { docs };
+              if (ref.dispatchId) return { exists: pendingDispatchIds.includes(ref.dispatchId), data: () => ({
+                attempts: { active: { expires_at: { toMillis: () => Date.parse('2026-08-12T10:01:00Z') } } },
+              }) };
               throw new Error(`unexpected transaction get ${ref.path}`);
             }),
             delete: jest.fn(),
@@ -1304,6 +1310,17 @@ describe('unregisterFromEvent callable', () => {
     await expect(unregisterFromEvent({ auth: null, data: {} }))
       .rejects.toThrow('Authentification requise.');
     expect(admin.firestore).not.toHaveBeenCalled();
+  });
+
+  test('cancels immediately and warns when a payment email may be in flight', async () => {
+    const docs = [makeDoc('member', { membre_id: 'member-1', registration_status: 'confirmed' })];
+    const { db } = setupDb([docs], 'membre', {}, ['member']);
+    const result = await unregisterFromEvent({ auth: { uid: 'member-1' }, data: {
+      clubId: 'calypso', operationId: 'event-1', inscriptionId: 'member',
+    } });
+    expect(result).toMatchObject({ status: 'canceled', paymentEmailMayHaveBeenSent: true });
+    expect(db.transactions[0].update).toHaveBeenCalledWith(expect.objectContaining({ id: 'member' }),
+      expect.objectContaining({ registration_status: 'canceled' }));
   });
 
   test.each([
@@ -1554,7 +1571,7 @@ describe('unregisterFromEvent callable', () => {
       },
     });
 
-    expect(result).toEqual({ status: 'canceled', promoted: [] });
+    expect(result).toEqual({ status: 'canceled', promoted: [], paymentEmailMayHaveBeenSent: false });
     expect(db.transactions[0].update).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'waitlisted-member' }),
       expect.objectContaining({ registration_status: 'canceled' }),
@@ -1691,6 +1708,7 @@ describe('updateEventRegistration callable', () => {
         if (name === 'inscriptions') return inscriptionsRef;
         if (name === 'registration_requests') return { doc: jest.fn(() => requestRef) };
         if (name === 'waitlist_audit') return auditRef;
+        if (name === 'payment_email_dispatches') return { doc: id => ({ path: `dispatch/${id}`, dispatchId: id }) };
         throw new Error(`unexpected collection ${name}`);
       }),
     };
@@ -1730,6 +1748,7 @@ describe('updateEventRegistration callable', () => {
         if (ref === requestRef) {
           return { exists: previousRequest !== null, data: () => previousRequest };
         }
+        if (ref.dispatchId) return { exists: false, data: () => undefined };
         throw new Error(`unexpected get ${ref.path}`);
       }),
       set: jest.fn(),

@@ -1,0 +1,27 @@
+name: Event email cancellation race
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'functions/src/payment/**'
+      - 'functions/src/inscription/**'
+      - '.github/workflows/event-email-cancellation.yml'
+permissions:
+  contents: read
+jobs:
+  email-cancellation-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --prefix functions --ignore-scripts --no-audit --no-fund
+      - run: npx --yes firebase-tools@15.12.0 emulators:exec --only firestore --project demo-email-cancellation --config firebase.boutique-flow-qa.json 'node --test functions/src/payment/paymentEmailCancellation.emulator.cjs'

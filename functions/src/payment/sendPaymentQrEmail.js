@@ -35,6 +35,7 @@ const {
   prepareEventPaymentIntent,
 } = require('./eventPaymentIntent');
 const { markInstallmentQrSent } = require('./markInstallmentQrSent');
+const { beginPaymentEmailDispatch, endPaymentEmailDispatch } = require('./paymentEmailDispatch');
 
 function paymentRegistrationState(value) {
   return String(value || '').trim().toLowerCase();
@@ -784,15 +785,30 @@ async function sendPaymentEmailForMember(db, input) {
   const configuredFromName = provider === 'gmail'
     ? (emailConfig.gmail?.fromName || clubName)
     : (emailConfig.resend?.fromName || clubName);
-  const result = await sendEmailWithConfig(emailConfig, {
-    to: memberEmail,
-    subject: renderedSubject,
-    html: renderedHtml,
-    attachments,
-    replyTo: routing.replyToAddress || undefined,
-    replyToName: configuredFromName,
-    headers: routing.headers,
-  });
+  const dispatch = await beginPaymentEmailDispatch(db, clubId, operationId, participantId, paymentIntent, installmentId);
+  let result;
+  let dispatchRecorded = false;
+  try {
+    result = await sendEmailWithConfig(emailConfig, {
+      to: memberEmail,
+      subject: renderedSubject,
+      html: renderedHtml,
+      attachments,
+      replyTo: routing.replyToAddress || undefined,
+      replyToName: configuredFromName,
+      headers: routing.headers,
+    });
+    // Keep the intent matchable even if cancellation occurs during delivery.
+    await markEventPaymentIntentIssued(paymentIntent, result.messageId);
+    dispatchRecorded = true;
+  } finally {
+    // A timeout or provider error can be ambiguous; retain the short-lived
+    // marker so a concurrent cancellation warns rather than promising no mail.
+    if (dispatchRecorded) {
+      try { await endPaymentEmailDispatch(db, dispatch); }
+      catch (error) { console.warn('[sendPaymentQrEmail] Dispatch marker cleanup failed:', error); }
+    }
+  }
   const usedProviderConfig = result.provider === 'gmail' ? (emailConfig.gmail || {}) : (emailConfig.resend || {});
 
   console.log(`✅ [sendPaymentQrEmail] Email sent successfully to ${memberEmail}, id: ${result.messageId}`);
@@ -800,8 +816,6 @@ async function sendPaymentEmailForMember(db, input) {
   // L'intention existe déjà en status=prepared avant l'envoi. Le passage à
   // issued confirme l'envoi; prepared reste volontairement matchable si cette
   // dernière écriture échoue après qu'un email a effectivement été délivré.
-  await markEventPaymentIntentIssued(paymentIntent, result.messageId);
-
   // 11. Log to email_history collection
   try {
     const serverTimestamp = admin.firestore.FieldValue.serverTimestamp();
