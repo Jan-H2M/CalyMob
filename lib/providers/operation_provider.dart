@@ -10,6 +10,8 @@ import '../services/operation_service.dart';
 
 /// Provider pour l'état des opérations
 class OperationProvider with ChangeNotifier {
+  bool _paymentEmailMayHaveBeenSent = false;
+  bool get paymentEmailMayHaveBeenSent => _paymentEmailMayHaveBeenSent;
   final OperationService _operationService;
 
   OperationProvider({OperationService? operationService})
@@ -278,7 +280,9 @@ class OperationProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      await _operationService.unregisterFromOperation(
+      _paymentEmailMayHaveBeenSent = false;
+      _paymentEmailMayHaveBeenSent =
+          await _operationService.unregisterFromOperation(
         clubId: clubId,
         operationId: operationId,
         inscriptionId: inscriptionId,

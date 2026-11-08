@@ -73,12 +73,14 @@ class _MockOperationProvider extends Mock implements OperationProvider {
     this.remainingInscriptionAfterUnregister,
     this.unregisterError,
     this.participants = const [],
+    this.paymentEmailWarning = false,
   });
 
   final Operation _operation;
   final ParticipantOperation? remainingInscriptionAfterUnregister;
   final Object? unregisterError;
   final List<ParticipantOperation> participants;
+  final bool paymentEmailWarning;
   final unregisterCalls = <Map<String, dynamic>>[];
   var reloadCalls = 0;
   var _isRegistered = true;
@@ -92,6 +94,9 @@ class _MockOperationProvider extends Mock implements OperationProvider {
 
   @override
   bool get isLoading => false;
+
+  @override
+  bool get paymentEmailMayHaveBeenSent => paymentEmailWarning;
 
   @override
   int getParticipantCount(String operationId) => 1;
@@ -503,6 +508,7 @@ void main() {
     final operationProvider = _MockOperationProvider(
       operation,
       remainingInscriptionAfterUnregister: remainingInscription,
+      paymentEmailWarning: true,
     );
     final operationService = _MockOperationService(loadedInscription);
     final profileService = _MockProfileService();
@@ -553,6 +559,8 @@ void main() {
       }
     ]);
     expect(operationProvider.reloadCalls, 1);
+    expect(find.textContaining('Un email de paiement est peut-être déjà parti'),
+        findsOneWidget);
     expect(find.byType(OperationUnregisterButton), findsOneWidget);
     expect(
       tester

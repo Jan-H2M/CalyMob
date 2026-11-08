@@ -84,7 +84,7 @@ class _RecordingOperationService extends OperationService {
   var getUserInscriptionCalls = 0;
 
   @override
-  Future<void> unregisterFromOperation({
+  Future<bool> unregisterFromOperation({
     required String clubId,
     required String operationId,
     required String inscriptionId,
@@ -98,6 +98,7 @@ class _RecordingOperationService extends OperationService {
       'userId': userId,
       'guestAction': guestAction,
     });
+    return false;
   }
 
   @override
@@ -230,6 +231,20 @@ void main() {
       'source': 'calymob',
       'reason': 'self_withdrawal',
     });
+  });
+
+  test('returns the warning from the cancellation callable', () async {
+    _MockFirebaseFunctionsPlatform.handler = (_, __) async => {
+          'status': 'canceled',
+          'paymentEmailMayHaveBeenSent': true,
+        };
+    final warning = await service.unregisterFromOperation(
+      clubId: clubId,
+      operationId: operationId,
+      inscriptionId: inscriptionId,
+      userId: 'member-1',
+    );
+    expect(warning, isTrue);
   });
 
   test('preserves the selected guest action beside the exact inscription',

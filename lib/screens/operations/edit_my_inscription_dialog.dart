@@ -126,7 +126,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     return total;
   }
 
-  double get _delta => (_newSupplementTotal + _newGuestTotal) -
+  double get _delta =>
+      (_newSupplementTotal + _newGuestTotal) -
       (_oldSupplementTotal + _oldGuestTotal);
 
   /// Old guest total uses the prix + the supplement_total **exactly as
@@ -157,10 +158,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       // Deleted guests don't count — they're handled by _deletedGuestIds.
       if (_deletedGuestIds.contains(id)) continue;
       final current = guest['selectedSupplementIds'] as Set<String>;
-      final initial =
-          _initialGuestSupplementIds[id] ?? const <String>{};
-      if (current.length != initial.length ||
-          !current.containsAll(initial)) {
+      final initial = _initialGuestSupplementIds[id] ?? const <String>{};
+      if (current.length != initial.length || !current.containsAll(initial)) {
         return true;
       }
     }
@@ -189,9 +188,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
   }
 
   List<Tariff> get _guestTariffs =>
-      widget.operation.eventTariffs
-          .where((t) => t.isGuestTariff)
-          .toList();
+      widget.operation.eventTariffs.where((t) => t.isGuestTariff).toList();
 
   @override
   void initState() {
@@ -208,7 +205,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       final snapshot = await FirebaseFirestore.instance
           .collection(
               'clubs/${widget.clubId}/operations/${widget.operation.id}/inscriptions')
-          .where('parent_inscription_id', isEqualTo: widget.currentInscription.id)
+          .where('parent_inscription_id',
+              isEqualTo: widget.currentInscription.id)
           .get();
 
       _initialGuestSupplementIds.clear();
@@ -289,8 +287,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           'prix': result['prix'] as double,
           'tariffId': result['tariffId'] as String?,
           'divingLevel': result['divingLevel'] as String?,
-          'selectedSupplementIds':
-              initialSupplements.map((s) => s.id).toSet(),
+          'selectedSupplementIds': initialSupplements.map((s) => s.id).toSet(),
         });
       });
     }
@@ -306,9 +303,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       if (prenom.isEmpty || nom.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content:
-                    Text('Veuillez remplir tous les champs des invites')),
+            const SnackBar(
+                content: Text('Veuillez remplir tous les champs des invites')),
           );
         }
         return;
@@ -452,8 +448,9 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           .map((g) => g['id'] as String)
           .toList();
 
+      final operationService = OperationService();
       final authoritativeServerDelta =
-          await OperationService().updateMyInscription(
+          await operationService.updateMyInscription(
         clubId: widget.clubId,
         operationId: widget.operation.id,
         inscriptionId: widget.currentInscription.id,
@@ -468,6 +465,22 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         forceRefundClaim: forceRefundClaim,
         requestId: _editRequestId,
       );
+
+      if (mounted && operationService.editPaymentEmailMayHaveBeenSent) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Email de paiement'),
+            content: const Text(
+                'Un email de paiement est peut-être déjà parti pour cet invité. Vérifiez la situation auprès du club.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Compris'))
+            ],
+          ),
+        );
+      }
 
       if (mounted) {
         // Build the list of SelectedSupplement objects for the caller
@@ -494,8 +507,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Erreur: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content:
+                Text('Erreur: ${e.toString().replaceFirst('Exception: ', '')}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -655,8 +668,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
                         Text(
                           '${totalPrix.toStringAsFixed(2)} €',
                           style: TextStyle(
-                            color: AppColors.donkerblauw
-                                .withValues(alpha: 0.6),
+                            color: AppColors.donkerblauw.withValues(alpha: 0.6),
                             fontSize: 12,
                           ),
                         ),
@@ -672,8 +684,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
                   child: Text(
                     'Suppléments',
                     style: TextStyle(
-                      color:
-                          AppColors.donkerblauw.withValues(alpha: 0.7),
+                      color: AppColors.donkerblauw.withValues(alpha: 0.7),
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 1.0,
@@ -732,8 +743,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
               prenom: g['prenom'] as String? ?? '',
               nom: g['nom'] as String? ?? '',
               prix: (g['prix'] as num).toDouble(),
-              selectedSupplementIds:
-                  g['selectedSupplementIds'] as Set<String>,
+              selectedSupplementIds: g['selectedSupplementIds'] as Set<String>,
               divingLevelFieldKey: ValueKey('guest-level-${g['id']}'),
               divingLevel: g['divingLevel'] as String?,
               onDivingLevelChanged: (level) {
@@ -751,8 +761,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
               prenom: g['prenom'] as String? ?? '',
               nom: g['nom'] as String? ?? '',
               prix: (g['prix'] as num).toDouble(),
-              selectedSupplementIds:
-                  g['selectedSupplementIds'] as Set<String>,
+              selectedSupplementIds: g['selectedSupplementIds'] as Set<String>,
               divingLevelFieldKey: ObjectKey(g),
               divingLevel: g['divingLevel'] as String?,
               onDivingLevelChanged: (level) {
@@ -870,8 +879,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
                 ),
                 onPressed: onDelete,
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 splashRadius: 16,
               ),
             ],
@@ -920,8 +928,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     required bool isNew,
   }) {
     final isSelected = selectedSupplementIds.contains(supp.id);
-    final accent =
-        isNew ? Colors.greenAccent.shade200 : AppColors.donkerblauw;
+    final accent = isNew ? Colors.greenAccent.shade200 : AppColors.donkerblauw;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () {
@@ -934,8 +941,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         });
       },
       child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Row(
           children: [
             SizedBox(
@@ -1072,8 +1078,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
                     height: 18,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.white),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   )
                 : const Icon(Icons.save, size: 20),
