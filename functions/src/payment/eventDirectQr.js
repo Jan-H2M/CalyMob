@@ -101,7 +101,7 @@ async function issueDirectEventQr(db, { clubId, operationId, participantId, inst
         issued_at: now, updated_at: now, created_at: now,
       });
     }
-    return { amount: cents / 100, communication, iban: cleanIban, beneficiaryName: beneficiary, bic: bank.bic || '', installmentLabel, eventNumber, intentId };
+    return { amount: cents / 100, communication, iban: cleanIban, beneficiaryName: beneficiary, bic: bank.bic || '', installmentLabel, eventNumber, intentId, allocations };
   });
 }
 

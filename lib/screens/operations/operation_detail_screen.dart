@@ -1548,7 +1548,30 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         asOrganizer: true,
       );
       final serverAmount = (issued['amount'] as num).toDouble();
-      if ((serverAmount * 100).round() != (aggregatedAmount * 100).round()) {
+      final expectedAllocations = <String, int>{};
+      if (hasPlan && openInstallment != null) {
+        final inst = openInstallment;
+        if (inst.amount > 0) expectedAllocations[participant.id] = (inst.amount * 100).round();
+        for (final guest in linkedGuests) {
+          final payment = guest.installmentPayments[inst.id];
+          if (payment != null && payment.amountDue > 0 && payment.status != 'paid' && payment.status != 'waived') {
+            expectedAllocations[guest.id] = (payment.amountDue * 100).round();
+          }
+        }
+      } else {
+        if (!participant.isPaymentSettled && participant.totalPrix > 0) expectedAllocations[participant.id] = (participant.totalPrix * 100).round();
+        for (final guest in linkedGuests.where((guest) => !guest.isPaymentSettled && guest.totalPrix > 0)) {
+          expectedAllocations[guest.id] = (guest.totalPrix * 100).round();
+        }
+      }
+      final serverAllocations = <String, int>{};
+      for (final raw in issued['allocations'] as List) {
+        final entry = Map<String, dynamic>.from(raw as Map);
+        serverAllocations[entry['inscription_id'] as String] = (entry['amount_cents'] as num).toInt();
+      }
+      if ((serverAmount * 100).round() != (aggregatedAmount * 100).round() ||
+          expectedAllocations.length != serverAllocations.length ||
+          expectedAllocations.entries.any((entry) => serverAllocations[entry.key] != entry.value)) {
         throw StateError('Le montant a changé. Actualisez avant de continuer.');
       }
       if (!mounted) return;

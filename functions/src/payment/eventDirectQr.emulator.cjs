@@ -26,6 +26,7 @@ test('direct QR records the authoritative group and rejects canceled or ambiguou
     await assert.rejects(issueDirectEventQr(db, { ...input, uid: 'stranger' }), /autorisé/);
     const result = await issueDirectEventQr(db, input);
     assert.equal(result.amount, 23);
+    assert.deepEqual(result.allocations.map(a => a.inscription_id).sort(), ['guest', 'member']);
     const ref = club.collection('event_payment_intents').doc(result.intentId);
     const intent = (await ref.get()).data();
     assert.equal(intent.status, 'issued');
