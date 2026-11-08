@@ -1797,6 +1797,11 @@
   ],
   "repoOnlyFunctions": [
     {
+      "name": "createDirectEventPaymentQr",
+      "sourcePath": "functions/src/payment/eventDirectQr.js",
+      "reason": "New direct event payment callable; not present in the recorded live inventory."
+    },
+    {
       "name": "onEventSettingsUpdated",
       "sourcePath": "functions/src/audit/onEventSettingsUpdated.js",
       "reason": "New event settings audit trigger, not present in the recorded live inventory."
