@@ -36,6 +36,7 @@ const {
 } = require('./eventPaymentIntent');
 const { markInstallmentQrSent } = require('./markInstallmentQrSent');
 const { beginPaymentEmailDispatch, endPaymentEmailDispatch } = require('./paymentEmailDispatch');
+const { amountForRegistration } = require('./eventPaymentAmounts');
 
 function paymentRegistrationState(value) {
   return String(value || '').trim().toLowerCase();
@@ -417,17 +418,7 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
   // payé"): avec plan → somme des tranches encore ouvertes; sans plan →
   // 0 si paye, sinon prix + suppléments. On ne re-facture jamais ce qui
   // est déjà réglé.
-  const openAmountFor = (i) => {
-    const ip = i.installment_payments;
-    if (ip && Object.keys(ip).length > 0) {
-      return Object.values(ip).reduce((sum, p) => {
-        if (!p || p.status === 'paid' || p.status === 'waived') return sum;
-        return sum + (Number(p.amount_due) || 0);
-      }, 0);
-    }
-    if (i.paye === true) return 0;
-    return (Number(i.prix) || 0) + (Number(i.supplement_total) || 0);
-  };
+  const openAmountFor = i => amountForRegistration(i, null) / 100;
 
   const parentAmount = openAmountFor(parent);
   let guestSubtotal = 0;
@@ -481,10 +472,8 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   // payée/dispensée (sinon on re-facturerait une tranche déjà réglée — cas
   // d'un membre en avance sur son invité, p.ex. Patrick a payé son acompte 2
   // mais l'acompte 2 de son invité Marie reste ouvert).
-  const ownStatus = installment.status || 'unpaid';
-  const ownOpen = ownStatus !== 'paid' && ownStatus !== 'waived';
-  const rawOwnDue = Number(installment.amount_due) || 0;
-  const ownDue = ownOpen ? rawOwnDue : 0;
+  const ownDue = amountForRegistration(inscription, installmentId) / 100;
+  const ownOpen = ownDue > 0;
 
   // Paiement groupé: le membre paie SA tranche (si ouverte) + la MÊME tranche
   // (encore ouverte) de chaque invité rattaché (is_guest + parent_inscription_id).
@@ -499,10 +488,10 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   guestsSnap.forEach((doc) => {
     const g = doc.data();
     const gp = g.installment_payments && g.installment_payments[installmentId];
-    const guestDue = gp && gp.status !== 'paid' && gp.status !== 'waived' ? Number(gp.amount_due) || 0 : 0;
+    const guestDue = gp ? amountForRegistration(g, installmentId) / 100 : 0;
     if (!includeGuestInPayment(g, guestDue)) return;
-    if (gp && gp.status !== 'paid' && gp.status !== 'waived') {
-      const gd = Number(gp.amount_due) || 0;
+    if (guestDue > 0) {
+      const gd = guestDue;
       if (gd > 0) {
         guestSubtotal += gd;
         const name = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
@@ -676,7 +665,7 @@ async function sendPaymentEmailForMember(db, input) {
     console.log(`📧 [sendPaymentQrEmail] Using ensured event_number=${effectiveEventNumber} for ${operationId}`);
   }
 
-  const paymentReference = generatePaymentCommunication(
+  let paymentReference = generatePaymentCommunication(
     effectiveEventNumber,
     operationId,
     operationTitle,
@@ -703,6 +692,7 @@ async function sendPaymentEmailForMember(db, input) {
     eventNumber: effectiveEventNumber,
     communication: paymentReference,
   });
+  if (paymentIntent) paymentReference = paymentIntent.communication;
 
   // 6. Generate EPC payload
   const epcPayload = generateEpcPayload({

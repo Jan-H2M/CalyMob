@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const admin = require('firebase-admin');
 const { HttpsError } = require('firebase-functions/v2/https');
+const { amountForRegistration } = require('./eventPaymentAmounts');
 
 const DISPATCH_WINDOW_MS = 120000;
 
@@ -42,17 +43,7 @@ async function beginPaymentEmailDispatch(db, clubId, operationId, payerId, inten
       if (allocation.inscription_id !== payerId && data.parent_inscription_id !== payerId) {
         throw new HttpsError('failed-precondition', 'Les invités ont changé. Actualisez avant de demander un paiement.');
       }
-      const installment = installmentId && data.installment_payments?.[installmentId];
-      const installments = Object.values(data.installment_payments || {});
-      const due = installmentId
-        ? Number(installment?.amount_due)
-        : installments.length > 0
-          ? installments.reduce((sum, item) => sum + (!item || ['paid', 'waived'].includes(item.status) ? 0 : Number(item.amount_due || 0)), 0)
-          : Number(data.prix || 0) + Number(data.supplement_total || 0);
-      if ((installmentId && (!installment || ['paid', 'waived'].includes(installment.status) || installment.transaction_id))
-        || (!installmentId && installments.length === 0
-          && (data.paye === true || data.transaction_id || data.transaction_matched === true))
-        || !Number.isFinite(due) || Math.round(due * 100) !== allocation.amount_cents) {
+      if (amountForRegistration(data, installmentId) !== allocation.amount_cents) {
         throw new HttpsError('failed-precondition', 'Le montant ou le paiement a changé. Actualisez avant de réessayer.');
       }
     }

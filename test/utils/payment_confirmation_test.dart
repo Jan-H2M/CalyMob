@@ -2,6 +2,10 @@ import 'package:calymob/utils/payment_confirmation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('same total for different people cannot confirm a payment', () {
+    expect(paymentAllocationsMatch({'member': 1500, 'guest-a': 800}, {'member': 1500, 'guest-b': 800}), isFalse);
+    expect(paymentAllocationsMatch({'member': 1500, 'guest-a': 800}, {'guest-a': 800, 'member': 1500}), isTrue);
+  });
   test('partial group failure reloads authoritative state and is not success',
       () async {
     final events = <String>[];

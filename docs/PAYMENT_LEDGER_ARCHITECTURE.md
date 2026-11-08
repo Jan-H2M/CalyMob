@@ -63,6 +63,14 @@ charge revision and amount. They create immutable payment intents for both
 flat and installment QR flows. CalyCompta settles incoming bank receipts and
 owns Firestore accounting rules.
 
+For the direct event QR, the callable validates the current registration,
+guest allocations, bank details and payment method and records the amount and
+reference atomically before returning them to the app. The QR and copy button
+use that returned reference. Once an intent is prepared or issued, subsequent
+requests reuse its original communication so event edits do not invalidate it.
+Older app versions may still generate their direct QR locally; do not assume
+that all historical direct QRs have a server intent.
+
 The exported legacy Noda event-payment functions (`createNodaPayment`,
 `checkNodaPaymentStatus` and `nodaWebhook`) are fail-closed. They no longer
 write `operation_participants`; historical Noda records require manual review.

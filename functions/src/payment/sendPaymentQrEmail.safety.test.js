@@ -43,3 +43,15 @@ test('does not fall back to a client amount for a missing installment', async ()
 test('legacy active parent with no cancellation reaches ordinary payment configuration checks', async () => {
   await expect(sendPaymentEmailForMember(fakeDb({ prix: 15 }), input)).rejects.toThrow('Bank settings not configured');
 });
+
+test.each([
+  { prix: 15, payment_status: 'settled' },
+  { prix: 15, transaction_matched: true },
+  { prix: 15, paye: true, installment_payments: { first: { amount_due: 15, status: 'unpaid' } } },
+])('does not issue an email QR for a settled registration with stale amount fields', async registration => {
+  await expect(sendPaymentEmailForMember(fakeDb(registration), input)).rejects.toThrow('Aucun montant');
+});
+
+test('does not email a QR while a bank transaction is under review', async () => {
+  await expect(sendPaymentEmailForMember(fakeDb({ prix: 15, payment_status: 'manual_review' }), input)).rejects.toThrow('vérifié');
+});
