@@ -8,7 +8,9 @@ const inactive = new Set(['canceled', 'cancelled', 'annule', 'annulé', 'waitlis
 const closed = new Set(['paid', 'settled', 'waived', 'canceled', 'cancelled']);
 
 function amountForRegistration(registration, installmentId) {
-  if (registration.payment_status === 'manual_review') {
+  const paymentStatus = String(registration.payment_status || '').trim().toLowerCase();
+  if (registration.paye === true || registration.transaction_matched === true || ['paid', 'settled'].includes(paymentStatus)) return 0;
+  if (paymentStatus === 'manual_review' || paymentStatus === 'pending_bank') {
     throw new HttpsError('failed-precondition', 'Ce paiement doit être vérifié avant de créer un QR.');
   }
   const installments = registration.installment_payments || {};
@@ -24,8 +26,8 @@ function amountForRegistration(registration, installmentId) {
     return open(installments[installmentId]);
   }
   if (Object.keys(installments).length) return Object.values(installments).reduce((sum, item) => sum + open(item), 0);
-  if (registration.paye === true || closed.has(registration.payment_status)) return 0;
-  if (registration.transaction_id || registration.transaction_matched || Number(registration.amount_paid || 0) > 0 || registration.payment_status === 'partial') throw new HttpsError('failed-precondition', 'Paiement en cours de vérification.');
+  if (closed.has(paymentStatus)) return 0;
+  if (registration.transaction_id || Number(registration.amount_paid || 0) > 0 || paymentStatus === 'partial') throw new HttpsError('failed-precondition', 'Paiement en cours de vérification.');
   const amount = Number(registration.prix || 0) + Number(registration.supplement_total || 0);
   if (!Number.isFinite(amount) || amount < 0) throw new HttpsError('failed-precondition', 'Montant invalide.');
   return Math.round(amount * 100);
@@ -59,7 +61,8 @@ async function issueDirectEventQr(db, { clubId, operationId, participantId, inst
     const bank = bankSnap.data() || {};
     const cleanIban = String(bank.iban || '').replace(/\s/g, '').toUpperCase();
     const beneficiary = String(bank.beneficiaryName || '').trim();
-    if (!/^[A-Z]{2}[A-Z0-9]{13,32}$/.test(cleanIban) || !beneficiary || beneficiary.length > 70) throw new HttpsError('failed-precondition', 'Coordonnées bancaires indisponibles.');
+    const bic = String(bank.bic || '').replace(/\s/g, '').toUpperCase();
+    if (!/^[A-Z]{2}[A-Z0-9]{13,32}$/.test(cleanIban) || !beneficiary || beneficiary.length > 70 || (bic && !/^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?$/.test(bic))) throw new HttpsError('failed-precondition', 'Coordonnées bancaires indisponibles.');
     const eventNumber = event.event_number;
     if (!/^(?:[PS][A-Z]{4}|\d[A-Z0-9]{5})$/.test(eventNumber || '')) throw new HttpsError('failed-precondition', 'Référence de l’activité indisponible. Contactez le club.');
     const installment = installmentId && (event.payment_installments || []).find(item => item.id === installmentId);
@@ -101,7 +104,7 @@ async function issueDirectEventQr(db, { clubId, operationId, participantId, inst
         issued_at: now, updated_at: now, created_at: now,
       });
     }
-    return { amount: cents / 100, communication, iban: cleanIban, beneficiaryName: beneficiary, bic: bank.bic || '', installmentLabel, eventNumber, intentId, allocations };
+    return { amount: cents / 100, communication, iban: cleanIban, beneficiaryName: beneficiary, bic, installmentLabel, eventNumber, intentId, allocations };
   });
 }
 
