@@ -7,6 +7,24 @@ import 'package:calymob/widgets/epc_qr_code_widget.dart';
 import 'package:calymob/widgets/payment_communication_copy_button.dart';
 
 void main() {
+  testWidgets('server communication is used unchanged for QR and copy', (tester) async {
+    tester.view.physicalSize = const Size(500, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const issuedReference = '+++OP-SAAAB+++ Référence initiale';
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ParticipantPaymentCard(
+      participantFirstName: 'Ada', participantLastName: 'FICTIVE', amount: 23,
+      eventTitle: 'Titre modifié', eventId: 'event', eventNumber: 'SAAAB',
+      clubIban: 'BE68539007547034', beneficiaryName: 'CLUB',
+      authoritativeCommunication: issuedReference, showConfirmButton: false,
+      onMarkAsPaid: () {},
+    ))));
+    await tester.pumpAndSettle();
+    expect(tester.widget<EpcQrCodeWidget>(find.byType(EpcQrCodeWidget)).description, issuedReference);
+    expect(tester.widget<PaymentCommunicationCopyButton>(find.byType(PaymentCommunicationCopyButton)).communication, issuedReference);
+  });
+
   testWidgets(
     'member transfer copies exact QR values without confirming payment',
     (tester) async {

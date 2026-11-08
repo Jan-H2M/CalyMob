@@ -25,3 +25,4 @@ jobs:
           java-version: '21'
       - run: npm ci --prefix functions --ignore-scripts --no-audit --no-fund
       - run: npx --yes firebase-tools@15.12.0 emulators:exec --only firestore --project demo-email-cancellation --config firebase.boutique-flow-qa.json 'node --test functions/src/payment/paymentEmailCancellation.emulator.cjs'
+      - run: npx --yes firebase-tools@15.12.0 emulators:exec --only firestore --project demo-event-direct-qr --config firebase.boutique-flow-qa.json 'node --test functions/src/payment/eventDirectQr.emulator.cjs'

@@ -11,6 +11,26 @@ class PaymentService {
   final FirebaseFunctions _functions =
       FirebaseFunctions.instanceFor(region: 'europe-west1');
 
+  /// Issues and records the current event payment instructions server-side.
+  Future<Map<String, dynamic>> createDirectEventPaymentQr({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    String? installmentId,
+    bool asOrganizer = false,
+    bool manualTransfer = false,
+  }) async {
+    final result = await _functions.httpsCallable('createDirectEventPaymentQr').call({
+      'clubId': clubId,
+      'operationId': operationId,
+      'participantId': participantId,
+      if (installmentId != null) 'installmentId': installmentId,
+      if (asOrganizer) 'asOrganizer': true,
+      if (manualTransfer) 'manualTransfer': true,
+    });
+    return Map<String, dynamic>.from(result.data as Map);
+  }
+
   // ===========================================================================
   // EPC QR CODE PAYMENT EMAIL
   // ===========================================================================

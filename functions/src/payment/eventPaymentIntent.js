@@ -115,10 +115,19 @@ async function prepareEventPaymentIntent(db, data) {
   const ref = db.collection('clubs').doc(data.clubId).collection(COLLECTION).doc(intentId);
   const now = admin.firestore.FieldValue.serverTimestamp();
 
-  await db.runTransaction(async (transaction) => {
+  const communication = await db.runTransaction(async (transaction) => {
     const existing = await transaction.get(ref);
     if (existing.exists && existing.get('status') === 'settled') {
       throw new Error(`Payment intent ${intentId} is already settled`);
+    }
+    // A QR may already have been shown or sent. Keep its exact communication
+    // and allocations matchable even if the event title changes later.
+    if (existing.exists) {
+      const previous = existing.get('communication');
+      if (!previous || !['prepared', 'issued'].includes(existing.get('status'))) {
+        throw new Error(`Payment intent ${intentId} requires review`);
+      }
+      return previous;
     }
     transaction.set(ref, {
       schema_version: SCHEMA_VERSION,
@@ -135,21 +144,27 @@ async function prepareEventPaymentIntent(db, data) {
       communication_normalized: normalizePaymentCommunication(data.communication),
       prepared_at: now,
       updated_at: now,
-      ...(existing.exists ? {} : { created_at: now }),
+      created_at: now,
     }, { merge: true });
+    return data.communication;
   });
 
-  return { id: intentId, ref, allocations, expectedAmountCents };
+  return { id: intentId, ref, allocations, expectedAmountCents, communication };
 }
 
 async function markEventPaymentIntentIssued(intent, messageId) {
   if (!intent) return;
-  await intent.ref.set({
-    status: 'issued',
-    email_message_id: messageId || null,
-    issued_at: admin.firestore.FieldValue.serverTimestamp(),
-    updated_at: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  await intent.ref.firestore.runTransaction(async transaction => {
+    const existing = await transaction.get(intent.ref);
+    if (!existing.exists || existing.get('status') === 'settled') return;
+    if (!['prepared', 'issued'].includes(existing.get('status'))) return;
+    transaction.update(intent.ref, {
+      status: 'issued',
+      email_message_id: messageId || null,
+      issued_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
 }
 
 module.exports = {

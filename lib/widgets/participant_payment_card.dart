@@ -63,6 +63,7 @@ class ParticipantPaymentCard extends StatelessWidget {
   /// dans la communication pour que l'import bancaire attribue le virement
   /// à la bonne tranche.
   final String? installmentLabel;
+  final String? authoritativeCommunication;
 
   const ParticipantPaymentCard({
     super.key,
@@ -82,6 +83,7 @@ class ParticipantPaymentCard extends StatelessWidget {
     this.instructionText = 'Le membre scanne ce QR code avec son app bancaire',
     this.isProcessing = false,
     this.installmentLabel,
+    this.authoritativeCommunication,
   });
 
   String get _participantFullName =>
@@ -90,7 +92,7 @@ class ParticipantPaymentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Generate payment communication
-    final paymentCommunication = generatePaymentCommunication(
+    final paymentCommunication = authoritativeCommunication ?? generatePaymentCommunication(
       eventNumber: eventNumber,
       eventId: eventId,
       eventTitle: eventTitle,
@@ -412,6 +414,7 @@ Future<bool?> showParticipantPaymentCard({
   bool showConfirmButton = true,
   String instructionText = 'Le membre scanne ce QR code avec son app bancaire',
   String? installmentLabel,
+  String? authoritativeCommunication,
 }) {
   // Keep the lock across StatefulBuilder rebuilds (and rapid repeated taps).
   bool isProcessing = false;
@@ -437,6 +440,7 @@ Future<bool?> showParticipantPaymentCard({
           showConfirmButton: showConfirmButton,
           instructionText: instructionText,
           installmentLabel: installmentLabel,
+          authoritativeCommunication: authoritativeCommunication,
           onMarkAsPaid: () async {
             if (isProcessing) return;
             setState(() => isProcessing = true);

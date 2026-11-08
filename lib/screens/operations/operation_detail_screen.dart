@@ -1151,6 +1151,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       await _showPaymentQrOnDevice(
         operation: operation,
         amount: amount,
+        participantId: participantId,
+        installmentId: installmentId,
+        manualTransfer: choice == 'bank_transfer',
         memberEmail: memberEmail,
         memberFirstName: memberFirstName,
         memberLastName: memberLastName,
@@ -1369,6 +1372,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Future<void> _showPaymentQrOnDevice({
     required dynamic operation,
     required double amount,
+    required String participantId,
+    String? installmentId,
+    bool manualTransfer = false,
     required String memberEmail,
     required String memberFirstName,
     required String memberLastName,
@@ -1376,38 +1382,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }) async {
     if (amount <= 0) return;
 
-    final bankDoc = await FirebaseFirestore.instance
-        .collection('clubs')
-        .doc(widget.clubId)
-        .collection('settings')
-        .doc('bank')
-        .get();
-
-    if (!bankDoc.exists) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Configuration bancaire non trouvée. Impossible d’afficher le QR code.'),
-          backgroundColor: Colors.orange,
-        ),
+    Map<String, dynamic> issued;
+    try {
+      issued = await PaymentService().createDirectEventPaymentQr(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: participantId,
+        installmentId: installmentId,
+        manualTransfer: manualTransfer,
       );
-      return;
-    }
-
-    final bankData = bankDoc.data()!;
-    final iban = bankData['iban'] as String?;
-    final beneficiaryName = bankData['beneficiaryName'] as String?;
-    final bic = bankData['bic'] as String?;
-
-    if (iban == null ||
-        iban.isEmpty ||
-        beneficiaryName == null ||
-        beneficiaryName.isEmpty) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('IBAN ou nom du bénéficiaire non configuré.'),
+          content: Text('Impossible de préparer le paiement. Actualisez et réessayez, ou contactez le club.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -1420,14 +1408,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       participantFirstName: memberFirstName,
       participantLastName: memberLastName,
       participantEmail: memberEmail,
-      amount: amount,
+      amount: (issued['amount'] as num).toDouble(),
       eventTitle: operation.titre ?? 'Événement',
-      eventNumber: operation.eventNumber,
+      eventNumber: issued['eventNumber'] as String?,
       eventId: widget.operationId,
       eventDate: operation.dateDebut,
-      clubIban: iban,
-      beneficiaryName: beneficiaryName,
-      bic: bic,
+      clubIban: issued['iban'] as String,
+      beneficiaryName: issued['beneficiaryName'] as String,
+      bic: issued['bic'] as String?,
+      authoritativeCommunication: issued['communication'] as String,
       showConfirmButton: false,
       instructionText:
           'Scannez ce QR avec un autre appareil ou copiez les coordonnées, '
@@ -1481,7 +1470,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       final bankData = bankDoc.data()!;
       final iban = bankData['iban'] as String?;
       final beneficiaryName = bankData['beneficiaryName'] as String?;
-      final bic = bankData['bic'] as String?;
 
       if (iban == null ||
           iban.isEmpty ||
@@ -1552,20 +1540,33 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         }
       }
 
+      final issued = await PaymentService().createDirectEventPaymentQr(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: participant.id,
+        installmentId: openInstallment?.id,
+        asOrganizer: true,
+      );
+      final serverAmount = (issued['amount'] as num).toDouble();
+      if ((serverAmount * 100).round() != (aggregatedAmount * 100).round()) {
+        throw StateError('Le montant a changé. Actualisez avant de continuer.');
+      }
+      if (!mounted) return;
       final result = await showParticipantPaymentCard(
         context: context,
         participantFirstName: participant.membrePrenom ?? '',
         participantLastName: participant.membreNom ?? '',
         participantEmail:
             null, // Email not available on participant, QR code shown on screen
-        amount: aggregatedAmount,
+        amount: serverAmount,
         eventTitle: operation.titre ?? 'Événement',
-        eventNumber: operation.eventNumber,
+        eventNumber: issued['eventNumber'] as String?,
         eventId: widget.operationId,
         eventDate: operation.dateDebut,
-        clubIban: iban,
-        beneficiaryName: beneficiaryName,
-        bic: bic,
+        clubIban: issued['iban'] as String,
+        beneficiaryName: issued['beneficiaryName'] as String,
+        bic: issued['bic'] as String?,
+        authoritativeCommunication: issued['communication'] as String,
         installmentLabel: openInstallment?.label,
         onMarkAsPaid: () async {
           await confirmPaymentsAndRefresh(
@@ -4523,6 +4524,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                     await _showPaymentQrOnDevice(
                       operation: operation,
                       amount: inscriptionPrice,
+                      participantId: inscription.id,
+                      installmentId: installmentId,
                       memberEmail: memberEmail,
                       memberFirstName: memberFirstName,
                       memberLastName: memberLastName,

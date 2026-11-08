@@ -2,6 +2,16 @@
 
 # CalyMob — geconsolideerde releasekandidaat
 
+## Directe evenementbetaling — in voorbereiding
+
+- De app vraagt het bedrag en de referentie van de server; deze legt de
+  betaalintentie en de actuele deelnemers samen vast voordat de QR verschijnt.
+- Oude appversies kunnen nog lokaal een QR maken en hebben niet altijd een
+  betaalintentie. Eerder uitgegeven referenties blijven relevant voor de
+  afstemming. Activiteiten zonder geldig eventnummer vereisen opvolging.
+- Productiegebruik vereist eerst de serverfunctie en daarna een gecontroleerde
+  mobiele release; lokale tests zijn geen bewijs van store- of toestelwerking.
+
 ## MOB-044 — herstel vertrouwensgrens, lokaal — 28 oktober 2026
 
 - De eerdere inline-intentregel hieronder is onveilig en vervallen:

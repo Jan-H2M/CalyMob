@@ -676,7 +676,7 @@ async function sendPaymentEmailForMember(db, input) {
     console.log(`📧 [sendPaymentQrEmail] Using ensured event_number=${effectiveEventNumber} for ${operationId}`);
   }
 
-  const paymentReference = generatePaymentCommunication(
+  let paymentReference = generatePaymentCommunication(
     effectiveEventNumber,
     operationId,
     operationTitle,
@@ -703,6 +703,7 @@ async function sendPaymentEmailForMember(db, input) {
     eventNumber: effectiveEventNumber,
     communication: paymentReference,
   });
+  if (paymentIntent) paymentReference = paymentIntent.communication;
 
   // 6. Generate EPC payload
   const epcPayload = generateEpcPayload({

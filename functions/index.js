@@ -36,6 +36,7 @@ if (!admin.firestore.FieldValue) {
 // EPC QR code payment email for event registrations
 const { sendPaymentQrEmail } = require('./src/payment/sendPaymentQrEmail');
 exports.sendPaymentQrEmail = sendPaymentQrEmail;
+exports.createDirectEventPaymentQr = require('./src/payment/eventDirectQr').createDirectEventPaymentQr;
 
 // Material-loan cautions have their own callable contract. They never reuse
 // event registrations, event templates or event bank-matching state.
