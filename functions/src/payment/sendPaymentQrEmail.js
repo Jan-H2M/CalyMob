@@ -34,6 +34,7 @@ const {
   markEventPaymentIntentIssued,
   prepareEventPaymentIntent,
 } = require('./eventPaymentIntent');
+const { markInstallmentQrSent } = require('./markInstallmentQrSent');
 
 function paymentRegistrationState(value) {
   return String(value || '').trim().toLowerCase();
@@ -871,15 +872,10 @@ async function sendPaymentEmailForMember(db, input) {
   //    un invité en retard) → aucune écriture, sinon on écraserait 'paid'.
   if (installmentId && installmentPayment && installmentPayment.ownOpen) {
     try {
-      await db.collection('clubs').doc(clubId)
+      const inscriptionRef = db.collection('clubs').doc(clubId)
         .collection('operations').doc(operationId)
-        .collection('inscriptions').doc(participantId)
-        .update({
-          [`installment_payments.${installmentId}.status`]: 'qr_sent',
-          [`installment_payments.${installmentId}.qr_sent_at`]: admin.firestore.FieldValue.serverTimestamp(),
-          [`installment_payments.${installmentId}.payment_email_id`]: result.messageId || null,
-          updated_at: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        .collection('inscriptions').doc(participantId);
+      await markInstallmentQrSent(db, inscriptionRef, installmentId, installmentPayment.amountDue, result.messageId);
     } catch (statusError) {
       console.warn(`[sendPaymentQrEmail] Email sent but failed to mark installment ${installmentId} as qr_sent:`, statusError);
     }
