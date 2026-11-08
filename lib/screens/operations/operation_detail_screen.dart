@@ -1570,8 +1570,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         serverAllocations[entry['inscription_id'] as String] = (entry['amount_cents'] as num).toInt();
       }
       if ((serverAmount * 100).round() != (aggregatedAmount * 100).round() ||
-          expectedAllocations.length != serverAllocations.length ||
-          expectedAllocations.entries.any((entry) => serverAllocations[entry.key] != entry.value)) {
+          !paymentAllocationsMatch(expectedAllocations, serverAllocations)) {
         throw StateError('Le montant a changé. Actualisez avant de continuer.');
       }
       if (!mounted) return;
@@ -1599,7 +1598,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 // Installment-bewust: ferme UNIQUEMENT la tranche du QR, pour le
                 // membre (si sa part était ouverte) et ses invités (parts
                 // ouvertes). `paye` global ne bascule que si tout est clos.
-                if (inst.amount > 0) {
+                if (serverAllocations.containsKey(participant.id)) {
                   await _operationService.markInstallmentAsPaid(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
@@ -1608,11 +1607,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   );
                 }
                 for (final g in linkedGuests) {
-                  final gp = g.installmentPayments[inst.id];
-                  if (gp != null &&
-                      gp.amountDue > 0 &&
-                      gp.status != 'paid' &&
-                      gp.status != 'waived') {
+                  if (serverAllocations.containsKey(g.id)) {
                     await _operationService.markInstallmentAsPaid(
                       clubId: widget.clubId,
                       operationId: widget.operationId,
@@ -1624,15 +1619,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               } else {
                 // Sans plan: comportement existant, mais uniquement pour les
                 // personnes encore non payées.
-                if (!participant.isPaymentSettled) {
+                if (serverAllocations.containsKey(participant.id)) {
                   await _operationService.markParticipantAsPaid(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
                     participantId: participant.id,
                   );
                 }
-                for (final g
-                    in linkedGuests.where((g) => !g.isPaymentSettled)) {
+                for (final g in linkedGuests.where((g) => serverAllocations.containsKey(g.id))) {
                   await _operationService.markParticipantAsPaid(
                     clubId: widget.clubId,
                     operationId: widget.operationId,

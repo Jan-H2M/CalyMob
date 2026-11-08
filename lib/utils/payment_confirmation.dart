@@ -1,5 +1,9 @@
 import 'package:flutter/foundation.dart';
 
+/// A matching total is insufficient when a different guest could receive it.
+bool paymentAllocationsMatch(Map<String, int> expected, Map<String, int> issued) =>
+    mapEquals(expected, issued);
+
 /// Sequential server confirmations are individually idempotent, not an atomic
 /// group transaction. Always reload authoritative state, including on failure.
 Future<void> confirmPaymentsAndRefresh({
