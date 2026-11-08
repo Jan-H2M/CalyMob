@@ -5,7 +5,7 @@ const { buildIntentId, allocationSignature, normalizePaymentCommunication } = re
 const { generatePaymentCommunication } = require('./sendPaymentQrEmail');
 
 const inactive = new Set(['canceled', 'cancelled', 'annule', 'annulé', 'waitlisted']);
-const closed = new Set(['paid', 'waived', 'canceled', 'cancelled']);
+const closed = new Set(['paid', 'settled', 'waived', 'canceled', 'cancelled']);
 
 function amountForRegistration(registration, installmentId) {
   if (registration.payment_status === 'manual_review') {

@@ -12,6 +12,7 @@ describe('amount for a direct event payment QR', () => {
     expect(amountForRegistration(registration, 'first')).toBe(0);
     expect(amountForRegistration(registration, 'second')).toBe(750);
     expect(amountForRegistration(registration, null)).toBe(750);
+    expect(amountForRegistration({ prix: 15, payment_status: 'settled' }, null)).toBe(0);
   });
   test('fails closed for bank review and ambiguous transactions', () => {
     expect(() => amountForRegistration({ prix: 15, payment_status: 'manual_review' }, null)).toThrow();
