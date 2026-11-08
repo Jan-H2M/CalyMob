@@ -35,6 +35,28 @@ const {
   prepareEventPaymentIntent,
 } = require('./eventPaymentIntent');
 
+function paymentRegistrationState(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function assertPaymentRegistrationActive(registration) {
+  if (['canceled', 'cancelled', 'annulé', 'annule', 'waitlisted'].includes(paymentRegistrationState(registration?.registration_status))) {
+    throw new HttpsError('failed-precondition', 'Cette inscription est annulée ou en liste d’attente. Vérifiez la situation avant de demander un paiement.');
+  }
+}
+
+function includeGuestInPayment(guest, openAmount) {
+  const status = paymentRegistrationState(guest.registration_status);
+  if (status === 'waitlisted') return false;
+  if (['canceled', 'cancelled', 'annulé', 'annule'].includes(status)) {
+    if (openAmount > 0) {
+      throw new HttpsError('failed-precondition', 'Un invité annulé présente un montant ouvert. Vérifiez sa situation avant de créer un paiement.');
+    }
+    return false;
+  }
+  return true;
+}
+
 /**
  * Generate EPC QR code payload for SEPA Credit Transfer
  *
@@ -355,9 +377,8 @@ function formatDateDisplay(dateString) {
  * Aggregate payment for a member's inscription including any guest
  * inscriptions linked to it via `parent_inscription_id`.
  *
- * Returns `null` when the participant doc is missing or when there are
- * no guest children (in which case the caller should fall back to the
- * client-supplied amount). Otherwise returns:
+ * Returns `null` when the participant document is missing. The caller must
+ * reject that case instead of trusting a client-supplied amount. Otherwise:
  *   {
  *     parentAmount: number,                  // member's own prix + supplements
  *     guestSubtotal: number,                 // sum of all linked guest prix
@@ -366,10 +387,7 @@ function formatDateDisplay(dateString) {
  *     parentInscription: <DocumentData>,     // parent doc for downstream use
  *   }
  *
- * IMPORTANT: this is the single source of truth for "how much should the
- * member pay?" — the caller is allowed to pass an `amount`, but if guests
- * are linked the server overrides it with the aggregated total to prevent
- * the QR from being short-paid.
+ * The amount is derived from recorded registrations, not the client amount.
  */
 async function aggregatePaymentForInscription(db, clubId, operationId, participantId) {
   if (!participantId) return null;
@@ -381,10 +399,11 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
 
   const parentSnap = await inscriptionsRef.doc(participantId).get();
   if (!parentSnap.exists) {
-    console.log(`[aggregatePaymentForInscription] Parent inscription ${participantId} not found — falling back to client amount`);
+    console.log(`[aggregatePaymentForInscription] Parent inscription ${participantId} not found`);
     return null;
   }
   const parent = parentSnap.data();
+  assertPaymentRegistrationActive(parent);
 
   // Guests are inscriptions whose parent_inscription_id points back to us.
   const childrenSnap = await inscriptionsRef
@@ -414,6 +433,7 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
   childrenSnap.forEach((doc) => {
     const g = doc.data();
     const guestOpen = openAmountFor(g);
+    if (!includeGuestInPayment(g, guestOpen)) return;
     if (guestOpen <= 0) return; // invité déjà en règle — pas dans le QR
     guestSubtotal += guestOpen;
     const fullName = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
@@ -443,14 +463,15 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   const inscriptionSnap = await inscriptionsRef.doc(participantId).get();
 
   if (!inscriptionSnap.exists) {
-    console.log(`[resolveInstallmentPaymentForInscription] Inscription ${participantId} not found — falling back to client amount`);
+    console.log(`[resolveInstallmentPaymentForInscription] Inscription ${participantId} not found`);
     return null;
   }
 
   const inscription = inscriptionSnap.data();
+  assertPaymentRegistrationActive(inscription);
   const installment = inscription.installment_payments && inscription.installment_payments[installmentId];
   if (!installment) {
-    console.log(`[resolveInstallmentPaymentForInscription] Installment ${installmentId} not found for ${participantId} — falling back to client amount`);
+    console.log(`[resolveInstallmentPaymentForInscription] Installment ${installmentId} not found for ${participantId}`);
     return null;
   }
 
@@ -476,6 +497,8 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   guestsSnap.forEach((doc) => {
     const g = doc.data();
     const gp = g.installment_payments && g.installment_payments[installmentId];
+    const guestDue = gp && gp.status !== 'paid' && gp.status !== 'waived' ? Number(gp.amount_due) || 0 : 0;
+    if (!includeGuestInPayment(g, guestDue)) return;
     if (gp && gp.status !== 'paid' && gp.status !== 'waived') {
       const gd = Number(gp.amount_due) || 0;
       if (gd > 0) {
@@ -558,6 +581,9 @@ async function sendPaymentEmailForMember(db, input) {
     : await aggregatePaymentForInscription(
         db, clubId, operationId, participantId
       );
+  if (installmentId ? !installmentPayment : !aggregation) {
+    throw new HttpsError('failed-precondition', 'Inscription ou tranche introuvable. Actualisez avant de demander un paiement.');
+  }
   const amount = installmentPayment ? installmentPayment.aggregatedDue : (aggregation ? aggregation.totalAmount : clientAmount);
   if (aggregation) {
     console.log(`📧 [sendPaymentQrEmail] Aggregated amount: ${amount}€ (parent ${aggregation.parentAmount}€ + ${aggregation.guests.length} guests ${aggregation.guestSubtotal}€). Client sent ${clientAmount}€.`);
