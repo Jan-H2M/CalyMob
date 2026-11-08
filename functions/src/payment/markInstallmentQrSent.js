@@ -9,8 +9,8 @@ async function markInstallmentQrSent(db, ref, installmentId, expectedAmount, mes
     const state = String(registration.registration_status || '').toLowerCase();
     const payment = registration.installment_payments?.[installmentId];
     if (['canceled', 'cancelled', 'annulé', 'annule', 'waitlisted'].includes(state)
-      || registration.paye === true || ['paid', 'waived'].includes(registration.payment_status)
-      || !payment || ['paid', 'waived'].includes(payment.status)
+      || registration.paye === true || registration.transaction_matched === true || ['paid', 'settled', 'waived', 'manual_review', 'pending_bank'].includes(String(registration.payment_status || '').trim().toLowerCase())
+      || !payment || ['paid', 'settled', 'waived', 'manual_review', 'pending_bank', 'canceled', 'cancelled'].includes(payment.status)
       || payment.transaction_id || payment.transaction_matched === true
       || !Number.isFinite(Number(payment.amount_due))
       || Math.round(Number(payment.amount_due) * 100) !== Math.round(Number(expectedAmount) * 100)) return false;

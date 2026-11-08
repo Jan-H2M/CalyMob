@@ -44,6 +44,9 @@ test.each([
   { registration_status: 'canceled', prix: 15 },
   { registration_status: 'confirmed', prix: 20 },
   { registration_status: 'confirmed', prix: 15, paye: true },
+  { registration_status: 'confirmed', prix: 15, payment_status: 'settled' },
+  { registration_status: 'confirmed', prix: 15, payment_status: 'manual_review' },
+  { registration_status: 'confirmed', prix: 15, transaction_matched: true },
 ])('no email dispatch starts after the registration changed', async parent => {
   const { db, updates } = setup({
     [parentPath]: parent,

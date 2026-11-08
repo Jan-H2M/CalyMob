@@ -3,35 +3,9 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { assertPaymentMethod } = require('./paymentConfirmationPolicy');
 const { buildIntentId, allocationSignature, normalizePaymentCommunication } = require('./eventPaymentIntent');
 const { generatePaymentCommunication } = require('./sendPaymentQrEmail');
+const { amountForRegistration } = require('./eventPaymentAmounts');
 
 const inactive = new Set(['canceled', 'cancelled', 'annule', 'annulé', 'waitlisted']);
-const closed = new Set(['paid', 'settled', 'waived', 'canceled', 'cancelled']);
-
-function amountForRegistration(registration, installmentId) {
-  const paymentStatus = String(registration.payment_status || '').trim().toLowerCase();
-  if (registration.paye === true || registration.transaction_matched === true || ['paid', 'settled'].includes(paymentStatus)) return 0;
-  if (paymentStatus === 'manual_review' || paymentStatus === 'pending_bank') {
-    throw new HttpsError('failed-precondition', 'Ce paiement doit être vérifié avant de créer un QR.');
-  }
-  const installments = registration.installment_payments || {};
-  const open = item => {
-    if (!item || closed.has(item.status)) return 0;
-    if (item.transaction_id || Number(item.amount_paid || 0) > 0 || item.status === 'partial') throw new HttpsError('failed-precondition', 'Paiement en cours de vérification.');
-    const amount = Number(item.amount_due);
-    if (!Number.isFinite(amount) || amount < 0) throw new HttpsError('failed-precondition', 'Montant invalide.');
-    return Math.round(amount * 100);
-  };
-  if (installmentId) {
-    if (!installments[installmentId]) throw new HttpsError('failed-precondition', 'Tranche introuvable.');
-    return open(installments[installmentId]);
-  }
-  if (Object.keys(installments).length) return Object.values(installments).reduce((sum, item) => sum + open(item), 0);
-  if (closed.has(paymentStatus)) return 0;
-  if (registration.transaction_id || Number(registration.amount_paid || 0) > 0 || paymentStatus === 'partial') throw new HttpsError('failed-precondition', 'Paiement en cours de vérification.');
-  const amount = Number(registration.prix || 0) + Number(registration.supplement_total || 0);
-  if (!Number.isFinite(amount) || amount < 0) throw new HttpsError('failed-precondition', 'Montant invalide.');
-  return Math.round(amount * 100);
-}
 
 /** Compute and record the exact payment instructions in one transaction. */
 async function issueDirectEventQr(db, { clubId, operationId, participantId, installmentId, uid, asOrganizer = false, manualTransfer = false }) {

@@ -23,6 +23,9 @@ test('records a QR only for the same open installment', async () => {
 test.each([
   { ...open, registration_status: 'canceled' },
   { ...open, paye: true },
+  { ...open, payment_status: 'settled' },
+  { ...open, payment_status: 'manual_review' },
+  { ...open, transaction_matched: true },
   { ...open, installment_payments: { first: { status: 'paid', amount_due: 15, transaction_id: 'bank' } } },
   { ...open, installment_payments: { first: { status: 'waived', amount_due: 15 } } },
   { ...open, installment_payments: { first: { status: 'unpaid', amount_due: 20 } } },
