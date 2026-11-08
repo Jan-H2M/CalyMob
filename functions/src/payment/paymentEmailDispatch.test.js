@@ -56,3 +56,14 @@ test.each([
 test('expired dispatches do not produce cancellation warnings', () => {
   expect(hasPendingDispatch({ attempts: { old: { expires_at: { toMillis: () => 100 } } } }, 200)).toBe(false);
 });
+
+test('a flat payment for a partially paid plan validates its remaining installments', async () => {
+  const { db, updates } = setup({
+    [parentPath]: { registration_status: 'confirmed', prix: 25, transaction_id: 'earlier-payment', installment_payments: {
+      first: { status: 'paid', amount_due: 10 }, second: { status: 'unpaid', amount_due: 15 },
+    } },
+  });
+  const onlyParent = { allocations: [{ inscription_id: 'p', amount_cents: 1500 }] };
+  await beginPaymentEmailDispatch(db, 'c', 'o', 'p', onlyParent, null);
+  expect(updates).toHaveLength(1);
+});

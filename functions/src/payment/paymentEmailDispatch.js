@@ -43,9 +43,15 @@ async function beginPaymentEmailDispatch(db, clubId, operationId, payerId, inten
         throw new HttpsError('failed-precondition', 'Les invités ont changé. Actualisez avant de demander un paiement.');
       }
       const installment = installmentId && data.installment_payments?.[installmentId];
-      const due = installmentId ? Number(installment?.amount_due) : Number(data.prix || 0) + Number(data.supplement_total || 0);
+      const installments = Object.values(data.installment_payments || {});
+      const due = installmentId
+        ? Number(installment?.amount_due)
+        : installments.length > 0
+          ? installments.reduce((sum, item) => sum + (!item || ['paid', 'waived'].includes(item.status) ? 0 : Number(item.amount_due || 0)), 0)
+          : Number(data.prix || 0) + Number(data.supplement_total || 0);
       if ((installmentId && (!installment || ['paid', 'waived'].includes(installment.status) || installment.transaction_id))
-        || (!installmentId && (data.paye === true || data.transaction_id || data.transaction_matched === true))
+        || (!installmentId && installments.length === 0
+          && (data.paye === true || data.transaction_id || data.transaction_matched === true))
         || !Number.isFinite(due) || Math.round(due * 100) !== allocation.amount_cents) {
         throw new HttpsError('failed-precondition', 'Le montant ou le paiement a changé. Actualisez avant de réessayer.');
       }
