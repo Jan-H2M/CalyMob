@@ -194,6 +194,23 @@ void main() {
     ]);
   });
 
+  test('guest removal exposes the in-flight email warning', () async {
+    final service = OperationService(
+      firestore: FakeFirebaseFirestore(),
+      updateEventRegistrationInvoker: (_) async => {
+        ...editReceipt(oldTotal: 25, newTotal: 25, delta: 0),
+        'paymentEmailMayHaveBeenSent': true,
+        'removedGuestIds': ['guest-existing'],
+      },
+    );
+    await service.updateMyInscription(
+      clubId: 'calypso', operationId: 'event-1', inscriptionId: 'parent-1',
+      selectedSupplements: const [], supplementTotal: 0,
+      guestIdsToRemove: ['guest-existing'],
+    );
+    expect(service.editPaymentEmailMayHaveBeenSent, isTrue);
+  });
+
   test('edit receipt rejects missing authoritative totals', () {
     expect(
       () => EventRegistrationEditResult.fromCallable({

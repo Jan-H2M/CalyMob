@@ -1357,17 +1357,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'L’email de paiement n’a pas pu être envoyé. QR affiché ci-dessous.'),
+                'L’email de paiement n’a pas pu être envoyé. Vérifiez l’inscription et réessayez.'),
             backgroundColor: Colors.orange,
           ),
-        );
-        await _showPaymentQrOnDevice(
-          operation: operation,
-          amount: amount,
-          memberEmail: memberEmail,
-          memberFirstName: memberFirstName,
-          memberLastName: memberLastName,
-          installmentLabel: installmentLabel,
         );
       }
       return false;
@@ -1760,10 +1752,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             : guestAction == 'transfer'
                 ? 'Désinscription réussie (vos ${myGuests.length} invité${myGuests.length > 1 ? "s sont" : " est"} maintenant sous l\'organisateur)'
                 : 'Désinscription réussie';
+        final warning = operationProvider.paymentEmailMayHaveBeenSent
+            ? ' Un email de paiement est peut-être déjà parti. Vérifiez la situation auprès du club.'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(msg),
+            content: Text('$msg$warning'),
             backgroundColor: Colors.orange,
+            duration: Duration(seconds: warning.isEmpty ? 4 : 12),
           ),
         );
       }
@@ -2053,7 +2049,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (operationProvider.selectedOperation == null) return;
       if (operationProvider.selectedOperation!.allowGuests != true) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Les invités ne sont pas autorisés pour cette activité.'),
+          content:
+              Text('Les invités ne sont pas autorisés pour cette activité.'),
         ));
         return;
       }

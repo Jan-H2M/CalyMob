@@ -270,6 +270,7 @@ class EventRegistrationEditResult {
     required this.addedGuestIds,
     required this.removedGuestIds,
     required this.idempotent,
+    this.paymentEmailMayHaveBeenSent = false,
   });
 
   final String inscriptionId;
@@ -283,6 +284,7 @@ class EventRegistrationEditResult {
   final List<String> addedGuestIds;
   final List<String> removedGuestIds;
   final bool idempotent;
+  final bool paymentEmailMayHaveBeenSent;
 
   factory EventRegistrationEditResult.fromCallable(Object? value) {
     if (value is! Map) {
@@ -318,6 +320,7 @@ class EventRegistrationEditResult {
       addedGuestIds: ids('addedGuestIds'),
       removedGuestIds: ids('removedGuestIds'),
       idempotent: data['idempotent'] as bool,
+      paymentEmailMayHaveBeenSent: data['paymentEmailMayHaveBeenSent'] == true,
     );
   }
 }
@@ -381,6 +384,8 @@ class PaymentMethodNotAllowedException implements Exception {
 
 /// Service de gestion des opérations (événements)
 class OperationService {
+  bool _editPaymentEmailMayHaveBeenSent = false;
+  bool get editPaymentEmailMayHaveBeenSent => _editPaymentEmailMayHaveBeenSent;
   final FirebaseFirestore _firestore;
   final FirebaseFunctions? _injectedFunctions;
   final RegisterForEventInvoker? _registerForEventInvoker;
@@ -770,7 +775,7 @@ class OperationService {
 
   /// Se désinscrire d'une opération
   /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
-  Future<void> unregisterFromOperation({
+  Future<bool> unregisterFromOperation({
     required String clubId,
     required String operationId,
     required String inscriptionId,
@@ -789,7 +794,8 @@ class OperationService {
       // must be atomic, otherwise two simultaneous cancellations can assign
       // the same free place.
       final appVersion = await _appVersion();
-      await _functions.httpsCallable('unregisterFromEvent').call({
+      final response =
+          await _functions.httpsCallable('unregisterFromEvent').call({
         'clubId': clubId,
         'operationId': operationId,
         'inscriptionId': inscriptionId,
@@ -800,6 +806,8 @@ class OperationService {
       });
 
       debugPrint('✅ Désinscription réussie: user $userId');
+      final data = response.data;
+      return data is Map && data['paymentEmailMayHaveBeenSent'] == true;
     } catch (e) {
       debugPrint('❌ Erreur désinscription: $e');
       rethrow;
@@ -1153,7 +1161,8 @@ class OperationService {
         .where('membre_id', isEqualTo: userId)
         .get();
     final activeDocuments = snapshot.docs
-        .where((document) => document.data()['registration_status'] != 'canceled')
+        .where(
+            (document) => document.data()['registration_status'] != 'canceled')
         .toList()
       ..sort(_compareCanonicalUserInscriptions);
     if (activeDocuments.isEmpty) return null;
@@ -2137,15 +2146,15 @@ class OperationService {
     String? requestId,
   }) async {
     try {
+      _editPaymentEmailMayHaveBeenSent = false;
       final appVersion = await _appVersion();
       final payload = <String, dynamic>{
         'clubId': clubId,
         'operationId': operationId,
         'inscriptionId': inscriptionId,
         'requestId': requestId ?? _newRegistrationRequestId(),
-        'selectedSupplementIds': selectedSupplements
-            .map((supplement) => supplement.id)
-            .toList(),
+        'selectedSupplementIds':
+            selectedSupplements.map((supplement) => supplement.id).toList(),
         'guests': (guests ?? const <GuestUpdate>[]).map((guest) {
           if (guest.inscriptionId != null) {
             return <String, dynamic>{
@@ -2182,13 +2191,13 @@ class OperationService {
       if (invoker != null) {
         response = await invoker(payload);
       } else {
-        response =
-            (await _functions
-                    .httpsCallable('updateEventRegistration')
-                    .call(payload))
-                .data;
+        response = (await _functions
+                .httpsCallable('updateEventRegistration')
+                .call(payload))
+            .data;
       }
       final result = EventRegistrationEditResult.fromCallable(response);
+      _editPaymentEmailMayHaveBeenSent = result.paymentEmailMayHaveBeenSent;
 
       final unverifiedPayment = !result.isPaid && forceRefundClaim;
       if (result.delta > 0 && (result.isPaid || forceRefundClaim)) {
@@ -2207,8 +2216,7 @@ class OperationService {
             newAmount: result.newTotal,
             editSessionId: editSessionId,
             eventTitre: result.operationTitle,
-            description:
-                '${descriptionPrefix}diminution de '
+            description: '${descriptionPrefix}diminution de '
                 '${result.delta.toStringAsFixed(2)} € '
                 '(de ${result.oldTotal.toStringAsFixed(2)} € à '
                 '${result.newTotal.toStringAsFixed(2)} €).',
