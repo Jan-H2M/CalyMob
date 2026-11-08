@@ -1357,17 +1357,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'L’email de paiement n’a pas pu être envoyé. QR affiché ci-dessous.'),
+                'L’email de paiement n’a pas pu être envoyé. Vérifiez l’inscription et réessayez.'),
             backgroundColor: Colors.orange,
           ),
-        );
-        await _showPaymentQrOnDevice(
-          operation: operation,
-          amount: amount,
-          memberEmail: memberEmail,
-          memberFirstName: memberFirstName,
-          memberLastName: memberLastName,
-          installmentLabel: installmentLabel,
         );
       }
       return false;
