@@ -33,7 +33,11 @@ void main() {
         expect(text.didExceedMaxLines, isFalse);
         final titleRect = tester.getRect(find.text(title));
         final artRect = tester.getRect(find.byType(EventCardDecoration));
-        expect(artRect.top, greaterThanOrEqualTo(titleRect.bottom));
+        expect(artRect.left, greaterThanOrEqualTo(titleRect.right));
+        expect(artRect.top, lessThan(titleRect.bottom));
+        expect(artRect.bottom, greaterThan(titleRect.top));
+        expect(artRect.width, greaterThanOrEqualTo(99));
+        expect(artRect.height, greaterThanOrEqualTo(116));
         expect(artRect.right, lessThanOrEqualTo(width + .01));
         expect(tester.takeException(), isNull);
       });
