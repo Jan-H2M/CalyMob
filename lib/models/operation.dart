@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tariff.dart';
+import 'event_card_appearance.dart';
 import 'supplement.dart';
 import 'document_justificatif.dart';
 
@@ -39,6 +40,7 @@ class PaymentInstallment {
 
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
+  final EventCardAppearance? cardAppearance;
   final String id;
   final String type; // 'evenement', 'cotisation', 'don', etc.
   final String? categorie; // 'plongee' ou 'sortie' pour les événements
@@ -122,6 +124,7 @@ class Operation {
   final DateTime updatedAt;
 
   Operation({
+    this.cardAppearance,
     required this.id,
     required this.type,
     this.categorie,
@@ -166,6 +169,7 @@ class Operation {
     final data = doc.data() as Map<String, dynamic>;
 
     return Operation(
+      cardAppearance: EventCardAppearance.fromMap(data['card_appearance']),
       id: doc.id,
       type: data['type'] ?? 'evenement',
       categorie: data['event_category'] ?? data['categorie'],
