@@ -10,6 +10,7 @@ import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/event_card_heading.dart';
+import '../../widgets/event_card_decoration.dart';
 import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -467,6 +468,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     }
 
     return GestureDetector(
+      key: ValueKey('activity-card-${item.id}'),
       onTap: () => _onActivityTapped(item),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -558,158 +560,33 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                         ],
                       ),
                     ),
-                    // Activity details
+                    // Title and every detail remain left of full-height artwork.
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            EventCardHeading(
-                              title: item.titre,
-                              icon: icon,
-                              iconColor: item.isPiscine
-                                  ? AppColors.piscineBlauw
-                                  : AppColors.middenblauw,
-                              appearance: !item.isCancelled ? appearance : null,
-                            ),
-                            // Location (niet tonen voor piscine - dat is al duidelijk)
-                            if (item.lieu != null &&
-                                item.lieu!.isNotEmpty &&
-                                !item.isPiscine) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.location_on,
-                                    size: 14,
-                                    color: Colors.grey[600],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      item.lieu!,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey[700],
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                            // Extra info (verschilt per type)
+                      child: EventCardBody(
+                        appearance: !item.isCancelled ? appearance : null,
+                        children: [
+                          EventCardHeading(
+                            title: item.titre,
+                            icon: icon,
+                            iconColor: item.isPiscine
+                                ? AppColors.piscineBlauw : AppColors.middenblauw,
+                            appearance: !item.isCancelled ? appearance : null,
+                          ),
+                          if (item.lieu != null && item.lieu!.isNotEmpty &&
+                              !item.isPiscine) ...[
                             const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                if (item.isDraft) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFF3C4),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      item.statusLabel!,
-                                      style: const TextStyle(
-                                        color: Color(0xFF92400E),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                if (item.isPiscine) ...[
-                                  // Piscine: toon accueil en encadrants count
-                                  Icon(
-                                    Icons.group,
-                                    size: 14,
-                                    color: AppColors.piscineBlauw.withOpacity(
-                                      0.7,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    item.subtitle ?? '',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ] else if (item.capaciteMax != null &&
-                                    item.capaciteMax! > 0) ...[
-                                  // Operation: toon capaciteit
-                                  Icon(
-                                    Icons.group,
-                                    size: 14,
-                                    color: AppColors.middenblauw.withOpacity(
-                                      0.7,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Max ${item.capaciteMax}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                                const Spacer(),
-                                // Price badge (alleen voor operations met prijs)
-                                if (!item.isPiscine &&
-                                    item.operation?.priceTbd == true)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.withOpacity(0.25),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Text(
-                                      'Prix à confirmer',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFFB45309),
-                                      ),
-                                    ),
-                                  )
-                                else if (!item.isPiscine &&
-                                    item.prix != null &&
-                                    item.prix! > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.lichtblauw.withOpacity(
-                                        0.3,
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      '${item.prix!.toStringAsFixed(2)} €',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.donkerblauw,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                            Row(children: [
+                              Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Expanded(child: Text(item.lieu!,
+                                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                                maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            ]),
                           ],
-                        ),
+                          const SizedBox(height: 8),
+                          _buildActivityInfo(item,
+                            stacked: !item.isCancelled && appearance?.hasArtwork == true),
+                        ],
                       ),
                     ),
                     // Unread badge + arrow indicator
@@ -717,6 +594,12 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                   ],
                 ),
               ),
+              if (!item.isCancelled && appearance?.theme == 'christmas')
+                Positioned.fill(
+                  child: EventCardDecoration(
+                    appearance: appearance!, particlesOnly: true,
+                  ),
+                ),
               if (item.isCancelled)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -741,6 +624,57 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildActivityInfo(ActivityItem item, {required bool stacked}) {
+    final draft = item.isDraft ? Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: const Color(0xFFFFF3C4),
+        borderRadius: BorderRadius.circular(8)),
+      child: Text(item.statusLabel!, style: const TextStyle(
+        color: Color(0xFF92400E), fontSize: 12, fontWeight: FontWeight.bold)),
+    ) : null;
+    final count = item.isPiscine ? item.subtitle ?? ''
+        : item.capaciteMax != null && item.capaciteMax! > 0
+            ? 'Max ${item.capaciteMax}' : null;
+    final people = count == null ? null : Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.group, size: 14,
+          color: (item.isPiscine ? AppColors.piscineBlauw : AppColors.middenblauw)
+            .withOpacity(0.7)),
+        const SizedBox(width: 4),
+        Flexible(child: Text(count,
+          style: TextStyle(fontSize: 13, color: Colors.grey[600]))),
+      ],
+    );
+    final tbd = !item.isPiscine && item.operation?.priceTbd == true;
+    final paid = !item.isPiscine && item.prix != null && item.prix! > 0;
+    final price = !tbd && !paid ? null : Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: tbd ? Colors.orange.withOpacity(0.25)
+            : AppColors.lichtblauw.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(8)),
+      child: Text(tbd ? 'Prix à confirmer' : '${item.prix!.toStringAsFixed(2)} €',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
+          color: tbd ? const Color(0xFFB45309) : AppColors.donkerblauw)),
+    );
+    if (stacked) {
+      final rows = [if (draft != null) draft, if (people != null) people,
+        if (price != null) price];
+      return Column(crossAxisAlignment: CrossAxisAlignment.start,
+        children: [for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 6), rows[i],
+        ]]);
+    }
+    return Row(children: [
+      if (draft != null) ...[draft, const SizedBox(width: 8)],
+      if (people != null) people,
+      const Spacer(),
+      if (price != null) price,
+    ]);
   }
 
   Widget _buildUnreadBadgeAndArrow(ActivityItem item) {
