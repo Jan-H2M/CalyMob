@@ -3,7 +3,7 @@ import '../config/app_colors.dart';
 import '../models/event_card_appearance.dart';
 import 'event_card_decoration.dart';
 
-/// Keep event names readable on a phone: artwork has its own compact row.
+/// Wrap the full themed title beside large artwork on the same horizontal band.
 class EventCardHeading extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -21,48 +21,49 @@ class EventCardHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final decorated = appearance?.hasArtwork == true;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    final titleText = Text(
+      title,
+      style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: AppColors.donkerblauw),
+      maxLines: decorated ? null : 2,
+      overflow: decorated ? TextOverflow.visible : TextOverflow.ellipsis,
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(icon, size: 18, color: iconColor),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.donkerblauw,
+        Expanded(
+          child: decorated
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, size: 18, color: iconColor),
+                    const SizedBox(height: 4),
+                    titleText
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(icon, size: 18, color: iconColor)),
+                    const SizedBox(width: 8),
+                    Expanded(child: titleText),
+                  ],
                 ),
-                // A themed event name must not compete with its illustration.
-                maxLines: decorated ? null : 2,
-                overflow:
-                    decorated ? TextOverflow.visible : TextOverflow.ellipsis,
-              ),
-            ),
-          ],
         ),
-        if (decorated)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: SizedBox(
-                width: 64,
-                height: 64,
-                child: FittedBox(
-                  child: EventCardDecoration(appearance: appearance!),
-                ),
-              ),
-            ),
+        if (decorated) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 100,
+            height: 120,
+            child:
+                FittedBox(child: EventCardDecoration(appearance: appearance!)),
           ),
+        ],
       ],
     );
   }
