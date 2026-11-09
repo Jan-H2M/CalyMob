@@ -1,9 +1,11 @@
 import 'operation.dart';
 import 'piscine_session.dart';
+import 'event_card_appearance.dart';
 
 /// Uniforme wrapper voor Operations en PiscineSession in de activiteitenlijst
 /// Maakt het mogelijk om beide types in één lijst te tonen en te filteren
 class ActivityItem {
+  EventCardAppearance? get cardAppearance => operation?.cardAppearance ?? piscineSession?.cardAppearance;
   final String id;
   final String type; // 'operation' of 'piscine'
   final String titre;

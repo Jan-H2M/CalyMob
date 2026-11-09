@@ -1,0 +1,30 @@
+name: Event card appearance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/event-card-appearance.yml'
+      - 'lib/models/event_card_appearance.dart'
+      - 'lib/models/activity_item.dart'
+      - 'lib/models/operation.dart'
+      - 'lib/models/piscine_session.dart'
+      - 'lib/widgets/event_card_decoration.dart'
+      - 'lib/screens/operations/operations_list_screen.dart'
+      - 'assets/images/card_themes/**'
+      - 'test/models/event_card_appearance_test.dart'
+      - 'test/widgets/event_card_decoration_test.dart'
+      - 'pubspec.yaml'
+permissions:
+  contents: read
+jobs:
+  appearance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test test/models/event_card_appearance_test.dart test/widgets/event_card_decoration_test.dart test/widgets/timed_undo_snackbar_test.dart test/widgets/scanner_modal_sheet_feedback_test.dart test/utils/scanner_lifecycle_test.dart test/services/piscine_session_service_test.dart
+      - run: git diff --exit-code -- pubspec.lock

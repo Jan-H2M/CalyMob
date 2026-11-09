@@ -9,6 +9,7 @@ import '../../models/team_channel.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
+import '../../widgets/event_card_decoration.dart';
 import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -439,6 +440,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   }
 
   Widget _buildActivityCard(ActivityItem item) {
+    final appearance = item.cardAppearance?.forTarget(_clubId, item.isPiscine ? 'piscine_sessions' : 'operations', item.id);
+    final accent = appearance?.accent;
+    final dateTextColor = !item.isDraft && !item.isCancelled && accent != null && accent.computeLuminance() > 0.18 ? AppColors.donkerblauw : Colors.white;
     final dayName = DateFormat('EEEE', 'fr_FR').format(item.date);
     final dayNumber = DateFormat('d', 'fr_FR').format(item.date);
 
@@ -467,7 +471,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: item.isCancelled ? const Color(0xFFFFE4E6) : Colors.white,
+          color: item.isCancelled ? const Color(0xFFFFE4E6) : accent == null ? Colors.white : Color.alphaBlend(accent.withValues(alpha: 0.10), Colors.white),
           borderRadius: BorderRadius.circular(16),
           border: item.isCancelled
               ? Border.all(color: const Color(0xFFDC2626), width: 3)
@@ -500,6 +504,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                               ? const [Color(0xFFF59E0B), Color(0xFFB45309)]
                               : item.isCancelled
                               ? const [Color(0xFFEF4444), Color(0xFF991B1B)]
+                              : accent != null
+                              ? [accent, Color.alphaBlend(Colors.black.withValues(alpha: 0.12), accent)]
                               : item.isPiscine
                               ? [
                                   AppColors.piscineBlauwLight, // Piscine blauw
@@ -513,10 +519,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                         children: [
                           Text(
                             dayNumber,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: dateTextColor,
                               height: 1,
                             ),
                           ),
@@ -526,7 +532,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white.withOpacity(0.9),
+                              color: dateTextColor.withOpacity(0.9),
                               letterSpacing: 1,
                             ),
                           ),
@@ -542,10 +548,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             ),
                             child: Text(
                               time,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                color: dateTextColor,
                               ),
                             ),
                           ),
@@ -582,6 +588,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                                if (appearance?.hasArtwork == true && !item.isCancelled)
+                                  EventCardDecoration(appearance: appearance!),
                               ],
                             ),
                             // Location (niet tonen voor piscine - dat is al duidelijk)

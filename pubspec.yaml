@@ -131,6 +131,7 @@ flutter:
   assets:
     - assets/apnee/lifras-preparation-cards-2025-08.json
     - assets/images/
+    - assets/images/card_themes/
     - assets/animations/
     - assets/mil/preview_protocols.json
 
