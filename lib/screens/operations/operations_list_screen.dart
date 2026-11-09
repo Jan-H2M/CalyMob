@@ -9,7 +9,7 @@ import '../../models/team_channel.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
-import '../../widgets/event_card_decoration.dart';
+import '../../widgets/event_card_heading.dart';
 import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -565,32 +565,13 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Title row with icon
-                            Row(
-                              children: [
-                                Icon(
-                                  icon,
-                                  size: 18,
-                                  color: item.isPiscine
-                                      ? AppColors.piscineBlauw
-                                      : AppColors.middenblauw,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    item.titre,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.donkerblauw,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (appearance?.hasArtwork == true && !item.isCancelled)
-                                  EventCardDecoration(appearance: appearance!),
-                              ],
+                            EventCardHeading(
+                              title: item.titre,
+                              icon: icon,
+                              iconColor: item.isPiscine
+                                  ? AppColors.piscineBlauw
+                                  : AppColors.middenblauw,
+                              appearance: !item.isCancelled ? appearance : null,
                             ),
                             // Location (niet tonen voor piscine - dat is al duidelijk)
                             if (item.lieu != null &&
