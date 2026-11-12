@@ -298,3 +298,44 @@ test('an edit refund assigned to another receipt is not deducted from this recei
   const result = await f.cancel();
   expect(f.claims().find(c => c.id === result.refundClaimIds[0]).montant).toBe(20);
 });
+
+
+test('canonical reset clears stale legacy paid aliases on a rejected claim', async () => {
+  const f = fixture({
+    [`${base}/demandes_remboursement/prior`]: { source_transaction_id: 'bank', montant: 20,
+      statut: 'refuse', transaction_id: 'stale-link', paiement_manuel: true },
+    [`${base}/expense_claims/prior`]: { source_transaction_id: 'bank', amount: 20,
+      status: 'rejected', bank_transaction_id: null, manual_payment: false },
+  });
+  const result = await f.cancel();
+  expect(f.claims().find(c => c.id === result.refundClaimIds[0]).montant).toBe(20);
+});
+
+test('existing refund_demande_id discovers a canonical-only older edit refund', async () => {
+  const f = fixture({
+    [`${insPath}/member`]: { ...person, refund_demande_id: 'edit', refund_montant: 10 },
+    [`${base}/expense_claims/edit`]: { operation_id: 'event', legacy_document_id: 'edit',
+      amount: 10, status: 'approved', requester_id: 'member' },
+  });
+  const result = await f.cancel();
+  expect(f.claims().find(c => c.id === result.refundClaimIds[0]).montant).toBe(10);
+});
+
+test('a retained parent’s old group edit refund cannot be missed when only a guest withdraws', async () => {
+  const f = fixture({ ...groupedFixture(),
+    [`${insPath}/member`]: { ...person, transaction_id: 'child-member', refund_demande_id: 'edit' },
+    [`${base}/expense_claims/edit`]: { operation_id: 'event', legacy_document_id: 'edit',
+      amount: 5, status: 'approved', requester_id: 'member' },
+  });
+  const result = await f.cancel({ inscriptionId: 'guest' });
+  expect(result.refundClaimIds).toEqual([]);
+  expect(result.refundReviewRequired).toBe(true);
+});
+
+test('canceling the entire bank-funded group can deduct an old unallocated refund from its total', async () => {
+  const f = fixture({ ...groupedFixture(),
+    [`${base}/demandes_remboursement/prior`]: { source_transaction_id: 'bank', montant: 5, statut: 'rembourse' },
+  });
+  const result = await f.cancel({ guestAction: 'delete' });
+  expect(f.claims().find(c => c.id === result.refundClaimIds[0]).montant).toBe(25);
+});

@@ -26,6 +26,10 @@ function mergeClaims(legacy, canonical) {
       montant: value.amount ?? value.montant ?? legacy.montant,
       statut: value.status ?? value.statut ?? legacy.statut,
       source_transaction_ref: value.source_transaction_reference ?? value.source_transaction_ref ?? legacy.source_transaction_ref,
+      transaction_id: Object.hasOwn(value, 'bank_transaction_id') ? value.bank_transaction_id
+        : value.transaction_id ?? legacy.transaction_id,
+      paiement_manuel: Object.hasOwn(value, 'manual_payment') ? value.manual_payment
+        : value.paiement_manuel ?? legacy.paiement_manuel,
     });
   }
   return [...claims.values()].filter(claim => !['refuse', 'rejected'].includes(claim.statut)
@@ -138,6 +142,11 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
     const children = new Map(childrenLegacy.docs.map(doc => [doc.id, { ...doc.data(), id: doc.id }]));
     childrenCanonical.docs.forEach(doc => children.set(doc.id, { ...doc.data(), id: doc.id }));
     const sourceIds = [receipt.id, ...children.keys()];
+    const relatedEntries = allEntries.filter(entry => links(entry.data())
+      .some(id => sourceIds.includes(id)));
+    const relatedIds = new Set(relatedEntries.map(entry => entry.id));
+    const linkedRefundIds = relatedEntries.map(entry => entry.data().refund_demande_id)
+      .filter(id => typeof id === 'string' && id && !id.includes('/'));
     const legacyClaims = new Map();
     const canonicalClaims = new Map();
     // Includes manual refunds without an operation_id, and mirrored claims once.
@@ -156,14 +165,14 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
       transaction.get(collection('expense_claims').where('operation_id', '==', operationId)),
     ]);
     const editIds = new Set([...editLegacy.docs, ...editCanonical.docs]
-      .filter(doc => shares.some(item => item.inscription_id === doc.data().inscription_id))
+      .filter(doc => relatedIds.has(doc.data().inscription_id))
       .map(doc => doc.id));
     for (const [snap, target] of [[editLegacy, legacyClaims], [editCanonical, canonicalClaims]]) {
       snap.docs.filter(doc => editIds.has(doc.id)).forEach(doc => target.set(doc.id, doc));
     }
     // A query can find only the stale mirror. Read the same-ID counterpart
     // before applying canonical-primary amount/status and legacy-only context.
-    for (const id of new Set([...legacyClaims.keys(), ...canonicalClaims.keys()])) {
+    for (const id of new Set([...legacyClaims.keys(), ...canonicalClaims.keys(), ...linkedRefundIds])) {
       const [legacy, canonical] = await Promise.all([
         transaction.get(db.doc(`${base}/demandes_remboursement/${id}`)),
         transaction.get(db.doc(`${base}/expense_claims/${id}`)),
@@ -200,9 +209,11 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
         inscription_id: target, amount_cents: Math.max(0, cents(claim.montant)),
       }] } : claim;
     });
+    const hasRetainedShares = [...allShares.keys()]
+      .some(id => !shares.some(share => share.inscription_id === id));
     if (claims.some(claim => cents(claim.montant) > 0
       && ((!claim.source_transaction_id && receipts.size > 1)
-        || !claim.withdrawal_refund_allocations?.length))) {
+        || (hasRetainedShares && !claim.withdrawal_refund_allocations?.length)))) {
       // An old refund on an unsplit group receipt does not identify whose
       // share was refunded. Do not guess a smaller refund for the next person.
       plan.reviewRequired = true;

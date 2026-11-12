@@ -61,13 +61,29 @@ test('COM-166 withdrawal and expense drafts are atomic and retry-safe in Firesto
       assert.equal((await club.collection('demandes_remboursement').get()).size, 2);
       assert.equal((await club.collection('expense_claims').get()).size, 2);
     });
+    await t.test('canonical-only old edit refund is found through the registration link', async () => {
+      await event.collection('inscriptions').doc('canonical-only').set({ membre_id: 'member',
+        registration_status: 'confirmed', prix: 20, paye: true, transaction_id: 'bank2',
+        refund_demande_id: 'edit-canonical' });
+      await club.collection('bank_transactions').doc('bank2').set({ montant: 20,
+        contrepartie_iban: iban, contrepartie_nom: 'Alice Synthetic', numero_sequence: 'TEST-2',
+        matched_entities: [{ entity_type: 'event', entity_id: 'event' },
+          { entity_type: 'inscription', entity_id: 'canonical-only' }] });
+      await club.collection('expense_claims').doc('edit-canonical').set({ amount: 7,
+        status: 'approved', operation_id: 'event', requester_id: 'member',
+        legacy_document_id: 'edit-canonical' });
+      const result = await cancel({ inscriptionId: 'canonical-only' });
+      assert.equal(result.refundClaimIds.length, 1);
+      const claim = await club.collection('demandes_remboursement').doc(result.refundClaimIds[0]).get();
+      assert.equal(claim.get('montant'), 13);
+    });
     await t.test('unreceived payment declaration produces no draft', async () => {
       await event.collection('inscriptions').doc('unverified').set({ membre_id: 'member',
         registration_status: 'confirmed', prix: 20, paye: true, transaction_id: 'missing-bank' });
       const result = await cancel({ inscriptionId: 'unverified' });
       assert.deepEqual(result.refundClaimIds, []);
       assert.equal(result.refundReviewRequired, true);
-      assert.equal((await club.collection('demandes_remboursement').get()).size, 2);
+      assert.equal((await club.collection('demandes_remboursement').get()).size, 3);
     });
   } finally {
     await db.recursiveDelete(club);
