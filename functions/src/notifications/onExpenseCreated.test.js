@@ -131,3 +131,15 @@ test('copies an existing communication into a missing mirror without generating 
   expect(result.legacy.communication_qr).toBe(message);
   expect(result.canonical.payment_qr_message).toBe(message);
 });
+
+
+test('automatic event-withdrawal draft never sends a member confirmation email', async () => {
+  const path = 'clubs/calypso/demandes_remboursement/withdrawal-test';
+  const claim = { statut: 'brouillon', source: 'event_withdrawal',
+    send_confirmation_email: false, payment_reference: 'REM-2026-0012' };
+  const docs = { [path]: claim };
+  mockDb = fakeDb(docs);
+  await expect(onExpenseCreated({ params: { clubId: 'calypso', demandeId: 'withdrawal-test' },
+    data: { data: () => claim } })).resolves.toBeNull();
+  expect(docs[path]).toEqual(claim);
+});
