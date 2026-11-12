@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { hasPendingDispatch } = require('../payment/paymentEmailDispatch');
+const { planWithdrawalRefunds, stageWithdrawalRefunds } = require('./withdrawalRefund');
 
 const REGION = 'europe-west1';
 const ACTIVE_STATUSES = new Set(['confirmed', 'pending_payment']);
@@ -1554,11 +1555,7 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       transaction.get(inscriptionsRef),
     ]);
     if (!operationSnap.exists) throw new HttpsError('not-found', 'Événement introuvable.');
-    const ownEntry = inscriptionsSnap.docs.find(doc => {
-      const data = doc.data();
-      if (data.registration_status === 'canceled') return false;
-      return doc.id === inscriptionId;
-    });
+    const ownEntry = inscriptionsSnap.docs.find(doc => doc.id === inscriptionId);
     if (!ownEntry) throw new HttpsError('not-found', 'Inscription introuvable.');
 
     const ownData = ownEntry.data();
@@ -1569,6 +1566,13 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       throw new HttpsError('permission-denied', 'Vous ne pouvez pas annuler cette inscription.');
     }
 
+    // A transport retry must not create another expense or repeat promotions.
+    if (ownData.registration_status === 'canceled') {
+      return { status: 'canceled', promoted: [], notifications: [],
+        paymentEmailMayHaveBeenSent: false,
+        refundClaimIds: ownData.withdrawal_refund_claim_ids || [],
+        refundReviewRequired: ownData.withdrawal_refund_review_required === true };
+    }
     const operation = operationSnap.data();
     const wasWaitlisted = ownData.registration_status === 'waitlisted';
     const now = admin.firestore.Timestamp.now();
@@ -1593,6 +1597,13 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
     )));
     const paymentEmailMayHaveBeenSent = dispatches.some(snapshot =>
       snapshot.exists && hasPendingDispatch(snapshot.data(), now.toMillis()));
+    const refundPlan = await planWithdrawalRefunds({
+      db: admin.firestore(), transaction, clubId, operationId, operation,
+      affected, allEntries: inscriptionsSnap.docs, actorUid: uid, now,
+    });
+    const refundReceipt = { refundClaimIds: refundPlan.claimIds,
+      refundReviewRequired: refundPlan.reviewRequired };
+    stageWithdrawalRefunds(transaction, refundPlan);
     const removedEntries = [ownEntry];
     if (effectiveGuestAction === 'delete') {
       for (const guest of guests) {
@@ -1652,6 +1663,12 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       action: wasWaitlisted ? 'left_waitlist' : 'unregistered',
       now,
     }));
+    for (const entry of affected) {
+      transaction.update(entry.ref, {
+        withdrawal_refund_claim_ids: refundPlan.claimIds,
+        withdrawal_refund_review_required: refundPlan.reviewRequired,
+      });
+    }
     transaction.set(auditRef.doc(), {
       action: wasWaitlisted ? 'left' : 'unregistered',
       membre_id: ownData.membre_id || null,
@@ -1664,17 +1681,19 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       app_version: cleanAuditText(appVersion, null, 40),
       reason: cleanAuditText(reason, isElevated && !ownsRegistration ? 'admin_cancellation' : 'self_withdrawal', 240),
       payment_email_may_have_been_sent: paymentEmailMayHaveBeenSent,
+      refund_claim_ids: refundPlan.claimIds,
+      refund_review_required: refundPlan.reviewRequired,
     });
 
     if (wasWaitlisted) {
-      return { status: 'canceled', promoted: [], notifications: [], paymentEmailMayHaveBeenSent };
+      return { status: 'canceled', promoted: [], notifications: [], paymentEmailMayHaveBeenSent, ...refundReceipt };
     }
     const nextEntries = promotionCandidatesAfterWithdrawal(
       operation,
       inscriptionsSnap.docs,
       removedEntries.map(entry => entry.id),
     );
-    if (nextEntries.length === 0) return { status: 'canceled', promoted: [], notifications: [], paymentEmailMayHaveBeenSent };
+    if (nextEntries.length === 0) return { status: 'canceled', promoted: [], notifications: [], paymentEmailMayHaveBeenSent, ...refundReceipt };
     const promotedStatus = registrationStatusAfterPromotion(operation);
     for (const nextEntry of nextEntries) {
       transaction.update(nextEntry.ref, {
@@ -1708,6 +1727,7 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       promoted: nextEntries.map(entry => entry.id),
       promotedStatus,
       paymentEmailMayHaveBeenSent,
+      ...refundReceipt,
       notifications: nextEntries.map(entry => ({ operation, memberId: entry.data().membre_id })),
     };
   });

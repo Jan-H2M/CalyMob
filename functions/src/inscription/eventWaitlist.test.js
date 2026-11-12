@@ -1281,6 +1281,8 @@ describe('unregisterFromEvent callable', () => {
                 };
               }
               if (ref === inscriptionsRef) return { docs };
+              if (ref.financialQuery) return { docs: [] };
+              if (/\/(bank_transactions|transactions_bancaires)\//.test(ref.path)) return { exists: false };
               if (ref.dispatchId) return { exists: pendingDispatchIds.includes(ref.dispatchId), data: () => ({
                 attempts: { active: { expires_at: { toMillis: () => Date.parse('2026-08-12T10:01:00Z') } } },
               }) };
@@ -1295,6 +1297,7 @@ describe('unregisterFromEvent callable', () => {
         }
         return finalResult;
       }),
+      collection: jest.fn(path => ({ path, where: () => ({ path, financialQuery: true }) })),
       transactions: [],
     };
     admin.firestore.mockReturnValue(db);
@@ -1571,7 +1574,7 @@ describe('unregisterFromEvent callable', () => {
       },
     });
 
-    expect(result).toEqual({ status: 'canceled', promoted: [], paymentEmailMayHaveBeenSent: false });
+    expect(result).toMatchObject({ status: 'canceled', promoted: [], paymentEmailMayHaveBeenSent: false, refundClaimIds: [], refundReviewRequired: false });
     expect(db.transactions[0].update).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'waitlisted-member' }),
       expect.objectContaining({ registration_status: 'canceled' }),
