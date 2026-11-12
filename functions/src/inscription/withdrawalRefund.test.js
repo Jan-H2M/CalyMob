@@ -240,3 +240,61 @@ test('a different member cannot trigger another person’s cancellation/refund',
   await expect(f.cancel({}, 'other')).rejects.toMatchObject({ code: 'permission-denied' });
   expect(f.claims()).toHaveLength(0);
 });
+
+
+test('prior manual refund against a retained guest child reduces only that guest reserve', async () => {
+  const f = fixture({ ...groupedFixture(),
+    [`${base}/demandes_remboursement/prior-guest`]: {
+      source_transaction_id: 'child-guest', montant: 5, statut: 'rembourse' },
+  });
+  await f.cancel({ guestAction: 'transfer' });
+  expect(f.claims().filter(c => c.id !== 'prior-guest')[0].montant).toBe(20);
+});
+
+test.each([
+  { transaction_id: 'outgoing' }, { bank_transaction_id: 'outgoing' }, { paiement_manuel: true },
+])('rejected but already paid claims still reserve received money: %j', async paidEvidence => {
+  const f = fixture({ [`${base}/demandes_remboursement/prior`]: {
+    source_transaction_id: 'bank', montant: 20, statut: 'refuse', ...paidEvidence },
+  });
+  const result = await f.cancel();
+  expect(result.refundClaimIds).toEqual([]);
+});
+
+test('canonical amount wins for a legacy edit refund whose canonical mirror lacks inscription_id', async () => {
+  const f = fixture({
+    [`${base}/demandes_remboursement/edit`]: {
+      operation_id: 'event', inscription_id: 'member', montant: 3, statut: 'soumis' },
+    [`${base}/expense_claims/edit`]: { operation_id: 'event', legacy_document_id: 'edit',
+      amount: 10, status: 'approved' },
+  });
+  const result = await f.cancel();
+  expect(f.claims().find(c => c.id === result.refundClaimIds[0]).montant).toBe(10);
+});
+
+test('ambiguous prior refund against the unsplit group receipt is flagged for review', async () => {
+  const f = fixture({ ...groupedFixture(),
+    [`${base}/demandes_remboursement/prior`]: { source_transaction_id: 'bank', montant: 5, statut: 'rembourse' },
+  });
+  const result = await f.cancel({ guestAction: 'transfer' });
+  expect(result.refundClaimIds).toEqual([]);
+  expect(result.refundReviewRequired).toBe(true);
+});
+
+
+test('mixed canceled group flags a declared-paid guest without bank evidence', async () => {
+  const f = fixture({ [`${insPath}/guest`]: { membre_id: 'guest', is_guest: true,
+    parent_inscription_id: 'member', paye: true, registration_status: 'confirmed', prix: 10 } });
+  const result = await f.cancel({ guestAction: 'delete' });
+  expect(result.refundReviewRequired).toBe(true);
+  expect(f.claims()[0].montant).toBe(20);
+});
+
+test('an edit refund assigned to another receipt is not deducted from this receipt', async () => {
+  const f = fixture({
+    [`${base}/demandes_remboursement/edit`]: { operation_id: 'event', inscription_id: 'member',
+      source_transaction_id: 'other-receipt', montant: 5, statut: 'rembourse' },
+  });
+  const result = await f.cancel();
+  expect(f.claims().find(c => c.id === result.refundClaimIds[0]).montant).toBe(20);
+});

@@ -21,13 +21,15 @@ function mergeClaims(legacy, canonical) {
   const claims = new Map(legacy.map(doc => [doc.id, { ...doc.data(), id: doc.id }]));
   for (const doc of canonical) {
     const value = doc.data();
-    claims.set(doc.id, { ...value, id: doc.id,
-      montant: value.amount ?? value.montant,
-      statut: value.status ?? value.statut,
-      source_transaction_ref: value.source_transaction_reference ?? value.source_transaction_ref,
+    const legacy = claims.get(doc.id) || {};
+    claims.set(doc.id, { ...legacy, ...value, id: doc.id,
+      montant: value.amount ?? value.montant ?? legacy.montant,
+      statut: value.status ?? value.statut ?? legacy.statut,
+      source_transaction_ref: value.source_transaction_reference ?? value.source_transaction_ref ?? legacy.source_transaction_ref,
     });
   }
-  return [...claims.values()].filter(claim => !['refuse', 'rejected'].includes(claim.statut));
+  return [...claims.values()].filter(claim => !['refuse', 'rejected'].includes(claim.statut)
+    || claim.transaction_id || claim.bank_transaction_id || claim.paiement_manuel || claim.manual_payment);
 }
 
 // Attribute at most the actual draft/paid amount, even after an admin edit.
@@ -83,7 +85,7 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
     .where('operation_id', '==', operationId));
   const allocations = allocationsSnap.docs.map(doc => doc.data());
   const receipts = new Map();
-  let reviewRequired = false;
+  let reviewRequired = eligible.some(entry => entry.data().paye === true && !links(entry.data()).length);
   for (const entry of eligible) {
     const registration = entry.data();
     const seen = new Set();
@@ -153,15 +155,24 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
       transaction.get(collection('demandes_remboursement').where('operation_id', '==', operationId)),
       transaction.get(collection('expense_claims').where('operation_id', '==', operationId)),
     ]);
+    const editIds = new Set([...editLegacy.docs, ...editCanonical.docs]
+      .filter(doc => shares.some(item => item.inscription_id === doc.data().inscription_id))
+      .map(doc => doc.id));
     for (const [snap, target] of [[editLegacy, legacyClaims], [editCanonical, canonicalClaims]]) {
-      snap.docs.filter(doc => shares.some(item => item.inscription_id === doc.data().inscription_id))
-        .forEach(doc => target.set(doc.id, doc));
+      snap.docs.filter(doc => editIds.has(doc.id)).forEach(doc => target.set(doc.id, doc));
     }
-    const claims = mergeClaims([...legacyClaims.values()], [...canonicalClaims.values()]);
-    if (receipts.size > 1 && claims.some(claim => !claim.source_transaction_id)) {
-      plan.reviewRequired = true;
-      continue;
+    // A query can find only the stale mirror. Read the same-ID counterpart
+    // before applying canonical-primary amount/status and legacy-only context.
+    for (const id of new Set([...legacyClaims.keys(), ...canonicalClaims.keys()])) {
+      const [legacy, canonical] = await Promise.all([
+        transaction.get(db.doc(`${base}/demandes_remboursement/${id}`)),
+        transaction.get(db.doc(`${base}/expense_claims/${id}`)),
+      ]);
+      if (legacy.exists) legacyClaims.set(id, legacy);
+      if (canonical.exists) canonicalClaims.set(id, canonical);
     }
+    let claims = mergeClaims([...legacyClaims.values()], [...canonicalClaims.values()])
+      .filter(claim => !claim.source_transaction_id || sourceIds.includes(claim.source_transaction_id));
     const allShares = new Map();
     for (const allocation of allocations.filter(item => item.receipt_id === receipt.id)) {
       if (Number.isSafeInteger(allocation.amount_cents) && allocation.amount_cents > 0
@@ -178,6 +189,25 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
       }
     }
     shares.forEach(item => allShares.set(item.inscription_id, item.amount_cents));
+    claims = claims.map(claim => {
+      if (claim.withdrawal_refund_allocations?.some(item => Number.isSafeInteger(item.amount_cents)
+        && item.amount_cents > 0)) return claim;
+      const child = children.get(claim.source_transaction_id);
+      const targets = child?.matched_entities?.filter(entity => entity.entity_type === 'inscription') || [];
+      const target = targets.length === 1 ? targets[0].entity_id
+        : allShares.size === 1 ? [...allShares.keys()][0] : null;
+      return target ? { ...claim, withdrawal_refund_allocations: [{
+        inscription_id: target, amount_cents: Math.max(0, cents(claim.montant)),
+      }] } : claim;
+    });
+    if (claims.some(claim => cents(claim.montant) > 0
+      && ((!claim.source_transaction_id && receipts.size > 1)
+        || !claim.withdrawal_refund_allocations?.length))) {
+      // An old refund on an unsplit group receipt does not identify whose
+      // share was refunded. Do not guess a smaller refund for the next person.
+      plan.reviewRequired = true;
+      continue;
+    }
     const amount = refundableCents(receipt, shares,
       [...allShares].map(([inscription_id, amount_cents]) => ({ inscription_id, amount_cents })), claims);
     if (!amount) continue;
