@@ -139,3 +139,7 @@ android/fastlane/README.md
 # IDE project files
 *.code-workspace
 .metadata
+
+# Finder/iCloud duplicate copies of generated Flutter files
+.flutter-plugins-dependencies *
+.flutter-plugins *
