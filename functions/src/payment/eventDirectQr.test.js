@@ -28,4 +28,11 @@ describe('amount for a direct event payment QR', () => {
     expect(() => amountForRegistration({ installment_payments: {} }, 'missing')).toThrow();
     expect(() => amountForRegistration({ prix: -1 }, null)).toThrow();
   });
+  test('treats undefined or null amount_due as not yet assigned (returns 0)', () => {
+    // An installment_payments record may exist without amount_due when the plan was
+    // added after registration. It should be treated as "nothing owed yet", not an error.
+    expect(amountForRegistration({ installment_payments: { a: { status: 'unpaid' } } }, 'a')).toBe(0);
+    expect(amountForRegistration({ installment_payments: { a: { status: 'unpaid', amount_due: null } } }, 'a')).toBe(0);
+    expect(amountForRegistration({ installment_payments: { a: { status: 'unpaid' } } }, null)).toBe(0);
+  });
 });

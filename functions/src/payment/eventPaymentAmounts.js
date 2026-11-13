@@ -13,7 +13,7 @@ function amountForRegistration(registration, installmentId) {
   const open = item => {
     if (!item || closed.has(item.status)) return 0;
     if (item.transaction_id || item.transaction_matched === true || Number(item.amount_paid || 0) > 0 || ['partial', 'manual_review', 'pending_bank'].includes(item.status)) throw new HttpsError('failed-precondition', 'Paiement en cours de vérification.');
-    const amount = Number(item.amount_due);
+    const amount = Number(item.amount_due ?? 0);
     if (!Number.isFinite(amount) || amount < 0) throw new HttpsError('failed-precondition', 'Montant invalide.');
     return Math.round(amount * 100);
   };
