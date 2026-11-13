@@ -19,24 +19,10 @@ const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { memberDisplayName } = require('../utils/memberName');
+const { resolveChefEcole } = require('../utils/resolveChefEcole');
 
 const FUNCTION_NAME = 'onTargetLevelChanged';
 const FUNCTION_REGION = 'europe-west1';
-
-async function findChefEcoleId(clubRef) {
-  try {
-    const snap = await clubRef
-      .collection('members')
-      .where('app_role', 'in', ['admin', 'superadmin'])
-      .orderBy(admin.firestore.FieldPath.documentId())
-      .limit(1)
-      .get();
-    if (!snap.empty) return snap.docs[0].id;
-  } catch (err) {
-    console.warn(`[${FUNCTION_NAME}] admin lookup failed: ${err.message}`);
-  }
-  return '';
-}
 
 async function handleTargetLevelChanged(event) {
   const { clubId, memberId } = event.params;
@@ -69,7 +55,7 @@ async function handleTargetLevelChanged(event) {
   }
 
   const memberName = memberDisplayName(after, 'Membre');
-  const assigneeId = await findChefEcoleId(clubRef);
+  const assigneeId = await resolveChefEcole(admin.firestore(), clubId);
 
   const taskRef = clubRef.collection('formation_tasks').doc();
   await taskRef.set({

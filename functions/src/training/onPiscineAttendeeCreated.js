@@ -45,6 +45,7 @@ const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { memberDisplayName } = require('../utils/memberName');
 const { enrollmentId } = require('./apnee/training');
+const { resolveChefEcole } = require('../utils/resolveChefEcole');
 
 const FUNCTION_NAME = 'onPiscineAttendeeCreated';
 const FUNCTION_REGION = 'europe-west1';
@@ -446,9 +447,6 @@ async function createEncadrantTask(
 }
 
 async function createBlockedTask(db, clubId, attendeeId, member, memberId, sessionId, targetLevel) {
-  // Find a school responsible to route the blocked task to. For now, route to
-  // the first admin in the club. Phase 2 may introduce a dedicated
-  // school_responsible role.
   const memberName = composeMemberName(member);
   const taskRef = db
     .collection('clubs')
@@ -456,23 +454,16 @@ async function createBlockedTask(db, clubId, attendeeId, member, memberId, sessi
     .collection('formation_tasks')
     .doc();
 
-  // Try to find an admin to assign the blocked task to.
   let assigneeId = memberId; // fallback : assign to member themselves, status=blocked
   let assigneeType = 'student';
   try {
-    const adminQuery = await db
-      .collection('clubs')
-      .doc(clubId)
-      .collection('members')
-      .where('app_role', 'in', ['admin', 'superadmin'])
-      .limit(1)
-      .get();
-    if (!adminQuery.empty) {
-      assigneeId = adminQuery.docs[0].id;
+    const resolved = await resolveChefEcole(db, clubId);
+    if (resolved) {
+      assigneeId = resolved;
       assigneeType = 'school_responsible';
     }
   } catch (err) {
-    console.warn(`[${FUNCTION_NAME}] could not look up admin for blocked task:`, err.message);
+    console.warn(`[${FUNCTION_NAME}] could not resolve chef d'école for blocked task:`, err.message);
   }
 
   await taskRef.set({
