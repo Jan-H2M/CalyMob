@@ -282,7 +282,7 @@ async function resolveAssignee(db, clubRef, claim, { isExternal }) {
 
   // WP-18 (D18) — preuves externes revues par le chef d'école : après le
   // reviewer explicite (Branch 2), on résout le chef d'école
-  // (settings/general.chef_ecole_member_id, sinon premier admin).
+  // (membre avec fonction "Chef d'école" dans clubStatuten, sinon premier admin).
   if (isExternal) {
     const chefId = await resolveChefEcole(db, clubRef.id);
     if (chefId) {
