@@ -123,7 +123,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     if (currentUserId == null) return false;
 
     final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin') return true;
+    if (role == 'admin') return true;
 
     final creatorId =
         widget.operation.creatorUserId ?? widget.operation.organisateurId;

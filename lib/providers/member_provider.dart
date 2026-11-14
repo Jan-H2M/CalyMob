@@ -116,10 +116,10 @@ class MemberProvider with ChangeNotifier {
   /// Check if user is gonflage
   bool get isGonflage => ClubRoleUtils.hasGonflageRole(clubStatuten);
 
-  /// Check if user can approve expenses (validateur, admin, or superadmin)
+  /// Check if user can approve expenses (admin only)
   bool get canApproveExpenses {
     final role = appRole?.toLowerCase();
-    return role == 'validateur' || role == 'admin' || role == 'superadmin';
+    return role == 'admin';
   }
 
   /// Check if user must change password on first login

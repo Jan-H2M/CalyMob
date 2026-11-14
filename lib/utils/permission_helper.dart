@@ -6,7 +6,7 @@ class PermissionHelper {
     required String? appRole,
     required List<String> clubStatuten,
   }) =>
-      const ['admin', 'superadmin'].contains(appRole) ||
+      appRole == 'admin' ||
       clubStatuten.any(const ['O', 'organisateur', 'Organisateur'].contains);
 
   /// LIFRAS Moniteur niveaux — mogen LIFRAS-oefeningen / examens valideren.

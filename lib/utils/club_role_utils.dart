@@ -68,7 +68,7 @@ class ClubRoleUtils {
 
   static bool hasAdminAccess(List<String> roles, {String? appRole}) {
     final normalizedAppRole = appRole?.trim().toLowerCase();
-    return normalizedAppRole == 'admin' || normalizedAppRole == 'superadmin';
+    return normalizedAppRole == 'admin';
   }
 
   static List<TeamChannelType> getVisibleTeamChannelTypes(

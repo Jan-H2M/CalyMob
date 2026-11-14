@@ -142,18 +142,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (_isCurrentUserResponsable(operation)) return true;
     final memberProvider = context.read<MemberProvider>();
     final role = memberProvider.appRole?.toLowerCase();
-    return role == 'admin' || role == 'superadmin';
+    return role == 'admin';
   }
 
   /// Duik-events mogen door de huidige organisator of door beheerders worden
-  /// gewist. Dit volgt de Firestore-regels: gewone users enkel voor hun eigen
-  /// `organisateur_id`, admin/validateur/superadmin voor alle events.
+  /// gewist. Dit volgt de Firestore-regels: gewone members enkel voor hun eigen
+  /// `organisateur_id`, admin voor alle events.
   bool _canDeleteDiveEvent(Operation operation) {
     if (operation.categorie != 'plongee') return false;
     if (_isCurrentUserResponsable(operation)) return true;
     final memberProvider = context.read<MemberProvider>();
     final role = memberProvider.appRole?.toLowerCase();
-    return role == 'admin' || role == 'superadmin' || role == 'validateur';
+    return role == 'admin';
   }
 
   /// Check if the current user is the responsable (organisateur) currently
@@ -2010,7 +2010,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     }
     final member = context.read<MemberProvider>();
     final role = member.appRole?.toLowerCase().trim();
-    if (const {'admin', 'superadmin', 'validateur'}.contains(role)) return true;
+    if (role == 'admin') return true;
     return PermissionHelper.isEncadrant(member.clubStatuten);
   }
 
