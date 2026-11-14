@@ -80,7 +80,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     // Vérifier app_role d'abord (superadmin, admin)
     if (_appRole != null) {
       final role = _appRole!.toLowerCase();
-      if (role == 'superadmin' || role == 'admin') {
+      if (role == 'admin') {
         debugPrint('✅ User IS admin via app_role');
         return true;
       }
