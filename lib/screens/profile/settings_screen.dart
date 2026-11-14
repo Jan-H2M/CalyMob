@@ -1284,7 +1284,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildVersionPublishSection() {
     final memberProvider = context.watch<MemberProvider>();
     final appRole = memberProvider.appRole?.toLowerCase() ?? '';
-    final isAdmin = appRole == 'admin' || appRole == 'superadmin';
+    final isAdmin = appRole == 'admin';
 
     // Alleen tonen voor admins
     if (!isAdmin) return const SizedBox.shrink();
