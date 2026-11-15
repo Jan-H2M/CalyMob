@@ -464,8 +464,29 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   assertPaymentRegistrationActive(inscription);
   const installment = inscription.installment_payments && inscription.installment_payments[installmentId];
   if (!installment) {
-    console.log(`[resolveInstallmentPaymentForInscription] Installment ${installmentId} not found for ${participantId}`);
-    return null;
+    // No installment_payments record for this tranche yet — the member may have
+    // registered before the payment plan was added, or the lines were never
+    // initialised. Attempt to derive the amount from the event tariff so an
+    // admin can still issue a QR before the lines are manually set.
+    const operationSnap = await db
+      .collection('clubs').doc(clubId)
+      .collection('operations').doc(operationId).get();
+    const event = operationSnap.exists ? (operationSnap.data() || {}) : {};
+    const tariff = (event.event_tariffs || []).find(t => t.id === inscription.tariff_id);
+    const tariffAmount = Number(tariff?.installment_amounts?.[installmentId] ?? 0);
+    if (!Number.isFinite(tariffAmount) || tariffAmount <= 0) {
+      console.log(`[resolveInstallmentPaymentForInscription] Installment ${installmentId} not found and no tariff fallback for ${participantId}`);
+      return null;
+    }
+    console.log(`[resolveInstallmentPaymentForInscription] No payment line for ${installmentId}, using tariff amount ${tariffAmount}€ for ${participantId}`);
+    return {
+      amountDue: tariffAmount,
+      ownOpen: true,
+      aggregatedDue: tariffAmount,
+      guestSubtotal: 0,
+      guests: [],
+      status: 'unpaid',
+    };
   }
 
   // Montant PROPRE du membre pour CETTE tranche: 0 si sa tranche est déjà
