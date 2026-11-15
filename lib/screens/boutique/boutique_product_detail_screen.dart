@@ -38,15 +38,12 @@ class _BoutiqueProductDetailScreenState
     super.initState();
     final editingItem = widget.editingItem;
     _selectedVariant = editingItem == null
-        ? (widget.product.variants.isNotEmpty
+        ? (widget.product.variants.length == 1
             ? widget.product.variants.first
-            : null)
+            : null)  // multiple variants → user must choose explicitly
         : widget.product.variants
             .where((variant) => variant.id == editingItem.variantId)
             .firstOrNull;
-    _selectedVariant ??= widget.product.variants.isNotEmpty
-        ? widget.product.variants.first
-        : null;
     _selectedDeliveryMode = editingItem == null
         ? widget.product.deliveryModes.first
         : widget.product.deliveryModes.firstWhere(
@@ -164,7 +161,8 @@ class _BoutiqueProductDetailScreenState
                       const SizedBox(height: 18),
                       if (widget.product.variants.length > 1)
                         DropdownButtonFormField<BoutiqueVariant>(
-                          initialValue: _selectedVariant,
+                          value: _selectedVariant,
+                          hint: const Text('Choisir une taille'),
                           decoration: const InputDecoration(
                             labelText: 'Variante',
                             border: OutlineInputBorder(),
@@ -282,6 +280,7 @@ class _BoutiqueProductDetailScreenState
   }
 
   bool get _canPrepareOrder {
+    if (widget.product.variants.length > 1 && _selectedVariant == null) return false;
     if (_quantity < _minimumQuantity) return false;
     final variant = _selectedVariant;
     final hasStock =
