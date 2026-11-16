@@ -1600,6 +1600,7 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
     const refundPlan = await planWithdrawalRefunds({
       db: admin.firestore(), transaction, clubId, operationId, operation,
       affected, allEntries: inscriptionsSnap.docs, actorUid: uid, now,
+      context: { source, appVersion, reason, actor: memberData },
     });
     const refundReceipt = { refundClaimIds: refundPlan.claimIds,
       refundReviewRequired: refundPlan.reviewRequired };

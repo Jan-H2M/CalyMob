@@ -17,6 +17,60 @@ const eventMatches = (bank, operationId) => bank.operation_id === operationId
 const inscriptionMatches = (bank, id) => (bank.matched_entities || [])
   .some(entity => entity.entity_type === 'inscription' && entity.entity_id === id);
 
+const BRUSSELS = 'Europe/Brussels';
+const toDate = value => {
+  if (!value) return null;
+  const date = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+const dayText = date => new Intl.DateTimeFormat('fr-BE', { timeZone: BRUSSELS,
+  day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+const timeText = date => new Intl.DateTimeFormat('fr-BE', { timeZone: BRUSSELS,
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date).replace(':', 'h');
+const euros = amountCents => `${(amountCents / 100).toFixed(2).replace('.', ',')} €`;
+const personName = value => text(`${value?.prenom || value?.firstName || value?.membre_prenom || ''} ${
+  value?.nom || value?.lastName || value?.membre_nom || ''}`);
+const SOURCES = { calymob: "l'app CalyMob", calycompta: 'CalyCompta (web)' };
+const REASONS = { self_withdrawal: 'désinscription par le membre lui-même',
+  admin_cancellation: 'annulation par un administrateur' };
+
+/**
+ * Human-readable note shown as "Notes additionnelles" in CalyCompta, so a
+ * treasurer sees why this draft exists without opening the audit log.
+ */
+function buildWithdrawalNote({ now, source, appVersion, reason, actorUid, actor, ownerId, owner,
+  operation, receipt, shares, entries, amountCents }) {
+  const at = toDate(now) || new Date();
+  const via = SOURCES[source] || (source ? text(source) : 'une source inconnue');
+  const version = appVersion ? ` (version ${text(appVersion)})` : '';
+  const who = personName(owner) || 'un membre';
+  const event = text(operation.titre || operation.lieu || '');
+  const eventRef = operation.event_number ? ` (${text(operation.event_number)})` : '';
+  const lines = [
+    `Demande générée automatiquement suite à la désinscription de ${who}`
+      + `${event ? ` de « ${event} »${eventRef}` : ''}, le ${dayText(at)} à ${timeText(at)} via ${via}${version}.`,
+  ];
+  if (actorUid && actorUid !== ownerId) {
+    lines.push(`Désinscription effectuée par ${personName(actor) || 'un autre utilisateur'}`
+      + `${actor?.app_role ? ` (rôle ${text(actor.app_role)})` : ''}.`);
+  }
+  if (REASONS[reason]) lines.push(`Motif : ${REASONS[reason]}.`);
+  if (shares.length > 1) {
+    const names = shares.map(share => personName(entries.find(entry => entry.id === share.inscription_id)?.data()))
+      .filter(Boolean);
+    lines.push(`Inscriptions annulées couvertes par ce paiement : ${shares.length}`
+      + `${names.length ? ` (${names.join(', ')})` : ''}.`);
+  }
+  const paidOn = toDate(receipt.date_execution || receipt.date_valeur || receipt.date);
+  lines.push(`Paiement d'origine : ${euros(cents(receipt.montant))}`
+    + `${paidOn ? ` reçu le ${dayText(paidOn)}` : ''}`
+    + `${receipt.contrepartie_nom ? ` de ${text(receipt.contrepartie_nom)}` : ''}`
+    + ` (transaction ${receipt.numero_sequence || receipt.id}).`);
+  lines.push(`Montant proposé au remboursement : ${euros(amountCents)}.`);
+  lines.push('Brouillon : à vérifier et valider avant tout virement.');
+  return lines.join('\n');
+}
+
 function mergeClaims(legacy, canonical) {
   const claims = new Map(legacy.map(doc => [doc.id, { ...doc.data(), id: doc.id }]));
   for (const doc of canonical) {
@@ -67,7 +121,7 @@ function refundableCents(receipt, affected, allAllocations, claims) {
 
 /** All reads finish before stageWithdrawalRefunds is called by the cancellation. */
 async function planWithdrawalRefunds({ db, transaction, clubId, operationId, operation,
-  affected, allEntries, actorUid, now }) {
+  affected, allEntries, actorUid, now, context = {} }) {
   const empty = { writes: [], claimIds: [], reviewRequired: false };
   const eligible = affected.filter(entry => entry.data().registration_status !== 'waitlisted');
   if (!eligible.some(entry => links(entry.data()).length)) return { ...empty,
@@ -269,7 +323,9 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
     }).filter(share => share.amount_cents > 0);
     const legacy = {
       club_id: clubId, operation_id: operationId, operation_titre: operation.titre || '',
-      titre: `Désinscription — ${operation.titre || eventContext}`,
+      titre: buildWithdrawalNote({ ...context, now, actorUid, ownerId, owner: { ...ownerEntry.data(), ...owner },
+        operation, receipt, shares: refundShares.length ? refundShares : shares, entries: allEntries,
+        amountCents: amount }),
       description: `Remboursement après désinscription — ${eventContext} — transaction ${receipt.numero_sequence || receipt.id}`,
       montant: amount / 100, statut: 'brouillon', categorie: 'remboursement_inscription',
       code_comptable: account, fiscal_year_id: operation.fiscal_year_id || receipt.fiscal_year_id || null,
@@ -299,4 +355,4 @@ function stageWithdrawalRefunds(transaction, plan) {
   for (const [ref, payload] of plan.writes) transaction.set(ref, payload, { merge: true });
 }
 
-module.exports = { planWithdrawalRefunds, stageWithdrawalRefunds, refundableCents };
+module.exports = { planWithdrawalRefunds, stageWithdrawalRefunds, refundableCents, buildWithdrawalNote };

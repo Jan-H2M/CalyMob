@@ -102,6 +102,30 @@ test('paid full withdrawal creates the linked prefilled draft in both expense co
   expect(f.records.get(`${base}/transactions_bancaires/bank`)).toEqual(receipt());
 });
 
+test('draft notes explain the automatic CalyMob withdrawal with Brussels date and time', async () => {
+  const f = fixture({ [`${base}/transactions_bancaires/bank`]: receipt('member', 20,
+    { date_execution: '2026-11-10T09:00:00Z' }) });
+  await f.cancel({ source: 'calymob', appVersion: '1.30.5', reason: 'self_withdrawal' });
+  const [claim] = f.claims();
+  expect(claim.titre).toBe([
+    "Demande générée automatiquement suite à la désinscription de Alice Example de « Sortie exemple » (S-2026-99), le 12/11/2026 à 13h00 via l'app CalyMob (version 1.30.5).",
+    'Motif : désinscription par le membre lui-même.',
+    "Paiement d'origine : 20,00 € reçu le 10/11/2026 de Alice Example (transaction 2026-01234).",
+    'Montant proposé au remboursement : 20,00 €.',
+    'Brouillon : à vérifier et valider avant tout virement.',
+  ].join('\n'));
+  expect(f.claims(true)[0].title).toBe(claim.titre);
+});
+
+test('draft notes name the admin who canceled on behalf of the member', async () => {
+  const f = fixture({ [`${base}/members/admin`]: { prenom: 'Bob', nom: 'Admin', app_role: 'admin' } });
+  await f.cancel({ source: 'calycompta', appVersion: 'dev', reason: 'admin_cancellation' }, 'admin');
+  const [claim] = f.claims();
+  expect(claim.titre).toContain('via CalyCompta (web) (version dev).');
+  expect(claim.titre).toContain('Désinscription effectuée par Bob Admin (rôle admin).');
+  expect(claim.titre).toContain('Motif : annulation par un administrateur.');
+});
+
 test.each([null, receipt('member', -20)])('a missing or outgoing bank line cannot turn a paid checkbox into a refund', async bank => {
   const f = fixture({ [`${base}/transactions_bancaires/bank`]: bank });
   const result = await f.cancel();
