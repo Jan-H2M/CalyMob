@@ -69,15 +69,13 @@ class MaterialLoanService {
         .doc(clubId)
         .collection('inventory_loans')
         .where('memberId', isEqualTo: memberId)
+        .where('statut', whereIn: ['actif', 'en_cours', 'en_retard'])
         .snapshots()
         .asyncMap((snapshot) async {
       final loans = <MaterialLoan>[];
       for (final document in snapshot.docs) {
-        final loan = MaterialLoan.fromFirestore(document);
-        if (!{'actif', 'en_cours', 'en_retard'}.contains(loan.status)) {
-          continue;
-        }
-        final items = await _loadLoanItems(clubId, loan.itemIds);
+        final rawLoan = MaterialLoan.fromFirestore(document);
+        final items = await _loadLoanItems(clubId, rawLoan.itemIds);
         loans.add(MaterialLoan.fromFirestore(document, items: items));
       }
       loans.sort((left, right) {
@@ -371,7 +369,8 @@ class MaterialLoanService {
         'statut': loanStatus,
         'date_pret': now,
         'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
-        'caution_amount': 0,
+        'caution_amount':
+            cautionStatus == 'not_required' ? 0 : fixedCautionAmount,
         'caution_payment_status': cautionStatus,
         'payment_mode': paymentMode,
         'handover_status': handoverStatus,
@@ -397,7 +396,8 @@ class MaterialLoanService {
         'handed_over_to_member_id': member.id,
         'handed_over_to_member_name': member.name,
         'item_ids': items.map((item) => item.id).toList(),
-        'caution_amount': 0,
+        'caution_amount':
+            cautionStatus == 'not_required' ? 0 : fixedCautionAmount,
         'actor_id': createdByUserId,
         'actor_name': createdByName,
         'createdAt': now,
@@ -573,23 +573,86 @@ class MaterialLoanService {
     });
   }
 
+  /// Releases every reserved physical item and marks the pending loan as
+  /// cancelled. This is the only safe way to free items stuck in `reserve`.
+  Future<void> cancelPendingLoan({
+    required String clubId,
+    required String loanId,
+    required String cancelledByUserId,
+    required String cancelledByName,
+  }) async {
+    final clubRef = _firestore.collection('clubs').doc(clubId);
+    final loanRef = clubRef.collection('inventory_loans').doc(loanId);
+    final auditRef = clubRef.collection('audit_logs').doc();
+    final now = FieldValue.serverTimestamp();
+
+    await _firestore.runTransaction((transaction) async {
+      final loanSnap = await transaction.get(loanRef);
+      if (!loanSnap.exists) throw StateError('Prêt introuvable');
+      final loan = loanSnap.data() ?? const <String, dynamic>{};
+      if (loan['statut'] != 'attente_caution') {
+        throw StateError(
+            'Seul un prêt en attente de caution peut être annulé');
+      }
+      final itemIds = (loan['itemIds'] as List<dynamic>? ?? [])
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      // Read all items before writing (Firestore transaction rule).
+      final itemRefs = itemIds
+          .map((id) => clubRef.collection('inventory_items').doc(id))
+          .toList();
+      final itemDocs = await Future.wait(itemRefs.map(transaction.get));
+
+      for (var i = 0; i < itemRefs.length; i++) {
+        if (itemDocs[i].exists &&
+            itemDocs[i].data()?['current_loan_id'] == loanId) {
+          transaction.update(itemRefs[i], {
+            'statut': 'disponible',
+            'current_loan_id': FieldValue.delete(),
+            'updatedAt': now,
+          });
+        }
+      }
+      transaction.update(loanRef, {
+        'statut': 'annule',
+        'cancelled_by': cancelledByUserId,
+        'cancelled_by_name': cancelledByName,
+        'cancelled_at': now,
+        'updatedAt': now,
+      });
+      transaction.set(auditRef, {
+        'event_type': 'material_loan_cancelled',
+        'entity_type': 'inventory_loan',
+        'entity_id': loanId,
+        'loan_number': loan['loanNumber']?.toString(),
+        'member_id': loan['memberId']?.toString(),
+        'item_ids': itemIds,
+        'actor_id': cancelledByUserId,
+        'actor_name': cancelledByName,
+        'createdAt': now,
+      });
+    });
+  }
+
   Future<List<MaterialLoanItem>> _loadLoanItems(
     String clubId,
     List<String> itemIds,
   ) async {
-    final items = <MaterialLoanItem>[];
-    for (final itemId in itemIds) {
-      final snapshot = await _firestore
+    if (itemIds.isEmpty) return const [];
+    final snapshots = await Future.wait(
+      itemIds.map((id) => _firestore
           .collection('clubs')
           .doc(clubId)
           .collection('inventory_items')
-          .doc(itemId)
-          .get();
-      if (snapshot.exists) {
-        items.add(MaterialLoanItem.fromFirestore(snapshot));
-      }
-    }
-    return items;
+          .doc(id)
+          .get()),
+    );
+    return snapshots
+        .where((snap) => snap.exists)
+        .map(MaterialLoanItem.fromFirestore)
+        .toList();
   }
 }
 

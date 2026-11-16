@@ -151,6 +151,7 @@ void main() {
         .doc(loanId)
         .get();
     expect(loan.data()?['statut'], 'attente_caution');
+    expect(loan.data()?['caution_amount'], MaterialLoanService.fixedCautionAmount);
     expect(loan.data()?['caution_payment_status'], 'unpaid');
     expect(loan.data()?['handover_status'], 'blocked');
 
@@ -176,5 +177,88 @@ void main() {
     expect(loan.data()?['statut'], 'actif');
     expect(loan.data()?['caution_payment_status'], 'paid');
     expect(inventory.data()?['statut'], 'prete');
+  });
+
+  test('cancelPendingLoan releases reserved items and marks loan cancelled',
+      () async {
+    final gilet = item(id: 'gilet-036', code: 'GILET-036', variant: 'XL');
+    await seedItem(gilet);
+
+    final loanId = await service.createPendingQrLoan(
+      clubId: clubId,
+      member: const MaterialLoanMember(id: 'alice', name: 'Alice DUPONT'),
+      items: [gilet],
+      expectedReturnDate: DateTime(2026, 8, 21),
+      createdByUserId: 'encadrant-1',
+      createdByName: 'Encadrant',
+      paymentMode: 'epc_qr_onsite',
+    );
+
+    // Verify item is reserved.
+    var inventory = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_items')
+        .doc('gilet-036')
+        .get();
+    expect(inventory.data()?['statut'], 'reserve');
+
+    // Cancel the pending loan.
+    await service.cancelPendingLoan(
+      clubId: clubId,
+      loanId: loanId,
+      cancelledByUserId: 'encadrant-1',
+      cancelledByName: 'Encadrant',
+    );
+
+    // Loan should be cancelled.
+    final loan = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_loans')
+        .doc(loanId)
+        .get();
+    expect(loan.data()?['statut'], 'annule');
+
+    // Item should be available again.
+    inventory = await inventory.reference.get();
+    expect(inventory.data()?['statut'], 'disponible');
+    expect(inventory.data()?['current_loan_id'], isNull);
+
+    // Audit log should exist.
+    final audits = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('audit_logs')
+        .get();
+    final cancelAudit = audits.docs
+        .where((doc) => doc.data()['event_type'] == 'material_loan_cancelled')
+        .toList();
+    expect(cancelAudit, hasLength(1));
+  });
+
+  test('cancelPendingLoan refuses to cancel an active loan', () async {
+    final gilet = item(id: 'gilet-036', code: 'GILET-036', variant: 'XL');
+    await seedItem(gilet);
+
+    final loanId = await service.createDirectLoan(
+      clubId: clubId,
+      member: const MaterialLoanMember(id: 'alice', name: 'Alice DUPONT'),
+      items: [gilet],
+      expectedReturnDate: DateTime(2026, 8, 21),
+      createdByUserId: 'encadrant-1',
+      createdByName: 'Encadrant',
+      handoverReceipt: handoverReceipt(),
+    );
+
+    await expectLater(
+      service.cancelPendingLoan(
+        clubId: clubId,
+        loanId: loanId,
+        cancelledByUserId: 'encadrant-1',
+        cancelledByName: 'Encadrant',
+      ),
+      throwsA(isA<StateError>()),
+    );
   });
 }
