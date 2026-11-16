@@ -39,6 +39,17 @@ function compact(obj) {
 // Projecties (identiek aan de mirror/gateway; consolideren bij Stap 5).
 // ---------------------------------------------------------------------------
 
+// Fields of automatic withdrawal refunds (inscription/withdrawalRefund.js).
+// Same name in both collections; undefined is compacted away so a merge keeps
+// the other side's value.
+function withdrawalPassthrough(data) {
+  return {
+    send_confirmation_email: data.send_confirmation_email ?? undefined,
+    withdrawal_operation_id: data.withdrawal_operation_id ?? undefined,
+    withdrawal_refund_allocations: data.withdrawal_refund_allocations ?? undefined,
+  };
+}
+
 function buildCanonicalFromLegacy(legacy, id) {
   return compact({
     club_id: legacy.club_id ?? null,
@@ -96,6 +107,7 @@ function buildCanonicalFromLegacy(legacy, id) {
     payment_reference_key: legacy.payment_reference_key ?? null,
     fiscal_year_id: legacy.fiscal_year_id ?? null,
     source: legacy.source ?? null,
+    ...withdrawalPassthrough(legacy),
   });
 }
 
@@ -153,7 +165,10 @@ function buildLegacyFromCanonical(canon, id) {
     payment_reference: canon.payment_reference ?? null,
     payment_reference_key: canon.payment_reference_key ?? null,
     fiscal_year_id: canon.fiscal_year_id ?? null,
-    source: canon.source ?? null,
+    // Absent/null in canonical must not erase the legacy provenance: the web
+    // canonical projection did not carry `source`, so a web edit nulled it.
+    source: canon.source ?? undefined,
+    ...withdrawalPassthrough(canon),
   });
 }
 

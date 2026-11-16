@@ -38,6 +38,27 @@ const { DEFAULT_FLAGS, notificationsOwner } = require('../migrationFlags.js');
   assert.strictEqual(back.payment_reference, 'REM-1');
 }
 
+// 2b. withdrawal-refund provenance overleeft een web-edit (canonical zonder source)
+{
+  const legacy = { montant: 6, statut: 'brouillon', source: 'event_withdrawal',
+    withdrawal_operation_id: 'op1', send_confirmation_email: false,
+    withdrawal_refund_allocations: [{ inscription_id: 'i1', amount_cents: 600 }] };
+  const canon = s.buildCanonicalFromLegacy(legacy, 'withdrawal_x');
+  assert.strictEqual(canon.source, 'event_withdrawal');
+  assert.strictEqual(canon.withdrawal_operation_id, 'op1');
+  assert.deepStrictEqual(canon.withdrawal_refund_allocations, legacy.withdrawal_refund_allocations);
+  // Web-projectie zonder source/withdrawal-velden mag ze niet op null zetten in legacy.
+  const webCanon = { amount: 6, status: 'draft', title: 'note', source: null };
+  const back = s.buildLegacyFromCanonical(webCanon, 'withdrawal_x');
+  for (const key of ['source', 'withdrawal_operation_id', 'withdrawal_refund_allocations', 'send_confirmation_email']) {
+    assert.ok(!(key in back), `${key} moet ontbreken zodat merge de legacy-waarde behoudt`);
+  }
+  // Maar een aanwezige canonical source wordt wel teruggespiegeld.
+  assert.strictEqual(s.buildLegacyFromCanonical(canon, 'withdrawal_x').source, 'event_withdrawal');
+  // Gewone claims krijgen geen lege withdrawal-velden.
+  assert.ok(!('withdrawal_operation_id' in s.buildCanonicalFromLegacy({ montant: 1 }, 'd')));
+}
+
 // 3. _sync-tagging + e-mail-guard + loop-guard
 {
   const tagged = s.tagSync({ amount: 1 }, { origin: 'legacy-mirror', version: 10, sourceId: 'x' });
