@@ -67,7 +67,7 @@ function buildWithdrawalNote({ now, source, appVersion, reason, actorUid, actor,
     + `${receipt.contrepartie_nom ? ` de ${text(receipt.contrepartie_nom)}` : ''}`
     + ` (transaction ${receipt.numero_sequence || receipt.id}).`);
   lines.push(`Montant proposé au remboursement : ${euros(amountCents)}.`);
-  lines.push('Brouillon : à vérifier et valider avant tout virement.');
+  lines.push('En attente de validation : à vérifier avant tout virement.');
   return lines.join('\n');
 }
 
@@ -327,7 +327,9 @@ async function planWithdrawalRefunds({ db, transaction, clubId, operationId, ope
         operation, receipt, shares: refundShares.length ? refundShares : shares, entries: allEntries,
         amountCents: amount }),
       description: `Remboursement après désinscription — ${eventContext} — transaction ${receipt.numero_sequence || receipt.id}`,
-      montant: amount / 100, statut: 'brouillon', categorie: 'remboursement_inscription',
+      montant: amount / 100, categorie: 'remboursement_inscription',
+      // Skips the draft step: a bank-confirmed withdrawal is a complete request.
+      statut: 'en_attente_validation', date_soumission: now,
       code_comptable: account, fiscal_year_id: operation.fiscal_year_id || receipt.fiscal_year_id || null,
       demandeur_id: beneficiary?.id || ownerId || actorUid,
       demandeur_nom: text(`${requester.prenom || requester.firstName || ''} ${requester.nom || requester.lastName || ''}`),
