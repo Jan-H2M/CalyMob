@@ -1,1 +1,1 @@
-Les cartes d’événement affichent les couleurs, thèmes et images ou GIF choisis par l’organisateur. La confirmation de désinscription à la piscine disparaît automatiquement ; l’action « Annuler » reste disponible.
+Corrections : choix explicite de la taille dans la Boutique (plus de taille présélectionnée) et simplification des niveaux d'accès (Membre / Administrateur).
