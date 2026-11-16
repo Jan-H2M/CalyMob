@@ -41,6 +41,14 @@ exports.sendMaterialLoanPaymentQrEmail = sendMaterialLoanPaymentQrEmail;
 const { sendMaterialLoanHandoverReceipt } = require('./src/loans/sendMaterialLoanHandoverReceipt');
 exports.sendMaterialLoanHandoverReceipt = sendMaterialLoanHandoverReceipt;
 
+// M1: Daily overdue transition — marks active loans past their return date as en_retard.
+const { materialLoanOverdueTransition } = require('./src/loans/materialLoanOverdueTransition');
+exports.materialLoanOverdueTransition = materialLoanOverdueTransition;
+
+// M3: Pending reservation expiry — cancels stale attente_caution loans after a configurable timeout.
+const { materialLoanPendingExpiry } = require('./src/loans/materialLoanPendingExpiry');
+exports.materialLoanPendingExpiry = materialLoanPendingExpiry;
+
 // Payment reminder — called by CalyCompta to send QR emails + post message in event chat
 const { sendPaymentReminder } = require('./src/payment/sendPaymentReminder');
 exports.sendPaymentReminder = sendPaymentReminder;

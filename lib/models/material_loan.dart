@@ -497,9 +497,9 @@ class MaterialLoan {
 }
 
 DateTime? _dateFromValue(dynamic value) {
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
-  if (value is String) return DateTime.tryParse(value);
+  if (value is Timestamp) return value.toDate().toLocal();
+  if (value is DateTime) return value.isUtc ? value.toLocal() : value;
+  if (value is String) return DateTime.tryParse(value)?.toLocal();
   return null;
 }
 

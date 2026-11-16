@@ -14,7 +14,8 @@ void main() {
     service = MaterialLoanService(firestore: db);
   });
   Future<String> request(
-          {List<MaterialLoanRequestedLine> lines = const [line]}) =>
+          {List<MaterialLoanRequestedLine> lines = const [line],
+          double cautionAmount = 50}) =>
       service.createPendingTypeLoan(
           clubId: 'club',
           member: const MaterialLoanMember(id: 'member', name: 'Membre'),
@@ -22,7 +23,8 @@ void main() {
           expectedReturnDate: DateTime(2026, 9, 10),
           createdByUserId: 'staff',
           createdByName: 'Staff',
-          paymentMode: 'epc_qr_email');
+          paymentMode: 'epc_qr_email',
+          cautionAmount: cautionAmount);
   Future<void> seed(String id,
           {String status = 'disponible',
           String? owner,
@@ -62,7 +64,7 @@ void main() {
     expect(loan['itemIds'], isEmpty);
     expect(loan['items_snapshot'], isEmpty);
     expect(loan['requested_lines'], [line.toMap()]);
-    expect(loan['caution_amount'], 0);
+    expect(loan['caution_amount'], 50);
     expect(loan['reservation_policy'], 'none');
     expect(loan['caution_payment_status'], 'unpaid');
   });

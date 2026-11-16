@@ -82,8 +82,6 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     return StreamBuilder<List<MaterialLoanRequest>>(
       stream: _service.watchOpenLoanRequests(clubId: _clubId),
       builder: (context, requestSnapshot) => StreamBuilder<List<MaterialLoan>>(
-        stream: _loanService.watchPendingPaymentLoans(_clubId),
-        builder: (context, _) => StreamBuilder<List<MaterialLoan>>(
           stream: _service.watchReturnableLoans(_clubId),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -250,7 +248,6 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
             );
           },
         ),
-      ),
     );
   }
 
@@ -2134,6 +2131,7 @@ class _DirectLoanSheet extends StatefulWidget {
 class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   final _memberSearchController = TextEditingController();
   final _notesController = TextEditingController();
+  final _cautionAmountController = TextEditingController();
   final Map<String, String> _selectedVariantByType = {};
   final Map<String, String?> _selectedTypeIds = {};
   late final Stream<List<MaterialLoanItem>> _requestCatalog;
@@ -2163,6 +2161,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   void dispose() {
     _memberSearchController.dispose();
     _notesController.dispose();
+    _cautionAmountController.dispose();
     super.dispose();
   }
 
@@ -2240,7 +2239,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                 .toList();
             final canSubmit = _member != null &&
                 selectedLines.isNotEmpty &&
-                assignedItems.length == physicalLines.length &&
+                (physicalLines.isEmpty || assignedItems.isNotEmpty) &&
                 !_submitting;
 
             return Column(
@@ -2413,6 +2412,20 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                           ],
                           const SizedBox(height: 14),
                           TextField(
+                            controller: _cautionAmountController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'Montant de la caution (EUR)',
+                              hintText: '0.00',
+                              prefixIcon: const Icon(Icons.euro),
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.92),
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
                             controller: _notesController,
                             minLines: 2,
                             maxLines: 4,
@@ -2461,7 +2474,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                         label: Text(
                           _submitting
                               ? 'Création...'
-                              : 'Remettre le matériel (${selectedLines.length})',
+                              : 'Remettre le matériel (${assignedItems.length + (selectedLines.length - physicalLines.length)})',
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.middenblauw,
@@ -2600,6 +2613,13 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     }
     if (normalized.contains('bouteille')) return 'bouteille';
     if (normalized.contains('palme')) return 'palmes';
+    if (normalized.contains('lampe') || normalized.contains('phare')) {
+      return 'lampe';
+    }
+    if (normalized.contains('compas') || normalized.contains('boussole')) {
+      return 'compas';
+    }
+    if (normalized.contains('parachute')) return 'parachute';
     return normalized;
   }
 
@@ -2873,17 +2893,20 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     List<MaterialLoanItem> items,
   ) {
     final assigned = <MaterialLoanItem>[];
+    final usedIds = <String>{};
     for (final line in lines) {
       if (_canonicalLoanType(line.typeName) == 'ceinture') continue;
       final selectedId = _selectedItemIdsByLine[_lineKey(line)];
+      if (selectedId == null || usedIds.contains(selectedId)) continue;
       final matches = _availableItemsForLine(line, items)
           .where((item) => item.id == selectedId)
           .toList();
-      if (matches.length == 1) assigned.add(matches.single);
+      if (matches.length == 1) {
+        assigned.add(matches.single);
+        usedIds.add(matches.single.id);
+      }
     }
-    return assigned.map((item) => item.id).toSet().length == assigned.length
-        ? assigned
-        : const <MaterialLoanItem>[];
+    return assigned;
   }
 
   String _cdcLabel(MaterialLoanItem item) {
@@ -3133,13 +3156,13 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               const Text(
-                  'Kies eerst de productgroep; daarna kies je het concrete CDC-nummer.'),
+                  'Choisissez d\'abord le groupe de produit, puis le numéro CDC concret.'),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 initialValue: selectedType,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                    labelText: 'Productgroep', border: OutlineInputBorder()),
+                    labelText: 'Type de matériel', border: OutlineInputBorder()),
                 items: grouped.keys
                     .map((type) =>
                         DropdownMenuItem(value: type, child: Text(type)))
@@ -3160,7 +3183,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                     ),
                   ),
                   icon: const Icon(Icons.add),
-                  label: const Text('Toevoegen'),
+                  label: const Text('Ajouter'),
                 ),
               ),
             ],
@@ -3196,7 +3219,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     final physicalLines = lines
         .where((line) => _canonicalLoanType(line.typeName) != 'ceinture')
         .toList();
-    if (assignedItems.length != physicalLines.length) return;
+    if (physicalLines.isNotEmpty && assignedItems.isEmpty) return;
     if (nonTrackedLines
         .any((line) => line.leadKg == null || line.leadKg! <= 0)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -3242,6 +3265,9 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     if (finish != true || !mounted) return;
     setState(() => _submitting = true);
     try {
+      final cautionAmount = double.tryParse(
+              _cautionAmountController.text.replaceAll(',', '.').trim()) ??
+          0;
       final loanId = await widget.loanService.createDirectLoan(
         clubId: widget.clubId,
         member: member,
@@ -3250,6 +3276,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         createdByUserId: widget.createdByUserId,
         createdByName: widget.createdByName,
         handoverReceipt: receipt,
+        cautionAmount: cautionAmount < 0 ? 0 : cautionAmount,
         nonTrackedLines: nonTrackedLines,
         notes: _notesController.text,
       );

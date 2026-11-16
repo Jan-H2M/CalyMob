@@ -164,6 +164,8 @@ class MaterialReturnService {
   }
 
   /// Catalog for non-reserving requests, including items currently on loan.
+  /// Non-eligible items are filtered out client-side (the Firestore field may
+  /// be absent, so a server-side `where` would drop valid documents).
   Stream<List<MaterialLoanItem>> watchRequestCatalog(String clubId) =>
       _firestore
           .collection('clubs')
@@ -172,10 +174,13 @@ class MaterialReturnService {
           .snapshots()
           .asyncMap((snapshot) async {
         final names = await _loadItemTypeNames(clubId);
-        return snapshot.docs.map((doc) {
-          final item = MaterialLoanItem.fromFirestore(doc);
-          return item.copyWithTypeName(names[item.typeId]);
-        }).toList();
+        return snapshot.docs
+            .map((doc) {
+              final item = MaterialLoanItem.fromFirestore(doc);
+              return item.copyWithTypeName(names[item.typeId]);
+            })
+            .where((item) => item.loanEligible)
+            .toList();
       });
 
   Stream<List<MaterialLoanItem>> watchBorrowableItems(String clubId) {
@@ -278,6 +283,8 @@ class MaterialReturnService {
           .collection('clubs')
           .doc(clubId)
           .collection('inventory_loan_requests')
+          .where('status',
+              whereIn: ['submitted', 'approved', 'validated', 'ready'])
           .snapshots(),
     );
   }
@@ -462,24 +469,50 @@ class MaterialReturnService {
     List<String> itemIds,
   ) async {
     if (itemIds.isEmpty) return const [];
+    final snapshots = await Future.wait(
+      itemIds.map((id) => _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('inventory_items')
+          .doc(id)
+          .get()),
+    );
+    return snapshots
+        .where((snap) => snap.exists)
+        .map(MaterialLoanItem.fromFirestore)
+        .toList();
+  }
 
-    final items = <MaterialLoanItem>[];
-    for (final itemId in itemIds) {
-      try {
-        final doc = await _firestore
-            .collection('clubs')
-            .doc(clubId)
-            .collection('inventory_items')
-            .doc(itemId)
-            .get();
-        if (doc.exists) {
-          items.add(MaterialLoanItem.fromFirestore(doc));
-        }
-      } catch (e) {
-        debugPrint('Materiel $itemId niet geladen: $e');
+  /// Transitions an item from `en_maintenance` back to `disponible` after a
+  /// repair or inspection. Without this, items set to maintenance at return
+  /// validation are permanently stuck and never borrowable again.
+  Future<void> markMaintenanceComplete({
+    required String clubId,
+    required String itemId,
+    required String completedByUserId,
+    required String completedByName,
+  }) async {
+    final itemRef = _firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_items')
+        .doc(itemId);
+
+    await _firestore.runTransaction((transaction) async {
+      final itemSnap = await transaction.get(itemRef);
+      if (!itemSnap.exists) throw StateError('Article introuvable');
+      if (itemSnap.data()?['statut'] != 'en_maintenance') {
+        throw StateError('L\'article n\'est pas en maintenance');
       }
-    }
-    return items;
+      transaction.update(itemRef, {
+        'statut': 'disponible',
+        'current_loan_id': FieldValue.delete(),
+        'maintenance_completed_by': completedByUserId,
+        'maintenance_completed_by_name': completedByName,
+        'maintenance_completed_at': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
   }
 
   Future<MaterialReturnResult> validateReturn({

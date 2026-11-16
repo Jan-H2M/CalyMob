@@ -172,6 +172,18 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // ============================================
+    // Inventory return condition photos (per loan, per item)
+    // Path: clubs/{clubId}/inventory_incidents/{loanId}/{itemId}/{fileName}
+    // Synced from CalyCompta (deployed source of truth).
+    // ============================================
+    match /clubs/{clubId}/inventory_incidents/{loanId}/{itemId}/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if canManageMaterialLoans(clubId) &&
+        isValidImageSize() && isValidFileType('image/.*');
+      allow update, delete: if false;
+    }
+
     // Inbound email attachments stored server-side from Resend/Gmail replies
     match /clubs/{clubId}/communications/{allPaths=**} {
       allow read: if isClubMember(clubId);
