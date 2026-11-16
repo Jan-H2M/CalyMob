@@ -89,13 +89,13 @@ test('paid full withdrawal creates the linked prefilled draft in both expense co
   const result = await f.cancel();
   const [claim] = f.claims();
   expect(result).toMatchObject({ status: 'canceled', refundClaimIds: [claim.id], refundReviewRequired: false });
-  expect(claim).toMatchObject({ statut: 'brouillon', montant: 20, demandeur_id: 'member',
+  expect(claim).toMatchObject({ statut: 'en_attente_validation', montant: 20, demandeur_id: 'member',
     demandeur_nom: 'Alice Example', demandeur_email: 'alice@example.invalid',
     operation_id: 'event', code_comptable: '619-00-633', fiscal_year_id: 'FY26',
     source_transaction_id: 'bank', source_transaction_ref: '2026-01234',
     payment_reference: 'REM-2026-0001', source: 'event_withdrawal', send_confirmation_email: false });
   expect(claim.communication_qr).toContain('+++REM-2026-0001+++ Remb. qui ann. la trans. 2026-01234 S-2026-99 Lieu test');
-  expect(f.claims(true)).toEqual([expect.objectContaining({ id: claim.id, status: 'draft', amount: 20,
+  expect(f.claims(true)).toEqual([expect.objectContaining({ id: claim.id, status: 'pending_approval', amount: 20,
     requester_id: 'member', source_transaction_id: 'bank', operation_id: 'event' })]);
   expect(f.records.get(`${insPath}/member`)).toMatchObject({ registration_status: 'canceled',
     paye: true, transaction_id: 'bank', withdrawal_refund_claim_ids: [claim.id] });
@@ -112,7 +112,7 @@ test('draft notes explain the automatic CalyMob withdrawal with Brussels date an
     'Motif : désinscription par le membre lui-même.',
     "Paiement d'origine : 20,00 € reçu le 10/11/2026 de Alice Example (transaction 2026-01234).",
     'Montant proposé au remboursement : 20,00 €.',
-    'Brouillon : à vérifier et valider avant tout virement.',
+    'En attente de validation : à vérifier avant tout virement.',
   ].join('\n'));
   expect(f.claims(true)[0].title).toBe(claim.titre);
 });

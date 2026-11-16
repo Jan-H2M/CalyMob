@@ -47,9 +47,9 @@ test('COM-166 withdrawal and expense drafts are atomic and retry-safe in Firesto
       assert.equal(reg.get('transaction_id'), 'bank');
       assert.equal(reg.get('paye'), true);
       assert.equal(legacy.get('montant'), 15);
-      assert.equal(legacy.get('statut'), 'brouillon');
+      assert.equal(legacy.get('statut'), 'en_attente_validation');
       assert.equal(canonical.get('amount'), 15);
-      assert.equal(canonical.get('status'), 'draft');
+      assert.equal(canonical.get('status'), 'pending_approval');
       assert.equal(counter.get('counter'), 1);
       assert.equal(legacy.get('source'), 'event_withdrawal');
       assert.equal(legacy.get('send_confirmation_email'), false);
