@@ -1,6 +1,6 @@
 const { sendPaymentEmailForMember } = require('./sendPaymentQrEmail');
 
-function fakeDb(parent, guests = []) {
+function fakeDb(parent, guests = [], eventData = {}) {
   const snap = value => ({ exists: value != null, data: () => value });
   const inscriptions = {
     doc: () => ({ get: async () => snap(parent) }),
@@ -8,7 +8,10 @@ function fakeDb(parent, guests = []) {
       forEach: fn => guests.forEach((value, i) => fn({ id: `guest-${i}`, data: () => value })),
     }) }) }),
   };
-  const operation = { collection: name => name === 'inscriptions' ? inscriptions : undefined };
+  const operation = {
+    get: async () => snap(eventData),
+    collection: name => name === 'inscriptions' ? inscriptions : undefined,
+  };
   const club = { collection: name => name === 'operations'
     ? { doc: () => operation }
     : { doc: () => ({ get: async () => snap(null) }) } };
@@ -35,9 +38,37 @@ test('does not include a cancelled guest installment without review', async () =
   await expect(sendPaymentEmailForMember(db, { ...input, installmentId: 'first' })).rejects.toThrow('invité annulé');
 });
 
-test('does not fall back to a client amount for a missing installment', async () => {
+test('does not fall back to a client amount for a missing installment without a tariff', async () => {
   const db = fakeDb({ registration_status: 'confirmed', prix: 15, installment_payments: {} });
   await expect(sendPaymentEmailForMember(db, { ...input, installmentId: 'missing' })).rejects.toThrow('tranche introuvable');
+});
+
+test('refuses a missing installment when the tariff has no amount for that tranche', async () => {
+  // COM-168: the event tariff exists but defines no amount for the requested tranche.
+  const db = fakeDb(
+    { registration_status: 'confirmed', prix: 100, tariff_id: 'tariff1', installment_payments: {} },
+    [],
+    { event_tariffs: [{ id: 'tariff1', price: 100, installment_amounts: { first: 50 } }] },
+  );
+  await expect(sendPaymentEmailForMember(db, { ...input, installmentId: 'second', amount: 0 }))
+    .rejects.toThrow('tranche introuvable');
+});
+
+test('falls back to the tariff amount when the installment line is not yet initialised', async () => {
+  // COM-168: member registered before the payment plan was added, so the
+  // inscription has no installment_payments[installmentId] entry. The server
+  // derives the amount from the event tariff and proceeds to the bank settings
+  // check instead of refusing the QR.
+  const db = fakeDb(
+    { registration_status: 'confirmed', prix: 100, tariff_id: 'tariff1', installment_payments: {} },
+    [],
+    {
+      event_tariffs: [{ id: 'tariff1', price: 100, installment_amounts: { first: 50 } }],
+      payment_installments: [{ id: 'first', label: 'Acompte 1' }],
+    },
+  );
+  await expect(sendPaymentEmailForMember(db, { ...input, installmentId: 'first', amount: 0 }))
+    .rejects.toThrow('Bank settings not configured');
 });
 
 test('legacy active parent with no cancellation reaches ordinary payment configuration checks', async () => {

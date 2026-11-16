@@ -250,6 +250,24 @@ void main() {
   });
 
   testWidgets(
+    'no size is pre-selected and add button is blocked until a variant is chosen',
+    (tester) async {
+      await _pumpProduct(tester, cart: cart, product: _multiVariantProduct());
+
+      // The dropdown must show the hint, not a pre-selected size.
+      expect(find.text('Choisir une taille'), findsOneWidget);
+      expect(find.text('S'), findsNothing);
+
+      // Tapping "Add to cart" when no variant is chosen must do nothing.
+      await tester.ensureVisible(find.textContaining('Ajouter'));
+      await tester.pump();
+      await tester.tap(find.textContaining('Ajouter'));
+      await tester.pump();
+      expect(cart.addedItems, isEmpty);
+    },
+  );
+
+  testWidgets(
     'add flow returns without SnackBar and leaves host action clickable',
     (tester) async {
       final hostKey = GlobalKey<_ProductHostState>();
@@ -356,6 +374,28 @@ class _ProductHostState extends State<_ProductHost> {
       ),
     );
   }
+}
+
+BoutiqueProduct _multiVariantProduct() {
+  return BoutiqueProduct(
+    id: 'bonnet',
+    name: 'Bonnet Calypso',
+    description: '',
+    category: BoutiqueProductCategory.vetements,
+    supplierId: 'supplier',
+    images: const [],
+    pricing: const BoutiquePrice(salePrice: 15, currency: 'EUR'),
+    inventoryMode: BoutiqueInventoryMode.tracked,
+    variants: const [
+      BoutiqueVariant(id: 's', label: 'S', attributes: {}, stockCount: 5, allowBackorder: false),
+      BoutiqueVariant(id: 'm', label: 'M', attributes: {}, stockCount: 5, allowBackorder: false),
+      BoutiqueVariant(id: 'l', label: 'L', attributes: {}, stockCount: 5, allowBackorder: false),
+    ],
+    deliveryModes: const [BoutiqueDeliveryMode.poolPickup],
+    deliverySurcharges: const {},
+    visibility: 'published',
+    personalization: null,
+  );
 }
 
 BoutiqueProduct _product(
