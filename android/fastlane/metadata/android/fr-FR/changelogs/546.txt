@@ -1,0 +1,1 @@
+Corrections : choix explicite de la taille dans la Boutique (plus de taille présélectionnée) et simplification des niveaux d'accès (Membre / Administrateur).
