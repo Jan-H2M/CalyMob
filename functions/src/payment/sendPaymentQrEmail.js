@@ -468,6 +468,21 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
     // registered before the payment plan was added, or the lines were never
     // initialised. Attempt to derive the amount from the event tariff so an
     // admin can still issue a QR before the lines are manually set.
+    //
+    // Registration-level guards first (same rules as amountForRegistration):
+    // a registration already paid flat, matched to a bank transaction or
+    // settled must never receive a tariff-based QR for a tranche it has no
+    // line for, and a payment under verification must not be re-requested.
+    const paymentStatus = String(inscription.payment_status || '').trim().toLowerCase();
+    if (inscription.paye === true || inscription.transaction_matched === true
+      || ['paid', 'settled', 'waived', 'exempt'].includes(paymentStatus)) {
+      console.log(`[resolveInstallmentPaymentForInscription] Installment ${installmentId} missing but registration already settled for ${participantId} — no QR`);
+      return { amountDue: 0, ownOpen: false, aggregatedDue: 0, guestSubtotal: 0, guests: [], status: 'paid' };
+    }
+    if (['manual_review', 'pending_bank', 'partial'].includes(paymentStatus)
+      || inscription.transaction_id || Number(inscription.amount_paid || 0) > 0) {
+      throw new HttpsError('failed-precondition', 'Ce paiement doit être vérifié avant de créer un QR.');
+    }
     const operationSnap = await db
       .collection('clubs').doc(clubId)
       .collection('operations').doc(operationId).get();

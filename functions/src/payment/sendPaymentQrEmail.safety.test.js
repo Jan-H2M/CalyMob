@@ -71,6 +71,37 @@ test('falls back to the tariff amount when the installment line is not yet initi
     .rejects.toThrow('Bank settings not configured');
 });
 
+test.each([
+  { paye: true },
+  { transaction_matched: true },
+  { payment_status: 'settled' },
+])('tariff fallback never issues a QR for a registration already settled flat (%j)', async flags => {
+  // COM-168 review finding: a member who paid before the payment plan existed
+  // has no installment line; the tariff fallback must not invite a second payment.
+  const db = fakeDb(
+    { registration_status: 'confirmed', prix: 100, tariff_id: 'tariff1', installment_payments: {}, ...flags },
+    [],
+    { event_tariffs: [{ id: 'tariff1', price: 100, installment_amounts: { first: 50 } }] },
+  );
+  await expect(sendPaymentEmailForMember(db, { ...input, installmentId: 'first', amount: 0 }))
+    .rejects.toThrow(/Aucun montant/);
+});
+
+test.each([
+  { payment_status: 'manual_review' },
+  { payment_status: 'pending_bank' },
+  { transaction_id: 'tx-1' },
+  { amount_paid: 20 },
+])('tariff fallback refuses a registration whose payment is under verification (%j)', async flags => {
+  const db = fakeDb(
+    { registration_status: 'confirmed', prix: 100, tariff_id: 'tariff1', installment_payments: {}, ...flags },
+    [],
+    { event_tariffs: [{ id: 'tariff1', price: 100, installment_amounts: { first: 50 } }] },
+  );
+  await expect(sendPaymentEmailForMember(db, { ...input, installmentId: 'first', amount: 0 }))
+    .rejects.toThrow('vérifié');
+});
+
 test('legacy active parent with no cancellation reaches ordinary payment configuration checks', async () => {
   await expect(sendPaymentEmailForMember(fakeDb({ prix: 15 }), input)).rejects.toThrow('Bank settings not configured');
 });
