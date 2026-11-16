@@ -2131,6 +2131,7 @@ class _DirectLoanSheet extends StatefulWidget {
 class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   final _memberSearchController = TextEditingController();
   final _notesController = TextEditingController();
+  final _cautionAmountController = TextEditingController();
   final Map<String, String> _selectedVariantByType = {};
   final Map<String, String?> _selectedTypeIds = {};
   late final Stream<List<MaterialLoanItem>> _requestCatalog;
@@ -2160,6 +2161,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   void dispose() {
     _memberSearchController.dispose();
     _notesController.dispose();
+    _cautionAmountController.dispose();
     super.dispose();
   }
 
@@ -2408,6 +2410,20 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                               ),
                             ],
                           ],
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _cautionAmountController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'Montant de la caution (EUR)',
+                              hintText: '0.00',
+                              prefixIcon: const Icon(Icons.euro),
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.92),
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
                           const SizedBox(height: 14),
                           TextField(
                             controller: _notesController,
@@ -3249,6 +3265,9 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     if (finish != true || !mounted) return;
     setState(() => _submitting = true);
     try {
+      final cautionAmount = double.tryParse(
+              _cautionAmountController.text.replaceAll(',', '.').trim()) ??
+          0;
       final loanId = await widget.loanService.createDirectLoan(
         clubId: widget.clubId,
         member: member,
@@ -3257,6 +3276,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         createdByUserId: widget.createdByUserId,
         createdByName: widget.createdByName,
         handoverReceipt: receipt,
+        cautionAmount: cautionAmount < 0 ? 0 : cautionAmount,
         nonTrackedLines: nonTrackedLines,
         notes: _notesController.text,
       );

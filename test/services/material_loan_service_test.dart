@@ -142,6 +142,7 @@ void main() {
       createdByUserId: 'encadrant-1',
       createdByName: 'Encadrant',
       paymentMode: 'epc_qr_email',
+      cautionAmount: 75,
     );
 
     var loan = await firestore
@@ -151,7 +152,7 @@ void main() {
         .doc(loanId)
         .get();
     expect(loan.data()?['statut'], 'attente_caution');
-    expect(loan.data()?['caution_amount'], MaterialLoanService.fixedCautionAmount);
+    expect(loan.data()?['caution_amount'], 75);
     expect(loan.data()?['caution_payment_status'], 'unpaid');
     expect(loan.data()?['handover_status'], 'blocked');
 
@@ -192,6 +193,7 @@ void main() {
       createdByUserId: 'encadrant-1',
       createdByName: 'Encadrant',
       paymentMode: 'epc_qr_onsite',
+      cautionAmount: 75,
     );
 
     // Verify item is reserved.

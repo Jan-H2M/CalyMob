@@ -10,8 +10,6 @@ import '../models/material_loan.dart';
 /// The transaction is intentionally all-or-nothing: the selected physical
 /// articles, the loan and its audit entry are created together at handover.
 class MaterialLoanService {
-  static const double fixedCautionAmount = 100;
-
   final FirebaseFirestore _firestore;
   FirebaseFunctions? _functions;
   FirebaseStorage? _storage;
@@ -91,7 +89,7 @@ class MaterialLoanService {
   }
 
   /// Loans whose physical items are reserved but cannot be handed over until
-  /// the fixed caution has been observed by the responsible staff member.
+  /// the caution has been observed by the responsible staff member.
   Stream<List<MaterialLoan>> watchPendingPaymentLoans(String clubId) {
     return _firestore
         .collection('clubs')
@@ -145,7 +143,8 @@ class MaterialLoanService {
     return members;
   }
 
-  /// Creates a handed-over loan. Cautions are not collected in this flow.
+  /// Creates a handed-over loan. The caution amount is entered by the
+  /// responsible staff member; zero means no deposit is collected.
   Future<String> createDirectLoan({
     required String clubId,
     required MaterialLoanMember member,
@@ -154,6 +153,7 @@ class MaterialLoanService {
     required String createdByUserId,
     required String createdByName,
     required MaterialLoanHandoverReceipt handoverReceipt,
+    double cautionAmount = 0,
     List<MaterialLoanRequestedLine> nonTrackedLines = const [],
     String? notes,
   }) =>
@@ -167,9 +167,10 @@ class MaterialLoanService {
         handoverReceipt: handoverReceipt,
         nonTrackedLines: nonTrackedLines,
         notes: notes,
+        cautionAmount: cautionAmount,
         loanStatus: 'actif',
         itemStatus: 'prete',
-        cautionStatus: 'not_required',
+        cautionStatus: cautionAmount > 0 ? 'paid' : 'not_required',
         paymentMode: 'none',
         handoverStatus: 'handed_over',
       );
@@ -185,10 +186,15 @@ class MaterialLoanService {
     required String createdByUserId,
     required String createdByName,
     required String paymentMode,
+    required double cautionAmount,
     String? notes,
   }) {
     if (!{'epc_qr_onsite', 'epc_qr_email'}.contains(paymentMode)) {
       throw ArgumentError.value(paymentMode, 'paymentMode', 'Mode QR invalide');
+    }
+    if (cautionAmount < 0) {
+      throw ArgumentError.value(
+          cautionAmount, 'cautionAmount', 'Montant négatif');
     }
     return _createLoan(
       clubId: clubId,
@@ -198,6 +204,7 @@ class MaterialLoanService {
       createdByUserId: createdByUserId,
       createdByName: createdByName,
       notes: notes,
+      cautionAmount: cautionAmount,
       loanStatus: 'attente_caution',
       itemStatus: 'reserve',
       cautionStatus: 'unpaid',
@@ -216,6 +223,7 @@ class MaterialLoanService {
     required String createdByUserId,
     required String createdByName,
     required String paymentMode,
+    required double cautionAmount,
     String? notes,
   }) {
     if (!{'epc_qr_onsite', 'epc_qr_email'}.contains(paymentMode) ||
@@ -225,6 +233,10 @@ class MaterialLoanService {
             line.typeName.trim().isEmpty ||
             line.variant.trim().isEmpty)) {
       throw ArgumentError('Demande de matériel invalide');
+    }
+    if (cautionAmount < 0) {
+      throw ArgumentError.value(
+          cautionAmount, 'cautionAmount', 'Montant négatif');
     }
     final types =
         requestedLines.map((line) => line.typeId ?? line.typeName).toSet();
@@ -239,6 +251,7 @@ class MaterialLoanService {
         expectedReturnDate: expectedReturnDate,
         createdByUserId: createdByUserId,
         createdByName: createdByName,
+        cautionAmount: cautionAmount,
         loanStatus: 'attente_caution',
         itemStatus: 'reserve',
         cautionStatus: 'unpaid',
@@ -259,6 +272,7 @@ class MaterialLoanService {
     required String cautionStatus,
     required String paymentMode,
     required String handoverStatus,
+    double cautionAmount = 0,
     MaterialLoanHandoverReceipt? handoverReceipt,
     List<MaterialLoanRequestedLine> nonTrackedLines = const [],
     List<MaterialLoanRequestedLine> requestedLines = const [],
@@ -369,8 +383,7 @@ class MaterialLoanService {
         'statut': loanStatus,
         'date_pret': now,
         'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
-        'caution_amount':
-            cautionStatus == 'not_required' ? 0 : fixedCautionAmount,
+        'caution_amount': cautionAmount,
         'caution_payment_status': cautionStatus,
         'payment_mode': paymentMode,
         'handover_status': handoverStatus,
@@ -396,8 +409,7 @@ class MaterialLoanService {
         'handed_over_to_member_id': member.id,
         'handed_over_to_member_name': member.name,
         'item_ids': items.map((item) => item.id).toList(),
-        'caution_amount':
-            cautionStatus == 'not_required' ? 0 : fixedCautionAmount,
+        'caution_amount': cautionAmount,
         'actor_id': createdByUserId,
         'actor_name': createdByName,
         'createdAt': now,
@@ -423,7 +435,7 @@ class MaterialLoanService {
     return MaterialLoanPaymentQr(
       loanNumber: data['loanNumber']?.toString() ?? 'PRET',
       epcPayload: data['epcPayload'] as String,
-      amount: (data['amount'] as num?)?.toDouble() ?? fixedCautionAmount,
+      amount: (data['amount'] as num?)?.toDouble() ?? 0,
       reference: data['reference']?.toString() ?? '',
     );
   }
@@ -565,7 +577,8 @@ class MaterialLoanService {
         'loan_number': loan['loanNumber']?.toString(),
         'item_ids': itemIds,
         'member_id': loan['memberId']?.toString(),
-        'caution_amount': fixedCautionAmount,
+        'caution_amount':
+            (loan['caution_amount'] as num?)?.toDouble() ?? 0,
         'actor_id': confirmedByUserId,
         'actor_name': confirmedByName,
         'createdAt': now,

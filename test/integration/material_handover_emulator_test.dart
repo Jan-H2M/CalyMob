@@ -57,7 +57,8 @@ void main() {
         expectedReturnDate: DateTime(2026, 10, 1),
         createdByUserId: 'test-staff',
         createdByName: 'Test staff',
-        paymentMode: 'epc_qr_email');
+        paymentMode: 'epc_qr_email',
+        cautionAmount: 50);
     final first = await request();
     final second = await request();
     expect((await itemRef.get()).data()!['statut'], 'disponible');
