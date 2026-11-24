@@ -1,6 +1,6 @@
 # CalyMob — current release status (source of truth)
 
-_Last observed: 2026-11-24 (task t11241138-0988). Live store queries always take precedence over this dated document._
+_Last observed: 2026-11-24 (task t11241226-7e3f). Live store queries always take precedence over this dated document._
 
 ## 1.30.9 (550) production release gate — blocked before submission
 
@@ -22,18 +22,21 @@ _Last observed: 2026-11-24 (task t11241138-0988). Live store queries always take
   The AAB is prepared locally but has not been uploaded.
 - **Backend gate:** the required `createDirectEventPaymentQr` callable exists
   in production (an unauthenticated no-data request returns the expected 401).
-  The separately approved expense-sync deployment remains blocked because the
-  Firebase and gcloud sessions for `jan@h2m.ai` require reauthentication; the
-  repository service account lacks permission to read or deploy Functions.
-  Store submissions must wait until the approved sync functions are deployed
-  and read back as `ACTIVE`.
+  Live expense-sync source was compared with release commit `c57f332`; the live
+  deployment contained no newer expense-sync logic. Only
+  `mirrorLegacyExpenseClaim` and `mirrorCanonicalToLegacy` were deployed. Both
+  are `ACTIVE` on Node.js 22 with update times `2026-11-24T11:29:22.073501683Z`
+  and `2026-11-24T11:29:22.356610032Z`, respectively.
 - **CalyCompta production gate:** PR #300 passed all ten CI checks and merged to
   `main` as `b668b9710c81ff95f28f8379db42e36cb67ceb9e`. Vercel production is
   `Ready`, and `https://caly.club/version.json` reports that exact build ID.
-- **Release text:** proposed French text is “Amélioration des demandes de
-  remboursement : liaison facultative à une activité, informations détaillées
-  et contrôle du montant attendu.” It is not approved metadata until Jan
-  explicitly confirms the exact text.
+- **Store metadata blocker:** release commit `c57f332` still contains French
+  iOS notes from an older release and has no build-550 Android changelog. The
+  release verifier requires the exact approved notes to be present in the same
+  clean commit/tree as the Xcode Cloud build and signed AAB. Altering or hiding
+  them after the build would invalidate provenance, so neither store was
+  mutated. A corrected metadata commit requires a new aligned build reservation
+  and Xcode Cloud build before submission.
 - **Distribution:** no App Store submission, Google Play upload or Firestore
   `settings/app_version` publication has been performed for 1.30.9 (550).
 
