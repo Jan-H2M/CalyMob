@@ -41,8 +41,7 @@ void main() {
     await tester.pump();
     final switchFinder = find.byType(SwitchListTile);
     await tester.ensureVisible(switchFinder);
-    await tester.tap(switchFinder);
-    await tester.pump();
+    expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
     expect(find.text('Private member A order'), findsWidgets);
     auth.switchTo('member-b');
     await tester.pump();

@@ -42,6 +42,15 @@ function optionalActivityField(data, keys) {
     (keys.some((key) => Object.hasOwn(data, key)) ? null : undefined);
 }
 
+// Preserve the difference between an absent field (merge must keep the other
+// side) and an explicit null (the writer intentionally cleared the field).
+function optionalMirroredField(data, keys) {
+  for (const key of keys) {
+    if (Object.hasOwn(data, key)) return data[key];
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Projecties (identiek aan de mirror/gateway; consolideren bij Stap 5).
 // ---------------------------------------------------------------------------
@@ -75,6 +84,7 @@ function buildCanonicalFromLegacy(legacy, id) {
     amount: legacy.montant ?? null,
     description: legacy.description ?? null,
     category: legacy.categorie ?? null,
+    reimbursement_type: optionalMirroredField(legacy, ['type_remboursement', 'reimbursement_type']),
     account_code: legacy.code_comptable ?? null,
     status: statusToCanonical(firstDefined(legacy, ['status', 'statut'])),
     attachment_file_names: legacy.pieces_jointes ?? null,
@@ -136,6 +146,7 @@ function buildLegacyFromCanonical(canon, id) {
     montant: firstDefined(canon, ['amount', 'montant']),
     description: canon.description ?? null,
     categorie: firstDefined(canon, ['category', 'categorie']),
+    type_remboursement: optionalMirroredField(canon, ['reimbursement_type', 'type_remboursement']),
     code_comptable: firstDefined(canon, ['account_code', 'code_comptable']),
     statut: statusToLegacy(firstDefined(canon, ['status', 'statut'])),
     pieces_jointes: firstDefined(canon, ['attachment_file_names', 'pieces_jointes']),
@@ -276,6 +287,7 @@ function changedFields(expected, current) {
 const MEMBER_FIELDS = [
   'amount', 'description', 'expense_date', 'requester_id', 'requester_name',
   'requester_first_name', 'requester_email', 'title', 'category',
+  'reimbursement_type',
   'supporting_document_urls', 'attachment_file_names',
 ];
 const SYSTEM_FIELDS = ['_sync', 'legacy_collection', 'legacy_document_id', 'created_at', 'updated_at', 'created_by'];

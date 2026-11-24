@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:calymob/config/firebase_config.dart';
 import 'package:calymob/models/activity_item.dart';
+import 'package:calymob/models/expense_claim.dart';
 import 'package:calymob/models/expense_activity_summary.dart';
 import 'package:calymob/providers/activity_provider.dart';
 import 'package:calymob/providers/auth_provider.dart';
@@ -210,11 +211,20 @@ Finder _pickerScroll() => find.descendant(
     );
 
 Future<void> _openActivityPicker(WidgetTester tester) async {
-  final field = find.text('Activité');
+  final field = find.text('Activité (facultatif)');
   await tester.ensureVisible(field);
   await tester.tap(field);
   await _finishTransition(tester);
   await tester.pump();
+}
+
+Future<void> _selectType(WidgetTester tester, String label) async {
+  final field = find.byKey(const ValueKey('expense-reimbursement-type'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await _finishTransition(tester);
+  await tester.tap(find.text(label).last);
+  await _finishTransition(tester);
 }
 
 void main() {
@@ -226,7 +236,8 @@ void main() {
     final db = FakeFirebaseFirestore();
     await _openForm(tester, db);
 
-    expect(find.text('Pas liée à une activité'), findsOneWidget);
+    expect(find.text('Type de remboursement'), findsOneWidget);
+    expect(find.text('Pas liée à une activité'), findsNothing);
     expect(find.text('Nombre de plongeurs'), findsNothing);
     final claim = await _submit(tester, db);
     expect(claim, containsPair('amount', 24));
@@ -235,47 +246,73 @@ void main() {
       'piscine_session_id',
       'operation_title',
       'nombre_plongeurs',
+      'reimbursement_type',
     ]) {
       expect(claim.containsKey(key), isFalse, reason: key);
     }
   });
 
-  for (final count in [null, '4']) {
-    testWidgets('searches and submits an activity with count $count', (
-      tester,
-    ) async {
-      final db = FakeFirebaseFirestore();
-      await _seedActivities(db);
-      await _openForm(tester, db);
-      await _openActivityPicker(tester);
+  testWidgets('shows only the controls relevant to the selected type', (
+    tester,
+  ) async {
+    final db = FakeFirebaseFirestore();
+    await _openForm(tester, db);
 
-      final dialog = find.byType(ExpenseActivityPicker);
-      expect(find.text('Carrière'), findsOneWidget);
-      expect(find.text('Ancienne sortie'), findsNothing);
-      expect(find.text('Cotisation'), findsNothing);
-      await tester.enterText(
-        find.descendant(of: dialog, matching: find.byType(TextField)),
-        'ecole',
-      );
-      await tester.pump();
-      expect(find.text('Sortie récente'), findsNothing);
-      await tester.tap(find.text('École de plongée'));
-      await _finishTransition(tester);
-      if (count != null) {
-        await tester.enterText(find.byType(TextFormField).at(2), count);
-      }
+    await _selectType(tester, 'Boutique');
+    expect(
+      find.text('Lier à une commande Boutique (facultatif)'),
+      findsOneWidget,
+    );
+    expect(find.text('Activité (facultatif)'), findsNothing);
 
-      final claim = await _submit(tester, db);
-      expect(claim, containsPair('operation_id', 'registered'));
-      expect(claim, containsPair('operation_title', 'École de plongée'));
-      expect(claim.containsKey('piscine_session_id'), isFalse);
-      if (count == null) {
-        expect(claim.containsKey('nombre_plongeurs'), isFalse);
-      } else {
-        expect(claim, containsPair('nombre_plongeurs', 4));
-      }
-    });
-  }
+    await _selectType(tester, 'Matériel/entretien (incl. gonflage)');
+    expect(
+      find.text('Lier à une commande Boutique (facultatif)'),
+      findsNothing,
+    );
+    expect(find.text('Activité (facultatif)'), findsNothing);
+
+    await _selectType(tester, 'Sortie/événement (fête, excursion)');
+    expect(find.text('Activité (facultatif)'), findsOneWidget);
+    expect(find.text('Pas liée à une activité'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('clear-expense-reimbursement-type')),
+    );
+    await _finishTransition(tester);
+    expect(find.text('Choisir un type (facultatif)'), findsOneWidget);
+    expect(find.text('Activité (facultatif)'), findsNothing);
+  });
+
+  testWidgets('filters diving activities and stores the reimbursement type', (
+    tester,
+  ) async {
+    final db = FakeFirebaseFirestore();
+    await _seedActivities(db);
+    await _openForm(tester, db);
+    await _selectType(tester, 'Plongée (sorties en milieu naturel)');
+    await _openActivityPicker(tester);
+
+    final dialog = find.byType(ExpenseActivityPicker);
+    expect(find.text('Carrière'), findsOneWidget);
+    expect(find.text('Sortie récente'), findsNothing);
+    expect(find.text('Piscine'), findsNothing);
+    expect(find.text('Cotisation'), findsNothing);
+    await tester.enterText(
+      find.descendant(of: dialog, matching: find.byType(TextField)),
+      'ecole',
+    );
+    await tester.pump();
+    await tester.tap(find.text('École de plongée'));
+    await _finishTransition(tester);
+
+    final claim = await _submit(tester, db);
+    expect(claim, containsPair('reimbursement_type', 'plongee'));
+    expect(claim, containsPair('operation_id', 'registered'));
+    expect(claim, containsPair('operation_title', 'École de plongée'));
+    expect(claim.containsKey('piscine_session_id'), isFalse);
+    expect(claim.containsKey('nombre_plongeurs'), isFalse);
+  });
 
   testWidgets(
     'uses agenda section order, cards and dates, and saves a pool link',
@@ -288,6 +325,7 @@ void main() {
       final db = FakeFirebaseFirestore();
       await _seedActivities(db);
       await _openForm(tester, db);
+      await _selectType(tester, 'Piscine/formation');
       await _openActivityPicker(tester);
       final agendaList = tester.widget<CustomScrollView>(
         find.byType(CustomScrollView),
@@ -296,7 +334,7 @@ void main() {
           .map((sliver) => sliver.key)
           .whereType<ValueKey<AgendaActivityCategory>>()
           .map((key) => key.value.label);
-      expect(categories, ['Plongées', 'Piscine', 'Sorties']);
+      expect(categories, ['Piscine']);
       expect(find.byType(AgendaMonthHeader), findsWidgets);
       expect(find.byType(AgendaActivityCard), findsWidgets);
 
@@ -317,22 +355,17 @@ void main() {
         find.descendant(of: theory, matching: find.text('19:15')),
         findsOneWidget,
       );
-      await tester.scrollUntilVisible(
-        find.text('Sortie récente'),
-        160,
-        scrollable: _pickerScroll(),
-      );
-      expect(find.text('Sorties'), findsOneWidget);
+      expect(find.text('Sortie récente'), findsNothing);
       expect(find.text('Piscine en double'), findsNothing);
       expect(find.text('Ancienne sortie'), findsNothing);
 
       await tester.scrollUntilVisible(pool, -160, scrollable: _pickerScroll());
       await tester.tap(pool);
       await _finishTransition(tester);
-      await tester.enterText(find.byType(TextFormField).at(2), '3');
       final claim = await _submit(tester, db);
+      expect(claim, containsPair('reimbursement_type', 'piscine'));
       expect(claim, containsPair('piscine_session_id', 'registered'));
-      expect(claim, containsPair('nombre_plongeurs', 3));
+      expect(claim.containsKey('nombre_plongeurs'), isFalse);
       expect(claim['operation_title'], startsWith('Piscine - '));
       expect(claim.containsKey('operation_id'), isFalse);
     },
@@ -344,6 +377,7 @@ void main() {
       final db = FakeFirebaseFirestore();
       await _seedActivities(db);
       await _openForm(tester, db);
+      await _selectType(tester, 'Plongée (sorties en milieu naturel)');
       await _openActivityPicker(tester);
       await tester.pump(const Duration(milliseconds: 100));
 
@@ -457,22 +491,22 @@ void main() {
     },
   );
 
-  testWidgets('clearing the activity also clears the diver count', (
+  testWidgets('changing type clears fields that no longer apply', (
     tester,
   ) async {
     final db = FakeFirebaseFirestore();
     await _seedActivities(db);
     await _openForm(tester, db);
+    await _selectType(tester, 'Plongée (sorties en milieu naturel)');
     await _openActivityPicker(tester);
     await tester.tap(find.text('École de plongée'));
     await _finishTransition(tester);
-    await tester.enterText(find.byType(TextFormField).at(2), '4');
-    await _openActivityPicker(tester);
-    await tester.tap(find.text('Pas liée à une activité'));
-    await _finishTransition(tester);
+    await _selectType(tester, 'Administratif/autres');
 
     expect(find.text('Nombre de plongeurs'), findsNothing);
+    expect(find.text('Activité (facultatif)'), findsNothing);
     final claim = await _submit(tester, db);
+    expect(claim, containsPair('reimbursement_type', 'administratif'));
     expect(claim.containsKey('operation_id'), isFalse);
     expect(claim.containsKey('piscine_session_id'), isFalse);
     expect(claim.containsKey('operation_title'), isFalse);
@@ -496,10 +530,11 @@ void main() {
           body: Builder(
             builder: (context) => TextButton(
               onPressed: () {
-                showDialog<({
-                  ActivityItem? activity,
-                  ExpenseActivitySummary? summary,
-                })>(
+                showDialog<
+                    ({
+                      ActivityItem? activity,
+                      ExpenseActivitySummary? summary
+                    })>(
                   context: context,
                   builder: (_) => ExpenseActivityPicker(
                     clubId: FirebaseConfig.defaultClubId,
@@ -525,5 +560,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ExpenseActivityPicker), findsNothing);
     expect(find.text('Ouvrir le sélecteur'), findsOneWidget);
+  });
+
+  test('existing diver-count data remains harmlessly readable', () async {
+    final db = FakeFirebaseFirestore();
+    final ref = db.collection('$_club/expense_claims').doc('existing');
+    await ref.set({
+      'club_id': FirebaseConfig.defaultClubId,
+      'requester_id': 'member',
+      'amount': 24,
+      'description': 'Entrées du site',
+      'status': 'submitted',
+      'expense_date': Timestamp.fromDate(DateTime(2026, 11, 24)),
+      'requested_at': Timestamp.fromDate(DateTime(2026, 11, 24)),
+      'nombre_plongeurs': 4,
+      'reimbursement_type': 'plongee',
+    });
+
+    final claim = ExpenseClaim.fromFirestore(await ref.get());
+    expect(claim.montant, 24);
+    expect(claim.reimbursementType, 'plongee');
   });
 }
