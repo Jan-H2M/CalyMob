@@ -4,15 +4,18 @@ _Last updated: 2026-11-24. Live store queries always take precedence over this d
 
 ## Store state
 - **App Store live:** 1.30.5 (latest verified public version before this release).
-- **Google Play production:** versionCode 551 at 100% before this release.
-- **Prepared release:** 1.30.9 (553), containing the redesigned reimbursement
-  request form from PR #261 and the security hardening already merged in PR #263.
-- **iOS:** build 553 is reserved from the live Xcode Cloud counter (latest run
-  552). It must be built from the exact merged `main` commit, then submitted for
-  App Store review with automatic release after approval. TestFlight group
-  assignment is intentionally not part of this public release.
-- **Android:** the signed AAB must come from that same exact `main` commit and
-  be released to production at 100% as versionCode 553.
+- **Google Play production:** versionCode 553 at 100%, completed on
+  2026-11-24 at 19:18 Europe/Brussels. The signed AAB came from `main` merge
+  commit `391e2c7f8bc0112cdaa26a78cdcd1914dbc8b7c3` and includes the redesigned
+  reimbursement request form from PR #261 plus security PR #263.
+- **iOS blocker:** 1.30.9 (553) is reserved but has not been built or submitted.
+  Xcode Cloud rejected the manual start before creating a run because branch
+  `main` is not associated with workflow `D11B66EC-6E95-43A4-B345-727D1992D72A`.
+  The latest successful run remains 552 (`VALID`). Add `main` to that workflow's
+  manual branch start condition, then start build 553 from exact merge commit
+  `391e2c7f8bc0112cdaa26a78cdcd1914dbc8b7c3` and submit it with automatic
+  release after approval. No TestFlight group wait is required for this public
+  release.
 - **Release notes:** French and Dutch metadata describe the new type-first
   reimbursement form, optional activity link and expected-amount check.
 - **Backend/data scope:** no Firebase deployment or Firestore write belongs to
