@@ -11,6 +11,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { requireAuth, validateClubId } = require('../utils/clubCallableInput');
 const { authorizeLogbookAi } = require('../logbook/authorizeLogbookAi');
+const { memberFirstName, memberLastName } = require('../utils/memberName');
 const {
   loadCanonicalLocations,
   resolveLocationCandidates,
@@ -76,7 +77,7 @@ function normalizeName(value) {
 async function loadContext(clubId, uid) {
   const db = admin.firestore();
   const [membersSnap, locationsSnap, carnetSnap] = await Promise.all([
-    db.collection('clubs').doc(clubId).collection('members').limit(500).get(),
+    db.collection('clubs').doc(clubId).collection('member_directory').limit(500).get(),
     // No client-style limit here: canonical matching must see every active
     // club location, even when the catalogue grows past historical limits.
     db.collection('clubs').doc(clubId).collection('dive_locations').get(),
@@ -91,14 +92,11 @@ async function loadContext(clubId, uid) {
   const members = [];
   membersSnap.forEach((doc) => {
     const d = doc.data() || {};
-    const prenom = normalizeName(
-      d.prenom || d.firstName || d.first_name || d.membre_prenom || d.member_first_name
-    );
-    const nom = normalizeName(
-      d.nom || d.lastName || d.last_name || d.membre_nom || d.member_last_name
-    );
-    const displayName = normalizeName(`${prenom} ${nom}`);
-    if (!displayName || doc.id === uid) return;
+    if (doc.id === uid || d.is_test_account === true) return;
+    const prenom = memberFirstName(d);
+    const nom = memberLastName(d);
+    const displayName = normalizeName(d.display_name || d.displayName || `${prenom} ${nom}`);
+    if (!displayName) return;
     members.push({
       id: doc.id,
       displayName,

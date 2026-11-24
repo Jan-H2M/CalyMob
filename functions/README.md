@@ -362,8 +362,9 @@ functions/
 ### Logbook AI and medical certificate access
 
 - Dictation and OCR require an active member record in the requested club. They
-  share 30 attempts per caller, club and UTC calendar day. Invalid requests are
-  rejected before charging the allowance. The Firestore counter is server-only.
+  share 30 attempts per caller, club and UTC calendar day. Malformed requests
+  are rejected before charging the allowance. The Firestore counter is
+  server-only. Dictation uses the member directory for buddy suggestions.
 - `getMedicalCertificateUrl` accepts `clubId`, `memberId`, and `certificateId`.
   The certificate owner or a club admin can obtain a V4 read URL valid for ten
   minutes. The callable only signs the saved `document_path` inside that

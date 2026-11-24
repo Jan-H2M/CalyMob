@@ -5,7 +5,7 @@ jest.mock('firebase-admin', () => ({
 
 const admin = require('firebase-admin');
 const { authorizeLogbookAi } = require('./authorizeLogbookAi');
-const { analyzeLogbookDictation, sanitizeResult } = require('../logbookDictation/analyzeLogbookDictation');
+const { analyzeLogbookDictation, loadContext, sanitizeResult } = require('../logbookDictation/analyzeLogbookDictation');
 const { analyzeLogbookPage } = require('../logbookOcr/analyzeLogbookPage');
 
 const clubId = 'test-club';
@@ -132,6 +132,32 @@ test.each([
   await expect(analyzeLogbookPage.run({ auth, data: { ...ocr, ...overrides } }))
     .rejects.toHaveProperty('code', code);
   expect(admin.firestore).not.toHaveBeenCalled();
+});
+
+test('dictation builds its buddy context from the member directory only', async () => {
+  const docs = [
+    { id: uid, data: () => ({ first_name: 'Self' }) },
+    { id: 'visible', data: () => ({ first_name: 'Club', last_name: 'Member' }) },
+    { id: 'qa', data: () => ({ first_name: 'Test', is_test_account: true }) },
+  ];
+  const read = jest.fn(async (collection) => {
+    if (collection === 'member_directory') return docs;
+    if (['dive_locations', 'student_logbook_entries'].includes(collection)) return [];
+    throw new Error('Unexpected collection read');
+  });
+  const collection = (name) => ({
+    limit: () => ({ get: () => read(name) }),
+    where: () => ({ limit: () => ({ get: () => read(name) }) }),
+    get: () => read(name),
+  });
+  admin.firestore.mockReturnValue({
+    collection: () => ({ doc: () => ({ collection }) }),
+  });
+  const context = await loadContext(clubId, uid);
+  expect(context.members).toEqual([
+    { id: 'visible', displayName: 'Club Member', aliases: ['Club Member', 'Member Club'] },
+  ]);
+  expect(read).not.toHaveBeenCalledWith('members');
 });
 
 test('dictation only returns buddy IDs from the server-supplied context', () => {
