@@ -16,7 +16,8 @@ extension AgendaCategoryIcon on AgendaActivityCategory {
 
 /// Group activities by month
 Map<String, List<ActivityItem>> groupAgendaActivitiesByMonth(
-    List<ActivityItem> activities) {
+  List<ActivityItem> activities,
+) {
   final Map<String, List<ActivityItem>> grouped = {};
 
   for (final item in activities) {
@@ -92,17 +93,22 @@ class AgendaActivityCard extends StatelessWidget {
     required this.clubId,
     required this.onTap,
     required this.trailing,
+    this.extraDetails,
   });
 
   final ActivityItem item;
   final String clubId;
   final VoidCallback onTap;
   final Widget trailing;
+  final Widget? extraDetails;
 
   @override
   Widget build(BuildContext context) {
     final appearance = item.cardAppearance?.forTarget(
-        clubId, item.isPiscine ? 'piscine_sessions' : 'operations', item.id);
+      clubId,
+      item.isPiscine ? 'piscine_sessions' : 'operations',
+      item.id,
+    );
     final accent = appearance?.accent;
     final dateTextColor = !item.isDraft &&
             !item.isCancelled &&
@@ -170,9 +176,10 @@ class AgendaActivityCard extends StatelessWidget {
                                       ? [
                                           accent,
                                           Color.alphaBlend(
-                                              Colors.black
-                                                  .withValues(alpha: 0.12),
-                                              accent)
+                                            Colors.black
+                                                .withValues(alpha: 0.12),
+                                            accent,
+                                          ),
                                         ]
                                       : item.isPiscine
                                           ? [
@@ -247,23 +254,38 @@ class AgendaActivityCard extends StatelessWidget {
                               item.lieu!.isNotEmpty &&
                               !item.isPiscine) ...[
                             const SizedBox(height: 8),
-                            Row(children: [
-                              Icon(Icons.location_on,
-                                  size: 14, color: Colors.grey[600]),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                  child: Text(item.lieu!,
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey[700]),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis)),
-                            ]),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  size: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    item.lieu!,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[700],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                           const SizedBox(height: 8),
-                          _buildActivityInfo(item,
-                              stacked: !item.isCancelled &&
-                                  appearance?.hasArtwork == true),
+                          _buildActivityInfo(
+                            item,
+                            stacked: !item.isCancelled &&
+                                appearance?.hasArtwork == true,
+                          ),
+                          if (extraDetails != null) ...[
+                            const SizedBox(height: 10),
+                            extraDetails!,
+                          ],
                         ],
                       ),
                     ),
@@ -310,13 +332,17 @@ class AgendaActivityCard extends StatelessWidget {
         ? Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-                color: const Color(0xFFFFF3C4),
-                borderRadius: BorderRadius.circular(8)),
-            child: Text(item.statusLabel!,
-                style: const TextStyle(
-                    color: Color(0xFF92400E),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold)),
+              color: const Color(0xFFFFF3C4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              item.statusLabel!,
+              style: const TextStyle(
+                color: Color(0xFF92400E),
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           )
         : null;
     final count = item.isPiscine
@@ -330,16 +356,21 @@ class AgendaActivityCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.group,
-                  size: 14,
-                  color: (item.isPiscine
-                          ? AppColors.piscineBlauw
-                          : AppColors.middenblauw)
-                      .withOpacity(0.7)),
+              Icon(
+                Icons.group,
+                size: 14,
+                color: (item.isPiscine
+                        ? AppColors.piscineBlauw
+                        : AppColors.middenblauw)
+                    .withOpacity(0.7),
+              ),
               const SizedBox(width: 4),
               Flexible(
-                  child: Text(count,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]))),
+                child: Text(
+                  count,
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+              ),
             ],
           );
     final tbd = !item.isPiscine && item.operation?.priceTbd == true;
@@ -349,35 +380,42 @@ class AgendaActivityCard extends StatelessWidget {
         : Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-                color: tbd
-                    ? Colors.orange.withOpacity(0.25)
-                    : AppColors.lichtblauw.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8)),
+              color: tbd
+                  ? Colors.orange.withOpacity(0.25)
+                  : AppColors.lichtblauw.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Text(
-                tbd ? 'Prix à confirmer' : '${item.prix!.toStringAsFixed(2)} €',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color:
-                        tbd ? const Color(0xFFB45309) : AppColors.donkerblauw)),
+              tbd ? 'Prix à confirmer' : '${item.prix!.toStringAsFixed(2)} €',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: tbd ? const Color(0xFFB45309) : AppColors.donkerblauw,
+              ),
+            ),
           );
     if (stacked) {
       final rows = [
         if (draft != null) draft,
         if (people != null) people,
-        if (price != null) price
+        if (price != null) price,
       ];
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0) const SizedBox(height: 6),
-          rows[i],
-        ]
-      ]);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: 6),
+            rows[i],
+          ],
+        ],
+      );
     }
-    return Row(children: [
-      if (draft != null) ...[draft, const SizedBox(width: 8)],
-      if (people != null) Expanded(child: people) else const Spacer(),
-      if (price != null) price,
-    ]);
+    return Row(
+      children: [
+        if (draft != null) ...[draft, const SizedBox(width: 8)],
+        if (people != null) Expanded(child: people) else const Spacer(),
+        if (price != null) price,
+      ],
+    );
   }
 }

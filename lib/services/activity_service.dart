@@ -2,16 +2,77 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
 import '../models/activity_item.dart';
+import '../models/dive_location.dart';
+import '../models/expense_activity_summary.dart';
 import '../models/operation.dart';
+import '../models/participant_operation.dart';
 import '../models/piscine_session.dart';
 
 /// Service voor het ophalen van gecombineerde activiteiten
 /// Combineert operations en piscine sessions in één stream
 class ActivityService {
   final FirebaseFirestore _firestore;
+  final Map<String, Future<List<DiveLocation>>> _expenseLocations = {};
 
   ActivityService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  /// Loads the detail needed by one visible expense-picker card.
+  ///
+  /// The picker caches this future per activity, so registrations/attendance
+  /// are fetched lazily only for cards Firestore actually builds on screen.
+  /// The much smaller dive-site catalogue is shared by every card.
+  Future<ExpenseActivitySummary> loadExpenseActivitySummary(
+    String clubId,
+    ActivityItem activity,
+  ) async {
+    if (activity.isPiscine) {
+      final attendees = await _firestore
+          .collection('clubs/$clubId/piscine_sessions/${activity.id}/attendees')
+          .get();
+      final identities = attendees.docs.map((document) {
+        final data = document.data();
+        return (data['memberId'] ?? data['membre_id'] ?? document.id)
+            .toString();
+      }).toSet();
+      return ExpenseActivitySummary.forPool(
+        activity,
+        presentCount: identities.length,
+      );
+    }
+
+    final results = await Future.wait<dynamic>([
+      _firestore
+          .collection('clubs/$clubId/operations/${activity.id}/inscriptions')
+          .get(),
+      _loadExpenseLocations(clubId),
+    ]);
+    final registrations = (results[0] as QuerySnapshot<Map<String, dynamic>>)
+        .docs
+        .map(ParticipantOperation.fromFirestore)
+        .toList();
+    return ExpenseActivitySummary.forOperation(
+      activity,
+      registrations: registrations,
+      locations: results[1] as List<DiveLocation>,
+    );
+  }
+
+  Future<List<DiveLocation>> _loadExpenseLocations(String clubId) {
+    return _expenseLocations.putIfAbsent(clubId, () async {
+      try {
+        final snapshot =
+            await _firestore.collection('clubs/$clubId/dive_locations').get();
+        return snapshot.docs
+            .map(DiveLocation.fromFirestore)
+            .where((location) => location.mergedIntoLocationId == null)
+            .toList();
+      } catch (_) {
+        _expenseLocations.remove(clubId);
+        return const <DiveLocation>[];
+      }
+    });
+  }
 
   /// The expense form uses the agenda's sources over its existing date window.
   Stream<List<ActivityItem>> watchExpenseActivities(
@@ -27,8 +88,10 @@ class ActivityService {
       currentUserId: userId,
     ).map(
       (activities) => activities.reversed
-          .where((activity) =>
-              !activity.date.isBefore(from) && activity.date.isBefore(until))
+          .where(
+            (activity) =>
+                !activity.date.isBefore(from) && activity.date.isBefore(until),
+          )
           .toList(),
     );
   }
@@ -175,25 +238,25 @@ class ActivityService {
         .where('statut', isEqualTo: 'ferme')
         .snapshots()
         .map((snapshot) {
-      debugPrint(
-        '📦 Closed operations stream: ${snapshot.docs.length} docs',
-      );
-      final activities = <ActivityItem>[];
-      for (var doc in snapshot.docs) {
-        try {
-          final op = Operation.fromFirestore(doc);
-          // Exclude piscine category operations (we use piscine_sessions instead)
-          if (op.categorie != 'piscine') {
-            activities.add(ActivityItem.fromOperation(op));
+          debugPrint(
+            '📦 Closed operations stream: ${snapshot.docs.length} docs',
+          );
+          final activities = <ActivityItem>[];
+          for (var doc in snapshot.docs) {
+            try {
+              final op = Operation.fromFirestore(doc);
+              // Exclude piscine category operations (we use piscine_sessions instead)
+              if (op.categorie != 'piscine') {
+                activities.add(ActivityItem.fromOperation(op));
+              }
+            } catch (e) {
+              debugPrint('❌ Error parsing closed operation ${doc.id}: $e');
+            }
           }
-        } catch (e) {
-          debugPrint('❌ Error parsing closed operation ${doc.id}: $e');
-        }
-      }
-      // Meest recente eerst (handig voor reconciliatie van voorbije events)
-      activities.sort((a, b) => b.date.compareTo(a.date));
-      return activities;
-    });
+          // Meest recente eerst (handig voor reconciliatie van voorbije events)
+          activities.sort((a, b) => b.date.compareTo(a.date));
+          return activities;
+        });
   }
 
   /// Haal alleen open operations op (zonder piscine)
