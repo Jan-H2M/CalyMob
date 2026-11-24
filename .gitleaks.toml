@@ -1,5 +1,13 @@
-[allowlist]
-description = "Dependency lockfiles contain public package checksums, not credentials"
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "CocoaPods dependency checksums are public package integrity hashes"
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^  [A-Za-z0-9_+./"-]+: [0-9a-f]{40}$''',
+]
 paths = [
   '''^ios/Podfile\.lock$''',
 ]

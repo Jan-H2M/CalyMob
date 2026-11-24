@@ -9,6 +9,7 @@ import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/agenda_activity.dart';
+import '../../services/cursor_unread_count_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
@@ -383,6 +384,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
   Widget _buildUnreadBadgeAndArrow(ActivityItem item) {
     final userId = context.watch<AuthProvider>().currentUser?.uid;
+    final unreadProvider = context.watch<UnreadCountProvider>();
 
     if (userId == null) {
       return Padding(
@@ -403,6 +405,16 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     final opId = item.operation?.id;
     if (opId == null) {
       unreadStream = Stream.value(0);
+    } else if (unreadProvider.usesCursorReadState) {
+      unreadStream = unreadProvider.isCursorReady
+          ? Stream.fromFuture(
+              CursorUnreadCountService().countEligibleEventConversation(
+                clubId,
+                userId,
+                opId,
+              ),
+            )
+          : Stream.value(0);
     } else {
       unreadStream = Stream.fromFuture(
         UnreadCountService().countUnreadForOperation(clubId, opId),
@@ -413,10 +425,15 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       stream: unreadStream,
       builder: (context, snapshot) {
         final unreadCount = snapshot.data;
+        final cursorError = unreadProvider.usesCursorReadState &&
+            unreadProvider.isCursorReady &&
+            snapshot.hasError;
         return _buildUnreadBadgeValue(
           item,
           unreadCount ?? 0,
-          unavailable: snapshot.hasError || !snapshot.hasData,
+          unavailable: cursorError ||
+              (!unreadProvider.usesCursorReadState &&
+                  (snapshot.hasError || !snapshot.hasData)),
         );
       },
     );
