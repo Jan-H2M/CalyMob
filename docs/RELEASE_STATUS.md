@@ -8,16 +8,20 @@ _Last updated: 2026-11-24. Live store queries always take precedence over this d
   2026-11-24 at 19:18 Europe/Brussels. The signed AAB came from `main` merge
   commit `391e2c7f8bc0112cdaa26a78cdcd1914dbc8b7c3` and includes the redesigned
   reimbursement request form from PR #261 plus security PR #263.
-- **iOS blocker:** 1.30.9 (553) is reserved but has not been built or submitted.
-  Xcode Cloud rejected the manual start before creating a run because branch
-  `main` is not associated with workflow `D11B66EC-6E95-43A4-B345-727D1992D72A`.
-  The latest successful run remains 552 (`VALID`). Add `main` to that workflow's
-  manual branch start condition, then start build 553 from exact merge commit
-  `391e2c7f8bc0112cdaa26a78cdcd1914dbc8b7c3` and submit it with automatic
-  release after approval. No TestFlight group wait is required for this public
-  release.
+- **App Store review:** 1.30.9 (555) is `WAITING_FOR_REVIEW`, verified on
+  2026-11-24 at 20:43 Europe/Brussels. App Store Connect version ID
+  `2732204f-6fb4-4965-9f1a-90147513c69d` has build ID
+  `29915fb3-7437-4e10-a78e-4302afb79859` attached, with
+  `usesNonExemptEncryption=false` and `releaseType=AFTER_APPROVAL` (automatic
+  release after Apple's approval). It was built from exact `main` commit
+  `6a1e5acb3c7a297c5a26205af4a08eb01c01be43` by Xcode Cloud run
+  `74a65fb1-3315-4b65-8a01-b3e0f8aca06d`; both Test and Archive actions
+  succeeded and the build is `VALID`. No TestFlight group assignment was used.
 - **Release notes:** French and Dutch metadata describe the new type-first
-  reimbursement form, optional activity link and expected-amount check.
+  reimbursement form, optional activity link and expected-amount check. The
+  App Store historically had only French base metadata, so the Dutch listing
+  retains its Dutch release notes while its required description, keywords and
+  support URL were copied unchanged from the live French 1.30.5 listing.
 - **Backend/data scope:** no Firebase deployment or Firestore write belongs to
   this store release.
 
@@ -33,7 +37,7 @@ _Last updated: 2026-11-24. Live store queries always take precedence over this d
 
 ## Build-number source of truth
 
-- Xcode Cloud is the live product-wide counter; run 552 was observed read-only on
+- Xcode Cloud is the live product-wide counter; build 555 was verified `VALID` on
   2026-11-24. `scripts/bump_version.sh` reads it and reserves exactly the next number.
 - `scripts/run_fastlane.sh` and both platform Fastfiles re-read the live counters before every store mutation and
   fails clearly if local source is neither the matching latest build nor its exact next
@@ -64,6 +68,15 @@ scope after the release if desired:
   }
 }
 ```
+
+`main` remains appended to that condition. The workflow was unlocked only for
+the condition update and was locked again before the builds started.
+
+Build 553 failed because the cloud test script still named six test files that
+were not present on `main`; PR #266 removed only those stale arguments and
+reserved build 554. Build 554 then failed only in the test action after three
+CocoaPods CDN timeouts; PR #267 reserved the permitted network-flake retry as
+build 555. Build 555 succeeded and is the build submitted above.
 
 ## Historical documents
 `APP_STORE_PUBLICATIE.md`, `docs/MOBILE_RELEASE_QUEUE.md`, `docs/RELEASE_GATE.md`
