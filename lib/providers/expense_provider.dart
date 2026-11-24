@@ -9,7 +9,7 @@ class ExpenseProvider with ChangeNotifier {
   final ExpenseService _expenseService;
 
   ExpenseProvider({ExpenseService? expenseService})
-      : _expenseService = expenseService ?? ExpenseService();
+    : _expenseService = expenseService ?? ExpenseService();
 
   // Stream subscriptions for memory management
   StreamSubscription<List<ExpenseClaim>>? _userExpensesSubscription;
@@ -110,7 +110,7 @@ class ExpenseProvider with ChangeNotifier {
     String? operationId,
     String? piscineSessionId,
     String? operationTitle,
-    int? nombrePlongeurs,
+    String? reimbursementType,
     String? boutiqueSupplierBatchId,
     List<File>? photoFiles,
   }) async {
@@ -128,7 +128,7 @@ class ExpenseProvider with ChangeNotifier {
         operationId: operationId,
         piscineSessionId: piscineSessionId,
         operationTitle: operationTitle,
-        nombrePlongeurs: nombrePlongeurs,
+        reimbursementType: reimbursementType,
         boutiqueSupplierBatchId: boutiqueSupplierBatchId,
         photoFiles: photoFiles,
       );

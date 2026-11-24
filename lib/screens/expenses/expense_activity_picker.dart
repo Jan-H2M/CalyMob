@@ -15,13 +15,15 @@ class ExpenseActivityPicker extends StatefulWidget {
     required this.watchActivities,
     required this.loadSummary,
     required this.selected,
+    this.activityCategory,
   });
 
   final String clubId;
   final Stream<List<ActivityItem>> Function() watchActivities;
   final Future<ExpenseActivitySummary> Function(ActivityItem activity)
-      loadSummary;
+  loadSummary;
   final ActivityItem? selected;
+  final AgendaActivityCategory? activityCategory;
 
   @override
   State<ExpenseActivityPicker> createState() => _ExpenseActivityPickerState();
@@ -91,6 +93,9 @@ class _ExpenseActivityPickerState extends State<ExpenseActivityPicker> {
                   }
                   final matching = snapshot.data!.where(
                     (activity) =>
+                        (widget.activityCategory == null ||
+                            activity.agendaCategory ==
+                                widget.activityCategory) &&
                         normalizeSearchText(activity.titre).contains(_search),
                   );
                   final groups = <AgendaActivityCategory, List<ActivityItem>>{};
@@ -201,8 +206,8 @@ class _ExpenseActivityPickerDetails extends StatelessWidget {
     final time = item.isPiscine
         ? item.horaire
         : item.operation?.dateDebut == null
-            ? null
-            : DateFormat('HH:mm', 'fr_FR').format(item.operation!.dateDebut!);
+        ? null
+        : DateFormat('HH:mm', 'fr_FR').format(item.operation!.dateDebut!);
     final date = DateFormat('EEE d MMM yyyy', 'fr_FR').format(item.date);
     final details = <Widget>[
       _line(Icons.schedule, '$date${time == null ? '' : ' · $time'}'),
@@ -246,20 +251,20 @@ class _ExpenseActivityPickerDetails extends StatelessWidget {
   }
 
   Widget _line(IconData icon, String text, {bool emphasized = false}) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 15, color: AppColors.middenblauw),
-          const SizedBox(width: 5),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 12,
-                color: emphasized ? AppColors.donkerblauw : Colors.grey[700],
-                fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 15, color: AppColors.middenblauw),
+      const SizedBox(width: 5),
+      Expanded(
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: emphasized ? AppColors.donkerblauw : Colors.grey[700],
+            fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
           ),
-        ],
-      );
+        ),
+      ),
+    ],
+  );
 }

@@ -10,15 +10,18 @@ class ExpenseClaim {
   final double montant;
   final String description;
   final String? categorie;
+  final String? reimbursementType;
   final String? codeComptable;
   final String? codeComptableLabel;
-  final String statut; // 'soumis', 'en_attente_validation', 'approuve', 'rembourse', 'refuse'
+  // 'soumis', 'en_attente_validation', 'approuve', 'rembourse', 'refuse'
+  final String statut;
   final DateTime dateDepense;
   final DateTime dateDemande;
   final List<String> urlsJustificatifs;
   final String? boutiqueSupplierBatchId;
   final String? operationId; // Lien optionnel vers opération
   final String? piscineSessionId;
+  final String? operationTitle;
 
   // Premier approbateur
   final DateTime? dateApprobation;
@@ -45,6 +48,7 @@ class ExpenseClaim {
     required this.montant,
     required this.description,
     this.categorie,
+    this.reimbursementType,
     this.codeComptable,
     this.codeComptableLabel,
     required this.statut,
@@ -53,6 +57,7 @@ class ExpenseClaim {
     this.urlsJustificatifs = const [],
     this.operationId,
     this.piscineSessionId,
+    this.operationTitle,
     this.boutiqueSupplierBatchId,
     this.dateApprobation,
     this.approuvePar,
@@ -96,16 +101,30 @@ class ExpenseClaim {
   factory ExpenseClaim.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    final dateDepense = _parseDate(_pick(data, ['date_depense', 'expense_date']));
-    final dateDemande = _parseDate(_pick(data, ['date_demande', 'requested_at']));
-    final dateApprobation = _parseDate(_pick(data, ['date_approbation', 'approved_at']));
-    final dateApprobation2 = _parseDate(_pick(data, ['date_approbation_2', 'second_approved_at']));
+    final dateDepense = _parseDate(
+      _pick(data, ['date_depense', 'expense_date']),
+    );
+    final dateDemande = _parseDate(
+      _pick(data, ['date_demande', 'requested_at']),
+    );
+    final dateApprobation = _parseDate(
+      _pick(data, ['date_approbation', 'approved_at']),
+    );
+    final dateApprobation2 = _parseDate(
+      _pick(data, ['date_approbation_2', 'second_approved_at']),
+    );
     final dateRefus = _parseDate(_pick(data, ['date_refus', 'rejected_at']));
 
     // Documenten: objet-array, simpele URL-array (legacy of canonical)
     List<String> documents = [];
-    final docsObj = _pick(data, ['documents_justificatifs', 'supporting_documents']);
-    final urls = _pick(data, ['urls_justificatifs', 'supporting_document_urls']);
+    final docsObj = _pick(data, [
+      'documents_justificatifs',
+      'supporting_documents',
+    ]);
+    final urls = _pick(data, [
+      'urls_justificatifs',
+      'supporting_document_urls',
+    ]);
     if (docsObj != null) {
       try {
         documents = (docsObj as List).map((d) => d['url'] as String).toList();
@@ -130,6 +149,10 @@ class ExpenseClaim {
       montant: (_pick(data, ['montant', 'amount']) ?? 0).toDouble(),
       description: _pick(data, ['description', 'title', 'titre']) ?? '',
       categorie: _pick(data, ['categorie', 'category']),
+      reimbursementType: _pick(data, [
+        'type_remboursement',
+        'reimbursement_type',
+      ]),
       codeComptable: _pick(data, ['code_comptable', 'account_code']),
       codeComptableLabel: data['code_comptable_label'],
       // canonical->legacy zodat statusLabel/statusColor ongewijzigd werken
@@ -139,13 +162,21 @@ class ExpenseClaim {
       urlsJustificatifs: documents,
       operationId: _pick(data, ['operation_id', 'evenement_id']),
       piscineSessionId: data['piscine_session_id'] as String?,
+      operationTitle: _pick(data, [
+        'operation_titre',
+        'operation_title',
+        'evenement_titre',
+      ]),
       boutiqueSupplierBatchId: data['boutique_supplier_batch_id'] as String?,
       dateApprobation: dateApprobation,
       approuvePar: _pick(data, ['approuve_par', 'approved_by']),
       appouveParNom: _pick(data, ['approuve_par_nom', 'approved_by_name']),
       dateApprobation2: dateApprobation2,
       approuvePar2: _pick(data, ['approuve_par_2', 'second_approved_by']),
-      approuvePar2Nom: _pick(data, ['approuve_par_2_nom', 'second_approved_by_name']),
+      approuvePar2Nom: _pick(data, [
+        'approuve_par_2_nom',
+        'second_approved_by_name',
+      ]),
       requiresDoubleApproval: data['requires_double_approval'] ?? false,
       dateRefus: dateRefus,
       refusePar: _pick(data, ['refuse_par', 'rejected_by']),
@@ -163,6 +194,7 @@ class ExpenseClaim {
       'montant': montant,
       'description': description,
       'categorie': categorie ?? 'Autre',
+      if (reimbursementType != null) 'type_remboursement': reimbursementType,
       'code_comptable': codeComptable,
       'code_comptable_label': codeComptableLabel,
       'statut': statut,
@@ -173,7 +205,9 @@ class ExpenseClaim {
         'piscine_session_id': piscineSessionId
       else
         'operation_id': operationId,
-      if (boutiqueSupplierBatchId != null) 'boutique_supplier_batch_id': boutiqueSupplierBatchId,
+      if (operationTitle != null) 'operation_titre': operationTitle,
+      if (boutiqueSupplierBatchId != null)
+        'boutique_supplier_batch_id': boutiqueSupplierBatchId,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };
