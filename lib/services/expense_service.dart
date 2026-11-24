@@ -12,8 +12,10 @@ import '../models/expense_claim.dart';
 /// een oudere app-versie draaien. De app schrijft GEEN `_sync` (server-eigendom);
 /// `source: 'mobile'` blijft wél meegegeven zodat de bevestigingsmail werkt.
 class ExpenseService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseFirestore _firestore;
+
+  ExpenseService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   static const String _collection = 'expense_claims';
 
@@ -66,6 +68,8 @@ class ExpenseService {
     required String description,
     required DateTime dateDepense,
     String? operationId,
+    String? operationTitle,
+    int? nombrePlongeurs,
     String? boutiqueSupplierBatchId,
     List<File>? photoFiles,
   }) async {
@@ -84,7 +88,12 @@ class ExpenseService {
             'status': 'submitted',
             'expense_date': Timestamp.fromDate(dateDepense),
             'requested_at': Timestamp.now(),
-            'operation_id': operationId,
+            if (operationId != null) ...{
+              'operation_id': operationId,
+              if (operationTitle != null && operationTitle.isNotEmpty)
+                'operation_title': operationTitle,
+              if (nombrePlongeurs != null) 'nombre_plongeurs': nombrePlongeurs,
+            },
             if (boutiqueSupplierBatchId != null)
               'boutique_supplier_batch_id': boutiqueSupplierBatchId,
             'fiscal_year_id': fiscalYearId, // Required for web app filtering
@@ -128,13 +137,14 @@ class ExpenseService {
       debugPrint('⚠️ Photo upload skipped on web platform');
       return [];
     }
+    final storage = FirebaseStorage.instance;
     final List<String> photoUrls = [];
     for (int i = 0; i < photoFiles.length; i++) {
       try {
         final file = photoFiles[i];
         final fileName =
             'photo_${i + 1}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final storageRef = _storage.ref().child(
+        final storageRef = storage.ref().child(
           'clubs/$clubId/demandes/$expenseId/$fileName',
         );
         debugPrint('📤 Upload photo ${i + 1}/${photoFiles.length}: $fileName');
