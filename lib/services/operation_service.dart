@@ -392,6 +392,55 @@ class OperationService {
     });
   }
 
+  /// Événements récents et à venir pour une demande de remboursement.
+  Future<List<Operation>> getExpenseActivities(
+    String clubId,
+    String userId,
+  ) async {
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, now.day - 60);
+    final until = DateTime(now.year, now.month, now.day + 8);
+    final collection = _firestore.collection('clubs/$clubId/operations');
+    final snapshot = await collection
+        .where('type', isEqualTo: 'evenement')
+        .where('statut', whereIn: ['ouvert', 'ferme', 'annule'])
+        .where('date_debut', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
+        .where('date_debut', isLessThan: Timestamp.fromDate(until))
+        .orderBy('date_debut', descending: true)
+        .get();
+    final operations = snapshot.docs.map(Operation.fromFirestore).toList();
+    if (operations.isEmpty) return operations;
+
+    final registeredOperationIds = <String>{};
+    try {
+      final registrations = await _firestore
+          .collectionGroup('inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .get();
+      for (final registration in registrations.docs) {
+        final operation = registration.reference.parent.parent;
+        final status = registration.data()['registration_status'];
+        if (operation != null &&
+            operation.parent.path == collection.path &&
+            status != 'canceled' &&
+            status != 'waitlisted') {
+          registeredOperationIds.add(operation.id);
+        }
+      }
+    } catch (error) {
+      // Registration lookup only affects ordering.
+      debugPrint('Inscriptions indisponibles pour la note de frais: $error');
+    }
+    bool isPreferred(Operation operation) =>
+        operation.organisateurId == userId ||
+        registeredOperationIds.contains(operation.id);
+
+    return [
+      ...operations.where(isPreferred),
+      ...operations.where((operation) => !isPreferred(operation)),
+    ];
+  }
+
   /// Obtenir une opération par ID
   Future<Operation?> getOperationById(String clubId, String operationId) async {
     try {

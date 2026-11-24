@@ -1,26 +1,37 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../../config/firebase_config.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../models/operation.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../providers/operation_provider.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/boutique/member_missions_service.dart';
 import '../../utils/amount_parser.dart';
 import '../../utils/date_formatter.dart';
+import '../../utils/search_highlight.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de création d'une demande de remboursement
 class CreateExpenseScreen extends StatefulWidget {
-  const CreateExpenseScreen({Key? key}) : super(key: key);
+  final String? originatingUid;
+  final String? boutiqueBatchId;
+  final String? boutiqueOrderLabel;
+  const CreateExpenseScreen({
+    Key? key,
+    this.originatingUid,
+    this.boutiqueBatchId,
+    this.boutiqueOrderLabel,
+  }) : super(key: key);
 
   @override
   State<CreateExpenseScreen> createState() => _CreateExpenseScreenState();
@@ -30,16 +41,137 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _montantController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _nombrePlongeursController = TextEditingController();
   final _imagePicker = ImagePicker();
 
   DateTime _selectedDate = DateTime.now();
-  List<File> _selectedPhotos = [];
+  Operation? _activity;
+  final List<File> _selectedPhotos = [];
   bool _isSubmitting = false;
+  bool _linkBoutique = false;
+  String? _boutiqueBatchId;
+  Map<String, String> _boutiqueChoices = {};
+  String? _originatingUid;
+  bool _identityBound = false;
+  bool _accountChanged = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final uid = context.watch<AuthProvider>().currentUser?.uid;
+    if (!_identityBound) {
+      _originatingUid = widget.originatingUid ?? uid;
+      _identityBound = true;
+      _accountChanged = uid == null || uid != _originatingUid;
+    } else if (uid != _originatingUid) {
+      _accountChanged = true;
+      _montantController.clear();
+      _descriptionController.clear();
+      _nombrePlongeursController.clear();
+      _activity = null;
+      _selectedPhotos.clear();
+      _boutiqueChoices.clear();
+      _boutiqueBatchId = null;
+      _linkBoutique = false;
+    }
+  }
+
+  bool get _sameAccount =>
+      mounted &&
+      !_accountChanged &&
+      _originatingUid != null &&
+      context.read<AuthProvider>().currentUser?.uid == _originatingUid;
+
+  Future<void> _chooseActivity() async {
+    if (!_sameAccount) return;
+    final auth = context.read<AuthProvider>();
+    final operations = context.read<OperationProvider>();
+    final userId = _originatingUid!;
+    final choice = await showDialog<({Operation? activity})>(
+      context: context,
+      builder: (_) => ListenableBuilder(
+        listenable: auth,
+        builder: (context, _) {
+          if (!_sameAccount) {
+            return AlertDialog(
+              title: const Text('Le compte a changé.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Fermer'),
+                ),
+              ],
+            );
+          }
+          return _ExpenseActivityDialog(
+            loadActivities: () => operations.getExpenseActivities(
+              FirebaseConfig.defaultClubId,
+              userId,
+            ),
+            selectedId: _activity?.id,
+          );
+        },
+      ),
+    );
+    if (!_sameAccount || choice == null) return;
+    setState(() {
+      if (choice.activity?.id != _activity?.id) {
+        _nombrePlongeursController.clear();
+      }
+      _activity = choice.activity;
+    });
+  }
+
+  Future<void> _chooseBoutique(bool enabled) async {
+    if (!_sameAccount) return;
+    setState(() {
+      _linkBoutique = enabled;
+    });
+    if (!enabled) return;
+    if (widget.boutiqueBatchId != null) {
+      setState(() {
+        _boutiqueBatchId = widget.boutiqueBatchId;
+        _boutiqueChoices = {
+          widget.boutiqueBatchId!:
+              widget.boutiqueOrderLabel ?? 'Commande Boutique',
+        };
+      });
+      return;
+    }
+    try {
+      final data = await const MemberMissionsService().expenseOrders(
+        FirebaseConfig.defaultClubId,
+      );
+      if (_sameAccount) {
+        setState(() {
+          _boutiqueChoices = {
+            for (final row in data['orders'] as List)
+              row['batchId'] as String:
+                  row['label'] as String? ?? 'Commande Boutique',
+          };
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _linkBoutique = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Commandes Boutique indisponibles. La note de frais peut être introduite sans lien.',
+            ),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
     _montantController.dispose();
     _descriptionController.dispose();
+    _nombrePlongeursController.dispose();
     super.dispose();
   }
 
@@ -109,7 +241,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   Future<File?> _compressImage(File file) async {
     try {
       final dir = await getTemporaryDirectory();
-      final targetPath = '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final targetPath =
+          '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
       final result = await FlutterImageCompress.compressAndGetFile(
         file.absolute.path,
@@ -143,7 +276,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       // Returns List<String> with file paths on both platforms
       debugPrint('🔍 Scanner: Starting document scan...');
 
-      final List<String>? scannedPaths = await CunningDocumentScanner.getPictures(
+      final List<String>? scannedPaths =
+          await CunningDocumentScanner.getPictures(
         isGalleryImportAllowed: true,
       );
 
@@ -162,7 +296,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             final compressedFile = await _compressImage(originalFile);
             if (compressedFile != null) {
               compressedFiles.add(compressedFile);
-              debugPrint('🔍 Scanner: Added compressed file: ${compressedFile.path}');
+              debugPrint(
+                '🔍 Scanner: Added compressed file: ${compressedFile.path}',
+              );
             }
           } else {
             debugPrint('🔍 Scanner: File does not exist at path: $path');
@@ -175,7 +311,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         });
         debugPrint('🔍 Scanner: Total photos now: ${_selectedPhotos.length}');
       } else {
-        debugPrint('🔍 Scanner: No documents scanned (user cancelled or empty result)');
+        debugPrint(
+          '🔍 Scanner: No documents scanned (user cancelled or empty result)',
+        );
       }
     } catch (e, stackTrace) {
       debugPrint('🔍 Scanner: Error: $e');
@@ -227,10 +365,23 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   }
 
   Future<void> _handleSubmit() async {
+    if (!_sameAccount) return;
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
+    if ((_linkBoutique && _boutiqueBatchId == null) ||
+        ((_linkBoutique || widget.boutiqueBatchId != null) &&
+            _selectedPhotos.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Choisissez la commande Boutique et ajoutez le ticket, ou désactivez le lien facultatif.',
+          ),
+        ),
+      );
+      return;
+    }
     // Note: Photos sont optionnelles (web browser ne supporte pas toujours la caméra)
     // if (_selectedPhotos.isEmpty) {
     //   ScaffoldMessenger.of(context).showSnackBar(
@@ -251,11 +402,13 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final expenseProvider = context.read<ExpenseProvider>();
       final memberProvider = context.read<MemberProvider>();
       final clubId = FirebaseConfig.defaultClubId;
-      final userId = authProvider.currentUser?.uid ?? '';
+      final userId = _originatingUid!;
       // Haal naam uit MemberProvider (displayName), fallback naar auth displayName of email
       final userName = memberProvider.displayName.isNotEmpty
           ? memberProvider.displayName
-          : (authProvider.displayName ?? authProvider.currentUser?.email ?? 'Utilisateur');
+          : (authProvider.displayName ??
+              authProvider.currentUser?.email ??
+              'Utilisateur');
 
       final montant = parseAmount(_montantController.text)!;
       final description = _descriptionController.text.trim();
@@ -267,7 +420,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         montant: montant,
         description: description,
         dateDepense: _selectedDate,
+        operationId: _activity?.id,
+        operationTitle: _activity?.titre,
+        nombrePlongeurs: int.tryParse(_nombrePlongeursController.text),
         photoFiles: _selectedPhotos,
+        boutiqueSupplierBatchId: _linkBoutique ? _boutiqueBatchId : null,
       );
 
       if (mounted) {
@@ -282,10 +439,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -326,6 +480,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_sameAccount) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Nouvelle demande')),
+        body: const Center(
+            child: Text(
+                'Le compte a changé. Fermez ce formulaire et recommencez.')),
+      );
+    }
     return OceanGradientBackground(
       creatures: CreatureSet.bubbles,
       opacity: 0.5,
@@ -333,7 +495,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: const Text('Nouvelle demande', style: TextStyle(color: Colors.white)),
+          title: const Text(
+            'Nouvelle demande',
+            style: TextStyle(color: Colors.white),
+          ),
           backgroundColor: Colors.transparent,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
@@ -347,14 +512,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                   padding: const EdgeInsets.all(16),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 32, // Account for padding
+                      minHeight:
+                          constraints.maxHeight - 32, // Account for padding
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: AppColors.lichtblauw.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+                        border: Border.all(
+                          color: AppColors.lichtblauw.withOpacity(0.5),
+                        ),
                       ),
                       child: Form(
                         key: _formKey,
@@ -364,11 +532,19 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                             // Montant
                             TextFormField(
                               controller: _montantController,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Montant (€)',
-                                prefixIcon: Icon(Icons.euro, color: AppColors.middenblauw),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                prefixIcon: Icon(
+                                  Icons.euro,
+                                  color: AppColors.middenblauw,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 filled: true,
                                 fillColor: Colors.white,
                               ),
@@ -392,11 +568,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                               textCapitalization: TextCapitalization.sentences,
                               maxLines: 2,
                               textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),
+                              onFieldSubmitted: (_) =>
+                                  FocusScope.of(context).unfocus(),
                               decoration: InputDecoration(
                                 hintText: 'Description de la dépense',
-                                prefixIcon: Icon(Icons.description, color: AppColors.middenblauw),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                prefixIcon: Icon(
+                                  Icons.description,
+                                  color: AppColors.middenblauw,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 filled: true,
                                 fillColor: Colors.white,
                               ),
@@ -413,20 +595,96 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
                             const SizedBox(height: 12),
 
+                            ListTile(
+                              tileColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              leading: const Icon(Icons.event_outlined),
+                              title: const Text('Activité'),
+                              subtitle: Text(
+                                _activity?.titre ?? 'Pas liée à une activité',
+                              ),
+                              trailing: const Icon(Icons.expand_more),
+                              onTap: _isSubmitting ? null : _chooseActivity,
+                            ),
+                            if (_activity != null) ...[
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _nombrePlongeursController,
+                                enabled: !_isSubmitting,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: InputDecoration(
+                                  labelText: 'Nombre de plongeurs',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return null;
+                                  }
+                                  return int.tryParse(value) == null
+                                      ? 'Saisissez un nombre entier'
+                                      : null;
+                                },
+                              ),
+                            ],
+
+                            const SizedBox(height: 12),
+
+                            SwitchListTile(
+                              title: const Text(
+                                'Lier à une commande Boutique (facultatif)',
+                              ),
+                              value: _linkBoutique,
+                              onChanged: _isSubmitting ? null : _chooseBoutique,
+                            ),
+                            if (_linkBoutique)
+                              DropdownButtonFormField<String>(
+                                initialValue: _boutiqueBatchId,
+                                decoration: const InputDecoration(
+                                  labelText: 'Commande Boutique',
+                                ),
+                                items: _boutiqueChoices.entries
+                                    .map(
+                                      (entry) => DropdownMenuItem(
+                                        value: entry.key,
+                                        child: Text(entry.value),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) => setState(() {
+                                  _boutiqueBatchId = value;
+                                }),
+                              ),
                             // Date de la dépense
                             InkWell(
                               onTap: _selectDate,
                               borderRadius: BorderRadius.circular(12),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 16,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.grey.shade400),
+                                  border: Border.all(
+                                    color: Colors.grey.shade400,
+                                  ),
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.calendar_today, color: AppColors.middenblauw),
+                                    Icon(
+                                      Icons.calendar_today,
+                                      color: AppColors.middenblauw,
+                                    ),
                                     const SizedBox(width: 12),
                                     Text(
                                       DateFormatter.formatMedium(_selectedDate),
@@ -459,19 +717,24 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                   _buildRoundButton(
                                     icon: Icons.document_scanner,
                                     label: 'Scanner',
-                                    onPressed: _isSubmitting ? null : _scanDocument,
+                                    onPressed:
+                                        _isSubmitting ? null : _scanDocument,
                                   ),
                                 // Photo button
                                 _buildRoundButton(
                                   icon: Icons.camera_alt,
                                   label: 'Photo',
-                                  onPressed: _isSubmitting ? null : _pickImageFromCamera,
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : _pickImageFromCamera,
                                 ),
                                 // Gallery button
                                 _buildRoundButton(
                                   icon: Icons.photo_library,
                                   label: 'Galerie',
-                                  onPressed: _isSubmitting ? null : _pickImageFromGallery,
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : _pickImageFromGallery,
                                 ),
                               ],
                             ),
@@ -491,7 +754,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                               GridView.builder(
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: 3,
                                   crossAxisSpacing: 8,
                                   mainAxisSpacing: 8,
@@ -533,7 +797,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 },
                               ),
                               const SizedBox(height: 24),
-                            ] else if (_selectedPhotos.isNotEmpty && kIsWeb) ...[
+                            ] else if (_selectedPhotos.isNotEmpty &&
+                                kIsWeb) ...[
                               // Web: show text only (no image preview)
                               Text(
                                 '${_selectedPhotos.length} photo(s) sélectionnée(s)',
@@ -559,7 +824,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Icon(Icons.send, color: Colors.white),
+                                    : const Icon(
+                                        Icons.send,
+                                        color: Colors.white,
+                                      ),
                                 label: Text(
                                   _isSubmitting ? 'Envoi...' : 'Soumettre',
                                   style: const TextStyle(
@@ -581,6 +849,100 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ExpenseActivityDialog extends StatefulWidget {
+  const _ExpenseActivityDialog({
+    required this.loadActivities,
+    required this.selectedId,
+  });
+
+  final Future<List<Operation>> Function() loadActivities;
+  final String? selectedId;
+
+  @override
+  State<_ExpenseActivityDialog> createState() => _ExpenseActivityDialogState();
+}
+
+class _ExpenseActivityDialogState extends State<_ExpenseActivityDialog> {
+  late final Future<List<Operation>> _activities = widget.loadActivities();
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Activité'),
+      content: SizedBox(
+        width: 400,
+        height: 350,
+        child: Column(
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Rechercher par titre',
+              ),
+              onChanged: (value) =>
+                  setState(() => _search = normalizeSearchText(value.trim())),
+            ),
+            Expanded(
+              child: FutureBuilder<List<Operation>>(
+                future: _activities,
+                builder: (context, snapshot) {
+                  final activities = (snapshot.data ?? [])
+                      .where((activity) =>
+                          normalizeSearchText(activity.titre).contains(_search))
+                      .toList();
+                  return ListView.builder(
+                    itemCount: activities.isEmpty ? 2 : activities.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return ListTile(
+                          selected: widget.selectedId == null,
+                          title: const Text('Pas liée à une activité'),
+                          onTap: () => Navigator.pop(context, (activity: null)),
+                        );
+                      }
+                      if (activities.isEmpty) {
+                        if (snapshot.hasError) {
+                          return const ListTile(
+                            title: Text('Activités indisponibles.'),
+                          );
+                        }
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        return const ListTile(
+                          title: Text('Aucune activité trouvée.'),
+                        );
+                      }
+                      final activity = activities[index - 1];
+                      return ListTile(
+                        selected: widget.selectedId == activity.id,
+                        title: Text(activity.titre),
+                        subtitle: Text(
+                          DateFormatter.formatMedium(activity.dateDebut!),
+                        ),
+                        onTap: () => Navigator.pop(context, (activity: activity)),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+      ],
     );
   }
 }

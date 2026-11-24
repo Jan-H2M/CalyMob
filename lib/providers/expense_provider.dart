@@ -6,7 +6,10 @@ import '../services/expense_service.dart';
 
 /// Provider pour l'état des demandes de remboursement
 class ExpenseProvider with ChangeNotifier {
-  final ExpenseService _expenseService = ExpenseService();
+  final ExpenseService _expenseService;
+
+  ExpenseProvider({ExpenseService? expenseService})
+      : _expenseService = expenseService ?? ExpenseService();
 
   // Stream subscriptions for memory management
   StreamSubscription<List<ExpenseClaim>>? _userExpensesSubscription;
@@ -34,24 +37,30 @@ class ExpenseProvider with ChangeNotifier {
     _userExpensesSubscription?.cancel();
 
     debugPrint('🎧 Starting expense stream for user: $userId');
-    _userExpensesSubscription = _expenseService.getUserExpensesStream(clubId, userId).listen(
-      (expenses) {
-        debugPrint('📦 Stream received ${expenses.length} expenses');
-        if (expenses.isNotEmpty) {
-          debugPrint('📦 First expense: ${expenses.first.description} (${expenses.first.montant}€)');
-        }
-        _expenses = expenses;
-        _isLoading = false;
-        notifyListeners();
-        debugPrint('🔔 notifyListeners called, _expenses.length = ${_expenses.length}');
-      },
-      onError: (error) {
-        debugPrint('❌ Stream error: $error');
-        _errorMessage = error.toString();
-        _isLoading = false;
-        notifyListeners();
-      },
-    );
+    _userExpensesSubscription = _expenseService
+        .getUserExpensesStream(clubId, userId)
+        .listen(
+          (expenses) {
+            debugPrint('📦 Stream received ${expenses.length} expenses');
+            if (expenses.isNotEmpty) {
+              debugPrint(
+                '📦 First expense: ${expenses.first.description} (${expenses.first.montant}€)',
+              );
+            }
+            _expenses = expenses;
+            _isLoading = false;
+            notifyListeners();
+            debugPrint(
+              '🔔 notifyListeners called, _expenses.length = ${_expenses.length}',
+            );
+          },
+          onError: (error) {
+            debugPrint('❌ Stream error: $error');
+            _errorMessage = error.toString();
+            _isLoading = false;
+            notifyListeners();
+          },
+        );
   }
 
   /// Écouter les demandes en attente d'approbation (stream)
@@ -59,25 +68,35 @@ class ExpenseProvider with ChangeNotifier {
     // Cancel any existing subscription to prevent memory leaks
     _pendingApprovalsSubscription?.cancel();
 
-    debugPrint('🎧 Starting pending approvals stream (excluding user: $currentUserId)');
-    _pendingApprovalsSubscription = _expenseService.getPendingApprovalsStream(clubId, currentUserId).listen(
-      (expenses) {
-        debugPrint('📦 Stream received ${expenses.length} pending approvals');
-        if (expenses.isNotEmpty) {
-          debugPrint('📦 First expense: ${expenses.first.description} (${expenses.first.montant}€)');
-        }
-        _expenses = expenses;
-        _isLoading = false;
-        notifyListeners();
-        debugPrint('🔔 notifyListeners called, _expenses.length = ${_expenses.length}');
-      },
-      onError: (error) {
-        debugPrint('❌ Stream error: $error');
-        _errorMessage = error.toString();
-        _isLoading = false;
-        notifyListeners();
-      },
+    debugPrint(
+      '🎧 Starting pending approvals stream (excluding user: $currentUserId)',
     );
+    _pendingApprovalsSubscription = _expenseService
+        .getPendingApprovalsStream(clubId, currentUserId)
+        .listen(
+          (expenses) {
+            debugPrint(
+              '📦 Stream received ${expenses.length} pending approvals',
+            );
+            if (expenses.isNotEmpty) {
+              debugPrint(
+                '📦 First expense: ${expenses.first.description} (${expenses.first.montant}€)',
+              );
+            }
+            _expenses = expenses;
+            _isLoading = false;
+            notifyListeners();
+            debugPrint(
+              '🔔 notifyListeners called, _expenses.length = ${_expenses.length}',
+            );
+          },
+          onError: (error) {
+            debugPrint('❌ Stream error: $error');
+            _errorMessage = error.toString();
+            _isLoading = false;
+            notifyListeners();
+          },
+        );
   }
 
   /// Créer une nouvelle demande
@@ -89,6 +108,9 @@ class ExpenseProvider with ChangeNotifier {
     required String description,
     required DateTime dateDepense,
     String? operationId,
+    String? operationTitle,
+    int? nombrePlongeurs,
+    String? boutiqueSupplierBatchId,
     List<File>? photoFiles,
   }) async {
     try {
@@ -103,6 +125,9 @@ class ExpenseProvider with ChangeNotifier {
         description: description,
         dateDepense: dateDepense,
         operationId: operationId,
+        operationTitle: operationTitle,
+        nombrePlongeurs: nombrePlongeurs,
+        boutiqueSupplierBatchId: boutiqueSupplierBatchId,
         photoFiles: photoFiles,
       );
 
@@ -254,10 +279,19 @@ class ExpenseProvider with ChangeNotifier {
     final expensesCopy = List<ExpenseClaim>.from(_expenses);
 
     final total = expensesCopy.length;
-    final enAttente = expensesCopy.where((e) => e.statut == 'soumis' || e.statut == 'en_attente_validation').length;
-    final approuves = expensesCopy.where((e) => e.statut == 'approuve' || e.statut == 'rembourse').length;
+    final enAttente = expensesCopy
+        .where(
+          (e) => e.statut == 'soumis' || e.statut == 'en_attente_validation',
+        )
+        .length;
+    final approuves = expensesCopy
+        .where((e) => e.statut == 'approuve' || e.statut == 'rembourse')
+        .length;
     final refuses = expensesCopy.where((e) => e.statut == 'refuse').length;
-    final montantTotal = expensesCopy.fold<double>(0, (sum, e) => sum + e.montant);
+    final montantTotal = expensesCopy.fold<double>(
+      0,
+      (sum, e) => sum + e.montant,
+    );
 
     return {
       'total': total,
