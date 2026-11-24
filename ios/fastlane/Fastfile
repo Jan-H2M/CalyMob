@@ -147,7 +147,10 @@ platform :ios do
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,
-      release_notes: { 'fr-FR' => release['notes'] },
+      release_notes: {
+        'fr-FR' => release['notes'],
+        'nl-NL' => File.read(File.join(File.dirname(__FILE__), 'metadata', 'nl-NL', 'release_notes.txt')).strip
+      },
       submit_for_review: true,
       automatic_release: true,
       force: true,
@@ -176,16 +179,20 @@ platform :ios do
     UI.user_error!('Editable store version does not match approved release') unless version && version.version_string == approved['version']
     UI.message("Version: #{version.version_string} — state: #{version.app_store_state}")
     locs = version.get_app_store_version_localizations
-    fr = locs.find { |l| l.locale == "fr-FR" }
-    notes_path = File.join(File.dirname(__FILE__), "metadata", "fr-FR", "release_notes.txt")
-    notes = approved['notes']
-    UI.message("Reading notes from #{notes_path}")
-    if fr
-      fr.update(attributes: { whats_new: notes })
-      UI.success("Updated fr-FR whats_new (#{notes.length} chars)")
-    else
-      version.create_app_store_version_localization(attributes: { locale: "fr-FR", whats_new: notes })
-      UI.success("Created fr-FR localization")
+    localized_notes = {
+      'fr-FR' => approved['notes'],
+      'nl-NL' => File.read(File.join(File.dirname(__FILE__), 'metadata', 'nl-NL', 'release_notes.txt')).strip
+    }
+    localized_notes.each do |locale, notes|
+      UI.user_error!("Empty #{locale} release notes") if notes.empty?
+      localization = locs.find { |entry| entry.locale == locale }
+      if localization
+        localization.update(attributes: { whats_new: notes })
+        UI.success("Updated #{locale} whats_new (#{notes.length} chars)")
+      else
+        version.create_app_store_version_localization(attributes: { locale: locale, whats_new: notes })
+        UI.success("Created #{locale} localization")
+      end
     end
   end
 

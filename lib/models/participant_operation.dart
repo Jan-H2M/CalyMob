@@ -131,6 +131,8 @@ class ParticipantOperation {
   final double supplementTotal; // Somme des prix des suppléments
   final String?
       paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
+  final String? paymentReviewTransactionId;
+  final String? paymentReviewReason;
   final String registrationStatus;
   final DateTime? canceledAt;
   final DateTime? paymentExpiresAt;
@@ -162,6 +164,10 @@ class ParticipantOperation {
   final String? tariffLabel;
   final String? tariffSelectedBy;
   final String? tariffValidationStatus;
+
+  /// Diver-level snapshot for non-member guests. Member levels continue to
+  /// come from member_directory; legacy guests legitimately have no value.
+  final String? plongeurCode;
   final Map<String, InstallmentPayment> installmentPayments;
 
   /// Snapshot of the paid amount at the moment paye was set to true.
@@ -190,6 +196,8 @@ class ParticipantOperation {
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
     this.paymentStatus,
+    this.paymentReviewTransactionId,
+    this.paymentReviewReason,
     this.registrationStatus = 'confirmed',
     this.canceledAt,
     this.paymentExpiresAt,
@@ -209,29 +217,36 @@ class ParticipantOperation {
     this.tariffLabel,
     this.tariffSelectedBy,
     this.tariffValidationStatus,
+    this.plongeurCode,
     this.installmentPayments = const {},
     this.amountPaid,
     this.editHistory,
   });
 
-  /// True when the bank-side reconciliation is considered done.
-  ///
-  /// Accepts either:
-  /// - transactionMatched=true (canonical flag written by CalyCompta)
-  /// - transactionId != null (fallback: a bank transaction is linked even
-  ///   if the transaction_matched flag got out of sync from legacy code
-  ///   paths that forgot to set it)
-  bool get _hasMatchedBankTransaction =>
+  String? get _normalizedPaymentStatus => paymentStatus?.trim().toLowerCase();
+
+  /// The single read-only settlement decision for every mobile presentation.
+  /// Read only canonical inscription accounting fields. Inline payment-intent
+  /// aliases are not protected by CalyCompta's accounting-field rules and must
+  /// never be treated as ledger evidence or as a manual-review instruction.
+  bool get isPaymentSettled =>
+      paye ||
       transactionMatched ||
-      (transactionId != null && transactionId!.isNotEmpty);
+      _normalizedPaymentStatus == 'paid' ||
+      _normalizedPaymentStatus == 'settled';
 
-  /// Payment is confirmed but bank transaction not yet matched
+  /// CalyCompta linked a receipt to this participant but deliberately left it
+  /// for review. An old QR communication marker must not hide this state.
+  bool get isPaymentInManualReview =>
+      !isPaymentSettled && _normalizedPaymentStatus == 'manual_review';
+
+  /// Explicit legacy pending-bank state. `paye: true` is itself a valid paid
+  /// signal and is therefore no longer rendered as pending.
   bool get isPaidAwaitingBank =>
-      paye && !_hasMatchedBankTransaction && modePaiement != 'cash';
+      !isPaymentSettled && _normalizedPaymentStatus == 'pending_bank';
 
-  /// Payment is fully confirmed (bank transaction matched, or paid in cash)
-  bool get isFullyPaid =>
-      paye && (_hasMatchedBankTransaction || modePaiement == 'cash');
+  /// Payment is fully confirmed by any canonical Firestore paid signal.
+  bool get isFullyPaid => isPaymentSettled;
 
   /// Total price including supplements
   double get totalPrix => prix + supplementTotal;
@@ -241,27 +256,23 @@ class ParticipantOperation {
   /// Used to show "Partiellement payé" instead of the misleading "Non payé"
   /// when e.g. only the first acompte has been settled.
   bool get hasPartialPayment =>
-      !paye && installmentPayments.values.any((p) => p.status == 'paid');
+      !isPaymentSettled &&
+      installmentPayments.values.any((p) => p.status == 'paid');
 
   /// Waitlist entries reserve no place and never enter payment flows.
   bool get isWaitlisted => registrationStatus == 'waitlisted';
 
   /// Get display status for payment
   String get paymentDisplayStatus {
-    // Fully paid with bank transaction matched
-    if (paye && _hasMatchedBankTransaction) return 'Payé';
-
-    // Paid in cash (no bank transaction involved)
-    if (paye && modePaiement == 'cash') return 'Espèces';
-
-    // Paid but awaiting bank reconciliation
-    if (paye) return 'Payé via CalyMob\nEn attente banque';
+    if (isPaymentSettled && modePaiement == 'cash') return 'Espèces';
+    if (isPaymentSettled) return 'Payé';
+    if (isPaymentInManualReview) return 'Vérification bancaire';
 
     // At least one installment paid, but not the full inscription yet
     if (hasPartialPayment) return 'Partiellement payé';
 
     // Check payment_status for pending states
-    switch (paymentStatus) {
+    switch (_normalizedPaymentStatus) {
       case 'qr_email_sent':
         return 'QR code envoyé';
       case 'qr_on_site':
@@ -275,11 +286,12 @@ class ParticipantOperation {
 
   /// Get payment status category for styling
   String get paymentStatusCategory {
-    if (paye && _hasMatchedBankTransaction) return 'paid';
-    if (paye && modePaiement == 'cash') return 'cash';
-    if (paye) return 'pending_bank';
+    if (isPaymentSettled && modePaiement == 'cash') return 'cash';
+    if (isPaymentSettled) return 'paid';
+    if (isPaymentInManualReview) return 'manual_review';
+    if (isPaidAwaitingBank) return 'pending_bank';
     if (hasPartialPayment) return 'partial';
-    switch (paymentStatus) {
+    switch (_normalizedPaymentStatus) {
       case 'qr_email_sent':
         return 'qr_sent';
       case 'qr_on_site':
@@ -324,7 +336,10 @@ class ParticipantOperation {
       selectedSupplements:
           _parseSelectedSupplements(data['selected_supplements']),
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
-      paymentStatus: data['payment_status'],
+      paymentStatus: data['payment_status']?.toString(),
+      paymentReviewTransactionId:
+          data['payment_review_transaction_id']?.toString(),
+      paymentReviewReason: data['payment_review_reason']?.toString(),
       registrationStatus: data['registration_status'] as String? ?? 'confirmed',
       canceledAt: (data['canceled_at'] as Timestamp?)?.toDate(),
       paymentExpiresAt: (data['payment_expires_at'] as Timestamp?)?.toDate(),
@@ -344,6 +359,7 @@ class ParticipantOperation {
       tariffLabel: data['tariff_label'] as String?,
       tariffSelectedBy: data['tariff_selected_by'] as String?,
       tariffValidationStatus: data['tariff_validation_status'] as String?,
+      plongeurCode: data['plongeur_code'] as String?,
       installmentPayments:
           _parseInstallmentPayments(data['installment_payments']),
       amountPaid: (data['amount_paid'] as num?)?.toDouble(),
@@ -443,6 +459,7 @@ class ParticipantOperation {
       'tariff_label': tariffLabel,
       'tariff_selected_by': tariffSelectedBy,
       'tariff_validation_status': tariffValidationStatus,
+      'plongeur_code': plongeurCode,
       'installment_payments': installmentPayments.map(
         (key, value) => MapEntry(key, value.toMap()),
       ),
@@ -471,6 +488,8 @@ class ParticipantOperation {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? paymentStatus,
+    String? paymentReviewTransactionId,
+    String? paymentReviewReason,
     String? registrationStatus,
     DateTime? canceledAt,
     DateTime? paymentExpiresAt,
@@ -490,6 +509,7 @@ class ParticipantOperation {
     String? tariffLabel,
     String? tariffSelectedBy,
     String? tariffValidationStatus,
+    String? plongeurCode,
     Map<String, InstallmentPayment>? installmentPayments,
     double? amountPaid,
     List<EditHistoryEntry>? editHistory,
@@ -511,6 +531,9 @@ class ParticipantOperation {
       selectedSupplements: selectedSupplements ?? this.selectedSupplements,
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentReviewTransactionId:
+          paymentReviewTransactionId ?? this.paymentReviewTransactionId,
+      paymentReviewReason: paymentReviewReason ?? this.paymentReviewReason,
       registrationStatus: registrationStatus ?? this.registrationStatus,
       canceledAt: canceledAt ?? this.canceledAt,
       paymentExpiresAt: paymentExpiresAt ?? this.paymentExpiresAt,
@@ -531,6 +554,7 @@ class ParticipantOperation {
       tariffSelectedBy: tariffSelectedBy ?? this.tariffSelectedBy,
       tariffValidationStatus:
           tariffValidationStatus ?? this.tariffValidationStatus,
+      plongeurCode: plongeurCode ?? this.plongeurCode,
       installmentPayments: installmentPayments ?? this.installmentPayments,
       amountPaid: amountPaid ?? this.amountPaid,
       editHistory: editHistory ?? this.editHistory,

@@ -1,1 +1,1 @@
-Amélioration du rangement piscine, stabilité des conversations d’équipe, fiabilité du compteur de messages et contrôle renforcé de la confidentialité des anniversaires.
+Nouveau formulaire de demande de remboursement : choix du type (plongée, piscine/formation, sortie, boutique, matériel, administratif), liaison facultative à une activité et contrôle du montant attendu. Fiabilisation des paiements QR et des remboursements lors des annulations.
