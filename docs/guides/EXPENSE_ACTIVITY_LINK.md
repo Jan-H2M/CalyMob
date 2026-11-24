@@ -5,6 +5,7 @@ est **Type de remboursement**. Il reste facultatif, car l’ancien formulaire
 n’imposait aucune catégorie. Les choix enregistrés sont **Plongée**,
 **Piscine/formation**, **Sortie/événement**, **Boutique**,
 **Matériel/entretien** et **Administratif/autres**.
+Après un choix, l’icône d’effacement du champ permet de revenir à aucun type.
 
 Le type limite le formulaire à ce qui est utile :
 
@@ -95,8 +96,11 @@ anciens `nombre_plongeurs` pour les événements. La prise en charge de
 `piscine_session_id` dans ce contrôle et sa conservation lors des
 réécritures côté CalyCompta restent à ajouter dans CalyCompta.
 CalyCompta doit aussi ajouter `reimbursement_type`/`type_remboursement` à son
-type de données et afficher son libellé ; le miroir CalyMob conserve déjà le
-champ dans les deux sens.
+contrat, à `normalizeCanonicalExpenseClaimPayload`, à son type de données et
+à son affichage. Tant que ce suivi n’est pas livré, une réécriture complète
+depuis le web peut omettre le champ canonique. Le miroir CalyMob distingue une
+omission d’un effacement explicite : il ne remplace donc pas pour autant le
+champ historique par `null`.
 
 > Information supersédée dans la première version du guide.
 > CalyCompta reconnaît déjà l’identifiant et le titre. La lecture du nombre

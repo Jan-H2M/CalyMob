@@ -93,7 +93,9 @@ Future<Map<String, dynamic>> _submit(
   await _finishTransition(tester);
   await tester.tap(find.widgetWithText(FloatingActionButton, 'Soumettre'));
   await _finishTransition(tester);
-  return (await db.collection('$_club/expense_claims').get()).docs.single
+  return (await db.collection('$_club/expense_claims').get())
+      .docs
+      .single
       .data();
 }
 
@@ -106,13 +108,14 @@ Future<void> _seedActivities(FakeFirebaseFirestore db) async {
     int daysAgo, {
     String type = 'evenement',
     String category = 'plongee',
-  }) => activities.doc(id).set({
-    'titre': title,
-    'type': type,
-    'statut': 'ferme',
-    'categorie': category,
-    'date_debut': Timestamp.fromDate(now.subtract(Duration(days: daysAgo))),
-  });
+  }) =>
+      activities.doc(id).set({
+        'titre': title,
+        'type': type,
+        'statut': 'ferme',
+        'categorie': category,
+        'date_debut': Timestamp.fromDate(now.subtract(Duration(days: daysAgo))),
+      });
 
   await add('other', 'Sortie récente', 2, category: 'sortie');
   await add('registered', 'École de plongée', 3);
@@ -203,9 +206,9 @@ Future<void> _seedActivities(FakeFirebaseFirestore db) async {
 }
 
 Finder _pickerScroll() => find.descendant(
-  of: find.byType(CustomScrollView),
-  matching: find.byType(Scrollable),
-);
+      of: find.byType(CustomScrollView),
+      matching: find.byType(Scrollable),
+    );
 
 Future<void> _openActivityPicker(WidgetTester tester) async {
   final field = find.text('Activité (facultatif)');
@@ -272,6 +275,13 @@ void main() {
     await _selectType(tester, 'Sortie/événement (fête, excursion)');
     expect(find.text('Activité (facultatif)'), findsOneWidget);
     expect(find.text('Pas liée à une activité'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('clear-expense-reimbursement-type')),
+    );
+    await _finishTransition(tester);
+    expect(find.text('Choisir un type (facultatif)'), findsOneWidget);
+    expect(find.text('Activité (facultatif)'), findsNothing);
   });
 
   testWidgets('filters diving activities and stores the reimbursement type', (
@@ -521,8 +531,10 @@ void main() {
             builder: (context) => TextButton(
               onPressed: () {
                 showDialog<
-                  ({ActivityItem? activity, ExpenseActivitySummary? summary})
-                >(
+                    ({
+                      ActivityItem? activity,
+                      ExpenseActivitySummary? summary
+                    })>(
                   context: context,
                   builder: (_) => ExpenseActivityPicker(
                     clubId: FirebaseConfig.defaultClubId,
