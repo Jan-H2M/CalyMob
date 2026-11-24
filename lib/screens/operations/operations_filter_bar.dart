@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/app_colors.dart';
+import '../../models/activity_item.dart';
 
 /// Keep access to past events visible without scrolling the category filters.
 /// An unread event discussion may belong to a recently closed event.
@@ -38,11 +39,11 @@ class OperationsFilterBar extends StatelessWidget {
           else
             _pastToggleChip(),
           const SizedBox(width: 12),
-          _filterChip('plongee', 'Plongées'),
-          const SizedBox(width: 12),
-          _filterChip('piscine', 'Piscine'),
-          const SizedBox(width: 12),
-          _filterChip('sortie', 'Sorties'),
+          for (final category in AgendaActivityCategory.values) ...[
+            _filterChip(category.name, category.label),
+            if (category != AgendaActivityCategory.values.last)
+              const SizedBox(width: 12),
+          ],
         ],
       ),
     );

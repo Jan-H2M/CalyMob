@@ -20,7 +20,7 @@ List<ActivityItem> filterOperationsForView(
     }
     return isClosedMode ||
         selectedFilter == 'all' ||
-        item.categorie == selectedFilter;
+        item.agendaCategory.name == selectedFilter;
   }).toList();
   final mostRecentFirst = isClosedMode || includePast;
   filtered.sort((a, b) {
