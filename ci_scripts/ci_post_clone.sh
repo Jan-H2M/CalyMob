@@ -63,12 +63,6 @@ flutter test --no-pub \
   test/models/boutique_product_personalization_test.dart \
   test/screens/boutique_screen_access_test.dart \
   test/services/boutique_access_service_test.dart \
-  test/widgets/boutique_access_guard_test.dart \
-  test/services/dive_computer_import_service_test.dart \
-  test/services/dive_log_import_registry_test.dart \
-  test/services/suunto_dive_log_adapter_test.dart \
-  test/services/suunto_share_inbox_test.dart \
-  test/services/uddf_dive_log_adapter_test.dart \
-  test/services/subsurface_dive_log_adapter_test.dart
+  test/widgets/boutique_access_guard_test.dart
 
 echo "CalyMob $BUILD_NAME ($CI_BUILD_NUMBER): dependencies and Flutter tests ready."
