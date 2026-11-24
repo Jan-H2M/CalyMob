@@ -1,8 +1,42 @@
 # CalyMob — current release status (source of truth)
 
-_Last observed: 2026-11-24 (task t11241226-7e3f). Live store queries always take precedence over this dated document._
+_Last observed: 2026-11-24 (task t11241239-b055). Live store queries always take precedence over this dated document._
 
-## 1.30.9 (550) production release gate — blocked before submission
+## 1.30.9 (551) store release — Android live, iOS submission blocked
+
+- **Source and metadata:** PR #258 passed all required CI checks and merged to
+  `dev` as `2292e5bc3937c3bb8e68331662e363428cff61c4` (tree
+  `8a5505603e974fe18f08e9fb6eb6754ed59a2063`). It records
+  `1.30.9+551` plus aligned French and Dutch release notes for both stores.
+- **Independent review and Android build:** the exact release tree was approved
+  with no findings; 29 focused release/build-number tests passed. The isolated
+  guarded Android pipeline completed successfully and produced the signed AAB
+  with SHA-256
+  `151d2f5469fcd211c5b9e4a2a83eb558085a8f858296e5d2567328614a0c98a5`.
+- **Google Play:** versionCode 551 was uploaded with both changelogs and moved
+  to `production`, `release_status: completed`, rollout `1.0`. A final
+  read-only query reports production version codes `[551]`; build 546 is no
+  longer in the production track response.
+- **TestFlight:** Xcode Cloud run
+  `cfb62d76-12e0-4fd4-9072-8a80c162235b` used the exact release commit and
+  produced App Store Connect build
+  `172dd6dd-a332-4644-8ce2-25ab08263fc6`. Build `1.30.9 (551)` is `VALID`,
+  declares `usesNonExemptEncryption: false`, is assigned to the internal
+  **CalyMob Testing team**, and is `IN_BETA_TESTING`.
+- **iOS blocker:** the Xcode Cloud run itself completed `FAILED`. Its parallel
+  test action did not reach the Flutter tests because CocoaPods dependency
+  download failed with a transient `curl` SSL connection timeout in
+  `ci_post_clone.sh`; the archive nevertheless completed and uploaded the valid
+  build. The schema-v2 release interlock requires the exact Xcode Cloud run to
+  be `SUCCEEDED`, so App Store submission failed closed. No App Store version
+  was created and state `WAITING_FOR_REVIEW` was not reached. Do not bypass the
+  interlock; reserve the next aligned build and run Xcode Cloud again after
+  explicit follow-up direction.
+- **Backend/data scope:** the already deployed expense-sync functions were not
+  changed. No Firebase deployment, Firestore write or CalyCompta change was
+  performed in this task.
+
+## 1.30.9 (550) production release gate — superseded by build 551
 
 - **Source:** merged `dev` commit
   `c57f332cb0b1390a5ca0674a7af53aadcbdf5568`; `pubspec.yaml` is
