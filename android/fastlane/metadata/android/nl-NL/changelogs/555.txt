@@ -1,0 +1,1 @@
+Nieuw formulier voor onkostennota's: kies het type (duiken, zwembad/opleiding, uitstap, boetiek, materiaal of administratie), koppel optioneel een activiteit en controleer het verwachte bedrag. Betrouwbaardere QR-betalingen en terugbetalingen bij annuleringen.
