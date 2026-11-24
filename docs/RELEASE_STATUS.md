@@ -1,8 +1,43 @@
 # CalyMob — current release status (source of truth)
 
-_Last observed: 2026-10-30 (1030T/1030U). Live store queries always take precedence over this dated document._
+_Last observed: 2026-11-24 (task t11241138-0988). Live store queries always take precedence over this dated document._
 
-## Store state
+## 1.30.9 (550) production release gate — blocked before submission
+
+- **Source:** merged `dev` commit
+  `c57f332cb0b1390a5ca0674a7af53aadcbdf5568`; `pubspec.yaml` is
+  `1.30.9+550`. The live numbering guard confirms local build 550, Xcode
+  Cloud run 550 and App Store Connect build 550 are aligned.
+- **iOS candidate:** Xcode Cloud run
+  `5abb1026-a512-4dad-9afd-ae63988a446a` completed successfully. App Store
+  Connect build `1.30.9 (550)` is `VALID`, non-expired and
+  `IN_BETA_TESTING` in the internal **CalyMob Testing team**. The public App
+  Store version remains `1.30.5` (`READY_FOR_SALE`); there is no editable or
+  in-review version. Build 550 has not been submitted for App Store review.
+- **Android candidate:** Google Play production currently contains build 546.
+  The release pipeline passed 1,507 Flutter tests (one expected skip) and its
+  release-gate tests, then stopped before Gradle compilation because the
+  configured Android SDK directory `/Users/jan/Library/Android/sdk` is absent
+  on this Mini. No build-550 AAB was produced or uploaded.
+- **Backend gate:** the required `createDirectEventPaymentQr` callable exists
+  in production (an unauthenticated no-data request returns the expected 401).
+  The separately approved expense-sync deployment remains blocked because the
+  Firebase and gcloud sessions for `jan@h2m.ai` require reauthentication; the
+  repository service account lacks permission to read or deploy Functions.
+  Store submissions must wait until the approved sync functions are deployed
+  and read back as `ACTIVE`.
+- **CalyCompta production gate:** PR #300 ports the activity refund controls to
+  `main`; its CI/merge/production deployment and `caly.club/version.json`
+  readback are tracked by task t11241138-0c2f. Store submission must wait for
+  that task to confirm production `Ready` and the matching version marker.
+- **Release text:** proposed French text is “Amélioration des demandes de
+  remboursement : liaison facultative à une activité, informations détaillées
+  et contrôle du montant attendu.” It is not approved metadata until Jan
+  explicitly confirms the exact text.
+- **Distribution:** no App Store submission, Google Play upload or Firestore
+  `settings/app_version` publication has been performed for 1.30.9 (550).
+
+## Historical store state — 2026-10-30 snapshot (superseded)
 - **App Store:** 1.27.1 (535), Ready for Distribution / Ready for Sale,
   downloadable, review COMPLETE. Submitted 2026-10-29T15:38:00.375Z; exact
   approval/publication times were not returned and remain unknown.
