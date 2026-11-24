@@ -1797,6 +1797,11 @@
   ],
   "repoOnlyFunctions": [
     {
+      "name": "getMedicalCertificateUrl",
+      "sourcePath": "functions/src/medical/getMedicalCertificateUrl.js",
+      "reason": "Added after the recorded live inventory for the targeted medical certificate rollout."
+    },
+    {
       "name": "createDirectEventPaymentQr",
       "sourcePath": "functions/src/payment/eventDirectQr.js",
       "reason": "New direct event payment callable; not present in the recorded live inventory."
