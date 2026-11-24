@@ -1,0 +1,1 @@
+Amélioration des demandes de remboursement : liaison facultative à une activité, informations détaillées et contrôle du montant attendu. Fiabilisation des paiements QR et des remboursements lors des annulations.
