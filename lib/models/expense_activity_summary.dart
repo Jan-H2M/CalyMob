@@ -56,6 +56,7 @@ class ExpenseActivitySummary {
     final active = registrations.where((person) {
       final status = person.registrationStatus.trim().toLowerCase();
       return !const {'canceled', 'cancelled'}.contains(status) &&
+          person.canceledAt == null &&
           (person.present == true || status == 'confirmed' || status.isEmpty);
     }).toList();
     final hasPresenceData = active.any((person) => person.present != null);

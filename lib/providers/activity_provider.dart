@@ -178,11 +178,9 @@ class ActivityProvider with ChangeNotifier {
   ) =>
       _activityService.watchExpenseActivities(clubId, userId);
 
-  Future<ExpenseActivitySummary> loadExpenseActivitySummary(
-    String clubId,
-    ActivityItem activity,
-  ) =>
-      _activityService.loadExpenseActivitySummary(clubId, activity);
+  Future<ExpenseActivitySummary> Function(ActivityItem activity)
+      createExpenseActivitySummaryLoader(String clubId) =>
+          _activityService.createExpenseActivitySummaryLoader(clubId);
 
   /// Filter activiteiten op categorie
   List<ActivityItem> getFilteredActivities(String filter) {

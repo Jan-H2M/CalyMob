@@ -31,6 +31,7 @@ class _ExpenseActivityPickerState extends State<ExpenseActivityPicker> {
   late final Stream<List<ActivityItem>> _activities = widget.watchActivities();
   final Map<String, Future<ExpenseActivitySummary?>> _summaries = {};
   String _search = '';
+  bool _choosing = false;
 
   Future<ExpenseActivitySummary?> _summary(ActivityItem activity) =>
       _summaries.putIfAbsent('${activity.type}/${activity.id}', () async {
@@ -42,6 +43,8 @@ class _ExpenseActivityPickerState extends State<ExpenseActivityPicker> {
       });
 
   Future<void> _choose(ActivityItem? activity) async {
+    if (_choosing) return;
+    setState(() => _choosing = true);
     final summary = activity == null ? null : await _summary(activity);
     if (!mounted) return;
     Navigator.pop(context, (activity: activity, summary: summary));
