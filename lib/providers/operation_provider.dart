@@ -75,6 +75,9 @@ class OperationProvider with ChangeNotifier {
   bool isUserWaitlisted(String operationId) =>
       _userWaitlistStatus[operationId] ?? false;
 
+  Future<List<Operation>> getExpenseActivities(String clubId, String userId) =>
+      _operationService.getExpenseActivities(clubId, userId);
+
   /// Charger les événements ouverts (stream)
   void listenToOpenEvents(String clubId) {
     // Cancel any existing subscription to prevent memory leaks

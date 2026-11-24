@@ -107,3 +107,21 @@ console.log('OK — dormant sync-engine: change-detection, projecties, guards, o
   assert.strictEqual(canonical.boutique_supplier_batch_id, 'batch-dev');
   assert.strictEqual(s.buildLegacyFromCanonical(canonical, 'expense-dev').boutique_supplier_batch_id, 'batch-dev');
 }
+
+{
+  const claim = { requester_id: 'member', status: 'submitted', operation_id: 'op1', operation_title: 'Sortie', nombre_plongeurs: 0 };
+  const legacy = s.buildLegacyFromCanonical(claim, 'expense-dev');
+  assert.strictEqual(legacy.operation_id, 'op1');
+  assert.strictEqual(legacy.operation_titre, 'Sortie');
+  assert.strictEqual(legacy.nombre_plongeurs, 0);
+  const roundTrip = s.buildCanonicalFromLegacy(legacy, 'expense-dev');
+  for (const key of ['operation_id', 'operation_title', 'nombre_plongeurs']) {
+    assert.strictEqual(roundTrip[key], claim[key]);
+  }
+  assert.ok(!Object.hasOwn(s.buildLegacyFromCanonical({ operation_id: 'op1' }, 'linked'), 'nombre_plongeurs'));
+  const unlinked = s.buildLegacyFromCanonical({ requester_id: 'member' }, 'unlinked');
+  for (const key of ['operation_id', 'operation_titre', 'nombre_plongeurs']) {
+    assert.ok(!Object.hasOwn(unlinked, key), key);
+  }
+  assert.strictEqual(s.buildLegacyFromCanonical({ operation_id: null }, 'cleared').operation_id, null);
+}

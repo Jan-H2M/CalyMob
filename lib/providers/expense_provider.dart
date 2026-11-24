@@ -6,7 +6,10 @@ import '../services/expense_service.dart';
 
 /// Provider pour l'état des demandes de remboursement
 class ExpenseProvider with ChangeNotifier {
-  final ExpenseService _expenseService = ExpenseService();
+  final ExpenseService _expenseService;
+
+  ExpenseProvider({ExpenseService? expenseService})
+      : _expenseService = expenseService ?? ExpenseService();
 
   // Stream subscriptions for memory management
   StreamSubscription<List<ExpenseClaim>>? _userExpensesSubscription;
@@ -105,6 +108,8 @@ class ExpenseProvider with ChangeNotifier {
     required String description,
     required DateTime dateDepense,
     String? operationId,
+    String? operationTitle,
+    int? nombrePlongeurs,
     String? boutiqueSupplierBatchId,
     List<File>? photoFiles,
   }) async {
@@ -120,6 +125,8 @@ class ExpenseProvider with ChangeNotifier {
         description: description,
         dateDepense: dateDepense,
         operationId: operationId,
+        operationTitle: operationTitle,
+        nombrePlongeurs: nombrePlongeurs,
         boutiqueSupplierBatchId: boutiqueSupplierBatchId,
         photoFiles: photoFiles,
       );

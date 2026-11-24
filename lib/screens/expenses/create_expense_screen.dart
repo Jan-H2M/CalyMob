@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
@@ -8,13 +9,16 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_colors.dart';
+import '../../models/operation.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../providers/operation_provider.dart';
 import '../../services/camera_permission_service.dart';
 import '../../services/boutique/member_missions_service.dart';
 import '../../utils/amount_parser.dart';
 import '../../utils/date_formatter.dart';
+import '../../utils/search_highlight.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de création d'une demande de remboursement
@@ -37,9 +41,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _montantController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _nombrePlongeursController = TextEditingController();
   final _imagePicker = ImagePicker();
 
   DateTime _selectedDate = DateTime.now();
+  Operation? _activity;
   final List<File> _selectedPhotos = [];
   bool _isSubmitting = false;
   bool _linkBoutique = false;
@@ -61,6 +67,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       _accountChanged = true;
       _montantController.clear();
       _descriptionController.clear();
+      _nombrePlongeursController.clear();
+      _activity = null;
       _selectedPhotos.clear();
       _boutiqueChoices.clear();
       _boutiqueBatchId = null;
@@ -73,6 +81,46 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       !_accountChanged &&
       _originatingUid != null &&
       context.read<AuthProvider>().currentUser?.uid == _originatingUid;
+
+  Future<void> _chooseActivity() async {
+    if (!_sameAccount) return;
+    final auth = context.read<AuthProvider>();
+    final operations = context.read<OperationProvider>();
+    final userId = _originatingUid!;
+    final choice = await showDialog<({Operation? activity})>(
+      context: context,
+      builder: (_) => ListenableBuilder(
+        listenable: auth,
+        builder: (context, _) {
+          if (!_sameAccount) {
+            return AlertDialog(
+              title: const Text('Le compte a changé.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Fermer'),
+                ),
+              ],
+            );
+          }
+          return _ExpenseActivityDialog(
+            loadActivities: () => operations.getExpenseActivities(
+              FirebaseConfig.defaultClubId,
+              userId,
+            ),
+            selectedId: _activity?.id,
+          );
+        },
+      ),
+    );
+    if (!_sameAccount || choice == null) return;
+    setState(() {
+      if (choice.activity?.id != _activity?.id) {
+        _nombrePlongeursController.clear();
+      }
+      _activity = choice.activity;
+    });
+  }
 
   Future<void> _chooseBoutique(bool enabled) async {
     if (!_sameAccount) return;
@@ -123,6 +171,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   void dispose() {
     _montantController.dispose();
     _descriptionController.dispose();
+    _nombrePlongeursController.dispose();
     super.dispose();
   }
 
@@ -371,6 +420,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         montant: montant,
         description: description,
         dateDepense: _selectedDate,
+        operationId: _activity?.id,
+        operationTitle: _activity?.titre,
+        nombrePlongeurs: int.tryParse(_nombrePlongeursController.text),
         photoFiles: _selectedPhotos,
         boutiqueSupplierBatchId: _linkBoutique ? _boutiqueBatchId : null,
       );
@@ -540,6 +592,49 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 return null;
                               },
                             ),
+
+                            const SizedBox(height: 12),
+
+                            ListTile(
+                              tileColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              leading: const Icon(Icons.event_outlined),
+                              title: const Text('Activité'),
+                              subtitle: Text(
+                                _activity?.titre ?? 'Pas liée à une activité',
+                              ),
+                              trailing: const Icon(Icons.expand_more),
+                              onTap: _isSubmitting ? null : _chooseActivity,
+                            ),
+                            if (_activity != null) ...[
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _nombrePlongeursController,
+                                enabled: !_isSubmitting,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: InputDecoration(
+                                  labelText: 'Nombre de plongeurs',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return null;
+                                  }
+                                  return int.tryParse(value) == null
+                                      ? 'Saisissez un nombre entier'
+                                      : null;
+                                },
+                              ),
+                            ],
 
                             const SizedBox(height: 12),
 
@@ -754,6 +849,100 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ExpenseActivityDialog extends StatefulWidget {
+  const _ExpenseActivityDialog({
+    required this.loadActivities,
+    required this.selectedId,
+  });
+
+  final Future<List<Operation>> Function() loadActivities;
+  final String? selectedId;
+
+  @override
+  State<_ExpenseActivityDialog> createState() => _ExpenseActivityDialogState();
+}
+
+class _ExpenseActivityDialogState extends State<_ExpenseActivityDialog> {
+  late final Future<List<Operation>> _activities = widget.loadActivities();
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Activité'),
+      content: SizedBox(
+        width: 400,
+        height: 350,
+        child: Column(
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Rechercher par titre',
+              ),
+              onChanged: (value) =>
+                  setState(() => _search = normalizeSearchText(value.trim())),
+            ),
+            Expanded(
+              child: FutureBuilder<List<Operation>>(
+                future: _activities,
+                builder: (context, snapshot) {
+                  final activities = (snapshot.data ?? [])
+                      .where((activity) =>
+                          normalizeSearchText(activity.titre).contains(_search))
+                      .toList();
+                  return ListView.builder(
+                    itemCount: activities.isEmpty ? 2 : activities.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return ListTile(
+                          selected: widget.selectedId == null,
+                          title: const Text('Pas liée à une activité'),
+                          onTap: () => Navigator.pop(context, (activity: null)),
+                        );
+                      }
+                      if (activities.isEmpty) {
+                        if (snapshot.hasError) {
+                          return const ListTile(
+                            title: Text('Activités indisponibles.'),
+                          );
+                        }
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        return const ListTile(
+                          title: Text('Aucune activité trouvée.'),
+                        );
+                      }
+                      final activity = activities[index - 1];
+                      return ListTile(
+                        selected: widget.selectedId == activity.id,
+                        title: Text(activity.titre),
+                        subtitle: Text(
+                          DateFormatter.formatMedium(activity.dateDebut!),
+                        ),
+                        onTap: () => Navigator.pop(context, (activity: activity)),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+      ],
     );
   }
 }

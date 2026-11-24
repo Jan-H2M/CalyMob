@@ -35,6 +35,13 @@ function compact(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
+// Keep explicit clears from older writers, but do not add null fields to new
+// unlinked claims. Mirror writes merge with any existing copy.
+function optionalActivityField(data, keys) {
+  return firstDefined(data, keys) ??
+    (keys.some((key) => Object.hasOwn(data, key)) ? null : undefined);
+}
+
 // ---------------------------------------------------------------------------
 // Projecties (identiek aan de mirror/gateway; consolideren bij Stap 5).
 // ---------------------------------------------------------------------------
@@ -55,9 +62,10 @@ function buildCanonicalFromLegacy(legacy, id) {
     club_id: legacy.club_id ?? null,
     legacy_collection: 'demandes_remboursement',
     legacy_document_id: id ?? null,
-    operation_id: firstDefined(legacy, ['operation_id', 'evenement_id']),
+    operation_id: optionalActivityField(legacy, ['operation_id', 'evenement_id']),
     boutique_supplier_batch_id: legacy.boutique_supplier_batch_id ?? null,
-    operation_title: firstDefined(legacy, ['operation_titre', 'evenement_titre']),
+    operation_title: optionalActivityField(legacy, ['operation_titre', 'evenement_titre']),
+    nombre_plongeurs: legacy.nombre_plongeurs ?? undefined,
     requester_id: legacy.demandeur_id ?? null,
     requester_name: legacy.demandeur_nom ?? null,
     requester_first_name: legacy.demandeur_prenom ?? null,
@@ -114,9 +122,10 @@ function buildCanonicalFromLegacy(legacy, id) {
 function buildLegacyFromCanonical(canon, id) {
   return compact({
     club_id: canon.club_id ?? null,
-    operation_id: firstDefined(canon, ['operation_id', 'evenement_id']),
+    operation_id: optionalActivityField(canon, ['operation_id', 'evenement_id']),
     boutique_supplier_batch_id: canon.boutique_supplier_batch_id ?? null,
-    operation_titre: firstDefined(canon, ['operation_title', 'operation_titre']),
+    operation_titre: optionalActivityField(canon, ['operation_title', 'operation_titre']),
+    nombre_plongeurs: canon.nombre_plongeurs ?? undefined,
     demandeur_id: firstDefined(canon, ['requester_id', 'demandeur_id']),
     demandeur_nom: firstDefined(canon, ['requester_name', 'demandeur_nom']),
     demandeur_prenom: firstDefined(canon, ['requester_first_name', 'demandeur_prenom']),
