@@ -358,3 +358,21 @@ functions/
 **Contact :**
 - Firebase Support : https://firebase.google.com/support
 - Noda Support : support@noda.live
+
+### Logbook AI and medical certificate access
+
+- Dictation and OCR require an active member record in the requested club. They
+  share 30 attempts per caller, club and UTC calendar day. Invalid requests are
+  rejected before charging the allowance. The Firestore counter is server-only.
+- `getMedicalCertificateUrl` accepts `clubId`, `memberId`, and `certificateId`.
+  The certificate owner or a club admin can obtain a V4 read URL valid for ten
+  minutes. The callable only signs the saved `document_path` inside that
+  member's certificate directory. Its dedicated runtime identity needs read-only
+  Firestore access, read access to certificate objects and permission to sign as
+  itself through the IAM Service Account Credentials API.
+- Mobile uploads save both `document_path` and the existing `document_url` for
+  compatibility. New app builds use the callable for previews and exports
+  whenever a path is present. Permanently tokenized URLs remain usable and
+  Cloud Storage XML responses can include the object's Firebase download token
+  in its custom metadata. Retiring permanent URLs requires migrating callers
+  and tightening Storage access in a separate release.

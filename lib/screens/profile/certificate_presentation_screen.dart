@@ -39,6 +39,7 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
 
   MemberProfile? _memberProfile;
   MedicalCertification? _currentCert;
+  Future<String>? _documentPreviewUrl;
   bool _isLoading = true;
   bool _isValid = false;
   String? _invalidReason;
@@ -99,8 +100,10 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
       final profile =
           await _profileService.getDirectoryProfile(_clubId, widget.userId);
 
+      if (!mounted) return;
       setState(() {
         _currentCert = cert;
+        _documentPreviewUrl = null;
         _memberProfile = profile;
         _verificationTime = DateTime.now();
         _isLoading = false;
@@ -108,6 +111,7 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
 
       _validateCertificate();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _isValid = false;
@@ -459,26 +463,26 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
           if (isImage)
             GestureDetector(
               onTap: () => _showFullScreenDocument(),
-              child: Container(
+              child: SizedBox(
                 height: 200,
                 width: double.infinity,
-                child: Image.network(
-                  cert.documentUrl,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return const Center(child: CircularProgressIndicator());
+                child: FutureBuilder<String>(
+                  future: _documentPreviewUrl ??=
+                      _certService.getDocumentUrl(_clubId, cert),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Center(child: Text('Appuyez pour réessayer'));
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return Image.network(
+                      snapshot.data!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Center(child: Text('Appuyez pour voir')),
+                    );
                   },
-                  errorBuilder: (_, __, ___) => Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.image, size: 48, color: Colors.grey[400]),
-                        const SizedBox(height: 8),
-                        Text('Appuyez pour voir', style: TextStyle(color: Colors.grey[600])),
-                      ],
-                    ),
-                  ),
                 ),
               ),
             )
@@ -719,7 +723,8 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
       final cert = _currentCert!;
 
       // Download the file to a temporary location
-      final response = await http.get(Uri.parse(cert.documentUrl));
+      final url = await _certService.getDocumentUrl(_clubId, cert);
+      final response = await http.get(Uri.parse(url));
       if (response.statusCode != 200) {
         throw Exception('Failed to download certificate');
       }
@@ -737,6 +742,7 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
 
       // Share the file using native share dialog
       // On iOS, we need to provide sharePositionOrigin for iPad compatibility
+      if (!mounted) return;
       final box = context.findRenderObject() as RenderBox?;
       await Share.shareXFiles(
         [XFile(tempFile.path)],
@@ -745,11 +751,11 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
             ? box.localToGlobal(Offset.zero) & box.size
             : null,
       );
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors de l\'export: $e'),
+          const SnackBar(
+            content: Text('Impossible d\'exporter le certificat'),
             backgroundColor: Colors.red,
           ),
         );
@@ -757,14 +763,23 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
     }
   }
 
-  void _showFullScreenDocument() {
-    if (_currentCert == null) return;
+  Future<void> _showFullScreenDocument() async {
+    final cert = _currentCert;
+    if (cert == null) return;
 
-    final cert = _currentCert!;
-    final isImage = cert.documentType == 'image';
+    try {
+      final future = _certService.getDocumentUrl(_clubId, cert);
+      if (cert.documentType == 'image') {
+        setState(() => _documentPreviewUrl = future);
+      }
+      final url = await future;
+      if (!mounted) return;
 
-    if (isImage) {
-      // Show image in full screen with zoom
+      if (cert.documentType != 'image') {
+        await _openPdf(url);
+        return;
+      }
+
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => Scaffold(
@@ -779,17 +794,24 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
                 minScale: 0.5,
                 maxScale: 4.0,
                 child: Image.network(
-                  cert.documentUrl,
+                  url,
                   fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Text(
+                    'Impossible d\'ouvrir le certificat',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
             ),
           ),
         ),
       );
-    } else {
-      // Open PDF in external application
-      _openPdf(cert.documentUrl);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossible d\'ouvrir le certificat')),
+        );
+      }
     }
   }
 

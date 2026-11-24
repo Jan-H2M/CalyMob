@@ -1,11 +1,108 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions_platform_interface/cloud_functions_platform_interface.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core_platform_interface/test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:calymob/models/medical_certification.dart';
 import 'package:calymob/services/medical_certification_service.dart';
 
+class _CertificateFunctions extends FirebaseFunctionsPlatform {
+  _CertificateFunctions(FirebaseApp? app, String region, this.respond)
+      : super(app, region);
+
+  final Future<dynamic> Function(String, dynamic) respond;
+
+  @override
+  FirebaseFunctionsPlatform delegateFor({
+    FirebaseApp? app,
+    required String region,
+  }) =>
+      _CertificateFunctions(app, region, respond);
+
+  @override
+  HttpsCallablePlatform httpsCallable(
+    String? origin,
+    String name,
+    HttpsCallableOptions options,
+  ) =>
+      _CertificateCallable(this, origin, name, options);
+}
+
+class _CertificateCallable extends HttpsCallablePlatform {
+  _CertificateCallable(
+    this.platform,
+    String? origin,
+    String name,
+    HttpsCallableOptions options,
+  ) : super(platform, origin, name, options, null);
+
+  final _CertificateFunctions platform;
+
+  @override
+  Future<dynamic> call([dynamic parameters]) =>
+      platform.respond(name!, parameters);
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('legacy certificate uses its stored URL without a callable', () async {
+    final db = FakeFirebaseFirestore();
+    final ref = db.doc('clubs/club/members/member/medical_certificates/legacy');
+    await ref.set({'document_url': 'https://example.test/legacy'});
+    final cert = MedicalCertification.fromFirestore(await ref.get());
+    final service = MedicalCertificationService(firestore: db);
+    expect(cert.toFirestore().containsKey('document_path'), isFalse);
+    expect(await service.getDocumentUrl('club', cert),
+        'https://example.test/legacy');
+  });
+
+  test('certificate path survives date projection and selects the signed URL',
+      () async {
+    setupFirebaseCoreMocks();
+    await Firebase.initializeApp();
+    final originalPlatform = FirebaseFunctionsPlatform.instance;
+    addTearDown(() => FirebaseFunctionsPlatform.instance = originalPlatform);
+    var reject = false;
+    FirebaseFunctionsPlatform.instance = _CertificateFunctions(
+      null,
+      'europe-west1',
+      (name, params) async {
+        expect(name, 'getMedicalCertificateUrl');
+        expect(params, {
+          'clubId': 'club',
+          'memberId': 'member',
+          'certificateId': 'new-cert',
+        });
+        if (reject) throw StateError('Permission denied');
+        return {'url': 'https://example.test/signed'};
+      },
+    );
+
+    final db = FakeFirebaseFirestore();
+    final ref =
+        db.doc('clubs/club/members/member/medical_certificates/new-cert');
+    const path =
+        'clubs/club/members/member/medical_certificates/certificat.pdf';
+    await ref.set({
+      'member_id': 'member',
+      'status': 'approved',
+      'document_url': 'https://example.test/legacy',
+      'document_path': path,
+      'valid_until': '2027-01-30',
+    });
+    final cert = MedicalCertification.fromFirestore(await ref.get())
+        .withMemberDates({'certificat_medical_validite': '2027-01-30'});
+    expect(cert.toFirestore()['document_path'], path);
+    final service = MedicalCertificationService(firestore: db);
+    expect(await service.getDocumentUrl('club', cert),
+        'https://example.test/signed');
+    reject = true;
+    await expectLater(service.getDocumentUrl('club', cert), throwsStateError);
+  });
+
   test(
       'COM-156 getter and stream preserve the approved web date without writes',
       () async {

@@ -13,6 +13,7 @@ class MedicalCertification {
   final String id;
   final String memberId;
   final String documentUrl;
+  final String? documentPath;
   final String documentType; // 'image' ou 'pdf'
   final String? fileName;
   final DateTime uploadedAt;
@@ -31,6 +32,7 @@ class MedicalCertification {
     required this.id,
     required this.memberId,
     required this.documentUrl,
+    this.documentPath,
     required this.documentType,
     this.fileName,
     required this.uploadedAt,
@@ -52,6 +54,7 @@ class MedicalCertification {
       id: doc.id,
       memberId: data['member_id'] ?? '',
       documentUrl: data['document_url'] ?? '',
+      documentPath: data['document_path'] as String?,
       documentType: data['document_type'] ?? 'image',
       fileName: data['file_name'],
       uploadedAt:
@@ -75,6 +78,7 @@ class MedicalCertification {
     return {
       'member_id': memberId,
       'document_url': documentUrl,
+      if (documentPath != null) 'document_path': documentPath,
       'document_type': documentType,
       'file_name': fileName,
       'uploaded_at': Timestamp.fromDate(uploadedAt),
@@ -143,6 +147,7 @@ class MedicalCertification {
         id: id,
         memberId: memberId,
         documentUrl: documentUrl,
+        documentPath: documentPath,
         documentType: documentType,
         fileName: fileName,
         uploadedAt: uploadedAt,

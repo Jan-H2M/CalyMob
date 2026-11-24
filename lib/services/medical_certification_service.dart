@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
@@ -9,11 +10,33 @@ import '../models/medical_certification.dart';
 class MedicalCertificationService {
   final FirebaseFirestore _firestore;
   final FirebaseStorage? _providedStorage;
+  final FirebaseFunctions? _providedFunctions;
   FirebaseStorage get _storage => _providedStorage ?? FirebaseStorage.instance;
   MedicalCertificationService(
-      {FirebaseFirestore? firestore, FirebaseStorage? storage})
+      {FirebaseFirestore? firestore,
+      FirebaseStorage? storage,
+      FirebaseFunctions? functions})
       : _firestore = firestore ?? FirebaseFirestore.instance,
-        _providedStorage = storage;
+        _providedStorage = storage,
+        _providedFunctions = functions;
+
+  Future<String> getDocumentUrl(
+    String clubId,
+    MedicalCertification certificate,
+  ) async {
+    if (certificate.documentPath?.isNotEmpty != true) {
+      return certificate.documentUrl;
+    }
+    final functions = _providedFunctions ??
+        FirebaseFunctions.instanceFor(region: 'europe-west1');
+    final result =
+        await functions.httpsCallable('getMedicalCertificateUrl').call({
+      'clubId': clubId,
+      'memberId': certificate.memberId,
+      'certificateId': certificate.id,
+    });
+    return (result.data as Map)['url'] as String;
+  }
 
   /// Récupérer le certificat médical actuel (le plus récent approuvé ou en attente)
   Future<MedicalCertification?> getCurrentCertification(
@@ -195,6 +218,7 @@ class MedicalCertificationService {
         file,
         SettableMetadata(
           contentType: contentType,
+          cacheControl: 'private, no-store',
           customMetadata: {
             'uploadedBy': userId,
             'uploadedAt': DateTime.now().toIso8601String(),
@@ -203,9 +227,8 @@ class MedicalCertificationService {
         ),
       );
 
-      // 4. Récupérer l'URL de téléchargement
+      // Keep the legacy URL for existing apps and CalyCompta.
       final downloadUrl = await uploadTask.ref.getDownloadURL();
-      debugPrint('✅ Fichier uploadé: $downloadUrl');
 
       // 5. Créer le document Firestore
       final now = DateTime.now();
@@ -217,6 +240,7 @@ class MedicalCertificationService {
         id: docRef.id,
         memberId: userId,
         documentUrl: downloadUrl,
+        documentPath: uploadTask.ref.fullPath,
         documentType: effectiveType,
         fileName: fileName,
         uploadedAt: now,
