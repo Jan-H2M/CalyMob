@@ -120,8 +120,21 @@ console.log('OK — dormant sync-engine: change-detection, projecties, guards, o
   }
   assert.ok(!Object.hasOwn(s.buildLegacyFromCanonical({ operation_id: 'op1' }, 'linked'), 'nombre_plongeurs'));
   const unlinked = s.buildLegacyFromCanonical({ requester_id: 'member' }, 'unlinked');
-  for (const key of ['operation_id', 'operation_titre', 'nombre_plongeurs']) {
+  for (const key of ['operation_id', 'piscine_session_id', 'operation_titre', 'nombre_plongeurs']) {
     assert.ok(!Object.hasOwn(unlinked, key), key);
   }
   assert.strictEqual(s.buildLegacyFromCanonical({ operation_id: null }, 'cleared').operation_id, null);
+}
+
+{
+  const pool = { piscine_session_id: 'pool1', operation_title: 'Piscine', nombre_plongeurs: 3 };
+  const legacy = s.buildLegacyFromCanonical(pool, 'expense-pool');
+  assert.strictEqual(legacy.piscine_session_id, 'pool1');
+  assert.strictEqual(legacy.operation_titre, 'Piscine');
+  assert.ok(!Object.hasOwn(legacy, 'operation_id'));
+  const canonical = s.buildCanonicalFromLegacy(legacy, 'expense-pool');
+  for (const key of ['piscine_session_id', 'operation_title', 'nombre_plongeurs']) {
+    assert.strictEqual(canonical[key], pool[key]);
+  }
+  assert.ok(!Object.hasOwn(canonical, 'operation_id'));
 }

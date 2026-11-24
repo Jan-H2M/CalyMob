@@ -9,6 +9,7 @@ on:
       - 'lib/models/piscine_session.dart'
       - 'lib/widgets/event_card_decoration.dart'
       - 'lib/widgets/event_card_heading.dart'
+      - 'lib/widgets/agenda_activity.dart'
       - 'lib/screens/operations/operations_list_screen.dart'
       - 'assets/images/card_themes/**'
       - 'test/models/event_card_appearance_test.dart'
