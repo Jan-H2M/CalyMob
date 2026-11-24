@@ -15,10 +15,11 @@ _Last observed: 2026-11-24 (task t11241138-0988). Live store queries always take
   Store version remains `1.30.5` (`READY_FOR_SALE`); there is no editable or
   in-review version. Build 550 has not been submitted for App Store review.
 - **Android candidate:** Google Play production currently contains build 546.
-  The release pipeline passed 1,507 Flutter tests (one expected skip) and its
-  release-gate tests, then stopped before Gradle compilation because the
-  configured Android SDK directory `/Users/jan/Library/Android/sdk` is absent
-  on this Mini. No build-550 AAB was produced or uploaded.
+  The isolated release pipeline passed 1,507 Flutter tests (one expected skip),
+  1,017 Functions tests (five skipped) and 32 release-gate tests. It then built
+  the signed `1.30.9 (550)` AAB from exact source commit `c57f332`; SHA-256
+  `54a354c3283006775a4a444590862fedad64559fbc4a799b59c912765ea03b0d`.
+  The AAB is prepared locally but has not been uploaded.
 - **Backend gate:** the required `createDirectEventPaymentQr` callable exists
   in production (an unauthenticated no-data request returns the expected 401).
   The separately approved expense-sync deployment remains blocked because the
@@ -26,10 +27,9 @@ _Last observed: 2026-11-24 (task t11241138-0988). Live store queries always take
   repository service account lacks permission to read or deploy Functions.
   Store submissions must wait until the approved sync functions are deployed
   and read back as `ACTIVE`.
-- **CalyCompta production gate:** PR #300 ports the activity refund controls to
-  `main`; its CI/merge/production deployment and `caly.club/version.json`
-  readback are tracked by task t11241138-0c2f. Store submission must wait for
-  that task to confirm production `Ready` and the matching version marker.
+- **CalyCompta production gate:** PR #300 passed all ten CI checks and merged to
+  `main` as `b668b9710c81ff95f28f8379db42e36cb67ceb9e`. Vercel production is
+  `Ready`, and `https://caly.club/version.json` reports that exact build ID.
 - **Release text:** proposed French text is “Amélioration des demandes de
   remboursement : liaison facultative à une activité, informations détaillées
   et contrôle du montant attendu.” It is not approved metadata until Jan
