@@ -25,6 +25,7 @@
     "amount": ["montant"],
     "description": ["description"],
     "category": ["categorie"],
+    "reimbursement_type": ["type_remboursement"],
     "account_code": ["code_comptable"],
     "attachment_file_names": ["pieces_jointes"],
     "supporting_document_urls": ["urls_justificatifs"],

@@ -25,17 +25,20 @@ const { DEFAULT_FLAGS, notificationsOwner } = require('../migrationFlags.js');
     montant: 47, statut: 'a_verifier_paiement', date_depense: '2026-06-26',
     demandeur_nom: 'Yves', demandeur_id: 'u1', description: 'floreffe',
     payment_reference: 'REM-1', payment_reference_key: '+++REM-1+++', fiscal_year_id: 'FY2026',
+    type_remboursement: 'plongee',
   };
   const canon = s.buildCanonicalFromLegacy(legacy, 'doc1');
   assert.strictEqual(canon.status, 'payment_verification_pending');
   assert.strictEqual(canon.amount, 47);
   assert.strictEqual(canon.payment_reference, 'REM-1');
+  assert.strictEqual(canon.reimbursement_type, 'plongee');
   const back = s.buildLegacyFromCanonical(canon, 'doc1');
   assert.strictEqual(back.statut, 'a_verifier_paiement');
   assert.strictEqual(back.montant, 47);
   assert.strictEqual(back.demandeur_nom, 'Yves');
   assert.strictEqual(back.date_depense, '2026-06-26');
   assert.strictEqual(back.payment_reference, 'REM-1');
+  assert.strictEqual(back.type_remboursement, 'plongee');
 }
 
 // 2b. withdrawal-refund provenance overleeft een web-edit (canonical zonder source)

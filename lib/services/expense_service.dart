@@ -15,7 +15,7 @@ class ExpenseService {
   final FirebaseFirestore _firestore;
 
   ExpenseService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   static const String _collection = 'expense_claims';
 
@@ -70,7 +70,7 @@ class ExpenseService {
     String? operationId,
     String? piscineSessionId,
     String? operationTitle,
-    int? nombrePlongeurs,
+    String? reimbursementType,
     String? boutiqueSupplierBatchId,
     List<File>? photoFiles,
   }) async {
@@ -86,6 +86,8 @@ class ExpenseService {
             'requester_name': userName,
             'amount': montant,
             'description': description,
+            if (reimbursementType != null && reimbursementType.isNotEmpty)
+              'reimbursement_type': reimbursementType,
             'status': 'submitted',
             'expense_date': Timestamp.fromDate(dateDepense),
             'requested_at': Timestamp.now(),
@@ -96,7 +98,6 @@ class ExpenseService {
                 'operation_id': operationId,
               if (operationTitle != null && operationTitle.isNotEmpty)
                 'operation_title': operationTitle,
-              if (nombrePlongeurs != null) 'nombre_plongeurs': nombrePlongeurs,
             },
             if (boutiqueSupplierBatchId != null)
               'boutique_supplier_batch_id': boutiqueSupplierBatchId,

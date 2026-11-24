@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
@@ -11,6 +10,7 @@ import '../../config/firebase_config.dart';
 import '../../config/app_colors.dart';
 import '../../models/activity_item.dart';
 import '../../models/expense_activity_summary.dart';
+import '../../models/expense_reimbursement_type.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
@@ -43,10 +43,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _montantController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _nombrePlongeursController = TextEditingController();
   final _imagePicker = ImagePicker();
 
   DateTime _selectedDate = DateTime.now();
+  ExpenseReimbursementType? _reimbursementType;
   ActivityItem? _activity;
   ExpenseActivitySummary? _activitySummary;
   final List<File> _selectedPhotos = [];
@@ -57,6 +57,20 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   String? _originatingUid;
   bool _identityBound = false;
   bool _accountChanged = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.boutiqueBatchId != null) {
+      _reimbursementType = ExpenseReimbursementType.boutique;
+      _linkBoutique = true;
+      _boutiqueBatchId = widget.boutiqueBatchId;
+      _boutiqueChoices = {
+        widget.boutiqueBatchId!:
+            widget.boutiqueOrderLabel ?? 'Commande Boutique',
+      };
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -70,7 +84,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       _accountChanged = true;
       _montantController.clear();
       _descriptionController.clear();
-      _nombrePlongeursController.clear();
+      _reimbursementType = null;
       _activity = null;
       _activitySummary = null;
       _selectedPhotos.clear();
@@ -92,43 +106,55 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     final activities = context.read<ActivityProvider>();
     const clubId = FirebaseConfig.defaultClubId;
     final userId = _originatingUid!;
-    final loadSummary =
-        activities.createExpenseActivitySummaryLoader(clubId);
-    final choice = await showDialog<
-        ({ActivityItem? activity, ExpenseActivitySummary? summary})>(
-      context: context,
-      builder: (_) => ListenableBuilder(
-        listenable: auth,
-        builder: (context, _) {
-          if (!_sameAccount) {
-            return AlertDialog(
-              title: const Text('Le compte a changé.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Fermer'),
-                ),
-              ],
-            );
-          }
-          return ExpenseActivityPicker(
-            clubId: clubId,
-            watchActivities: () =>
-                activities.watchExpenseActivities(clubId, userId),
+    final loadSummary = activities.createExpenseActivitySummaryLoader(clubId);
+    final choice =
+        await showDialog<
+          ({ActivityItem? activity, ExpenseActivitySummary? summary})
+        >(
+          context: context,
+          builder: (_) => ListenableBuilder(
+            listenable: auth,
+            builder: (context, _) {
+              if (!_sameAccount) {
+                return AlertDialog(
+                  title: const Text('Le compte a changé.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Fermer'),
+                    ),
+                  ],
+                );
+              }
+              return ExpenseActivityPicker(
+                clubId: clubId,
+                watchActivities: () =>
+                    activities.watchExpenseActivities(clubId, userId),
                 loadSummary: loadSummary,
-            selected: _activity,
-          );
-        },
-      ),
-    );
+                selected: _activity,
+                activityCategory: _reimbursementType?.activityCategory,
+              );
+            },
+          ),
+        );
     if (!_sameAccount || choice == null) return;
     setState(() {
-      if (choice.activity?.id != _activity?.id ||
-          choice.activity?.type != _activity?.type) {
-        _nombrePlongeursController.clear();
-      }
       _activity = choice.activity;
       _activitySummary = choice.summary;
+    });
+  }
+
+  void _changeReimbursementType(ExpenseReimbursementType? value) {
+    if (value == _reimbursementType) return;
+    setState(() {
+      _reimbursementType = value;
+      _activity = null;
+      _activitySummary = null;
+      if (value?.supportsBoutique != true) {
+        _linkBoutique = false;
+        _boutiqueBatchId = null;
+        _boutiqueChoices = {};
+      }
     });
   }
 
@@ -190,7 +216,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   void dispose() {
     _montantController.dispose();
     _descriptionController.dispose();
-    _nombrePlongeursController.dispose();
     super.dispose();
   }
 
@@ -297,8 +322,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
       final List<String>? scannedPaths =
           await CunningDocumentScanner.getPictures(
-        isGalleryImportAllowed: true,
-      );
+            isGalleryImportAllowed: true,
+          );
 
       debugPrint('🔍 Scanner: Result: $scannedPaths');
 
@@ -426,8 +451,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final userName = memberProvider.displayName.isNotEmpty
           ? memberProvider.displayName
           : (authProvider.displayName ??
-              authProvider.currentUser?.email ??
-              'Utilisateur');
+                authProvider.currentUser?.email ??
+                'Utilisateur');
 
       final montant = parseAmount(_montantController.text)!;
       final description = _descriptionController.text.trim();
@@ -442,7 +467,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         operationId: _activity?.operation?.id,
         piscineSessionId: _activity?.piscineSession?.id,
         operationTitle: _activity?.titre,
-        nombrePlongeurs: int.tryParse(_nombrePlongeursController.text),
+        reimbursementType: _reimbursementType?.code,
         photoFiles: _selectedPhotos,
         boutiqueSupplierBatchId: _linkBoutique ? _boutiqueBatchId : null,
       );
@@ -551,7 +576,119 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Montant
+                            DropdownButtonFormField<ExpenseReimbursementType>(
+                              key: const ValueKey('expense-reimbursement-type'),
+                              initialValue: _reimbursementType,
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                labelText: 'Type de remboursement',
+                                prefixIcon: Icon(
+                                  Icons.tune,
+                                  color: AppColors.middenblauw,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              hint: const Text('Choisir un type (facultatif)'),
+                              items: ExpenseReimbursementType.values
+                                  .map(
+                                    (type) => DropdownMenuItem(
+                                      value: type,
+                                      child: Text(type.label),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: _isSubmitting
+                                  ? null
+                                  : _changeReimbursementType,
+                            ),
+
+                            if (_reimbursementType?.supportsActivity ==
+                                true) ...[
+                              const SizedBox(height: 12),
+                              ListTile(
+                                key: const ValueKey('expense-activity-field'),
+                                tileColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                leading: const Icon(Icons.event_outlined),
+                                title: const Text('Activité (facultatif)'),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _activity?.titre ??
+                                          'Pas liée à une activité',
+                                    ),
+                                    if (_expectedRefund != null)
+                                      Text(
+                                        'Remboursement attendu · '
+                                        '${CurrencyFormatter.format(_expectedRefund!)}',
+                                        key: const ValueKey(
+                                          'expense-selected-expected-amount',
+                                        ),
+                                        style: TextStyle(
+                                          color: AppColors.donkerblauw,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: const Icon(Icons.expand_more),
+                                onTap: _isSubmitting ? null : _chooseActivity,
+                              ),
+                            ],
+
+                            if (_reimbursementType?.supportsBoutique ==
+                                true) ...[
+                              const SizedBox(height: 12),
+                              SwitchListTile(
+                                tileColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                title: const Text(
+                                  'Lier à une commande Boutique (facultatif)',
+                                ),
+                                value: _linkBoutique,
+                                onChanged: _isSubmitting
+                                    ? null
+                                    : _chooseBoutique,
+                              ),
+                              if (_linkBoutique) ...[
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<String>(
+                                  initialValue: _boutiqueBatchId,
+                                  isExpanded: true,
+                                  decoration: InputDecoration(
+                                    labelText: 'Commande Boutique',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                  ),
+                                  items: _boutiqueChoices.entries
+                                      .map(
+                                        (entry) => DropdownMenuItem(
+                                          value: entry.key,
+                                          child: Text(entry.value),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) => setState(() {
+                                    _boutiqueBatchId = value;
+                                  }),
+                                ),
+                              ],
+                            ],
+
+                            const SizedBox(height: 12),
+
                             TextFormField(
                               controller: _montantController,
                               onChanged: (_) {
@@ -559,8 +696,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                               },
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
+                                    decimal: true,
+                                  ),
                               decoration: InputDecoration(
                                 hintText: 'Montant (€)',
                                 prefixIcon: Icon(
@@ -658,92 +795,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
                             const SizedBox(height: 12),
 
-                            ListTile(
-                              tileColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              leading: const Icon(Icons.event_outlined),
-                              title: const Text('Activité'),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _activity?.titre ??
-                                        'Pas liée à une activité',
-                                  ),
-                                  if (_expectedRefund != null)
-                                    Text(
-                                      'Remboursement attendu · '
-                                      '${CurrencyFormatter.format(_expectedRefund!)}',
-                                      key: const ValueKey(
-                                        'expense-selected-expected-amount',
-                                      ),
-                                      style: TextStyle(
-                                        color: AppColors.donkerblauw,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              trailing: const Icon(Icons.expand_more),
-                              onTap: _isSubmitting ? null : _chooseActivity,
-                            ),
-                            if (_activity != null) ...[
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _nombrePlongeursController,
-                                enabled: !_isSubmitting,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
-                                decoration: InputDecoration(
-                                  labelText: 'Nombre de plongeurs',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return null;
-                                  }
-                                  return int.tryParse(value) == null
-                                      ? 'Saisissez un nombre entier'
-                                      : null;
-                                },
-                              ),
-                            ],
-
-                            const SizedBox(height: 12),
-
-                            SwitchListTile(
-                              title: const Text(
-                                'Lier à une commande Boutique (facultatif)',
-                              ),
-                              value: _linkBoutique,
-                              onChanged: _isSubmitting ? null : _chooseBoutique,
-                            ),
-                            if (_linkBoutique)
-                              DropdownButtonFormField<String>(
-                                initialValue: _boutiqueBatchId,
-                                decoration: const InputDecoration(
-                                  labelText: 'Commande Boutique',
-                                ),
-                                items: _boutiqueChoices.entries
-                                    .map(
-                                      (entry) => DropdownMenuItem(
-                                        value: entry.key,
-                                        child: Text(entry.value),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) => setState(() {
-                                  _boutiqueBatchId = value;
-                                }),
-                              ),
                             // Date de la dépense
                             InkWell(
                               onTap: _selectDate,
@@ -798,8 +849,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                   _buildRoundButton(
                                     icon: Icons.document_scanner,
                                     label: 'Scanner',
-                                    onPressed:
-                                        _isSubmitting ? null : _scanDocument,
+                                    onPressed: _isSubmitting
+                                        ? null
+                                        : _scanDocument,
                                   ),
                                 // Photo button
                                 _buildRoundButton(
@@ -837,10 +889,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 physics: const NeverScrollableScrollPhysics(),
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  crossAxisSpacing: 8,
-                                  mainAxisSpacing: 8,
-                                ),
+                                      crossAxisCount: 3,
+                                      crossAxisSpacing: 8,
+                                      mainAxisSpacing: 8,
+                                    ),
                                 itemCount: _selectedPhotos.length,
                                 itemBuilder: (context, index) {
                                   return Stack(
