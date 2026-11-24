@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_colors.dart';
 import '../../models/activity_item.dart';
+import '../../models/expense_activity_summary.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
@@ -17,6 +18,7 @@ import '../../providers/member_provider.dart';
 import '../../services/camera_permission_service.dart';
 import '../../services/boutique/member_missions_service.dart';
 import '../../utils/amount_parser.dart';
+import '../../utils/currency_formatter.dart';
 import '../../utils/date_formatter.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'expense_activity_picker.dart';
@@ -46,6 +48,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   DateTime _selectedDate = DateTime.now();
   ActivityItem? _activity;
+  ExpenseActivitySummary? _activitySummary;
   final List<File> _selectedPhotos = [];
   bool _isSubmitting = false;
   bool _linkBoutique = false;
@@ -69,6 +72,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       _descriptionController.clear();
       _nombrePlongeursController.clear();
       _activity = null;
+      _activitySummary = null;
       _selectedPhotos.clear();
       _boutiqueChoices.clear();
       _boutiqueBatchId = null;
@@ -88,7 +92,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     final activities = context.read<ActivityProvider>();
     const clubId = FirebaseConfig.defaultClubId;
     final userId = _originatingUid!;
-    final choice = await showDialog<({ActivityItem? activity})>(
+    final loadSummary =
+        activities.createExpenseActivitySummaryLoader(clubId);
+    final choice = await showDialog<
+        ({ActivityItem? activity, ExpenseActivitySummary? summary})>(
       context: context,
       builder: (_) => ListenableBuilder(
         listenable: auth,
@@ -108,6 +115,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             clubId: clubId,
             watchActivities: () =>
                 activities.watchExpenseActivities(clubId, userId),
+                loadSummary: loadSummary,
             selected: _activity,
           );
         },
@@ -120,7 +128,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         _nombrePlongeursController.clear();
       }
       _activity = choice.activity;
+      _activitySummary = choice.summary;
     });
+  }
+
+  double? get _expectedRefund => _activitySummary?.expectedRefund;
+
+  bool get _amountDiffersFromExpected {
+    final amount = parseAmount(_montantController.text);
+    final expected = _expectedRefund;
+    if (amount == null || expected == null) return false;
+    return (amount * 100).round() != (expected * 100).round();
   }
 
   Future<void> _chooseBoutique(bool enabled) async {
@@ -486,8 +504,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('Nouvelle demande')),
         body: const Center(
-            child: Text(
-                'Le compte a changé. Fermez ce formulaire et recommencez.')),
+          child: Text(
+            'Le compte a changé. Fermez ce formulaire et recommencez.',
+          ),
+        ),
       );
     }
     return OceanGradientBackground(
@@ -534,6 +554,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                             // Montant
                             TextFormField(
                               controller: _montantController,
+                              onChanged: (_) {
+                                if (_expectedRefund != null) setState(() {});
+                              },
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
@@ -561,6 +584,44 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 return null;
                               },
                             ),
+                            if (_amountDiffersFromExpected) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                key: const ValueKey(
+                                  'expense-expected-amount-warning',
+                                ),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF3C4),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: const Color(0xFFF59E0B),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline,
+                                      color: Color(0xFF92400E),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Le remboursement attendu est de '
+                                        '${CurrencyFormatter.format(_expectedRefund!)}. '
+                                        'Vérifiez le montant saisi si nécessaire; '
+                                        'vous pouvez tout de même envoyer la demande.',
+                                        style: const TextStyle(
+                                          color: Color(0xFF78350F),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
 
                             const SizedBox(height: 12),
 
@@ -604,8 +665,26 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                               ),
                               leading: const Icon(Icons.event_outlined),
                               title: const Text('Activité'),
-                              subtitle: Text(
-                                _activity?.titre ?? 'Pas liée à une activité',
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _activity?.titre ??
+                                        'Pas liée à une activité',
+                                  ),
+                                  if (_expectedRefund != null)
+                                    Text(
+                                      'Remboursement attendu · '
+                                      '${CurrencyFormatter.format(_expectedRefund!)}',
+                                      key: const ValueKey(
+                                        'expense-selected-expected-amount',
+                                      ),
+                                      style: TextStyle(
+                                        color: AppColors.donkerblauw,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                ],
                               ),
                               trailing: const Icon(Icons.expand_more),
                               onTap: _isSubmitting ? null : _chooseActivity,
