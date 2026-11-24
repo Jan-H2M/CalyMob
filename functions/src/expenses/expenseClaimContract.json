@@ -15,6 +15,7 @@
   "fieldMap": {
     "_comment": "canonicalField: [orderedLegacySourceFields]. First defined (non-undefined) legacy source wins. Status is handled separately via statusLegacyToCanonical.",
     "club_id": ["club_id"],
+    "boutique_supplier_batch_id": ["boutique_supplier_batch_id"],
     "operation_id": ["operation_id", "evenement_id"],
     "operation_title": ["operation_titre", "evenement_titre"],
     "requester_id": ["demandeur_id"],

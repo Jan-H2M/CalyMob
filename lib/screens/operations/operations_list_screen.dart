@@ -383,7 +383,6 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
   Widget _buildUnreadBadgeAndArrow(ActivityItem item) {
     final userId = context.watch<AuthProvider>().currentUser?.uid;
-    final unreadProvider = context.watch<UnreadCountProvider>();
 
     if (userId == null) {
       return Padding(
@@ -402,12 +401,6 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     // Individuele unread count per operatie via UnreadCountService
     final clubId = FirebaseConfig.defaultClubId;
     final opId = item.operation?.id;
-    final snapshotCount = opId == null
-        ? 0
-        : unreadProvider.eventUnreadFor(opId);
-    if (snapshotCount != null) {
-      return _buildUnreadBadgeValue(item, snapshotCount);
-    }
     if (opId == null) {
       unreadStream = Stream.value(0);
     } else {

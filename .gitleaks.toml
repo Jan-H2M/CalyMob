@@ -1,0 +1,5 @@
+[allowlist]
+description = "Dependency lockfiles contain public package checksums, not credentials"
+paths = [
+  '''^ios/Podfile\.lock$''',
+]
