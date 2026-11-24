@@ -44,6 +44,27 @@ _Last updated: 2026-11-24. Live store queries always take precedence over this d
 - `ci_scripts/xcode-cloud-workflow.json` is documentation-only snapshot data, never an
   applyable workflow definition.
 
+## Xcode Cloud manual-start recovery record
+
+Before authorizing `main` for the 1.30.9 (553) build on 2026-11-24, workflow
+`D11B66EC-6E95-43A4-B345-727D1992D72A` had this exact
+`manualBranchStartCondition`. Restore this JSON to return to the previous branch
+scope after the release if desired:
+
+```json
+{
+  "source": {
+    "isAllMatch": false,
+    "patterns": [
+      { "pattern": "dev", "isPrefix": false },
+      { "pattern": "codex/mob-xcode-cloud-20261016", "isPrefix": false },
+      { "pattern": "codex/joint-bug-build-20261028", "isPrefix": false },
+      { "pattern": "codex/release-next-1.29.0-missions-1101", "isPrefix": false }
+    ]
+  }
+}
+```
+
 ## Historical documents
 `APP_STORE_PUBLICATIE.md`, `docs/MOBILE_RELEASE_QUEUE.md`, `docs/RELEASE_GATE.md`
 (Fastlane mapping) and `docs/PUBLICATION_REPORT_2026-01-21.md` describe earlier
