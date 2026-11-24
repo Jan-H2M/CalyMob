@@ -107,36 +107,34 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     const clubId = FirebaseConfig.defaultClubId;
     final userId = _originatingUid!;
     final loadSummary = activities.createExpenseActivitySummaryLoader(clubId);
-    final choice =
-        await showDialog<
-          ({ActivityItem? activity, ExpenseActivitySummary? summary})
-        >(
-          context: context,
-          builder: (_) => ListenableBuilder(
-            listenable: auth,
-            builder: (context, _) {
-              if (!_sameAccount) {
-                return AlertDialog(
-                  title: const Text('Le compte a changé.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Fermer'),
-                    ),
-                  ],
-                );
-              }
-              return ExpenseActivityPicker(
-                clubId: clubId,
-                watchActivities: () =>
-                    activities.watchExpenseActivities(clubId, userId),
-                loadSummary: loadSummary,
-                selected: _activity,
-                activityCategory: _reimbursementType?.activityCategory,
-              );
-            },
-          ),
-        );
+    final choice = await showDialog<
+        ({ActivityItem? activity, ExpenseActivitySummary? summary})>(
+      context: context,
+      builder: (_) => ListenableBuilder(
+        listenable: auth,
+        builder: (context, _) {
+          if (!_sameAccount) {
+            return AlertDialog(
+              title: const Text('Le compte a changé.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Fermer'),
+                ),
+              ],
+            );
+          }
+          return ExpenseActivityPicker(
+            clubId: clubId,
+            watchActivities: () =>
+                activities.watchExpenseActivities(clubId, userId),
+            loadSummary: loadSummary,
+            selected: _activity,
+            activityCategory: _reimbursementType?.activityCategory,
+          );
+        },
+      ),
+    );
     if (!_sameAccount || choice == null) return;
     setState(() {
       _activity = choice.activity;
@@ -322,8 +320,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
       final List<String>? scannedPaths =
           await CunningDocumentScanner.getPictures(
-            isGalleryImportAllowed: true,
-          );
+        isGalleryImportAllowed: true,
+      );
 
       debugPrint('🔍 Scanner: Result: $scannedPaths');
 
@@ -451,8 +449,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final userName = memberProvider.displayName.isNotEmpty
           ? memberProvider.displayName
           : (authProvider.displayName ??
-                authProvider.currentUser?.email ??
-                'Utilisateur');
+              authProvider.currentUser?.email ??
+              'Utilisateur');
 
       final montant = parseAmount(_montantController.text)!;
       final description = _descriptionController.text.trim();
@@ -591,6 +589,19 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 ),
                                 filled: true,
                                 fillColor: Colors.white,
+                                suffixIcon: _reimbursementType == null
+                                    ? null
+                                    : IconButton(
+                                        key: const ValueKey(
+                                          'clear-expense-reimbursement-type',
+                                        ),
+                                        tooltip: 'Effacer le type',
+                                        onPressed: _isSubmitting
+                                            ? null
+                                            : () =>
+                                                _changeReimbursementType(null),
+                                        icon: const Icon(Icons.clear),
+                                      ),
                               ),
                               hint: const Text('Choisir un type (facultatif)'),
                               items: ExpenseReimbursementType.values
@@ -655,9 +666,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                   'Lier à une commande Boutique (facultatif)',
                                 ),
                                 value: _linkBoutique,
-                                onChanged: _isSubmitting
-                                    ? null
-                                    : _chooseBoutique,
+                                onChanged:
+                                    _isSubmitting ? null : _chooseBoutique,
                               ),
                               if (_linkBoutique) ...[
                                 const SizedBox(height: 12),
@@ -696,8 +706,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                               },
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
+                                decimal: true,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Montant (€)',
                                 prefixIcon: Icon(
@@ -849,9 +859,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                   _buildRoundButton(
                                     icon: Icons.document_scanner,
                                     label: 'Scanner',
-                                    onPressed: _isSubmitting
-                                        ? null
-                                        : _scanDocument,
+                                    onPressed:
+                                        _isSubmitting ? null : _scanDocument,
                                   ),
                                 // Photo button
                                 _buildRoundButton(
@@ -889,10 +898,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 physics: const NeverScrollableScrollPhysics(),
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                    ),
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
                                 itemCount: _selectedPhotos.length,
                                 itemBuilder: (context, index) {
                                   return Stack(

@@ -41,6 +41,22 @@ const { DEFAULT_FLAGS, notificationsOwner } = require('../migrationFlags.js');
   assert.strictEqual(back.type_remboursement, 'plongee');
 }
 
+// 2a. reimbursement type: absent keeps the other mirror side; null clears it.
+{
+  const canonicalWithoutType = s.buildCanonicalFromLegacy({ montant: 1 }, 'without-type');
+  assert.ok(!Object.hasOwn(canonicalWithoutType, 'reimbursement_type'));
+  const legacyWithoutType = s.buildLegacyFromCanonical({ amount: 1 }, 'without-type');
+  assert.ok(!Object.hasOwn(legacyWithoutType, 'type_remboursement'));
+  assert.strictEqual(
+    s.buildCanonicalFromLegacy({ type_remboursement: null }, 'clear').reimbursement_type,
+    null,
+  );
+  assert.strictEqual(
+    s.buildLegacyFromCanonical({ reimbursement_type: null }, 'clear').type_remboursement,
+    null,
+  );
+}
+
 // 2b. withdrawal-refund provenance overleeft een web-edit (canonical zonder source)
 {
   const legacy = { montant: 6, statut: 'brouillon', source: 'event_withdrawal',
