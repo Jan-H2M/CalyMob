@@ -68,6 +68,7 @@ class ExpenseService {
     required String description,
     required DateTime dateDepense,
     String? operationId,
+    String? piscineSessionId,
     String? operationTitle,
     int? nombrePlongeurs,
     String? boutiqueSupplierBatchId,
@@ -88,8 +89,11 @@ class ExpenseService {
             'status': 'submitted',
             'expense_date': Timestamp.fromDate(dateDepense),
             'requested_at': Timestamp.now(),
-            if (operationId != null) ...{
-              'operation_id': operationId,
+            if (operationId != null || piscineSessionId != null) ...{
+              if (piscineSessionId != null)
+                'piscine_session_id': piscineSessionId
+              else
+                'operation_id': operationId,
               if (operationTitle != null && operationTitle.isNotEmpty)
                 'operation_title': operationTitle,
               if (nombrePlongeurs != null) 'nombre_plongeurs': nombrePlongeurs,

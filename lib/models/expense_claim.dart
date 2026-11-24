@@ -16,7 +16,9 @@ class ExpenseClaim {
   final DateTime dateDepense;
   final DateTime dateDemande;
   final List<String> urlsJustificatifs;
+  final String? boutiqueSupplierBatchId;
   final String? operationId; // Lien optionnel vers opération
+  final String? piscineSessionId;
 
   // Premier approbateur
   final DateTime? dateApprobation;
@@ -50,6 +52,8 @@ class ExpenseClaim {
     required this.dateDemande,
     this.urlsJustificatifs = const [],
     this.operationId,
+    this.piscineSessionId,
+    this.boutiqueSupplierBatchId,
     this.dateApprobation,
     this.approuvePar,
     this.appouveParNom,
@@ -134,6 +138,8 @@ class ExpenseClaim {
       dateDemande: dateDemande ?? DateTime.now(),
       urlsJustificatifs: documents,
       operationId: _pick(data, ['operation_id', 'evenement_id']),
+      piscineSessionId: data['piscine_session_id'] as String?,
+      boutiqueSupplierBatchId: data['boutique_supplier_batch_id'] as String?,
       dateApprobation: dateApprobation,
       approuvePar: _pick(data, ['approuve_par', 'approved_by']),
       appouveParNom: _pick(data, ['approuve_par_nom', 'approved_by_name']),
@@ -163,7 +169,11 @@ class ExpenseClaim {
       'date_depense': Timestamp.fromDate(dateDepense),
       'date_demande': Timestamp.fromDate(dateDemande),
       'urls_justificatifs': urlsJustificatifs,
-      'operation_id': operationId,
+      if (piscineSessionId != null)
+        'piscine_session_id': piscineSessionId
+      else
+        'operation_id': operationId,
+      if (boutiqueSupplierBatchId != null) 'boutique_supplier_batch_id': boutiqueSupplierBatchId,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };

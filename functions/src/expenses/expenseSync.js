@@ -63,6 +63,7 @@ function buildCanonicalFromLegacy(legacy, id) {
     legacy_collection: 'demandes_remboursement',
     legacy_document_id: id ?? null,
     operation_id: optionalActivityField(legacy, ['operation_id', 'evenement_id']),
+    piscine_session_id: legacy.piscine_session_id ?? undefined,
     boutique_supplier_batch_id: legacy.boutique_supplier_batch_id ?? null,
     operation_title: optionalActivityField(legacy, ['operation_titre', 'evenement_titre']),
     nombre_plongeurs: legacy.nombre_plongeurs ?? undefined,
@@ -123,6 +124,7 @@ function buildLegacyFromCanonical(canon, id) {
   return compact({
     club_id: canon.club_id ?? null,
     operation_id: optionalActivityField(canon, ['operation_id', 'evenement_id']),
+    piscine_session_id: canon.piscine_session_id ?? undefined,
     boutique_supplier_batch_id: canon.boutique_supplier_batch_id ?? null,
     operation_titre: optionalActivityField(canon, ['operation_title', 'operation_titre']),
     nombre_plongeurs: canon.nombre_plongeurs ?? undefined,

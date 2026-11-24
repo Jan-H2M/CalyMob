@@ -114,12 +114,17 @@ class ActivityProvider with ChangeNotifier {
         );
   }
 
+  Stream<List<ActivityItem>> watchExpenseActivities(
+    String clubId,
+    String userId,
+  ) => _activityService.watchExpenseActivities(clubId, userId);
+
   /// Filter activiteiten op categorie
   List<ActivityItem> getFilteredActivities(String filter) {
     if (filter == 'all') {
       return _activities;
     }
-    return _activities.where((a) => a.categorie == filter).toList();
+    return _activities.where((a) => a.agendaCategory.name == filter).toList();
   }
 
   /// Zoek een activiteit op ID

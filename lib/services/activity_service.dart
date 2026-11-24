@@ -13,6 +13,26 @@ class ActivityService {
   ActivityService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
+  /// The expense form uses the agenda's sources over its existing date window.
+  Stream<List<ActivityItem>> watchExpenseActivities(
+    String clubId,
+    String userId,
+  ) {
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, now.day - 60);
+    final until = DateTime(now.year, now.month, now.day + 8);
+    return getAllActivitiesStream(
+      clubId,
+      includeClosed: true,
+      currentUserId: userId,
+    ).map(
+      (activities) => activities.reversed
+          .where((activity) =>
+              !activity.date.isBefore(from) && activity.date.isBefore(until))
+          .toList(),
+    );
+  }
+
   /// Gecombineerde stream van operations + piscine sessions
   /// Retourneert alle open events en gepubliceerde piscine sessies
   Stream<List<ActivityItem>> getAllActivitiesStream(

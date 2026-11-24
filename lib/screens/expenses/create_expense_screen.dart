@@ -9,17 +9,17 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_colors.dart';
-import '../../models/operation.dart';
+import '../../models/activity_item.dart';
+import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
-import '../../providers/operation_provider.dart';
 import '../../services/camera_permission_service.dart';
 import '../../services/boutique/member_missions_service.dart';
 import '../../utils/amount_parser.dart';
 import '../../utils/date_formatter.dart';
-import '../../utils/search_highlight.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'expense_activity_picker.dart';
 
 /// Écran de création d'une demande de remboursement
 class CreateExpenseScreen extends StatefulWidget {
@@ -45,7 +45,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _imagePicker = ImagePicker();
 
   DateTime _selectedDate = DateTime.now();
-  Operation? _activity;
+  ActivityItem? _activity;
   final List<File> _selectedPhotos = [];
   bool _isSubmitting = false;
   bool _linkBoutique = false;
@@ -85,9 +85,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   Future<void> _chooseActivity() async {
     if (!_sameAccount) return;
     final auth = context.read<AuthProvider>();
-    final operations = context.read<OperationProvider>();
+    final activities = context.read<ActivityProvider>();
+    const clubId = FirebaseConfig.defaultClubId;
     final userId = _originatingUid!;
-    final choice = await showDialog<({Operation? activity})>(
+    final choice = await showDialog<({ActivityItem? activity})>(
       context: context,
       builder: (_) => ListenableBuilder(
         listenable: auth,
@@ -103,19 +104,19 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
               ],
             );
           }
-          return _ExpenseActivityDialog(
-            loadActivities: () => operations.getExpenseActivities(
-              FirebaseConfig.defaultClubId,
-              userId,
-            ),
-            selectedId: _activity?.id,
+          return ExpenseActivityPicker(
+            clubId: clubId,
+            watchActivities: () =>
+                activities.watchExpenseActivities(clubId, userId),
+            selected: _activity,
           );
         },
       ),
     );
     if (!_sameAccount || choice == null) return;
     setState(() {
-      if (choice.activity?.id != _activity?.id) {
+      if (choice.activity?.id != _activity?.id ||
+          choice.activity?.type != _activity?.type) {
         _nombrePlongeursController.clear();
       }
       _activity = choice.activity;
@@ -420,7 +421,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         montant: montant,
         description: description,
         dateDepense: _selectedDate,
-        operationId: _activity?.id,
+        operationId: _activity?.operation?.id,
+        piscineSessionId: _activity?.piscineSession?.id,
         operationTitle: _activity?.titre,
         nombrePlongeurs: int.tryParse(_nombrePlongeursController.text),
         photoFiles: _selectedPhotos,
@@ -849,100 +851,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ExpenseActivityDialog extends StatefulWidget {
-  const _ExpenseActivityDialog({
-    required this.loadActivities,
-    required this.selectedId,
-  });
-
-  final Future<List<Operation>> Function() loadActivities;
-  final String? selectedId;
-
-  @override
-  State<_ExpenseActivityDialog> createState() => _ExpenseActivityDialogState();
-}
-
-class _ExpenseActivityDialogState extends State<_ExpenseActivityDialog> {
-  late final Future<List<Operation>> _activities = widget.loadActivities();
-  String _search = '';
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Activité'),
-      content: SizedBox(
-        width: 400,
-        height: 350,
-        child: Column(
-          children: [
-            TextField(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                labelText: 'Rechercher par titre',
-              ),
-              onChanged: (value) =>
-                  setState(() => _search = normalizeSearchText(value.trim())),
-            ),
-            Expanded(
-              child: FutureBuilder<List<Operation>>(
-                future: _activities,
-                builder: (context, snapshot) {
-                  final activities = (snapshot.data ?? [])
-                      .where((activity) =>
-                          normalizeSearchText(activity.titre).contains(_search))
-                      .toList();
-                  return ListView.builder(
-                    itemCount: activities.isEmpty ? 2 : activities.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return ListTile(
-                          selected: widget.selectedId == null,
-                          title: const Text('Pas liée à une activité'),
-                          onTap: () => Navigator.pop(context, (activity: null)),
-                        );
-                      }
-                      if (activities.isEmpty) {
-                        if (snapshot.hasError) {
-                          return const ListTile(
-                            title: Text('Activités indisponibles.'),
-                          );
-                        }
-                        if (!snapshot.hasData) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-                        return const ListTile(
-                          title: Text('Aucune activité trouvée.'),
-                        );
-                      }
-                      final activity = activities[index - 1];
-                      return ListTile(
-                        selected: widget.selectedId == activity.id,
-                        title: Text(activity.titre),
-                        subtitle: Text(
-                          DateFormatter.formatMedium(activity.dateDebut!),
-                        ),
-                        onTap: () => Navigator.pop(context, (activity: activity)),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-      ],
     );
   }
 }
