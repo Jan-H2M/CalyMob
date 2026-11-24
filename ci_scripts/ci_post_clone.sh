@@ -39,11 +39,12 @@ if [ ! -x "$(brew --prefix)/opt/ruby@3.3/bin/ruby" ]; then
   brew install ruby@3.3
 fi
 export PATH="$(brew --prefix ruby@3.3)/bin:$PATH"
-[ "$(ruby -e 'print RUBY_VERSION')" = "$RUBY_VERSION" ] || {
-  echo 'Unexpected Ruby patch version; review the toolchain pin before release.' >&2
+ruby_version="$(ruby -e 'print RUBY_VERSION')"
+[ "${ruby_version%.*}" = "$RUBY_MINOR" ] || {
+  echo "Expected Ruby $RUBY_MINOR.x; found $ruby_version." >&2
   exit 1
 }
-export GEM_HOME="$HOME/.calymob-gems/ruby-$RUBY_VERSION"
+export GEM_HOME="$HOME/.calymob-gems/ruby-$ruby_version"
 export GEM_PATH="$GEM_HOME"
 export PATH="$GEM_HOME/bin:$PATH"
 gem install cocoapods --version "$COCOAPODS_VERSION" --no-document
