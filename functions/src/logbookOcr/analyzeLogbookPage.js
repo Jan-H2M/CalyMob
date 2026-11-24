@@ -8,6 +8,8 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { requireAuth, validateClubId } = require('../utils/clubCallableInput');
+const { authorizeLogbookAi } = require('../logbook/authorizeLogbookAi');
 const {
   loadCanonicalLocations,
   resolveLocationCandidates,
@@ -17,24 +19,19 @@ const REGION = 'europe-west1';
 const MAX_IMAGE_BYTES = Number(process.env.LOGBOOK_OCR_MAX_IMAGE_BYTES || 8 * 1024 * 1024);
 const DEFAULT_MODEL = process.env.LOGBOOK_OCR_AI_MODEL || 'gpt-4.1-mini';
 
-function requireAuth(request) {
-  const uid = request.auth && request.auth.uid;
-  if (!uid) {
-    throw new HttpsError('unauthenticated', 'Authentification requise');
-  }
-  return uid;
-}
-
 function validateInput(data, uid) {
-  const clubId = typeof data.clubId === 'string' ? data.clubId.trim() : '';
-  const storagePath = typeof data.storagePath === 'string' ? data.storagePath.trim() : '';
+  const clubId = validateClubId(data.clubId);
+  const storagePath = typeof data.storagePath === 'string' ? data.storagePath : '';
   const defaultYear = Number(data.defaultYear);
-  const localeHints = Array.isArray(data.localeHints)
-    ? data.localeHints.filter((x) => typeof x === 'string').slice(0, 4)
-    : ['fr', 'nl'];
+  const localeHints = data.localeHints ?? ['fr', 'nl'];
 
-  if (!clubId) throw new HttpsError('invalid-argument', 'clubId requis');
-  if (!storagePath) throw new HttpsError('invalid-argument', 'storagePath requis');
+  if (!storagePath || Buffer.byteLength(storagePath, 'utf8') > 1024) {
+    throw new HttpsError('invalid-argument', 'storagePath invalide');
+  }
+  if (!Array.isArray(localeHints) || localeHints.length > 4 ||
+      localeHints.some((locale) => typeof locale !== 'string' || !/^[A-Za-z0-9-]{1,32}$/.test(locale))) {
+    throw new HttpsError('invalid-argument', 'localeHints invalide');
+  }
   if (!Number.isInteger(defaultYear) || defaultYear < 1950 || defaultYear > 2100) {
     throw new HttpsError('invalid-argument', 'defaultYear invalide');
   }
@@ -451,6 +448,7 @@ exports.analyzeLogbookPage = onCall(
   async (request) => {
     const uid = requireAuth(request);
     const input = validateInput(request.data || {}, uid);
+    await authorizeLogbookAi(admin.firestore(), input.clubId, uid);
 
     const bucket = admin.storage().bucket();
     const file = bucket.file(input.storagePath);

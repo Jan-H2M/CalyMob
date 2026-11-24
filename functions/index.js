@@ -220,6 +220,8 @@ exports.onPiscineTaskAssigned = onPiscineTaskAssigned;
 // MEDICAL CERTIFICATE NOTIFICATIONS (Gen2)
 // =============================================================================
 
+exports.getMedicalCertificateUrl = require('./src/medical/getMedicalCertificateUrl').getMedicalCertificateUrl;
+
 // Push notification when medical certificate status changes (approved/rejected)
 const { onMedicalCertStatusChange, onMedicalCertCreated } = require('./src/notifications/onMedicalCertStatusChange');
 exports.onMedicalCertStatusChange = onMedicalCertStatusChange;
