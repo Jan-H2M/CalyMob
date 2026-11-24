@@ -9,6 +9,9 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { requireAuth, validateClubId } = require('../utils/clubCallableInput');
+const { authorizeLogbookAi } = require('../logbook/authorizeLogbookAi');
+const { memberFirstName, memberLastName } = require('../utils/memberName');
 const {
   loadCanonicalLocations,
   resolveLocationCandidates,
@@ -18,33 +21,28 @@ const REGION = 'europe-west1';
 const DEFAULT_MODEL = process.env.LOGBOOK_DICTATION_AI_MODEL || 'gpt-5.2';
 const MAX_TEXT_LENGTH = 2000;
 
-function requireAuth(request) {
-  const uid = request.auth && request.auth.uid;
-  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise');
-  return uid;
-}
-
 function validateInput(data) {
-  const clubId = typeof data.clubId === 'string' ? data.clubId.trim() : '';
-  const text = typeof data.text === 'string' ? data.text.trim() : '';
+  const clubId = validateClubId(data.clubId);
+  const text = typeof data.text === 'string' ? data.text : '';
   const defaultYear = Number(data.defaultYear);
   const currentDiveNumber = Number(data.currentDiveNumber);
-  const lockedFields = Array.isArray(data.lockedFields)
-    ? data.lockedFields.filter((v) => typeof v === 'string').slice(0, 40)
-    : [];
+  const lockedFields = data.lockedFields ?? [];
+  if (!Array.isArray(lockedFields) || lockedFields.length > 40 ||
+      lockedFields.some((field) => typeof field !== 'string' || !/^[A-Za-z0-9_]{1,32}$/.test(field))) {
+    throw new HttpsError('invalid-argument', 'lockedFields invalide');
+  }
 
-  if (!clubId) throw new HttpsError('invalid-argument', 'clubId requis');
-  if (!text) throw new HttpsError('invalid-argument', 'Texte requis');
   if (text.length > MAX_TEXT_LENGTH) {
     throw new HttpsError('invalid-argument', 'Dictée trop longue');
   }
+  if (!text.trim()) throw new HttpsError('invalid-argument', 'Texte requis');
   if (!Number.isInteger(defaultYear) || defaultYear < 1950 || defaultYear > 2100) {
     throw new HttpsError('invalid-argument', 'defaultYear invalide');
   }
 
   return {
     clubId,
-    text,
+    text: text.trim(),
     defaultYear,
     currentDiveNumber:
       Number.isInteger(currentDiveNumber) && currentDiveNumber > 0
@@ -79,7 +77,7 @@ function normalizeName(value) {
 async function loadContext(clubId, uid) {
   const db = admin.firestore();
   const [membersSnap, locationsSnap, carnetSnap] = await Promise.all([
-    db.collection('clubs').doc(clubId).collection('members').limit(500).get(),
+    db.collection('clubs').doc(clubId).collection('member_directory').limit(500).get(),
     // No client-style limit here: canonical matching must see every active
     // club location, even when the catalogue grows past historical limits.
     db.collection('clubs').doc(clubId).collection('dive_locations').get(),
@@ -94,14 +92,11 @@ async function loadContext(clubId, uid) {
   const members = [];
   membersSnap.forEach((doc) => {
     const d = doc.data() || {};
-    const prenom = normalizeName(
-      d.prenom || d.firstName || d.first_name || d.membre_prenom || d.member_first_name
-    );
-    const nom = normalizeName(
-      d.nom || d.lastName || d.last_name || d.membre_nom || d.member_last_name
-    );
-    const displayName = normalizeName(`${prenom} ${nom}`);
-    if (!displayName || doc.id === uid) return;
+    if (doc.id === uid || d.is_test_account === true) return;
+    const prenom = memberFirstName(d);
+    const nom = memberLastName(d);
+    const displayName = normalizeName(d.display_name || d.displayName || `${prenom} ${nom}`);
+    if (!displayName) return;
     members.push({
       id: doc.id,
       displayName,
@@ -259,8 +254,21 @@ function extractOutputText(response) {
   return chunks.join('');
 }
 
-function sanitizeResult(result, input, canonicalLocations = []) {
-  const fields = result && typeof result.fields === 'object' ? result.fields : {};
+function sanitizeResult(result, input, canonicalLocations = [], members = []) {
+  const fields = { ...result?.fields };
+  if (Array.isArray(fields.buddies)) {
+    const membersById = new Map(members.map((member) => [member.id, member]));
+    fields.buddies = fields.buddies
+      .filter((buddy) => buddy && typeof buddy.displayName === 'string')
+      .map((buddy) => {
+        const member = membersById.get(buddy.memberId);
+        return {
+          memberId: member?.id ?? null,
+          displayName: member?.displayName ?? buddy.displayName,
+          matchedExisting: Boolean(member),
+        };
+      });
+  }
   const mapLocked = (locked) => {
     switch (locked) {
       case 'dive_number':
@@ -385,12 +393,13 @@ exports.analyzeLogbookDictation = onCall(
   async (request) => {
     const uid = requireAuth(request);
     const input = validateInput(request.data || {});
+    await authorizeLogbookAi(admin.firestore(), input.clubId, uid);
     const context = await loadContext(input.clubId, uid);
     const result = await callOpenAi({ input, context });
     // Re-resolve the model's spelling server-side against the full canonical
     // catalogue. The AI prompt is an aid, never the source of truth.
     const canonicalLocations = await loadCanonicalLocations(input.clubId);
-    return sanitizeResult(result, input, canonicalLocations);
+    return sanitizeResult(result, input, canonicalLocations, context.members);
   }
 );
 
