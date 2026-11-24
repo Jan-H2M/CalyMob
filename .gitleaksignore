@@ -1,0 +1,4 @@
+# False positives: CocoaPods public dependency checksums in the reviewed
+# Xcode Cloud tooling port. Fingerprints ignore only these exact findings.
+8ab6c1862ae61412ff4845698762161f42f48741:ios/Podfile.lock:generic-api-key:1843
+8ab6c1862ae61412ff4845698762161f42f48741:ios/Podfile.lock:generic-api-key:1883

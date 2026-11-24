@@ -8,7 +8,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { ARTIFACTS } = require('./verify_store_release.cjs');
+const { ARTIFACTS, PLATFORMS } = require('./verify_store_release.cjs');
+const { WORKFLOW_ID, assessBuildNumberSync } = require('./build_number_sync.cjs');
 
 const NOTES = {
   android: ({ build }) => `android/fastlane/metadata/android/fr-FR/changelogs/${build}.txt`,
@@ -31,7 +32,7 @@ function parseArgs(argv) {
   requireThat(Object.hasOwn(args, '--output') && Object.hasOwn(args, '--platforms'),
     'both --output and --platforms are required');
   const platforms = [...new Set(args['--platforms'].split(',').map((entry) => entry.trim()).filter(Boolean))];
-  requireThat(platforms.length > 0 && platforms.every((entry) => Object.hasOwn(ARTIFACTS, entry)),
+  requireThat(platforms.length > 0 && platforms.every((entry) => PLATFORMS.includes(entry)),
     'platforms must be android, ios, or android,ios');
   return { output: args['--output'], platforms };
 }
@@ -40,21 +41,22 @@ function pendingRecord(extra = {}) {
   return { ...extra, sourceCommit: null, sourceTree: null, evidence: null };
 }
 
-function createDraft({ sourceCommit, sourceTree, version, build, platforms, notes, artifacts }) {
+function createDraft({ sourceCommit, sourceTree, version, build, platforms, notes, artifacts,
+  buildNumberSource }) {
   const emptyActions = Object.fromEntries(platforms.map((platform) => [platform, []]));
   const nativeReview = Object.fromEntries(platforms.map((platform) => [platform, pendingRecord({
     reviewer: null,
     verdict: 'pending',
-    artifactSha256: artifacts[platform].sha256,
+    ...(platform === 'android'
+      ? { artifactSha256: artifacts[platform].sha256 }
+      : { xcodeCloudRunId: artifacts[platform].runId, appStoreBuildId: artifacts[platform].appStoreBuildId }),
   })]));
-  const artifactRecords = Object.fromEntries(platforms.map((platform) => [platform, {
-    path: artifacts[platform].path,
-    sha256: artifacts[platform].sha256,
-    sourceCommit: null,
-    sourceTree: null,
-    version: null,
-    build: null,
-  }]));
+  const artifactRecords = Object.fromEntries(platforms.map((platform) => [platform,
+    platform === 'android' ? {
+      kind: 'local-aab', path: artifacts[platform].path, sha256: artifacts[platform].sha256,
+      sourceCommit: null, sourceTree: null, version: null, build: null,
+    } : { kind: 'xcode-cloud-build', ...artifacts[platform] }
+  ]));
 
   return {
     schemaVersion: 2,
@@ -64,6 +66,7 @@ function createDraft({ sourceCommit, sourceTree, version, build, platforms, note
     sourceTree,
     version,
     build,
+    buildNumberSource,
     platforms,
     allowedActions: emptyActions,
     notes: { 'fr-FR': notes },
@@ -108,6 +111,31 @@ function main(argv = process.argv.slice(2)) {
   requireThat(versionMatch, 'invalid pubspec version');
   const [, version, build] = versionMatch;
 
+  const liveBuild = JSON.parse(execFileSync(
+    path.join(root, 'scripts', 'read_xcode_cloud_build_status.sh'),
+    ['json'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+  ));
+  const buildNumberRelation = assessBuildNumberSync({
+    localVersion: version,
+    localBuild: build,
+    cloudBuild: liveBuild.latestRun.number,
+    latestVersion: liveBuild.latestUploaded.version,
+    latestBuild: liveBuild.latestUploaded.build,
+  });
+  const buildNumberSource = {
+    provider: 'xcode-cloud',
+    workflowId: WORKFLOW_ID,
+    observedAt: new Date().toISOString(),
+    latestRunNumber: liveBuild.latestRun.number,
+    latestRunId: liveBuild.latestRun.id,
+    latestUploadedVersion: liveBuild.latestUploaded.version,
+    latestUploadedBuild: liveBuild.latestUploaded.build,
+    reservedVersion: version,
+    reservedBuild: Number(build),
+    relation: buildNumberRelation.relation,
+  };
+
   const notesByPlatform = platforms.map((platform) => fs.readFileSync(
     path.join(root, NOTES[platform]({ build })), 'utf8'
   ).trim());
@@ -116,7 +144,28 @@ function main(argv = process.argv.slice(2)) {
     'selected platforms must use identical approved French release notes');
 
   const artifacts = Object.fromEntries(platforms.map((platform) => {
-    const relativePath = ARTIFACTS[platform];
+    if (platform === 'ios') {
+      const run = liveBuild.latestRun;
+      const uploaded = run.appStoreBuild;
+      requireThat(buildNumberRelation.relation === 'matches-latest-cloud',
+        'iOS manifest requires the exact completed Xcode Cloud build, not an unbuilt reservation');
+      requireThat(run.executionProgress === 'COMPLETE' && run.completionStatus === 'SUCCEEDED',
+        'latest Xcode Cloud build did not succeed');
+      requireThat(run.sourceCommit === sourceCommit,
+        'latest Xcode Cloud build source commit does not match this checkout');
+      requireThat(uploaded && uploaded.version === version && String(uploaded.build) === build,
+        'latest Xcode Cloud run is not linked to the matching App Store build');
+      requireThat(uploaded.processingState === 'VALID',
+        'Xcode Cloud App Store build is not valid yet');
+      return [platform, {
+        workflowId: WORKFLOW_ID, runId: run.id, runNumber: run.number,
+        executionProgress: run.executionProgress, completionStatus: run.completionStatus,
+        createdAt: run.createdAt, finishedAt: run.finishedAt,
+        appStoreBuildId: uploaded.id, processingState: uploaded.processingState,
+        sourceCommit, sourceTree, version, build,
+      }];
+    }
+    const relativePath = ARTIFACTS.android;
     const absolutePath = path.join(root, relativePath);
     requireThat(fs.statSync(absolutePath).isFile() && fs.statSync(absolutePath).size > 0,
       `${platform} artifact is missing or empty`);
@@ -130,6 +179,7 @@ function main(argv = process.argv.slice(2)) {
 
   const draft = createDraft({
     sourceCommit, sourceTree, version, build, platforms, notes: notesByPlatform[0], artifacts,
+    buildNumberSource,
   });
   const descriptor = fs.openSync(resolvedOutput, 'wx', 0o600);
   try {
@@ -140,7 +190,7 @@ function main(argv = process.argv.slice(2)) {
   }
   process.stdout.write(`${JSON.stringify({
     output: resolvedOutput, sourceCommit, sourceTree, version, build, platforms,
-    draft: true, uploadAuthorized: false,
+    draft: true, uploadAuthorized: false, buildNumberSource,
   })}\n`);
 }
 

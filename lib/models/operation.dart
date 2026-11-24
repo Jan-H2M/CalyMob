@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tariff.dart';
+import 'event_card_appearance.dart';
 import 'supplement.dart';
 import 'document_justificatif.dart';
 
@@ -39,6 +40,7 @@ class PaymentInstallment {
 
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
+  final EventCardAppearance? cardAppearance;
   final String id;
   final String type; // 'evenement', 'cotisation', 'don', etc.
   final String? categorie; // 'plongee' ou 'sortie' pour les événements
@@ -56,6 +58,8 @@ class Operation {
   final DateTime? dateFin;
   final String? lieu;
   final String? lieuId;
+  /// Mirrors CalyCompta's `lieu_type`; it is optional for old operations.
+  final String? lieuType;
   final int? capaciteMax;
   final double? prixMembre; // Legacy: prix pour membres
   final double? prixNonMembre; // Legacy: prix pour non-membres
@@ -120,6 +124,7 @@ class Operation {
   final DateTime updatedAt;
 
   Operation({
+    this.cardAppearance,
     required this.id,
     required this.type,
     this.categorie,
@@ -132,6 +137,7 @@ class Operation {
     this.dateFin,
     this.lieu,
     this.lieuId,
+    this.lieuType,
     this.capaciteMax,
     this.prixMembre,
     this.prixNonMembre,
@@ -163,6 +169,7 @@ class Operation {
     final data = doc.data() as Map<String, dynamic>;
 
     return Operation(
+      cardAppearance: EventCardAppearance.fromMap(data['card_appearance']),
       id: doc.id,
       type: data['type'] ?? 'evenement',
       categorie: data['event_category'] ?? data['categorie'],
@@ -175,6 +182,7 @@ class Operation {
       dateFin: (data['date_fin'] as Timestamp?)?.toDate(),
       lieu: data['lieu'],
       lieuId: data['lieu_id'],
+      lieuType: data['lieu_type'] as String?,
       capaciteMax: data['capacite_max'],
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),

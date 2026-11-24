@@ -1,9 +1,20 @@
 import 'operation.dart';
 import 'piscine_session.dart';
+import 'event_card_appearance.dart';
+
+enum AgendaActivityCategory {
+  plongee('Plongées'),
+  piscine('Piscine'),
+  sortie('Sorties');
+
+  const AgendaActivityCategory(this.label);
+  final String label;
+}
 
 /// Uniforme wrapper voor Operations en PiscineSession in de activiteitenlijst
 /// Maakt het mogelijk om beide types in één lijst te tonen en te filteren
 class ActivityItem {
+  EventCardAppearance? get cardAppearance => operation?.cardAppearance ?? piscineSession?.cardAppearance;
   final String id;
   final String type; // 'operation' of 'piscine'
   final String titre;
@@ -43,6 +54,12 @@ class ActivityItem {
 
   /// Check of dit een reguliere operation is
   bool get isOperation => type == 'operation';
+
+  AgendaActivityCategory get agendaCategory => switch (categorie) {
+    'plongee' => AgendaActivityCategory.plongee,
+    'piscine' => AgendaActivityCategory.piscine,
+    _ => AgendaActivityCategory.sortie,
+  };
 
   bool get isDraft => operation?.statut == 'brouillon';
 

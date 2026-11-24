@@ -20,6 +20,20 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
+case "$platform:$lane" in
+  ios:deploy|ios:release)
+    echo 'Local iOS build/upload is disabled; use Xcode Cloud workflow D11B66EC-6E95-43A4-B345-727D1992D72A.' >&2
+    exit 1
+    ;;
+  android:deploy|android:submit|ios:submit|ios:update_notes)
+    sync_root="$repo_root"
+    if [[ "$platform:$lane" == "android:submit" && -n "${CALYMOB_RELEASE_ROOT:-}" ]]; then
+      sync_root="$CALYMOB_RELEASE_ROOT"
+    fi
+    "$repo_root/scripts/check_build_number_sync.sh" "$sync_root"
+    ;;
+esac
+
 cd "$repo_root/$platform"
 
 # Prefer the repository lock only when a known Bundler installation can

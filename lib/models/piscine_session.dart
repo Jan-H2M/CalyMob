@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../config/piscine_slots.dart';
+import 'event_card_appearance.dart';
 
 /// Assignment d'un membre à une fonction dans une séance
 class SessionAssignment {
@@ -368,6 +369,7 @@ class PiscineSessionStatus {
 /// Le champ [gonflage] est un Map indexé par créneau horaire (19h45, 20h15, 22h30).
 /// Le champ [theorie] est optionnel et contient les séances théorie par créneau.
 class PiscineSession {
+  final EventCardAppearance? cardAppearance;
   final String id;
   final String operationId;
   final String type; // 'piscine' | 'theorie' (défaut: 'piscine')
@@ -388,6 +390,7 @@ class PiscineSession {
   final String createdBy;
 
   PiscineSession({
+    this.cardAppearance,
     required this.id,
     required this.operationId,
     this.type = 'piscine',
@@ -444,6 +447,7 @@ class PiscineSession {
     }
 
     return PiscineSession(
+      cardAppearance: EventCardAppearance.fromMap(data['card_appearance']),
       id: doc.id,
       operationId: data['operation_id'] ?? '',
       type: data['type'] ?? 'piscine',
@@ -524,6 +528,7 @@ class PiscineSession {
 
   Map<String, dynamic> toFirestore() {
     return {
+      if (cardAppearance != null) 'card_appearance': cardAppearance!.toMap(),
       'operation_id': operationId,
       'type': type,
       'date': Timestamp.fromDate(date),
@@ -675,6 +680,7 @@ class PiscineSession {
     String? createdBy,
   }) {
     return PiscineSession(
+      cardAppearance: cardAppearance,
       id: id ?? this.id,
       operationId: operationId ?? this.operationId,
       type: type ?? this.type,

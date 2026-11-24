@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../config/app_assets.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../config/app_colors.dart';
 import '../../models/expense_claim.dart';
+import '../../models/expense_reimbursement_type.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/currency_formatter.dart';
@@ -14,22 +14,25 @@ import 'edit_expense_screen.dart';
 class ExpenseDetailScreen extends StatelessWidget {
   final ExpenseClaim expense;
 
-  const ExpenseDetailScreen({
-    super.key,
-    required this.expense,
-  });
+  const ExpenseDetailScreen({super.key, required this.expense});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final expenseProvider = Provider.of<ExpenseProvider>(context, listen: false);
+    final expenseProvider = Provider.of<ExpenseProvider>(
+      context,
+      listen: false,
+    );
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.currentUser?.uid;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Détail Demande', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Détail de la demande',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -40,7 +43,12 @@ class ExpenseDetailScreen extends StatelessWidget {
               icon: const Icon(Icons.edit),
               tooltip: 'Modifier',
               onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => EditExpenseScreen(expense: expense)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditExpenseScreen(expense: expense),
+                  ),
+                );
               },
             ),
             IconButton(
@@ -50,10 +58,8 @@ class ExpenseDetailScreen extends StatelessWidget {
                 final confirmed = await _showDeleteConfirmation(context);
                 if (confirmed && context.mounted) {
                   try {
-                    // Get clubId and userId from expense (assuming they're available)
-                    // Note: You may need to pass these from the parent widget if not in expense model
                     await expenseProvider.deleteExpense(
-                      clubId: expense.clubId ?? 'calypso', // Fallback to default club
+                      clubId: expense.clubId,
                       expenseId: expense.id,
                       userId: expense.demandeurId,
                     );
@@ -86,220 +92,259 @@ class ExpenseDetailScreen extends StatelessWidget {
         creatures: CreatureSet.bubbles,
         opacity: 0.6,
         child: SafeArea(
-            bottom: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-            // Status Badge
-            Center(
-              child: _buildStatusBadge(expense.statut),
-            ),
-            const SizedBox(height: 24),
+          bottom: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Status Badge
+                Center(child: _buildStatusBadge(expense.statut)),
+                const SizedBox(height: 24),
 
-            // Informations Card (met Montant)
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Montant prominent bovenaan
-                    Row(
+                // Informations Card (met Montant)
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.euro, size: 28, color: theme.primaryColor),
-                        const SizedBox(width: 12),
-                        Text(
-                          CurrencyFormatter.format(expense.montant),
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: theme.primaryColor,
+                        if (expense.reimbursementType != null) ...[
+                          _buildInfoRow(
+                            icon: Icons.tune,
+                            label: 'Type de remboursement',
+                            value: reimbursementTypeLabel(
+                              expense.reimbursementType,
+                            ),
                           ),
+                          const Divider(height: 24),
+                        ],
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.euro,
+                              size: 28,
+                              color: theme.primaryColor,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              CurrencyFormatter.format(expense.montant),
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: theme.primaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 24),
+                        _buildInfoRow(
+                          icon: Icons.description,
+                          label: 'Description',
+                          value: expense.description,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildInfoRow(
+                          icon: Icons.calendar_today,
+                          label: 'Date de dépense',
+                          value: DateFormatter.formatLong(expense.dateDepense),
+                        ),
+                        if (expense.categorie != null) ...[
+                          const SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.category,
+                            label: 'Catégorie comptable',
+                            value: expense.categorie!,
+                          ),
+                        ],
+                        if (expense.boutiqueSupplierBatchId != null) ...[
+                          const SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.storefront,
+                            label: 'Boutique',
+                            value:
+                                'Commande Boutique liée à cette note de frais',
+                          ),
+                        ],
+                        if (expense.operationId != null ||
+                            expense.piscineSessionId != null ||
+                            expense.operationTitle != null) ...[
+                          const SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.event,
+                            label: 'Activité liée',
+                            value: expense.operationTitle ??
+                                expense.operationId ??
+                                expense.piscineSessionId!,
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        _buildInfoRow(
+                          icon: Icons.access_time,
+                          label: 'Date de demande',
+                          value: DateFormatter.formatLong(expense.dateDemande),
                         ),
                       ],
                     ),
-                    const Divider(height: 24),
-                    _buildInfoRow(
-                      icon: Icons.description,
-                      label: 'Description',
-                      value: expense.description,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildInfoRow(
-                      icon: Icons.calendar_today,
-                      label: 'Date de dépense',
-                      value: DateFormatter.formatLong(expense.dateDepense),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildInfoRow(
-                      icon: Icons.category,
-                      label: 'Catégorie',
-                      value: expense.categorie ?? 'Non spécifié',
-                    ),
-                    if (expense.operationId != null) ...[
-                      const SizedBox(height: 12),
-                      _buildInfoRow(
-                        icon: Icons.event,
-                        label: 'Opération liée',
-                        value: expense.operationId!,
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    _buildInfoRow(
-                      icon: Icons.access_time,
-                      label: 'Date de demande',
-                      value: DateFormatter.formatLong(expense.dateDemande),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Demandeur Card
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Demandeur',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    _buildInfoRow(
-                      icon: Icons.person,
-                      label: 'Nom',
-                      value: expense.demandeurNom ?? 'Inconnu',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Historique Card - show for any status that indicates processing happened
-            if (expense.dateApprobation != null ||
-                expense.dateRefus != null ||
-                expense.requiresDoubleApproval ||
-                expense.statut == 'approuve' ||
-                expense.statut == 'rembourse' ||
-                expense.statut == 'refuse') ...[
-              Card(
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Historique',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Divider(height: 24),
-                      _buildHistoriqueTimeline(expense),
-                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                const SizedBox(height: 16),
 
-            // Photos Gallery
-            if (expense.urlsJustificatifs.isNotEmpty) ...[
-              Card(
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                // Demandeur Card
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Demandeur',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Divider(height: 24),
+                        _buildInfoRow(
+                          icon: Icons.person,
+                          label: 'Nom',
+                          value: expense.demandeurNom ?? 'Inconnu',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Historique Card - show for any status that indicates processing happened
+                if (expense.dateApprobation != null ||
+                    expense.dateRefus != null ||
+                    expense.requiresDoubleApproval ||
+                    expense.statut == 'approuve' ||
+                    expense.statut == 'rembourse' ||
+                    expense.statut == 'refuse') ...[
+                  Card(
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.photo_library, size: 20),
-                          const SizedBox(width: 8),
                           Text(
-                            'Justificatifs (${expense.urlsJustificatifs.length})',
+                            'Historique',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          const Divider(height: 24),
+                          _buildHistoriqueTimeline(expense),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      ExpensePhotoGallery(
-                        photoUrls: expense.urlsJustificatifs,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Photos Gallery
+                if (expense.urlsJustificatifs.isNotEmpty) ...[
+                  Card(
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.photo_library, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Justificatifs (${expense.urlsJustificatifs.length})',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          ExpensePhotoGallery(
+                            photoUrls: expense.urlsJustificatifs,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Boutons Approuver/Refuser (pour validateurs)
+                // RÈGLE: On ne peut PAS approuver ses propres demandes
+                if ((expense.statut == 'soumis' ||
+                        expense.statut == 'en_attente_validation') &&
+                    currentUserId != null &&
+                    currentUserId != expense.demandeurId) ...[
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              _handleReject(context, expenseProvider),
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          label: const Text(
+                            'Refuser',
+                            style: TextStyle(color: Colors.white, fontSize: 16),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              _handleApprove(context, expenseProvider),
+                          icon: const Icon(Icons.check, color: Colors.white),
+                          label: const Text(
+                            'Approuver',
+                            style: TextStyle(color: Colors.white, fontSize: 16),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.success,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                ],
 
-            // Boutons Approuver/Refuser (pour validateurs)
-            // RÈGLE: On ne peut PAS approuver ses propres demandes
-            if ((expense.statut == 'soumis' || expense.statut == 'en_attente_validation') &&
-                currentUserId != null &&
-                currentUserId != expense.demandeurId) ...[
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => _handleReject(context, expenseProvider),
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      label: const Text('Refuser', style: TextStyle(color: Colors.white, fontSize: 16)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                // Footer info
+                if (expense.statut == 'soumis')
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      'Vous pouvez modifier ou supprimer cette demande tant qu\'elle n\'est pas validée.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => _handleApprove(context, expenseProvider),
-                      icon: const Icon(Icons.check, color: Colors.white),
-                      label: const Text('Approuver', style: TextStyle(color: Colors.white, fontSize: 16)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.success,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-
-            // Footer info
-            if (expense.statut == 'soumis')
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text(
-                  'Vous pouvez modifier ou supprimer cette demande tant qu\'elle n\'est pas validée.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontStyle: FontStyle.italic,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-                ],
-              ),
+              ],
             ),
           ),
         ),
+      ),
     );
   }
 
@@ -423,12 +468,17 @@ class ExpenseDetailScreen extends StatelessWidget {
     return result ?? false;
   }
 
-  Future<void> _handleApprove(BuildContext context, ExpenseProvider expenseProvider) async {
+  Future<void> _handleApprove(
+    BuildContext context,
+    ExpenseProvider expenseProvider,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Approuver la demande'),
-        content: Text('Approuver la demande de ${CurrencyFormatter.format(expense.montant)} de ${expense.demandeurNom} ?'),
+        content: Text(
+          'Approuver la demande de ${CurrencyFormatter.format(expense.montant)} de ${expense.demandeurNom} ?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -450,10 +500,12 @@ class ExpenseDetailScreen extends StatelessWidget {
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final approverId = authProvider.currentUser?.uid ?? '';
-        final approverName = authProvider.displayName ?? authProvider.currentUser?.email ?? 'Inconnu';
+        final approverName = authProvider.displayName ??
+            authProvider.currentUser?.email ??
+            'Inconnu';
 
         await expenseProvider.approveExpense(
-          clubId: expense.clubId ?? 'calypso',
+          clubId: expense.clubId,
           expenseId: expense.id,
           approverId: approverId,
           approverName: approverName,
@@ -480,7 +532,10 @@ class ExpenseDetailScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _handleReject(BuildContext context, ExpenseProvider expenseProvider) async {
+  Future<void> _handleReject(
+    BuildContext context,
+    ExpenseProvider expenseProvider,
+  ) async {
     String? reason;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -489,7 +544,9 @@ class ExpenseDetailScreen extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Refuser la demande de ${CurrencyFormatter.format(expense.montant)} de ${expense.demandeurNom} ?'),
+            Text(
+              'Refuser la demande de ${CurrencyFormatter.format(expense.montant)} de ${expense.demandeurNom} ?',
+            ),
             const SizedBox(height: 16),
             TextField(
               textCapitalization: TextCapitalization.sentences,
@@ -522,7 +579,7 @@ class ExpenseDetailScreen extends StatelessWidget {
     if (confirmed == true && context.mounted) {
       try {
         await expenseProvider.rejectExpense(
-          clubId: expense.clubId ?? 'calypso',
+          clubId: expense.clubId,
           expenseId: expense.id,
           reason: reason,
         );
@@ -647,11 +704,7 @@ class ExpenseDetailScreen extends StatelessWidget {
         Column(
           children: [
             if (!isFirst)
-              Container(
-                width: 2,
-                height: 12,
-                color: Colors.grey[300],
-              ),
+              Container(width: 2, height: 12, color: Colors.grey[300]),
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -688,10 +741,7 @@ class ExpenseDetailScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                 ),
                 if (detail != null) ...[
                   const SizedBox(height: 8),
@@ -704,7 +754,11 @@ class ExpenseDetailScreen extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline, size: 16, color: Colors.red[700]),
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Colors.red[700],
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
