@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:calymob/config/firebase_config.dart';
 import 'package:calymob/models/activity_item.dart';
+import 'package:calymob/models/expense_activity_summary.dart';
 import 'package:calymob/providers/activity_provider.dart';
 import 'package:calymob/providers/auth_provider.dart';
 import 'package:calymob/providers/expense_provider.dart';
@@ -170,6 +173,16 @@ Future<void> _seedActivities(FakeFirebaseFirestore db) async {
     'tariff_label': 'Non plongeur',
     'prix': 4,
     'paye': false,
+    'date_inscription': Timestamp.fromDate(now),
+  });
+  await registrations.doc('legacy-canceled').set({
+    'operation_id': 'registered',
+    'membre_id': 'legacy-canceled',
+    'registration_status': 'confirmed',
+    'canceled_at': Timestamp.fromDate(now),
+    'prix': 100,
+    'paye': true,
+    'present': true,
     'date_inscription': Timestamp.fromDate(now),
   });
   await add('organized', 'Carrière', 4);
@@ -389,6 +402,48 @@ void main() {
         find.byKey(const ValueKey('expense-expected-amount-warning')),
         findsNothing,
       );
+      await db.collection('$_club/dive_locations').doc('calypso-site').update({
+        'tariffs': [
+          {
+            'id': 'member-site',
+            'label': 'Membre',
+            'category': 'membre',
+            'price': 9,
+            'is_default': true,
+          },
+          {
+            'id': 'staff-site',
+            'label': 'Encadrant',
+            'category': 'encadrant',
+            'price': 0,
+          },
+        ],
+      });
+      await _openActivityPicker(tester);
+      await tester.pump(const Duration(milliseconds: 100));
+      final refreshedActivity = find.byKey(
+        const ValueKey('expense-activity-operation-registered'),
+      );
+      await tester.scrollUntilVisible(
+        refreshedActivity,
+        120,
+        scrollable: _pickerScroll(),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.descendant(
+          of: refreshedActivity,
+          matching: find.textContaining('18,00'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(refreshedActivity);
+      await _finishTransition(tester);
+      expect(
+        find.byKey(const ValueKey('expense-expected-amount-warning')),
+        findsOneWidget,
+      );
+
       await tester.enterText(find.byType(TextFormField).at(0), '17');
       await tester.pump();
       expect(
@@ -422,5 +477,53 @@ void main() {
     expect(claim.containsKey('piscine_session_id'), isFalse);
     expect(claim.containsKey('operation_title'), isFalse);
     expect(claim.containsKey('nombre_plongeurs'), isFalse);
+  });
+
+  testWidgets('a delayed summary cannot pop two routes after a double tap', (
+    tester,
+  ) async {
+    final summary = Completer<ExpenseActivitySummary>();
+    final activity = ActivityItem(
+      id: 'delayed',
+      type: 'operation',
+      titre: 'Activité différée',
+      date: DateTime.now(),
+      categorie: 'plongee',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () {
+                showDialog<({
+                  ActivityItem? activity,
+                  ExpenseActivitySummary? summary,
+                })>(
+                  context: context,
+                  builder: (_) => ExpenseActivityPicker(
+                    clubId: FirebaseConfig.defaultClubId,
+                    watchActivities: () => Stream.value([activity]),
+                    loadSummary: (_) => summary.future,
+                    selected: null,
+                  ),
+                );
+              },
+              child: const Text('Ouvrir le sélecteur'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Ouvrir le sélecteur'));
+    await _finishTransition(tester);
+    await tester.tap(find.text('Activité différée'));
+    await tester.tap(find.text('Activité différée'));
+    expect(find.byType(ExpenseActivityPicker), findsOneWidget);
+
+    summary.complete(const ExpenseActivitySummary());
+    await tester.pumpAndSettle();
+    expect(find.byType(ExpenseActivityPicker), findsNothing);
+    expect(find.text('Ouvrir le sélecteur'), findsOneWidget);
   });
 }

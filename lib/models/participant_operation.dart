@@ -132,6 +132,7 @@ class ParticipantOperation {
   final String?
       paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
   final String registrationStatus;
+  final DateTime? canceledAt;
   final DateTime? paymentExpiresAt;
   final DateTime?
       paymentStatusAt; // Timestamp of last payment_status update (= last QR email sent time when status is 'qr_email_sent')
@@ -190,6 +191,7 @@ class ParticipantOperation {
     this.supplementTotal = 0,
     this.paymentStatus,
     this.registrationStatus = 'confirmed',
+    this.canceledAt,
     this.paymentExpiresAt,
     this.paymentStatusAt,
     this.transactionMatched = false,
@@ -324,6 +326,7 @@ class ParticipantOperation {
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status'],
       registrationStatus: data['registration_status'] as String? ?? 'confirmed',
+      canceledAt: (data['canceled_at'] as Timestamp?)?.toDate(),
       paymentExpiresAt: (data['payment_expires_at'] as Timestamp?)?.toDate(),
       paymentStatusAt: (data['payment_status_at'] as Timestamp?)?.toDate(),
       transactionMatched: data['transaction_matched'] ?? false,
@@ -421,6 +424,7 @@ class ParticipantOperation {
       'supplement_total': supplementTotal,
       'payment_status': paymentStatus,
       'registration_status': registrationStatus,
+      if (canceledAt != null) 'canceled_at': Timestamp.fromDate(canceledAt!),
       'payment_expires_at': paymentExpiresAt != null
           ? Timestamp.fromDate(paymentExpiresAt!)
           : null,
@@ -468,6 +472,7 @@ class ParticipantOperation {
     double? supplementTotal,
     String? paymentStatus,
     String? registrationStatus,
+    DateTime? canceledAt,
     DateTime? paymentExpiresAt,
     DateTime? paymentStatusAt,
     bool? transactionMatched,
@@ -507,6 +512,7 @@ class ParticipantOperation {
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       registrationStatus: registrationStatus ?? this.registrationStatus,
+      canceledAt: canceledAt ?? this.canceledAt,
       paymentExpiresAt: paymentExpiresAt ?? this.paymentExpiresAt,
       paymentStatusAt: paymentStatusAt ?? this.paymentStatusAt,
       transactionMatched: transactionMatched ?? this.transactionMatched,

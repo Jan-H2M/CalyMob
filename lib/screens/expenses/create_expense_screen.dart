@@ -92,6 +92,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     final activities = context.read<ActivityProvider>();
     const clubId = FirebaseConfig.defaultClubId;
     final userId = _originatingUid!;
+    final loadSummary =
+        activities.createExpenseActivitySummaryLoader(clubId);
     final choice = await showDialog<
         ({ActivityItem? activity, ExpenseActivitySummary? summary})>(
       context: context,
@@ -113,8 +115,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             clubId: clubId,
             watchActivities: () =>
                 activities.watchExpenseActivities(clubId, userId),
-            loadSummary: (activity) =>
-                activities.loadExpenseActivitySummary(clubId, activity),
+                loadSummary: loadSummary,
             selected: _activity,
           );
         },

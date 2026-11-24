@@ -12,20 +12,29 @@ import '../models/piscine_session.dart';
 /// Combineert operations en piscine sessions in één stream
 class ActivityService {
   final FirebaseFirestore _firestore;
-  final Map<String, Future<List<DiveLocation>>> _expenseLocations = {};
 
   ActivityService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Loads the detail needed by one visible expense-picker card.
   ///
-  /// The picker caches this future per activity, so registrations/attendance
-  /// are fetched lazily only for cards Firestore actually builds on screen.
-  /// The much smaller dive-site catalogue is shared by every card.
-  Future<ExpenseActivitySummary> loadExpenseActivitySummary(
+  /// The returned loader is scoped to one picker session: visible cards share
+  /// one site-catalogue read, while a later picker receives fresh tariffs.
+  Future<ExpenseActivitySummary> Function(ActivityItem activity)
+      createExpenseActivitySummaryLoader(String clubId) {
+    Future<List<DiveLocation>>? locations;
+    return (activity) => _loadExpenseActivitySummary(
+          clubId,
+          activity,
+          loadLocations: () => locations ??= _loadExpenseLocations(clubId),
+        );
+  }
+
+  Future<ExpenseActivitySummary> _loadExpenseActivitySummary(
     String clubId,
-    ActivityItem activity,
-  ) async {
+    ActivityItem activity, {
+    required Future<List<DiveLocation>> Function() loadLocations,
+  }) async {
     if (activity.isPiscine) {
       final attendees = await _firestore
           .collection('clubs/$clubId/piscine_sessions/${activity.id}/attendees')
@@ -45,7 +54,7 @@ class ActivityService {
       _firestore
           .collection('clubs/$clubId/operations/${activity.id}/inscriptions')
           .get(),
-      _loadExpenseLocations(clubId),
+      loadLocations(),
     ]);
     final registrations = (results[0] as QuerySnapshot<Map<String, dynamic>>)
         .docs
@@ -59,19 +68,14 @@ class ActivityService {
   }
 
   Future<List<DiveLocation>> _loadExpenseLocations(String clubId) {
-    return _expenseLocations.putIfAbsent(clubId, () async {
-      try {
-        final snapshot =
-            await _firestore.collection('clubs/$clubId/dive_locations').get();
-        return snapshot.docs
+    return _firestore
+        .collection('clubs/$clubId/dive_locations')
+        .get()
+        .then((snapshot) => snapshot.docs
             .map(DiveLocation.fromFirestore)
             .where((location) => location.mergedIntoLocationId == null)
-            .toList();
-      } catch (_) {
-        _expenseLocations.remove(clubId);
-        return const <DiveLocation>[];
-      }
-    });
+            .toList())
+        .catchError((_) => <DiveLocation>[]);
   }
 
   /// The expense form uses the agenda's sources over its existing date window.
