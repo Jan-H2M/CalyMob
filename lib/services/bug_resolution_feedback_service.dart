@@ -1,9 +1,37 @@
 import 'dart:typed_data';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/bug_report_screenshot.dart';
+
+/// What the administrator sent to the reporter: the report title, the
+/// explanation of the correction and whether an answer is still expected.
+class BugResolutionFeedbackRequest {
+  const BugResolutionFeedbackRequest({
+    required this.reportTitle,
+    required this.explanation,
+    required this.isPending,
+  });
+
+  factory BugResolutionFeedbackRequest.fromMap(Map<String, dynamic> data) {
+    String text(String key) {
+      final value = data[key];
+      return value is String ? value.trim() : '';
+    }
+
+    return BugResolutionFeedbackRequest(
+      reportTitle: text('report_title'),
+      explanation: text('explanation'),
+      isPending: data['status'] == 'pending',
+    );
+  }
+
+  final String reportTitle;
+  final String explanation;
+  final bool isPending;
+}
 
 /// Owns the reporter-side half of an explicitly requested resolution test.
 /// Status and comments are always committed by the callable; the client can
@@ -12,12 +40,35 @@ class BugResolutionFeedbackService {
   BugResolutionFeedbackService({
     FirebaseFunctions? functions,
     FirebaseStorage? storage,
+    FirebaseFirestore? firestore,
   })  : _functions =
             functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1'),
-        _storage = storage ?? FirebaseStorage.instance;
+        _storage = storage ?? FirebaseStorage.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFunctions _functions;
   final FirebaseStorage _storage;
+  final FirebaseFirestore _firestore;
+
+  /// Reads the request the reporter owns. Returns null when it cannot be
+  /// read, so the screen can still offer the answer buttons.
+  Future<BugResolutionFeedbackRequest?> fetchRequest({
+    required String clubId,
+    required String reportId,
+    required String feedbackId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .doc('clubs/$clubId/bug_reports/$reportId/'
+              'resolution_feedback/$feedbackId')
+          .get();
+      final data = snapshot.data();
+      if (data == null) return null;
+      return BugResolutionFeedbackRequest.fromMap(data);
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> respond({
     required String clubId,

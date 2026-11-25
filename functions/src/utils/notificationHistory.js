@@ -45,10 +45,16 @@ function buildNotificationHistoryRecord(basePayload, category) {
   };
 }
 
-function buildBugResolutionHistoryRecord({ reportId, feedbackId, title, reporterFirstName }) {
+function buildBugResolutionHistoryRecord({ reportId, feedbackId, title, reporterFirstName, explanation = '' }) {
+  const greeting = `Bonjour ${reporterFirstName || ''}`.trim();
+  const body = [
+    `${greeting}, votre signalement est résolu.`,
+    explanation.trim(),
+    'Pouvez-vous tester et nous dire si tout fonctionne ?',
+  ].filter(Boolean).join('\n\n');
   return {
     title: `Signalement ${title}`,
-    body: `Bonjour ${reporterFirstName || ''}, votre signalement est résolu. Pouvez-vous tester et nous dire si tout fonctionne ?`.trim(),
+    body,
     type: 'bug_report_resolution',
     category: 'Signalement',
     data: stringPayload({

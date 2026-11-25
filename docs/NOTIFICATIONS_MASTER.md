@@ -1273,3 +1273,11 @@ push delivery leaves the in-app card available. The reporter can confirm or
 reopen; reopening requires text, accepts at most five scoped PNG screenshots,
 writes a `reporter_reopened` comment, and returns the Kanban status to
 `en_cours`. This branch is DEV-only until a separately approved rollout.
+
+**2026-11-25 update:** the callable now requires a `message` (at most 1500
+characters): the administrator's short French explanation of what was fixed.
+It is stored as `explanation` (with `report_title`) on the feedback request,
+forms the body of the durable card, and is shown at the top of the reporter's
+feedback screen. The push body is a one-line, 140-character excerpt. The code
+is now on `main`; the feature flag stays off until the app version containing
+the feedback screen is public in both stores.

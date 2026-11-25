@@ -61,7 +61,21 @@ async function resolutionFeedbackEnabled(db, clubId) {
   return flags.exists && flags.data()?.bugResolutionFeedbackEnabled === true;
 }
 
-async function queueBugResolutionFeedback({ db, messaging, clubId, adminUid, reportId }) {
+const MAX_EXPLANATION_LENGTH = 1500;
+const PUSH_EXPLANATION_LENGTH = 140;
+
+function pushExplanation(explanation) {
+  const singleLine = explanation.replace(/\s+/g, ' ').trim();
+  return singleLine.length > PUSH_EXPLANATION_LENGTH
+    ? `${singleLine.slice(0, PUSH_EXPLANATION_LENGTH - 1).trimEnd()}…`
+    : singleLine;
+}
+
+async function queueBugResolutionFeedback({ db, messaging, clubId, adminUid, reportId, message }) {
+  safeId(clubId, 'Club'); safeId(reportId, 'Signalement');
+  // The reporter must learn what was actually corrected, so the explanation
+  // written (or reviewed) by the administrator is mandatory.
+  const explanation = cleanText(message, 'Explication', { required: true, max: MAX_EXPLANATION_LENGTH });
   if (!await resolutionFeedbackEnabled(db, clubId)) {
     fail('failed-precondition', 'La notification de résolution est désactivée.');
   }
@@ -102,9 +116,11 @@ async function queueBugResolutionFeedback({ db, messaging, clubId, adminUid, rep
       report_id: reportId,
       reporter_id: reporterId,
       requested_by: adminUid,
+      report_title: title,
+      explanation,
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
-    tx.create(notificationRef, buildBugResolutionHistoryRecord({ reportId, feedbackId, title, reporterFirstName: name }));
+    tx.create(notificationRef, buildBugResolutionHistoryRecord({ reportId, feedbackId, title, reporterFirstName: name, explanation }));
   });
 
   // The durable card is intentionally committed before FCM. A missing token,
@@ -118,7 +134,7 @@ async function queueBugResolutionFeedback({ db, messaging, clubId, adminUid, rep
       tokens,
       notification: {
         title: `Signalement ${title}`,
-        body: `Bonjour ${name}, votre signalement est résolu. Pouvez-vous tester et nous dire si tout fonctionne ?`,
+        body: `Résolu : ${pushExplanation(explanation)}`,
       },
       data: { type: RESOLUTION_TYPE, club_id: clubId, report_id: reportId, resolution_feedback_id: feedbackId },
     });
@@ -188,7 +204,7 @@ const respondToBugResolutionFeedbackV1 = onCall({ region: REGION, timeoutSeconds
 });
 
 module.exports = {
-  MAX_SCREENSHOTS, RESOLUTION_TYPE, feedbackScreenshotPath, validFeedbackScreenshots,
+  MAX_SCREENSHOTS, MAX_EXPLANATION_LENGTH, RESOLUTION_TYPE, pushExplanation, feedbackScreenshotPath, validFeedbackScreenshots,
   queueBugResolutionFeedback, respondToBugResolutionFeedback,
   queueBugResolutionFeedbackV1, respondToBugResolutionFeedbackV1,
 };

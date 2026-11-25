@@ -43,3 +43,29 @@ describe('buildNotificationHistoryRecord', () => {
     expect(record.category).toBe('Boutique');
   });
 });
+
+describe('buildBugResolutionHistoryRecord', () => {
+  const { buildBugResolutionHistoryRecord } = require('./notificationHistory');
+
+  it('shows the reporter what was corrected before asking for a test', () => {
+    const record = buildBugResolutionHistoryRecord({
+      reportId: 'report-1',
+      feedbackId: 'resolution_report-1',
+      title: 'Boutons décalés',
+      reporterFirstName: 'Marc',
+      explanation: ' Les boutons de l’accueil sont de nouveau alignés. ',
+    });
+    expect(record.title).toBe('Signalement Boutons décalés');
+    expect(record.body).toBe([
+      'Bonjour Marc, votre signalement est résolu.',
+      'Les boutons de l’accueil sont de nouveau alignés.',
+      'Pouvez-vous tester et nous dire si tout fonctionne ?',
+    ].join('\n\n'));
+    expect(record.data).toEqual({
+      type: 'bug_report_resolution',
+      report_id: 'report-1',
+      resolution_feedback_id: 'resolution_report-1',
+    });
+    expect(record.read).toBe(false);
+  });
+});

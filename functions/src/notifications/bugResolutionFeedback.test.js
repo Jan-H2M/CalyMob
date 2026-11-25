@@ -1,5 +1,8 @@
 const {
   MAX_SCREENSHOTS,
+  MAX_EXPLANATION_LENGTH,
+  pushExplanation,
+  queueBugResolutionFeedback,
   feedbackScreenshotPath,
   validFeedbackScreenshots,
 } = require('./bugResolutionFeedback');
@@ -30,5 +33,27 @@ describe('resolution feedback attachment contract', () => {
   test('rejects more than five screenshots', () => {
     expect(() => validFeedbackScreenshots(input(Array.from({ length: MAX_SCREENSHOTS + 1 }, () => ({})))))
       .toThrow('Au plus');
+  });
+});
+
+describe('resolution explanation contract', () => {
+  const request = (message) => queueBugResolutionFeedback({
+    db: null, messaging: null, clubId: 'calypso', adminUid: 'admin-1', reportId: 'report-1', message,
+  });
+
+  test('refuses to notify the reporter without an explanation', async () => {
+    await expect(request('   ')).rejects.toThrow('Explication est requis');
+    await expect(request(undefined)).rejects.toThrow('Explication est requis');
+  });
+
+  test('refuses an oversized explanation', async () => {
+    await expect(request('a'.repeat(MAX_EXPLANATION_LENGTH + 1))).rejects.toThrow('Explication est trop long');
+  });
+
+  test('keeps the push body on one bounded line', () => {
+    expect(pushExplanation('Le bouton\n\nest  corrigé.')).toBe('Le bouton est corrigé.');
+    const long = pushExplanation('mot '.repeat(100));
+    expect(long.length).toBeLessThanOrEqual(140);
+    expect(long.endsWith('…')).toBe(true);
   });
 });
