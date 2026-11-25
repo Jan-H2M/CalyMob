@@ -1,8 +1,31 @@
 # CalyMob — current release status (source of truth)
 
-_Last observed: 2026-11-24 (task t11241239-b055). Live store queries always take precedence over this dated document._
+_Last updated: 2026-11-24. Live store queries always take precedence over this dated document._
 
-## 1.30.9 (551) store release — Android live, iOS submission blocked
+## Store state
+- **App Store live:** 1.30.5 (latest verified public version before this release).
+- **Google Play production:** versionCode 553 at 100%, completed on
+  2026-11-24 at 19:18 Europe/Brussels. The signed AAB came from `main` merge
+  commit `391e2c7f8bc0112cdaa26a78cdcd1914dbc8b7c3` and includes the redesigned
+  reimbursement request form from PR #261 plus security PR #263.
+- **App Store review:** 1.30.9 (555) is `WAITING_FOR_REVIEW`, verified on
+  2026-11-24 at 20:43 Europe/Brussels. App Store Connect version ID
+  `2732204f-6fb4-4965-9f1a-90147513c69d` has build ID
+  `29915fb3-7437-4e10-a78e-4302afb79859` attached, with
+  `usesNonExemptEncryption=false` and `releaseType=AFTER_APPROVAL` (automatic
+  release after Apple's approval). It was built from exact `main` commit
+  `6a1e5acb3c7a297c5a26205af4a08eb01c01be43` by Xcode Cloud run
+  `74a65fb1-3315-4b65-8a01-b3e0f8aca06d`; both Test and Archive actions
+  succeeded and the build is `VALID`. No TestFlight group assignment was used.
+- **Release notes:** French and Dutch metadata describe the new type-first
+  reimbursement form, optional activity link and expected-amount check. The
+  App Store historically had only French base metadata, so the Dutch listing
+  retains its Dutch release notes while its required description, keywords and
+  support URL were copied unchanged from the live French 1.30.5 listing.
+- **Backend/data scope:** no Firebase deployment or Firestore write belongs to
+  this store release.
+
+## Historical release — 1.30.9 (551), Android rollout and blocked iOS submission
 
 - **Source and metadata:** PR #258 passed all required CI checks and merged to
   `dev` as `2292e5bc3937c3bb8e68331662e363428cff61c4` (tree
@@ -105,18 +128,15 @@ _Last observed: 2026-11-24 (task t11241239-b055). Live store queries always take
    Local Fastlane/Transporter uploads and Codemagic are no longer used for iOS.
 2. Internal TestFlight builds are not App Store eligible; start an App Store
    build for anything that will be submitted for review.
-3. Later, after separate exact-build approval, use the canonical verifier-backed
-   Fastlane submission route for the matching Cloud build, metadata and review.
-   Browser consoles are read-only verification, not an alternate mutation route.
-   The existing French notes are approved; Dutch metadata is prepared as a
-   translation and not represented as separately approved for store publication.
+3. Create or update the App Store version in App Store Connect, attach the build,
+   publish French and Dutch notes, answer the required declarations, then submit
+   for review with automatic release after approval.
 4. Store submission, backend deploys and rules deploys each need Jan's explicit approval.
 
 ## Build-number source of truth
 
-- Xcode Cloud is the live product-wide counter; run 535 was observed read-only on
-  2026-10-30. `scripts/bump_version.sh` freshly read it for the 1.28.0+536
-  reservation. Recheck before any later approved build; do not reuse stale numbers.
+- Xcode Cloud is the live product-wide counter; build 555 was verified `VALID` on
+  2026-11-24. `scripts/bump_version.sh` reads it and reserves exactly the next number.
 - `scripts/run_fastlane.sh` and both platform Fastfiles re-read the live counters before every store mutation and
   fails clearly if local source is neither the matching latest build nor its exact next
   reservation.
@@ -125,6 +145,36 @@ _Last observed: 2026-11-24 (task t11241239-b055). Live store queries always take
   build and workflow. No local IPA can satisfy the iOS gate.
 - `ci_scripts/xcode-cloud-workflow.json` is documentation-only snapshot data, never an
   applyable workflow definition.
+
+## Xcode Cloud manual-start recovery record
+
+Before authorizing `main` for the 1.30.9 (553) build on 2026-11-24, workflow
+`D11B66EC-6E95-43A4-B345-727D1992D72A` had this exact
+`manualBranchStartCondition`. Restore this JSON to return to the previous branch
+scope after the release if desired:
+
+```json
+{
+  "source": {
+    "isAllMatch": false,
+    "patterns": [
+      { "pattern": "dev", "isPrefix": false },
+      { "pattern": "codex/mob-xcode-cloud-20261016", "isPrefix": false },
+      { "pattern": "codex/joint-bug-build-20261028", "isPrefix": false },
+      { "pattern": "codex/release-next-1.29.0-missions-1101", "isPrefix": false }
+    ]
+  }
+}
+```
+
+`main` remains appended to that condition. The workflow was unlocked only for
+the condition update and was locked again before the builds started.
+
+Build 553 failed because the cloud test script still named six test files that
+were not present on `main`; PR #266 removed only those stale arguments and
+reserved build 554. Build 554 then failed only in the test action after three
+CocoaPods CDN timeouts; PR #267 reserved the permitted network-flake retry as
+build 555. Build 555 succeeded and is the build submitted above.
 
 ## Historical documents
 `APP_STORE_PUBLICATIE.md`, `docs/MOBILE_RELEASE_QUEUE.md`, `docs/RELEASE_GATE.md`
