@@ -83,6 +83,7 @@ class MockUnreadCountProvider extends ChangeNotifier
   int _teamMessages = 0;
   int _sessionMessages = 0;
   int _medicalCertificates = 0;
+  final int _reportResolutions = 0;
 
   @override
   int get total => _total;
@@ -97,7 +98,10 @@ class MockUnreadCountProvider extends ChangeNotifier
   @override
   int get medicalCertificates => _medicalCertificates;
   @override
-  int get communication => _announcements + _teamMessages + _sessionMessages;
+  int get reportResolutions => _reportResolutions;
+  @override
+  int get communication =>
+      _announcements + _teamMessages + _sessionMessages + _reportResolutions;
   @override
   UnreadCursorV1Mode get cursorMode => UnreadCursorV1Mode.off;
   @override
