@@ -55,6 +55,7 @@ import 'screens/piscine/session_detail_screen.dart';
 import 'screens/profile/medical_certification_screen.dart';
 import 'screens/training/logbook_dive_confirmation_screen.dart';
 import 'screens/training/actions_evaluations_screen.dart';
+import 'screens/communication/bug_resolution_feedback_screen.dart';
 import 'screens/training/historical_validation_screen.dart';
 import 'screens/exercises/validate_exercise_screen.dart';
 
@@ -570,6 +571,22 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           // A birthday push has no detail page. Opening the app is the
           // intended destination, so keep the member on the home screen.
           navigator.popUntil((route) => route.isFirst);
+          break;
+
+        case NotificationRouteKind.bugResolutionFeedback:
+          final reportId = request.reportId;
+          final feedbackId = request.resolutionFeedbackId;
+          if (reportId == null || feedbackId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
+          unawaited(navigator.push(MaterialPageRoute(
+            builder: (_) => BugResolutionFeedbackScreen(
+              clubId: clubId,
+              reportId: reportId,
+              feedbackId: feedbackId,
+            ),
+          )));
           break;
 
         case NotificationRouteKind.operation:

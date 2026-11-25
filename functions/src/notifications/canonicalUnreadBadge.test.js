@@ -132,4 +132,17 @@ describe('document-level canonical unread matrix', () => {
     });
     expect(result.events).toBe(1);
   });
+  test('unread resolution cards add to Communication and the app-icon total', async () => {
+    const result = await count({
+      'clubs/c/members/m/notifications/resolution-r': {
+        type: 'bug_report_resolution', counts_toward_unread_badge: true, read: false,
+      },
+      'clubs/c/members/m/notifications/read-r': {
+        type: 'bug_report_resolution', counts_toward_unread_badge: true, read: true,
+      },
+    });
+    expect(result.reportResolutions).toBe(1);
+    expect(result.communication).toBe(1);
+    expect(result.total).toBe(1);
+  });
 });

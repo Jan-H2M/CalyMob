@@ -61,6 +61,10 @@ class NotificationHistoryItem {
       'formationTaskId',
       'task_id',
       'taskId',
+      'report_id',
+      'reportId',
+      'resolution_feedback_id',
+      'resolutionFeedbackId',
       'target_tab',
       'deeplink',
     ]) {
@@ -114,6 +118,8 @@ class NotificationHistoryItem {
         return 'Action';
       case 'medical_certificate':
         return 'Médical';
+      case 'bug_report_resolution':
+        return 'Signalement';
       default:
         return 'Notification';
     }

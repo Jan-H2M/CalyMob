@@ -17,6 +17,7 @@ const CATEGORY_BY_TYPE = {
   logbook_dive_confirmation: 'Action',
   logbook_dive_confirmation_result: 'Action',
   medical_certificate: 'Médical',
+  bug_report_resolution: 'Signalement',
   birthday: 'Profil',
 };
 
@@ -38,6 +39,32 @@ function buildNotificationHistoryRecord(basePayload, category) {
     type,
     category: CATEGORY_BY_TYPE[type] || category || 'Notification',
     data,
+    created_at: admin.firestore.FieldValue.serverTimestamp(),
+    read: false,
+    read_at: null,
+  };
+}
+
+function buildBugResolutionHistoryRecord({ reportId, feedbackId, title, reporterFirstName, explanation = '' }) {
+  const greeting = `Bonjour ${reporterFirstName || ''}`.trim();
+  const body = [
+    `${greeting}, votre signalement est résolu.`,
+    explanation.trim(),
+    'Pouvez-vous tester et nous dire si tout fonctionne ?',
+  ].filter(Boolean).join('\n\n');
+  return {
+    title: `Signalement ${title}`,
+    body,
+    type: 'bug_report_resolution',
+    category: 'Signalement',
+    data: stringPayload({
+      type: 'bug_report_resolution',
+      report_id: reportId,
+      resolution_feedback_id: feedbackId,
+    }),
+    // This explicit bit makes this new persisted notification independent of
+    // older notification-history records, which remain display-only history.
+    counts_toward_unread_badge: true,
     created_at: admin.firestore.FieldValue.serverTimestamp(),
     read: false,
     read_at: null,
@@ -70,5 +97,6 @@ async function persistNotificationHistory(
 
 module.exports = {
   buildNotificationHistoryRecord,
+  buildBugResolutionHistoryRecord,
   persistNotificationHistory,
 };
