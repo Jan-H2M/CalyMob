@@ -14,6 +14,7 @@ import '../services/operation_service.dart';
 import '../screens/piscine/add_attendee_dialog.dart';
 import '../utils/scanner_lifecycle.dart';
 import 'alarm_overlay.dart';
+import 'camera_error_view.dart';
 
 /// Scanner modal that shows compact scanner + live attendee list
 /// With validation for medical certificate and cotisation
@@ -104,6 +105,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back from the system settings after a refused camera permission: the
+    // generic lifecycle rule below ignores "resumed" while permission is
+    // missing, so retry explicitly to pick up a freshly granted access.
+    if (state == AppLifecycleState.resumed &&
+        isCameraPermissionDenied(_scannerController.value.error)) {
+      unawaited(_restartScanner());
+      return;
+    }
     final action = scannerLifecycleAction(
       state: state,
       hasCameraPermission: _scannerController.value.hasCameraPermission,
@@ -679,27 +688,9 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
                 errorBuilder: (context, error, child) {
                   debugPrint(
                       '📷 Scanner error: ${error.errorCode} - ${error.errorDetails?.message}');
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error, color: Colors.red, size: 48),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Camera error: ${error.errorCode.name}',
-                          style: const TextStyle(color: Colors.red),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          error.errorDetails?.message ??
-                              'Vérifiez les permissions caméra',
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+                  return CameraErrorView(
+                    error: error,
+                    onRetry: _restartScanner,
                   );
                 },
               ),
@@ -738,25 +729,34 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             ),
           ),
 
-        // Scan frame overlay
-        Center(
-          child: Container(
-            width: 180,
-            height: 180,
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.oranje, width: 3),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Stack(
-              children: [
-                // Corner indicators
-                Positioned(top: 0, left: 0, child: _buildCorner(true, true)),
-                Positioned(top: 0, right: 0, child: _buildCorner(true, false)),
-                Positioned(
-                    bottom: 0, left: 0, child: _buildCorner(false, true)),
-                Positioned(
-                    bottom: 0, right: 0, child: _buildCorner(false, false)),
-              ],
+        // Scan frame overlay (hidden while the camera is in error, so it
+        // never overlaps the error message)
+        ValueListenableBuilder<MobileScannerState>(
+          valueListenable: _scannerController,
+          builder: (context, state, frame) =>
+              state.error != null || _scannerError != null
+                  ? const SizedBox.shrink()
+                  : frame!,
+          child: Center(
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.oranje, width: 3),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Stack(
+                children: [
+                  // Corner indicators
+                  Positioned(top: 0, left: 0, child: _buildCorner(true, true)),
+                  Positioned(
+                      top: 0, right: 0, child: _buildCorner(true, false)),
+                  Positioned(
+                      bottom: 0, left: 0, child: _buildCorner(false, true)),
+                  Positioned(
+                      bottom: 0, right: 0, child: _buildCorner(false, false)),
+                ],
+              ),
             ),
           ),
         ),

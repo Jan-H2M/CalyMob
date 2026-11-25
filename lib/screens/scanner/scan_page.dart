@@ -11,6 +11,7 @@ import '../../services/attendance_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/piscine_session_service.dart';
 import '../../utils/member_search_request_gate.dart';
+import '../../widgets/camera_error_view.dart';
 import 'member_validation_card.dart';
 
 /// Scanner page for member check-in with QR code scanning
@@ -615,6 +616,8 @@ class _ScanPageState extends State<ScanPage> {
         MobileScanner(
           controller: _scannerController,
           onDetect: _handleBarcode,
+          errorBuilder: (context, error, child) =>
+              CameraErrorView(error: error),
         ),
 
         // Scan overlay
