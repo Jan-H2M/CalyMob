@@ -132,7 +132,10 @@ class _AlarmOverlayState extends State<AlarmOverlay>
   @override
   Widget build(BuildContext context) {
     final cotisationStatus = widget.member.cotisationStatus;
-    final certificatStatus = widget.member.certificatStatus;
+    // A certificate that is not required (Nageur) is never reported (COM-170).
+    final certificatStatus = widget.member.requiresMedicalCertificate
+        ? widget.member.certificatStatus
+        : ValidationStatus.valid;
     final assuranceStatus = widget.member.assuranceStatus;
     final dateFormat = DateFormat('dd/MM/yyyy');
 

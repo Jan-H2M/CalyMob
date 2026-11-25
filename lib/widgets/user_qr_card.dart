@@ -75,6 +75,7 @@ class UserQRCard extends StatelessWidget {
               label: 'Certificat médical',
               status: profile.certificatStatus,
               validityDate: profile.certificatMedicalValidite,
+              notRequired: !profile.requiresMedicalCertificate,
             ),
 
             const SizedBox(height: 8),
@@ -117,6 +118,7 @@ class UserQRCard extends StatelessWidget {
     required String label,
     required ValidationStatus status,
     required DateTime? validityDate,
+    bool notRequired = false,
   }) {
     Color statusColor;
     IconData statusIcon;
@@ -149,6 +151,14 @@ class UserQRCard extends StatelessWidget {
         statusIcon = Icons.cancel;
         statusText = 'Non renseigné';
         break;
+    }
+
+    // Not required for this membership type (e.g. Nageur): never shown as a
+    // problem, whatever date is or is not stored.
+    if (notRequired) {
+      statusColor = Colors.green;
+      statusIcon = Icons.check_circle;
+      statusText = 'Non requis';
     }
 
     return Container(

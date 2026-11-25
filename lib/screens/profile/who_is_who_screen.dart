@@ -1032,7 +1032,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   bool _isMemberValid(MemberProfile member) {
     return (member.cotisationStatus == ValidationStatus.valid ||
             member.cotisationStatus == ValidationStatus.warning) &&
-           (member.certificatStatus == ValidationStatus.valid ||
+           (!member.requiresMedicalCertificate ||
+            member.certificatStatus == ValidationStatus.valid ||
             member.certificatStatus == ValidationStatus.warning);
   }
 

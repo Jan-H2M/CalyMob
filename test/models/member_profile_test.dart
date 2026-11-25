@@ -173,6 +173,37 @@ void main() {
       expect(lifras.assuranceStatus, ValidationStatus.missing);
     });
 
+    test('does not require a medical certificate for the Nageur member type',
+        () {
+      final validUntil = Timestamp.fromDate(DateTime(2099, 1, 30));
+      final nageur = MemberProfile.fromDirectoryData(
+        'nageur',
+        {'first_name': 'Nageur', 'last_name': 'Member'},
+        operationalStatus: {
+          'membership_category_code': 'nageur',
+          'cotisation_validite': validUntil,
+        },
+      );
+      final plongeur = MemberProfile.fromDirectoryData(
+        'plongeur',
+        {'first_name': 'Plongeur', 'last_name': 'Member'},
+        operationalStatus: {
+          'membership_category_code': 'membre_1ere',
+          'cotisation_validite': validUntil,
+        },
+      );
+      final unknown = MemberProfile.fromDirectoryData(
+        'unknown',
+        {'first_name': 'Unknown', 'last_name': 'Member'},
+      );
+
+      expect(nageur.certificatStatus, ValidationStatus.missing);
+      expect(nageur.requiresMedicalCertificate, isFalse);
+      expect(plongeur.requiresMedicalCertificate, isTrue);
+      // Fail closed: without a known member type the certificate stays required.
+      expect(unknown.requiresMedicalCertificate, isTrue);
+    });
+
     test('joins only the restricted operational status onto directory data',
         () {
       final validUntil = Timestamp.fromDate(DateTime(2099, 1, 30));

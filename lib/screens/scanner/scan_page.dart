@@ -138,7 +138,9 @@ class _ScanPageState extends State<ScanPage> {
 
       // Check if cotisation, certificat AND assurance are valid for auto-registration
       final cotisationValid = member.cotisationStatus == ValidationStatus.valid;
-      final certificatValid = member.certificatStatus == ValidationStatus.valid;
+      // Nageurs: no medical certificate required (COM-170).
+      final certificatValid = !member.requiresMedicalCertificate ||
+          member.certificatStatus == ValidationStatus.valid;
       final assuranceValid = !member.requiresExternalInsurance ||
           member.assuranceStatus == ValidationStatus.valid;
       final allValid = cotisationValid && certificatValid && assuranceValid;
