@@ -45,9 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<!-- Camera Permission (profile photo, expense receipts) -->
+	<!-- Camera Permission (QR attendance scanner, profile photo, expense receipts) -->
 	<key>NSCameraUsageDescription</key>
-	<string>CalyMob a besoin d'accéder à l'appareil photo pour prendre votre photo de profil et photographier vos justificatifs de dépenses.</string>
+	<string>CalyMob a besoin d'accéder à l'appareil photo pour scanner les QR codes de présence, prendre votre photo de profil et photographier vos justificatifs de dépenses.</string>
 	<!-- Photo Library Permission (profile photo, expense receipts) -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>CalyMob a besoin d'accéder à votre photothèque pour importer une photo de profil ou un justificatif de dépense.</string>

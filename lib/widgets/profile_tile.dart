@@ -43,6 +43,14 @@ class ProfileTile extends StatelessWidget {
   /// Override the gradient colors. Defaults to the maritime palette.
   final Gradient? gradientOverride;
 
+  /// Upper bound for the system text size applied to the label of the
+  /// `large` variant. Members who enlarge their phone's text still get a
+  /// bigger label, but never one that breaks the tile grid.
+  static const double largeLabelMaxTextScale = 1.3;
+
+  /// Diameter of the circle in the `large` variant.
+  static const double largeCircleSize = 90;
+
   const ProfileTile.large({
     super.key,
     required this.title,
@@ -99,8 +107,8 @@ class ProfileTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 90,
-                height: 90,
+                width: largeCircleSize,
+                height: largeCircleSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: gradient,
@@ -127,21 +135,33 @@ class ProfileTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  shadows: [
-                    Shadow(
-                      offset: Offset(0, 1),
-                      blurRadius: 3,
-                      color: Colors.black45,
-                    ),
-                  ],
+              // The label stays on one line and shrinks to the width its
+              // parent allows. Without this, a large iOS/Android text size
+              // (or bold text) made labels wider than their column, so
+              // neighbouring labels touched and the last tile was pushed
+              // off-screen.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  softWrap: false,
+                  textScaler: MediaQuery.textScalerOf(context)
+                      .clamp(maxScaleFactor: largeLabelMaxTextScale),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    shadows: [
+                      Shadow(
+                        offset: Offset(0, 1),
+                        blurRadius: 3,
+                        color: Colors.black45,
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -240,6 +260,41 @@ class ProfileTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// One row of [ProfileTile.large] tiles laid out on a fixed column grid.
+///
+/// Every tile gets exactly `1 / columns` of the available width, whatever
+/// the length of its label or the phone's text size, so circles line up
+/// vertically from one row to the next. A row holding fewer tiles than
+/// [columns] is centred (e.g. when the Boutique tile is hidden).
+class ProfileTileRow extends StatelessWidget {
+  final List<Widget> children;
+  final int columns;
+
+  const ProfileTileRow({
+    super.key,
+    required this.children,
+    this.columns = 3,
+  }) : assert(columns > 0);
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final slots = children.length > columns ? children.length : columns;
+        final tileWidth = constraints.maxWidth / slots;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final child in children)
+              SizedBox(width: tileWidth, child: child),
+          ],
+        );
+      },
     );
   }
 }

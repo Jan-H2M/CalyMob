@@ -335,8 +335,7 @@ class _LandingScreenState extends State<LandingScreen>
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     // Row 1 — Événements / Communication / Mon Carnet
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    ProfileTileRow(
                       children: [
                         ProfileTile.large(
                           title: 'Événements',
@@ -389,32 +388,9 @@ class _LandingScreenState extends State<LandingScreen>
                     const SizedBox(height: 20),
 
                     // Row 2 — Who is Who / Boutique / Mon Profil
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ProfileTile.large(
-                          title: 'Who is Who',
-                          icon: Icons.people,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const WhoIsWhoScreen()),
-                          ),
-                        ),
-                        _BoutiqueLandingTile(
-                          userId: authProvider.currentUser?.uid,
-                          onTap: _openBoutique,
-                        ),
-                        ProfileTile.large(
-                          title: 'Mon Profil',
-                          icon: Icons.person,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const ProfileScreen()),
-                          ),
-                        ),
-                      ],
+                    _LandingSecondRow(
+                      userId: authProvider.currentUser?.uid,
+                      onOpenBoutique: _openBoutique,
                     ),
                   ],
                 ),
@@ -440,33 +416,58 @@ class _LandingScreenState extends State<LandingScreen>
   }
 }
 
-class _BoutiqueLandingTile extends StatelessWidget {
+/// Row 2 of the landing grid. The Boutique tile only exists for members
+/// with boutique access; deciding that here (rather than inside the tile)
+/// lets the row stay centred on the column grid when the tile is hidden.
+class _LandingSecondRow extends StatelessWidget {
   final String? userId;
-  final VoidCallback onTap;
+  final VoidCallback onOpenBoutique;
 
-  const _BoutiqueLandingTile({
+  const _LandingSecondRow({
     required this.userId,
-    required this.onTap,
+    required this.onOpenBoutique,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (userId == null) return const SizedBox.shrink();
+    if (userId == null) return _buildRow(context, showBoutique: false);
 
     return StreamBuilder<bool>(
       stream: BoutiqueAccessService().watchCanAccessBoutique(
         clubId: FirebaseConfig.defaultClubId,
         userId: userId!,
       ),
-      builder: (context, snapshot) {
-        if (snapshot.data != true) return const SizedBox.shrink();
+      builder: (context, snapshot) =>
+          _buildRow(context, showBoutique: snapshot.data == true),
+    );
+  }
 
-        return ProfileTile.large(
-          title: 'Boutique',
-          icon: Icons.shopping_bag_outlined,
-          onTap: onTap,
-        );
-      },
+  Widget _buildRow(BuildContext context, {required bool showBoutique}) {
+    return ProfileTileRow(
+      children: [
+        ProfileTile.large(
+          title: 'Who is Who',
+          icon: Icons.people,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const WhoIsWhoScreen()),
+          ),
+        ),
+        if (showBoutique)
+          ProfileTile.large(
+            title: 'Boutique',
+            icon: Icons.shopping_bag_outlined,
+            onTap: onOpenBoutique,
+          ),
+        ProfileTile.large(
+          title: 'Mon Profil',
+          icon: Icons.person,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../config/app_colors.dart';
+import '../../widgets/camera_error_view.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'historical_validation_screen.dart';
 
@@ -170,38 +171,8 @@ class _HistoricalQrScanScreenState extends State<HistoricalQrScanScreen> {
           MobileScanner(
             controller: _scannerController,
             onDetect: _handleBarcode,
-            errorBuilder: (context, error, child) {
-              return Container(
-                color: Colors.black,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.no_photography_outlined,
-                        color: Colors.white, size: 46),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Caméra indisponible',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      error.errorDetails?.message ??
-                          'Autorise l’accès caméra ou teste sur un téléphone.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.72),
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+            errorBuilder: (context, error, child) =>
+                CameraErrorView(error: error),
           ),
           _scanFrame(),
           if (_errorMessage != null)
