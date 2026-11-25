@@ -465,6 +465,12 @@ class MemberProfile {
     return ValidationStatus.valid;
   }
 
+  /// Les membres de type « Nageur » ne pratiquent pas la plongée et ne doivent
+  /// pas fournir de certificat médical. Son absence ou son expiration ne peut
+  /// donc ni bloquer leur accès ni déclencher un avertissement (COM-170).
+  bool get requiresMedicalCertificate =>
+      membershipCategoryCode?.trim().toLowerCase() != 'nageur';
+
   /// Validité d'assurance effective pour l'accès.
   /// L'accès piscine/activités ne dépend que du champ visible dans CalyCompta.
   DateTime? get assuranceValiditeEffective => assuranceValidite;

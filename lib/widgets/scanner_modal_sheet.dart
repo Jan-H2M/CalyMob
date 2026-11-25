@@ -247,12 +247,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     final certificatStatus = member.certificatStatus;
     final assuranceStatus = member.assuranceStatus;
     final requiresExternalInsurance = member.requiresExternalInsurance;
+    // Nageurs: no medical certificate required (COM-170).
+    final requiresMedicalCertificate = member.requiresMedicalCertificate;
 
     final hasBlocking = isBlocking(cotisationStatus) ||
-        isBlocking(certificatStatus) ||
+        (requiresMedicalCertificate && isBlocking(certificatStatus)) ||
         (requiresExternalInsurance && isBlocking(assuranceStatus));
     final hasWarning = isWarning(cotisationStatus) ||
-        isWarning(certificatStatus) ||
+        (requiresMedicalCertificate && isWarning(certificatStatus)) ||
         (requiresExternalInsurance && isWarning(assuranceStatus));
 
     if (hasBlocking) {

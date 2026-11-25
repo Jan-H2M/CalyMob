@@ -52,6 +52,7 @@ class MemberValidationCard extends StatelessWidget {
                     member.certificatStatus,
                     member.certificatMedicalValidite,
                     Icons.medical_services,
+                    notRequired: !member.requiresMedicalCertificate,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -174,11 +175,14 @@ class MemberValidationCard extends StatelessWidget {
     String title,
     ValidationStatus status,
     DateTime? validUntil,
-    IconData icon,
-  ) {
+    IconData icon, {
+    bool notRequired = false,
+  }) {
+    // Not required for this membership type (e.g. Nageur): shown as in order.
+    if (notRequired) status = ValidationStatus.valid;
     final colors = _getStatusColors(status);
-    final statusText = _getStatusText(status);
-    final daysText = _getDaysText(status, validUntil);
+    final statusText = notRequired ? 'Non requis' : _getStatusText(status);
+    final daysText = notRequired ? null : _getDaysText(status, validUntil);
 
     return Container(
       padding: const EdgeInsets.all(12),
