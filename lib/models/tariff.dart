@@ -1,3 +1,5 @@
+import '../utils/event_edit_safety.dart';
+
 /// Modèle de tarif pour un événement
 /// Permet des prix différents selon la fonction du membre
 class Tariff {
@@ -5,6 +7,9 @@ class Tariff {
   final String label; // "Membre", "Encadrant", "CA", etc.
   final String category; // "membre", "encadrant", "ca" (référence fonction)
   final double price;
+
+  /// Lets the editor distinguish a missing legacy price from an explicit zero.
+  final bool hasNumericPrice;
   final bool isDefault;
   final int displayOrder;
 
@@ -21,6 +26,7 @@ class Tariff {
     required this.label,
     required this.category,
     required this.price,
+    this.hasNumericPrice = true,
     this.isDefault = false,
     this.displayOrder = 0,
     this.isGuestTariff = false,
@@ -33,16 +39,21 @@ class Tariff {
   factory Tariff.fromMap(Map<String, dynamic> data) {
     final label = data['label'] ?? '';
     // Use category if provided, otherwise derive from label (webapp compatibility)
-    final category = data['category'] ?? _deriveCategoryFromLabel(label);
+    final rawCategory = data['category'];
+    final rawPrice = data['price'];
+    final category = rawCategory is String
+        ? rawCategory
+        : registrationTariffCategory(null, label);
 
     return Tariff(
       id: data['id'] ?? '',
       label: label,
       category: category,
-      price: (data['price'] ?? 0).toDouble(),
+      price: rawPrice is num ? rawPrice.toDouble() : 0,
+      hasNumericPrice: rawPrice is num,
       isDefault: data['is_default'] ?? false,
       displayOrder: data['display_order'] ?? 0,
-      isGuestTariff: data['is_guest_tariff'] ?? false,
+      isGuestTariff: data['is_guest_tariff'] == true,
       selfSelectable: data['self_selectable'] != false,
       requiresAdminValidation: data['requires_admin_validation'] == true,
       installmentAmounts: _parseInstallmentAmounts(data['installment_amounts']),
@@ -56,25 +67,6 @@ class Tariff {
           value is num ? value.toDouble() : double.tryParse('$value') ?? 0.0;
       return MapEntry(key.toString(), amount);
     });
-  }
-
-  /// Derive category from label for webapp compatibility
-  /// The webapp only stores label and price, not category
-  static String _deriveCategoryFromLabel(String label) {
-    final normalized = label.toLowerCase().trim();
-    if (normalized.contains('encadrant')) return 'encadrant';
-    if (normalized.contains('ca') || normalized.contains('comité')) return 'ca';
-    if (normalized.contains('junior')) return 'junior';
-    if (normalized.contains('étudiant') || normalized.contains('etudiant')) {
-      return 'etudiant';
-    }
-    if (normalized.contains('non-membre') ||
-        normalized.contains('non membre')) {
-      return 'non_membre';
-    }
-    if (normalized.contains('membre')) return 'membre';
-    // Default: use the label itself as category
-    return normalized;
   }
 
   /// Convertir vers Firestore
