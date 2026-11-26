@@ -15,6 +15,7 @@ import '../../widgets/exercice_selection_editor.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/exercice_selection_policy.dart';
+import '../../utils/event_registration_error.dart';
 import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
@@ -567,6 +568,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _handleRegister() async {
+    try {
+      await _register();
+    } catch (error) {
+      _showRegistrationError(error);
+    }
+  }
+
+  void _showRegistrationError(
+    Object error, {
+    EventRegistrationAction action = EventRegistrationAction.register,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(eventRegistrationErrorMessage(error, action: action)),
+      backgroundColor: Colors.red,
+    ));
+  }
+
+  Future<void> _register() async {
     final authProvider = context.read<AuthProvider>();
     final memberProvider = context.read<MemberProvider>();
     final operationProvider = context.read<OperationProvider>();
@@ -614,7 +634,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       return;
     }
 
-    // If operation has supplements, show supplement selection dialog
+    var selectedSupplements = const <SelectedSupplement>[];
+    double? supplementTotal;
     if (operation.supplements.isNotEmpty) {
       final result = await showDialog<Map<String, dynamic>>(
         context: context,
@@ -624,63 +645,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           basePrice: basePrice,
         ),
       );
-
-      if (result == null) return; // User cancelled
-
-      if (mounted) {
-        try {
-          // Register first
-          final registrationResult = await _registerWithStableIdentity(
-            operationProvider: operationProvider,
-            userId: userId,
-            userName: userEmail,
-            selectedTariff: selectedTariff,
-            selectedSupplements:
-                result['supplements'] as List<SelectedSupplement>,
-            supplementTotal: result['supplementTotal'] as double,
-          );
-
-          // Refresh participant list after registration
-          await operationProvider.reloadParticipants(
-              widget.clubId, widget.operationId);
-
-          if (mounted) {
-            await _loadUserInscription();
-            final payment = registrationPaymentInstruction(registrationResult);
-
-            if (payment.shouldOpenPayment) {
-              await _showPaymentOptionsDialog(
-                operation: operation,
-                amount: payment.amount,
-                participantId: payment.participantId,
-                memberEmail: userEmail,
-                memberFirstName: memberProvider.prenom ?? '',
-                memberLastName: memberProvider.nom ?? '',
-                installmentId: payment.installmentId,
-                installmentLabel: payment.installmentLabel,
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(registrationSuccessMessage(
-                    registrationResult,
-                  )),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            }
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(e.toString()),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      }
+      if (result == null || !mounted) return;
+      selectedSupplements = result['supplements'] as List<SelectedSupplement>;
+      supplementTotal = result['supplementTotal'] as double;
     } else {
       // No supplements - simple confirmation dialog
       final confirmed = await showDialog<bool>(
@@ -714,56 +681,42 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ),
       );
 
-      if (confirmed == true && mounted) {
-        try {
-          final registrationResult = await _registerWithStableIdentity(
-            operationProvider: operationProvider,
-            userId: userId,
-            userName: userEmail,
-            selectedTariff: selectedTariff,
-          );
+      if (confirmed != true || !mounted) return;
+    }
 
-          // Refresh participant list after registration
-          await operationProvider.reloadParticipants(
-              widget.clubId, widget.operationId);
+    final registrationResult = await _registerWithStableIdentity(
+      operationProvider: operationProvider,
+      userId: userId,
+      userName: userEmail,
+      selectedTariff: selectedTariff,
+      selectedSupplements: selectedSupplements,
+      supplementTotal: supplementTotal,
+    );
+    await operationProvider.reloadParticipants(
+        widget.clubId, widget.operationId);
+    if (!mounted) return;
+    await _loadUserInscription();
+    if (!mounted) return;
+    final payment = registrationPaymentInstruction(registrationResult);
 
-          if (mounted) {
-            await _loadUserInscription();
-            final payment = registrationPaymentInstruction(registrationResult);
-
-            if (payment.shouldOpenPayment) {
-              await _showPaymentOptionsDialog(
-                operation: operation,
-                amount: payment.amount,
-                participantId: payment.participantId,
-                memberEmail: userEmail,
-                memberFirstName: memberProvider.prenom ?? '',
-                memberLastName: memberProvider.nom ?? '',
-                installmentId: payment.installmentId,
-                installmentLabel: payment.installmentLabel,
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(registrationSuccessMessage(
-                    registrationResult,
-                  )),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            }
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(e.toString()),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      }
+    if (payment.shouldOpenPayment) {
+      await _showPaymentOptionsDialog(
+        operation: operation,
+        amount: payment.amount,
+        participantId: payment.participantId,
+        memberEmail: userEmail,
+        memberFirstName: memberProvider.prenom ?? '',
+        memberLastName: memberProvider.nom ?? '',
+        installmentId: payment.installmentId,
+        installmentLabel: payment.installmentLabel,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(registrationSuccessMessage(registrationResult)),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -943,57 +896,45 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       );
     }).toList();
 
-    try {
-      // Register the complete group in one transaction. If any guest is
-      // invalid or capacity is insufficient, no registration is written.
-      final registrationResult = await _registerWithStableIdentity(
-        operationProvider: operationProvider,
-        userId: userId,
-        userName: userEmail,
-        selectedTariff: selectedTariff,
-        selectedSupplements: selectedSupplements,
-        supplementTotal:
-            selectedSupplements.isNotEmpty ? supplementTotal : null,
-        guests: guestRequests,
-      );
-      await operationProvider.reloadParticipants(
-          widget.clubId, widget.operationId);
-      if (!mounted) return;
-      await _loadUserInscription();
-      if (!mounted) return;
-      final payment = registrationPaymentInstruction(registrationResult);
+    // Register the complete group in one transaction. If any guest is
+    // invalid or capacity is insufficient, no registration is written.
+    final registrationResult = await _registerWithStableIdentity(
+      operationProvider: operationProvider,
+      userId: userId,
+      userName: userEmail,
+      selectedTariff: selectedTariff,
+      selectedSupplements: selectedSupplements,
+      supplementTotal: selectedSupplements.isNotEmpty ? supplementTotal : null,
+      guests: guestRequests,
+    );
+    await operationProvider.reloadParticipants(
+        widget.clubId, widget.operationId);
+    if (!mounted) return;
+    await _loadUserInscription();
+    if (!mounted) return;
+    final payment = registrationPaymentInstruction(registrationResult);
 
-      if (payment.shouldOpenPayment) {
-        await _showPaymentOptionsDialog(
-          operation: operation,
-          amount: payment.amount,
-          participantId: payment.participantId,
-          memberEmail: userEmail,
-          memberFirstName: prenom,
-          memberLastName: nom,
-          installmentId: payment.installmentId,
-          installmentLabel: payment.installmentLabel,
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(registrationSuccessMessage(
-              registrationResult,
-              guestCount: registrationResult.guestInscriptionIds.length,
-            )),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    if (payment.shouldOpenPayment) {
+      await _showPaymentOptionsDialog(
+        operation: operation,
+        amount: payment.amount,
+        participantId: payment.participantId,
+        memberEmail: userEmail,
+        memberFirstName: prenom,
+        memberLastName: nom,
+        installmentId: payment.installmentId,
+        installmentLabel: payment.installmentLabel,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(registrationSuccessMessage(
+            registrationResult,
+            guestCount: registrationResult.guestInscriptionIds.length,
+          )),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -1801,11 +1742,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _handleJoinWaitlist() async {
-    final authProvider = context.read<AuthProvider>();
-    final operationProvider = context.read<OperationProvider>();
-    final userId = authProvider.currentUser?.uid ?? '';
-    if (userId.isEmpty) return;
     try {
+      final authProvider = context.read<AuthProvider>();
+      final operationProvider = context.read<OperationProvider>();
+      final userId = authProvider.currentUser?.uid ?? '';
+      if (userId.isEmpty) return;
       await operationProvider.joinWaitlist(
         clubId: widget.clubId,
         operationId: widget.operationId,
@@ -1819,12 +1760,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         content: Text('Vous êtes ajouté à la liste d’attente'),
         backgroundColor: Colors.green,
       ));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erreur: $e'),
-        backgroundColor: Colors.red,
-      ));
+    } catch (error) {
+      _showRegistrationError(error,
+          action: EventRegistrationAction.joinWaitlist);
     }
   }
 
@@ -2129,14 +2067,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         if (OperationService.isDefinitiveGuestRegistrationFailure(e)) {
           _guestRequestIdentity.complete();
         }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        _showRegistrationError(e, action: EventRegistrationAction.addGuest);
       }
     }
   }
