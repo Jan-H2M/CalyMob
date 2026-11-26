@@ -853,6 +853,11 @@ service cloud.firestore {
 
       // Operations (événements, cotisations, dons, ventes, subventions)
       match /operations/{operationId} {
+        // The tariff trigger owns these fields and uses them to deduplicate alerts.
+        function tariffDiagnosticFields() {
+          return ['tariff_configuration_problems', 'tariff_configuration_checked_at'];
+        }
+
         // Read: Club members can read operations
         // (needed for event discussions, inscriptions, and operation details in mobile app)
         allow read: if isMember(clubId);
@@ -865,6 +870,7 @@ service cloud.firestore {
         // Note: uses .get() for fiscal_year_id to handle mobile app creating events without it
         allow create: if isAuthenticated()
           && hasValidSession(clubId)
+          && !request.resource.data.keys().hasAny(tariffDiagnosticFields())
           && request.resource.data.organisateur_id is string
           && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.organisateur_id))
           && (
@@ -885,6 +891,7 @@ service cloud.firestore {
         // owner-updates otherwise.
         allow update: if isAuthenticated()
           && hasValidSession(clubId)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(tariffDiagnosticFields())
           && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (

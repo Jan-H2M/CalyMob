@@ -276,6 +276,8 @@ exports.addGuestToEvent = eventWaitlist.addGuestToEvent;
 exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
 exports.unregisterFromEvent = eventWaitlist.unregisterFromEvent;
 exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;
+exports.onEventTariffConfigurationWritten =
+  require('./src/inscription/onEventTariffConfigurationWritten').onEventTariffConfigurationWritten;
 
 // =============================================================================
 // BOUTIQUE (Gen2)

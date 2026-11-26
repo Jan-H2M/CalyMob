@@ -8,6 +8,7 @@ const CATEGORY_BY_TYPE = {
   session_message: 'Conversation',
   new_operation: 'Activité',
   event_waitlist_promoted: 'Activité',
+  event_tariff_configuration: 'Activité',
   session_reminder: 'Activité',
   piscine_task_assigned: 'Action',
   exercice_declared: 'Action',

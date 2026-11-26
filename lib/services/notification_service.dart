@@ -228,7 +228,7 @@ class NotificationService {
         type == 'claim_rejected') {
       channelId = 'exercise_declarations';
       channelName = 'Déclarations d\'exercices';
-    } else if (type == 'new_operation') {
+    } else if (type == 'new_operation' || type == 'event_tariff_configuration') {
       channelId = 'event_messages';
       channelName = 'Nouvelles sorties';
     } else {

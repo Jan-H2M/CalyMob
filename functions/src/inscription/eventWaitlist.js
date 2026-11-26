@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { normalizedFunction, tariffCategory } = require('./eventTariffSafety');
 
 const REGION = 'europe-west1';
 const ACTIVE_STATUSES = new Set(['confirmed', 'pending_payment']);
@@ -184,25 +185,6 @@ function canAddStandaloneGuest(member, uid, operation) {
 async function activeCount(transaction, inscriptionsRef) {
   const snapshot = await transaction.get(inscriptionsRef);
   return snapshot.docs.filter(doc => ACTIVE_STATUSES.has(doc.data().registration_status || 'confirmed')).length;
-}
-
-function normalizedFunction(value) {
-  return typeof value === 'string'
-    ? value.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/s$/, '')
-    : '';
-}
-
-function tariffCategory(tariff) {
-  const explicit = normalizedFunction(tariff?.category);
-  if (explicit) return explicit;
-  const label = normalizedFunction(tariff?.label);
-  if (label.includes('encadrant')) return 'encadrant';
-  if (label === 'ca' || label.includes('comite')) return 'ca';
-  if (label.includes('junior')) return 'junior';
-  if (label.includes('etudiant')) return 'etudiant';
-  if (label.includes('non-membre') || label.includes('non membre')) return 'non-membre';
-  if (label.includes('membre')) return 'membre';
-  return label;
 }
 
 const OFFICIAL_ENCADRANT_FUNCTIONS = new Set([
