@@ -10,7 +10,9 @@ import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/operation_service.dart';
+import '../../utils/event_edit_safety.dart';
 import '../../utils/member_name.dart';
+import 'event_tariff_editor.dart';
 import 'payment_rules_section.dart';
 
 /// Écran d'édition d'un événement existant
@@ -45,7 +47,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
   DateTime? _dateFin;
   DateTime? _registrationDeadline;
   late String _statut;
-  late List<_EditableTariff> _tariffs;
+  late List<EditableEventTariff> _tariffs;
   late List<_EditableSupplement> _supplements;
   late bool _priceTbd;
   late bool _allowGuests;
@@ -96,7 +98,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
     // Copier les tarifs existants en version éditable
     _tariffs =
-        op.eventTariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
+        op.eventTariffs.map((t) => EditableEventTariff.fromTariff(t)).toList();
     // Copier les suppléments existants en version éditable
     _supplements = op.supplements
         .map((s) => _EditableSupplement.fromSupplement(s))
@@ -317,14 +319,14 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
   void _addTariff() {
     setState(() {
-      _tariffs.add(_EditableTariff(
+      _tariffs.add(EditableEventTariff.fromTariff(Tariff(
         id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_tariffs.length}',
         label: '',
-        category: 'membre',
+        category: '',
         price: 0,
         isDefault: _tariffs.isEmpty,
         displayOrder: _tariffs.length,
-      ));
+      )));
       _hasChanges = true;
     });
   }
@@ -334,28 +336,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
       _tariffs.removeAt(index);
       _hasChanges = true;
     });
-  }
-
-  void _updateTariffLabel(int index, String label) {
-    _tariffs[index].label = label;
-    _tariffs[index].category = _deriveCategoryFromLabel(label);
-    _markChanged();
-  }
-
-  void _updateTariffPrice(int index, String priceStr) {
-    _tariffs[index].price = double.tryParse(priceStr) ?? 0;
-    _markChanged();
-  }
-
-  String _deriveCategoryFromLabel(String label) {
-    final normalized = label.toLowerCase().trim();
-    if (normalized.contains('encadrant')) return 'encadrant';
-    if (normalized.contains('ca') || normalized.contains('comité')) return 'ca';
-    if (normalized.contains('junior')) return 'junior';
-    if (normalized.contains('non-membre') || normalized.contains('non membre'))
-      return 'non_membre';
-    if (normalized.contains('membre')) return 'membre';
-    return normalized;
   }
 
   // ============================================================
@@ -376,24 +356,39 @@ class _EditEventScreenState extends State<EditEventScreen> {
       return;
     }
 
+    final tariffsData = _tariffs.map((tariff) => tariff.toMap()).toList();
+    final problems = eventTariffProblems(
+      {
+        'event_tariffs': tariffsData,
+        'payment_required': _paymentRequired,
+        'price_tbd': _priceTbd,
+        'allow_guests': _allowGuests,
+        'prix_membre': widget.operation.prixMembre,
+        'payment_plan_enabled': widget.operation.paymentPlanEnabled,
+        'payment_installments': widget.operation.paymentInstallments
+            .map((installment) => installment.toMap())
+            .toList(),
+      },
+      previousTariffs:
+          widget.operation.eventTariffs.map((tariff) => tariff.toMap()),
+    );
+    if (problems.isNotEmpty) {
+      if (problems.any((problem) => problem.contains('tranche'))) {
+        problems.add('Pour modifier les tranches, utilisez CalyCompta.');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Tarifs non enregistrés. ${problems.join(' ')}'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 10),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
 
     try {
-      // Construire les tarifs pour Firestore — bewaar de is_guest_tariff
-      // flag zodat de "Invité" markering correct in Firestore terechtkomt.
-      final tariffsData = _tariffs
-          .where((t) => t.label.trim().isNotEmpty)
-          .map((t) => {
-                'id': t.id,
-                'label': t.label.trim(),
-                'category': t.category,
-                'price': t.price,
-                'is_default': t.isDefault,
-                'is_guest_tariff': t.isGuestTariff,
-                'display_order': t.displayOrder,
-              })
-          .toList();
-
       // Construire les suppléments pour Firestore
       final supplementsData = _supplements
           .where((s) => s.name.trim().isNotEmpty)
@@ -409,15 +404,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
       // gasten zijn pas bevestigd zodra een lid hen toevoegt.
       final capacity = int.tryParse(_capaciteController.text);
       final tariffObjects = _tariffs
-          .where((t) => t.label.trim().isNotEmpty && !t.isGuestTariff)
-          .map((t) => Tariff(
-                id: t.id,
-                label: t.label,
-                category: t.category,
-                price: t.price,
-                isDefault: t.isDefault,
-                displayOrder: t.displayOrder,
-              ))
+          .where((tariff) =>
+              tariff.label.trim().isNotEmpty &&
+              !tariff.isGuestTariff &&
+              tariff.price.isFinite)
+          .map((tariff) => tariff.toTariff())
           .toList();
       final budget =
           OperationService.computeBudgetPrevu(tariffObjects, capacity);
@@ -818,6 +809,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   // ============================================================
 
   Widget _buildTariffsSection() {
+    final hasOrdinaryMemberTariff =
+        _tariffs.any((tariff) => tariff.isOrdinaryMember);
     return _buildSectionCard(children: [
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -859,123 +852,19 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
       // Liste des tarifs éditables
       ...List.generate(_tariffs.length, (index) {
-        return _buildTariffRow(index);
+        return _buildTariffRow(index, hasOrdinaryMemberTariff);
       }),
     ]);
   }
 
-  Widget _buildTariffRow(int index) {
+  Widget _buildTariffRow(int index, bool hasOrdinaryMemberTariff) {
     final tariff = _tariffs[index];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.lichtblauw.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          // Label input
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              initialValue: tariff.label,
-              decoration: InputDecoration(
-                hintText: 'Label (ex: Membre)',
-                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                filled: true,
-                fillColor: Colors.white,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-              ),
-              style: const TextStyle(fontSize: 14),
-              onChanged: (v) => _updateTariffLabel(index, v),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Price input
-          Expanded(
-            flex: 2,
-            child: TextFormField(
-              initialValue:
-                  tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
-              decoration: InputDecoration(
-                hintText: '0.00',
-                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                suffixText: '€',
-                suffixStyle: TextStyle(
-                  color: AppColors.middenblauw,
-                  fontWeight: FontWeight.bold,
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-              ),
-              style: const TextStyle(fontSize: 14),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (v) => _updateTariffPrice(index, v),
-            ),
-          ),
-          const SizedBox(width: 4),
-
-          // Invité checkbox — alleen relevant wanneer "Autoriser les
-          // invités externes" aanstaat (zelfde principe als CalyCompta).
-          // Markeert deze tarief als gast-tarief (bv. "Invité adulte").
-          if (_allowGuests)
-            Tooltip(
-              message:
-                  'Marquer ce tarif comme tarif invité (sera utilisé quand un membre ajoute un invité externe)',
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Checkbox(
-                    value: tariff.isGuestTariff,
-                    onChanged: (v) {
-                      setState(() {
-                        tariff.isGuestTariff = v ?? false;
-                        _hasChanges = true;
-                      });
-                    },
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  const Text('Invité', style: TextStyle(fontSize: 12)),
-                ],
-              ),
-            ),
-
-          // Delete button
-          IconButton(
-            icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
-            onPressed: () => _removeTariff(index),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
+    return EventTariffEditorRow(
+      key: ObjectKey(tariff),
+      tariff: tariff,
+      hasOrdinaryMemberTariff: hasOrdinaryMemberTariff,
+      onChanged: _markChanged,
+      onRemove: () => _removeTariff(index),
     );
   }
 
@@ -1653,41 +1542,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 }
 
-/// Classe helper pour les tarifs éditables (mutable)
-class _EditableTariff {
-  String id;
-  String label;
-  String category;
-  double price;
-  bool isDefault;
-  bool isGuestTariff;
-  int displayOrder;
-
-  _EditableTariff({
-    required this.id,
-    required this.label,
-    required this.category,
-    required this.price,
-    this.isDefault = false,
-    this.isGuestTariff = false,
-    this.displayOrder = 0,
-  });
-
-  factory _EditableTariff.fromTariff(Tariff t) {
-    return _EditableTariff(
-      id: t.id,
-      label: t.label,
-      category: t.category,
-      price: t.price,
-      isDefault: t.isDefault,
-      isGuestTariff: t.isGuestTariff,
-      displayOrder: t.displayOrder,
-    );
-  }
-}
-
 /// Classe helper pour les suppléments éditables (mutable). Spiegelt
-/// _EditableTariff zodat de UI-flow (add / remove / edit / autosave)
+/// EditableEventTariff zodat de UI-flow (add / remove / edit / autosave)
 /// uniform werkt voor beide collecties.
 class _EditableSupplement {
   String id;

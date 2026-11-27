@@ -7,6 +7,7 @@ import '../models/supplement.dart';
 import '../models/tariff.dart';
 import '../models/user_event_registration.dart';
 import '../services/operation_service.dart';
+import '../utils/event_registration_error.dart';
 
 /// Provider pour l'état des opérations
 class OperationProvider with ChangeNotifier {
@@ -196,7 +197,10 @@ class OperationProvider with ChangeNotifier {
       );
       _userWaitlistStatus[operationId] = true;
     } catch (e) {
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _errorMessage = eventRegistrationErrorMessage(
+        e,
+        action: EventRegistrationAction.joinWaitlist,
+      );
       rethrow;
     } finally {
       _isLoading = false;
@@ -257,7 +261,7 @@ class OperationProvider with ChangeNotifier {
       return result;
     } catch (e) {
       _isLoading = false;
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _errorMessage = eventRegistrationErrorMessage(e);
       notifyListeners();
 
       debugPrint('❌ Erreur registerToOperation: $e');
@@ -401,7 +405,10 @@ class OperationProvider with ChangeNotifier {
       debugPrint('✅ Invité ajouté via provider');
     } catch (e) {
       _isLoading = false;
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _errorMessage = eventRegistrationErrorMessage(
+        e,
+        action: EventRegistrationAction.addGuest,
+      );
       notifyListeners();
 
       debugPrint('❌ Erreur addGuestToOperation: $e');

@@ -14,7 +14,9 @@ import '../../services/dive_location_sync_contract.dart';
 import '../../services/fiscal_year_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/session_service.dart';
+import '../../utils/event_edit_safety.dart';
 import '../../utils/member_name.dart';
+import 'event_tariff_editor.dart';
 import 'payment_rules_section.dart';
 import 'event_payment_defaults.dart';
 import 'event_waitlist_defaults.dart';
@@ -75,7 +77,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   );
   DateTime? _dateFin;
   String _statut = 'ouvert';
-  List<_EditableTariff> _editableTariffs = [];
+  List<EditableEventTariff> _editableTariffs = [];
   bool _saving = false;
   bool _paymentRequired = EventPaymentDefaults.paymentRequired;
   Set<String> _allowedPaymentMethods =
@@ -409,8 +411,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       _titreController.text = location.name;
       _descriptionController.text = location.description ?? '';
       // Convertir locatie-tarieven naar bewerkbare tarieven
-      _editableTariffs =
-          location.tariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
+      _editableTariffs = location.tariffs
+          .map((t) => EditableEventTariff.fromTariff(t))
+          .toList();
 
       // Recalculer budget
       _recalculateBudget();
@@ -436,15 +439,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     final capacity = int.tryParse(_capaciteController.text);
     // Converteer editeerbare tarieven naar Tariff objecten voor de berekening
     final tariffObjects = _editableTariffs
-        .where((t) => t.label.trim().isNotEmpty)
-        .map((t) => Tariff(
-              id: t.id,
-              label: t.label,
-              category: t.category,
-              price: t.price,
-              isDefault: t.isDefault,
-              displayOrder: t.displayOrder,
-            ))
+        .where((tariff) =>
+            tariff.label.trim().isNotEmpty &&
+            !tariff.isGuestTariff &&
+            tariff.price.isFinite)
+        .map((tariff) => tariff.toTariff())
         .toList();
     final budget = OperationService.computeBudgetPrevu(tariffObjects, capacity);
     _budgetController.text = budget.toStringAsFixed(2);
@@ -465,14 +464,67 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       return;
     }
 
+    final authProvider = context.read<AuthProvider>();
+    final userId = authProvider.currentUser?.uid ?? '';
+    final isDive =
+        widget.eventCategory == 'plongee' || _selectedLocation != null;
+
+    // Validate the same form values that will be written after the awaits.
+    final data = <String, dynamic>{
+      'type': 'evenement',
+      'titre': _titreController.text.trim(),
+      'description': _descriptionController.text.trim().isNotEmpty
+          ? _descriptionController.text.trim()
+          : null,
+      'montant_prevu': double.tryParse(_budgetController.text) ?? 0,
+      'date_debut': Timestamp.fromDate(_dateDebut),
+      if (_dateFin != null) 'date_fin': Timestamp.fromDate(_dateFin!),
+      'statut': _statut,
+      'event_category': isDive ? 'plongee' : 'sortie',
+      'lieu': _selectedLocation?.name ?? '',
+      if (_selectedLocation != null) 'lieu_id': _selectedLocation!.id,
+      if (_capaciteController.text.isNotEmpty)
+        'capacite_max': int.tryParse(_capaciteController.text),
+      'allow_waitlist': _allowWaitlist,
+      // Écrire id + nom ensemble depuis le picker pour que le lookup du
+      // numéro de téléphone (keyed sur organisateur_id) reste cohérent
+      // avec le nom affiché. Fallback sur userId si le picker n'a pas
+      // encore été initialisé (edge case très rare).
+      'organisateur_nom': (_organisateurNom ?? '').trim(),
+      'organisateur_id':
+          (_organisateurId != null && _organisateurId!.isNotEmpty)
+              ? _organisateurId
+              : userId,
+      'event_tariffs':
+          _editableTariffs.map((tariff) => tariff.toMap()).toList(),
+      'club_id': _clubId,
+      // Source tag (keep 'manual' for consistency with CalyCompta).
+      'created_by': 'manual',
+      // Firebase UID of the original creator — used to authorize later
+      // responsable changes. Distinct from created_by source tag above.
+      'creator_user_id': userId,
+      'payment_required': _paymentRequired,
+      'allowed_payment_methods': _allowedPaymentMethods.toList(),
+      'registration_confirmation_policy': _registrationConfirmationPolicy,
+      'payment_deadline_days': _paymentDeadlineDays,
+      'auto_cancel_unpaid': false,
+    };
+
+    final problems = eventTariffProblems(data);
+    if (problems.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Tarifs non enregistrés. ${problems.join(' ')}'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 10),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      final userId = authProvider.currentUser?.uid ?? '';
-      final isDive =
-          widget.eventCategory == 'plongee' || _selectedLocation != null;
-
       // Refresh session to prevent permission-denied on expired session
       await SessionService().touchActivity();
 
@@ -503,59 +555,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       final eventNumber =
           await _operationService.generateEventNumber(_clubId, isDive);
 
-      // Build tariffs data vanuit editeerbare tarieven
-      final tariffsData = _editableTariffs
-          .where((t) => t.label.trim().isNotEmpty)
-          .map((t) => {
-                'id': t.id,
-                'label': t.label.trim(),
-                'category': t.category,
-                'price': t.price,
-                'is_default': t.isDefault,
-                'display_order': t.displayOrder,
-              })
-          .toList();
-
-      final data = {
-        'type': 'evenement',
-        'titre': _titreController.text.trim(),
-        'description': _descriptionController.text.trim().isNotEmpty
-            ? _descriptionController.text.trim()
-            : null,
-        'montant_prevu': double.tryParse(_budgetController.text) ?? 0,
-        'date_debut': Timestamp.fromDate(_dateDebut),
-        if (_dateFin != null) 'date_fin': Timestamp.fromDate(_dateFin!),
-        'statut': _statut,
-        'event_category': isDive ? 'plongee' : 'sortie',
-        'event_number': eventNumber,
-        'lieu': _selectedLocation?.name ?? '',
-        if (_selectedLocation != null) 'lieu_id': _selectedLocation!.id,
-        if (_capaciteController.text.isNotEmpty)
-          'capacite_max': int.tryParse(_capaciteController.text),
-        'allow_waitlist': _allowWaitlist,
-        // Écrire id + nom ensemble depuis le picker pour que le lookup du
-        // numéro de téléphone (keyed sur organisateur_id) reste cohérent
-        // avec le nom affiché. Fallback sur userId si le picker n'a pas
-        // encore été initialisé (edge case très rare).
-        'organisateur_nom': (_organisateurNom ?? '').trim(),
-        'organisateur_id':
-            (_organisateurId != null && _organisateurId!.isNotEmpty)
-                ? _organisateurId
-                : userId,
-        'event_tariffs': tariffsData,
-        'club_id': _clubId,
-        'fiscal_year_id': fiscalYearId,
-        // Source tag (keep 'manual' for consistency with CalyCompta).
-        'created_by': 'manual',
-        // Firebase UID of the original creator — used to authorize later
-        // responsable changes. Distinct from created_by source tag above.
-        'creator_user_id': userId,
-        'payment_required': _paymentRequired,
-        'allowed_payment_methods': _allowedPaymentMethods.toList(),
-        'registration_confirmation_policy': _registrationConfirmationPolicy,
-        'payment_deadline_days': _paymentDeadlineDays,
-        'auto_cancel_unpaid': false,
-      };
+      data['event_number'] = eventNumber;
+      data['fiscal_year_id'] = fiscalYearId;
 
       await _operationService.createOperation(clubId: _clubId, data: data);
 
@@ -1357,14 +1358,14 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
   void _addTariff() {
     setState(() {
-      _editableTariffs.add(_EditableTariff(
+      _editableTariffs.add(EditableEventTariff.fromTariff(Tariff(
         id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_editableTariffs.length}',
         label: '',
-        category: 'membre',
+        category: '',
         price: 0,
         isDefault: _editableTariffs.isEmpty,
         displayOrder: _editableTariffs.length,
-      ));
+      )));
     });
   }
 
@@ -1375,28 +1376,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     });
   }
 
-  void _updateTariffLabel(int index, String label) {
-    _editableTariffs[index].label = label;
-    _editableTariffs[index].category = _deriveCategoryFromLabel(label);
-  }
-
-  void _updateTariffPrice(int index, String priceStr) {
-    _editableTariffs[index].price = double.tryParse(priceStr) ?? 0;
-    _recalculateBudget();
-  }
-
-  String _deriveCategoryFromLabel(String label) {
-    final normalized = label.toLowerCase().trim();
-    if (normalized.contains('encadrant')) return 'encadrant';
-    if (normalized.contains('ca') || normalized.contains('comité')) return 'ca';
-    if (normalized.contains('junior')) return 'junior';
-    if (normalized.contains('non-membre') || normalized.contains('non membre'))
-      return 'non_membre';
-    if (normalized.contains('membre')) return 'membre';
-    return normalized;
-  }
-
   Widget _buildTariffsSection() {
+    final hasOrdinaryMemberTariff =
+        _editableTariffs.any((tariff) => tariff.isOrdinaryMember);
     return _buildSectionCard(
       children: [
         Row(
@@ -1440,7 +1422,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
         // Liste des tarifs éditables
         ...List.generate(_editableTariffs.length, (index) {
-          return _buildTariffRow(index);
+          return _buildTariffRow(index, hasOrdinaryMemberTariff);
         }),
 
         if (_selectedLocation != null && _editableTariffs.isNotEmpty) ...[
@@ -1458,92 +1440,14 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     );
   }
 
-  Widget _buildTariffRow(int index) {
+  Widget _buildTariffRow(int index, bool hasOrdinaryMemberTariff) {
     final tariff = _editableTariffs[index];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.lichtblauw.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          // Label input
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              initialValue: tariff.label,
-              decoration: InputDecoration(
-                hintText: 'Label (ex: Membre)',
-                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                filled: true,
-                fillColor: Colors.white,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-              ),
-              style: const TextStyle(fontSize: 14),
-              onChanged: (v) => _updateTariffLabel(index, v),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Price input
-          Expanded(
-            flex: 2,
-            child: TextFormField(
-              initialValue:
-                  tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
-              decoration: InputDecoration(
-                hintText: '0.00',
-                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                suffixText: '€',
-                suffixStyle: TextStyle(
-                  color: AppColors.middenblauw,
-                  fontWeight: FontWeight.bold,
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-              ),
-              style: const TextStyle(fontSize: 14),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (v) => _updateTariffPrice(index, v),
-            ),
-          ),
-          const SizedBox(width: 4),
-
-          // Delete button
-          IconButton(
-            icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
-            onPressed: () => _removeTariff(index),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
+    return EventTariffEditorRow(
+      key: ObjectKey(tariff),
+      tariff: tariff,
+      hasOrdinaryMemberTariff: hasOrdinaryMemberTariff,
+      onChanged: () => setState(_recalculateBudget),
+      onRemove: () => _removeTariff(index),
     );
   }
 
@@ -1798,36 +1702,6 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    );
-  }
-}
-
-/// Classe helper voor bewerkbare tarieven (mutable versie van Tariff)
-class _EditableTariff {
-  String id;
-  String label;
-  String category;
-  double price;
-  bool isDefault;
-  int displayOrder;
-
-  _EditableTariff({
-    required this.id,
-    required this.label,
-    required this.category,
-    required this.price,
-    this.isDefault = false,
-    this.displayOrder = 0,
-  });
-
-  factory _EditableTariff.fromTariff(Tariff t) {
-    return _EditableTariff(
-      id: t.id,
-      label: t.label,
-      category: t.category,
-      price: t.price,
-      isDefault: t.isDefault,
-      displayOrder: t.displayOrder,
     );
   }
 }

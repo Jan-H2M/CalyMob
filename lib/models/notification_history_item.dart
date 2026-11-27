@@ -102,6 +102,7 @@ class NotificationHistoryItem {
         return 'Conversation';
       case 'new_operation':
       case 'event_waitlist_promoted':
+      case 'event_tariff_configuration':
       case 'session_reminder':
         return 'Activité';
       case 'piscine_task_assigned':

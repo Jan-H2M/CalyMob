@@ -142,6 +142,7 @@ class NotificationNavigationRequest {
       case 'event_message':
       case 'new_operation':
       case 'event_waitlist_promoted':
+      case 'event_tariff_configuration':
         return NotificationRouteKind.operation;
       case 'announcement':
       case 'announcement_reply':
