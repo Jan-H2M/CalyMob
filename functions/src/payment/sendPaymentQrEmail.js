@@ -22,7 +22,6 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const QRCode = require('qrcode');
 const {
   buildEmailRouting,
   logEmailHistoryAndCommunication,
@@ -318,6 +317,7 @@ function formatIbanDisplay(iban) {
  */
 async function generateQrCodeBase64(payload) {
   try {
+    const QRCode = require('qrcode');
     const dataUrl = await QRCode.toDataURL(payload, {
       errorCorrectionLevel: 'M',
       type: 'image/png',

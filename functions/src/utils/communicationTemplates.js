@@ -1,4 +1,3 @@
-const Handlebars = require('handlebars');
 const admin = require('firebase-admin');
 const crypto = require('node:crypto');
 
@@ -452,6 +451,7 @@ function renderCommunicationTemplate(template, data) {
       throw new TypeError(`Configuration invalide: ${field} doit être du texte.`);
     }
   }
+  const Handlebars = require('handlebars');
   const subject = Handlebars.compile(template.subject ?? '')(data);
   const html = Handlebars.compile(template.htmlContent ?? '')(data);
   const unreplacedVariables = `${subject} ${html}`.match(/\{\{[^}]+\}\}/g) || [];

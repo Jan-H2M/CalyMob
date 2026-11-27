@@ -3,6 +3,10 @@
  * Payment management via Noda (Open Banking) and Push Notifications
  */
 
+// A Cloud Run instance serves one entry point. Firebase discovery and the
+// emulator's shared debug process need the complete set of functions.
+const target = process.env.FUNCTION_DEBUG_MODE ? undefined : process.env.FUNCTION_TARGET;
+
 // Load environment variables from .env file (for local development)
 require('dotenv').config();
 
@@ -21,68 +25,64 @@ if (!admin.firestore.FieldValue) {
   admin.firestore.FieldValue = require('firebase-admin/firestore').FieldValue;
 }
 
+function exportFunctions(loadModule, ...names) {
+  if (target && !names.includes(target)) return;
+
+  const functions = loadModule();
+  for (const name of target ? [target] : names) {
+    exports[name] = functions[name];
+  }
+}
+
 // =============================================================================
 // EPC QR PAYMENT EMAIL (Gen2)
 // =============================================================================
 
 // EPC QR code payment email for event registrations
-const { sendPaymentQrEmail } = require('./src/payment/sendPaymentQrEmail');
-exports.sendPaymentQrEmail = sendPaymentQrEmail;
+exportFunctions(() => require('./src/payment/sendPaymentQrEmail'), 'sendPaymentQrEmail');
 
 // Material-loan cautions have their own callable contract. They never reuse
 // event registrations, event templates or event bank-matching state.
-const {
-  getMaterialLoanPaymentQr,
-  sendMaterialLoanPaymentQrEmail,
-} = require('./src/payment/materialLoanPayment');
-exports.getMaterialLoanPaymentQr = getMaterialLoanPaymentQr;
-exports.sendMaterialLoanPaymentQrEmail = sendMaterialLoanPaymentQrEmail;
+exportFunctions(
+  () => require('./src/payment/materialLoanPayment'),
+  'getMaterialLoanPaymentQr',
+  'sendMaterialLoanPaymentQrEmail',
+);
 
-const { sendMaterialLoanHandoverReceipt } = require('./src/loans/sendMaterialLoanHandoverReceipt');
-exports.sendMaterialLoanHandoverReceipt = sendMaterialLoanHandoverReceipt;
+exportFunctions(
+  () => require('./src/loans/sendMaterialLoanHandoverReceipt'),
+  'sendMaterialLoanHandoverReceipt',
+);
 
 // M1: Daily overdue transition — marks active loans past their return date as en_retard.
-const { materialLoanOverdueTransition } = require('./src/loans/materialLoanOverdueTransition');
-exports.materialLoanOverdueTransition = materialLoanOverdueTransition;
+exportFunctions(() => require('./src/loans/materialLoanOverdueTransition'), 'materialLoanOverdueTransition');
 
 // M3: Pending reservation expiry — cancels stale attente_caution loans after a configurable timeout.
-const { materialLoanPendingExpiry } = require('./src/loans/materialLoanPendingExpiry');
-exports.materialLoanPendingExpiry = materialLoanPendingExpiry;
+exportFunctions(() => require('./src/loans/materialLoanPendingExpiry'), 'materialLoanPendingExpiry');
 
 // Payment reminder — called by CalyCompta to send QR emails + post message in event chat
-const { sendPaymentReminder } = require('./src/payment/sendPaymentReminder');
-exports.sendPaymentReminder = sendPaymentReminder;
+exportFunctions(() => require('./src/payment/sendPaymentReminder'), 'sendPaymentReminder');
 
 // Server-authoritative on-site QR confirmation. The mobile client may request
 // this action but may not write accounting fields directly.
-const { recordOnSitePayment } = require('./src/payment/recordOnSitePayment');
-exports.recordOnSitePayment = recordOnSitePayment;
-const { recordPaymentCommunication } = require('./src/payment/recordPaymentCommunication');
-exports.recordPaymentCommunication = recordPaymentCommunication;
-const { recordInstallmentPayment } = require('./src/payment/recordInstallmentPayment');
-exports.recordInstallmentPayment = recordInstallmentPayment;
+exportFunctions(() => require('./src/payment/recordOnSitePayment'), 'recordOnSitePayment');
+exportFunctions(() => require('./src/payment/recordPaymentCommunication'), 'recordPaymentCommunication');
+exportFunctions(() => require('./src/payment/recordInstallmentPayment'), 'recordInstallmentPayment');
 
 // =============================================================================
 // NODA PAYMENT FUNCTIONS (Gen2) - DEPRECATED, kept for backward compatibility
 // =============================================================================
 
-// Import Noda payment functions
-const { createNodaPayment } = require('./src/payment/createPayment');
-const { nodaWebhook } = require('./src/payment/webhook');
-const { checkNodaPaymentStatus } = require('./src/payment/checkStatus');
-
-// Export Noda functions
-exports.createNodaPayment = createNodaPayment;
-exports.nodaWebhook = nodaWebhook;
-exports.checkNodaPaymentStatus = checkNodaPaymentStatus;
+exportFunctions(() => require('./src/payment/createPayment'), 'createNodaPayment');
+exportFunctions(() => require('./src/payment/webhook'), 'nodaWebhook');
+exportFunctions(() => require('./src/payment/checkStatus'), 'checkNodaPaymentStatus');
 
 // =============================================================================
 // PUSH NOTIFICATIONS (Gen2)
 // =============================================================================
 
 // Push notifications for event messages
-const { onNewEventMessage } = require('./src/notifications/onNewEventMessage');
-exports.onNewEventMessage = onNewEventMessage;
+exportFunctions(() => require('./src/notifications/onNewEventMessage'), 'onNewEventMessage');
 
 // NOTE (Fix #8): onEventStatusChange is removed. It attempted to decrement
 // per-member unread counts when an event was closed/cancelled, but the client
@@ -91,219 +91,212 @@ exports.onNewEventMessage = onNewEventMessage;
 // See docs/NOTIFICATIONS_MASTER.md § Fix #8.
 
 // Push notifications for club announcements
-const { onNewAnnouncement } = require('./src/notifications/onNewAnnouncement');
-exports.onNewAnnouncement = onNewAnnouncement;
+exportFunctions(() => require('./src/notifications/onNewAnnouncement'), 'onNewAnnouncement');
 
 // Daily 07:00 birthday push, only when one or more active members celebrate.
-const { birthdayNotification } = require('./src/notifications/birthdayNotification');
-exports.birthdayNotification = birthdayNotification;
+exportFunctions(() => require('./src/notifications/birthdayNotification'), 'birthdayNotification');
 
 // Push notifications for announcement replies
-const { onNewAnnouncementReply } = require('./src/notifications/onNewAnnouncementReply');
-exports.onNewAnnouncementReply = onNewAnnouncementReply;
-const { onAnnouncementReplyDeleted } = require('./src/notifications/onAnnouncementReplyDeleted');
-exports.onAnnouncementReplyDeleted = onAnnouncementReplyDeleted;
-const { onReadStateWritten, onReadStateScopeWritten } = require('./src/notifications/onReadStateWritten');
-exports.onReadStateWritten = onReadStateWritten;
-exports.onReadStateScopeWritten = onReadStateScopeWritten;
-const { bootstrapUnreadCursorV1 } = require('./src/notifications/bootstrapUnreadCursor');
-exports.bootstrapUnreadCursorV1 = bootstrapUnreadCursorV1;
-const { acknowledgeVisibleUnreadCursorV1 } = require('./src/notifications/acknowledgeVisibleUnreadCursor');
-exports.acknowledgeVisibleUnreadCursorV1 = acknowledgeVisibleUnreadCursorV1;
-const { onAnnouncementWritten } = require('./src/notifications/announcementFieldMaintenance');
-exports.onAnnouncementWritten = onAnnouncementWritten;
+exportFunctions(() => require('./src/notifications/onNewAnnouncementReply'), 'onNewAnnouncementReply');
+exportFunctions(
+  () => require('./src/notifications/onAnnouncementReplyDeleted'),
+  'onAnnouncementReplyDeleted',
+);
+exportFunctions(
+  () => require('./src/notifications/onReadStateWritten'),
+  'onReadStateWritten',
+  'onReadStateScopeWritten',
+);
+exportFunctions(() => require('./src/notifications/bootstrapUnreadCursor'), 'bootstrapUnreadCursorV1');
+exportFunctions(
+  () => require('./src/notifications/acknowledgeVisibleUnreadCursor'),
+  'acknowledgeVisibleUnreadCursorV1',
+);
+exportFunctions(() => require('./src/notifications/announcementFieldMaintenance'), 'onAnnouncementWritten');
 
 // =============================================================================
 // EXPENSE EMAIL NOTIFICATIONS (Gen2)
 // =============================================================================
 
 // Email notification when expense request is created
-const { onExpenseCreated } = require('./src/notifications/onExpenseCreated');
-exports.onExpenseCreated = onExpenseCreated;
+exportFunctions(() => require('./src/notifications/onExpenseCreated'), 'onExpenseCreated');
 
 // Email notification when expense status changes (approved/reimbursed)
-const { onExpenseStatusChange } = require('./src/notifications/onExpenseStatusChange');
-exports.onExpenseStatusChange = onExpenseStatusChange;
+exportFunctions(() => require('./src/notifications/onExpenseStatusChange'), 'onExpenseStatusChange');
 
 // Keep canonical `expense_claims` in sync with legacy `demandes_remboursement`
 // (auto-mirror so reimbursement requests are always visible in the web app)
-const { mirrorLegacyExpenseClaim } = require('./src/expenses/mirrorLegacyExpenseClaim');
-exports.mirrorLegacyExpenseClaim = mirrorLegacyExpenseClaim;
+exportFunctions(() => require('./src/expenses/mirrorLegacyExpenseClaim'), 'mirrorLegacyExpenseClaim');
 
 // Reverse mirror canonical -> legacy (DORMANT: standaard uit via feature-flag,
 // pas actief bij de gecoördineerde flip Stap 5b)
-const { mirrorCanonicalToLegacy } = require('./src/expenses/mirrorCanonicalToLegacy');
-exports.mirrorCanonicalToLegacy = mirrorCanonicalToLegacy;
+exportFunctions(() => require('./src/expenses/mirrorCanonicalToLegacy'), 'mirrorCanonicalToLegacy');
 
 // Audit trail: logt elke tranche-betaalstatuswijziging van een inschrijving
 // (over-afsluit-regressies meteen zichtbaar)
-const { onInscriptionPaymentAudit } = require('./src/audit/onInscriptionPaymentAudit');
-exports.onInscriptionPaymentAudit = onInscriptionPaymentAudit;
+exportFunctions(() => require('./src/audit/onInscriptionPaymentAudit'), 'onInscriptionPaymentAudit');
 
 // COM-062: registratielog — logged registered/unregistered/updated per inscription,
 // visible only in CalyCompta (append-only inscription_logs subcollection).
-const { onInscriptionChangeAudit } = require('./src/audit/onInscriptionChangeAudit');
-exports.onInscriptionChangeAudit = onInscriptionChangeAudit;
+exportFunctions(() => require('./src/audit/onInscriptionChangeAudit'), 'onInscriptionChangeAudit');
 
 // =============================================================================
 // PISCINE SESSION NOTIFICATIONS (Gen2)
 // =============================================================================
 
 // Push notifications for new piscine session messages
-const { onNewSessionMessage } = require('./src/notifications/onNewSessionMessage');
-exports.onNewSessionMessage = onNewSessionMessage;
-const { onPiscineSessionChatAclWritten } = require('./src/notifications/onPiscineSessionChatAclWritten');
-exports.onPiscineSessionChatAclWritten = onPiscineSessionChatAclWritten;
-const {
-  onAnnouncementUnreadTimestampCreated,
-  onAnnouncementReplyUnreadTimestampCreated,
-  onEventMessageUnreadTimestampCreated,
-  onTeamMessageUnreadTimestampCreated,
-  onSessionMessageUnreadTimestampCreated,
-} = require('./src/notifications/unreadTimestampReconciliationTriggers');
-exports.onAnnouncementUnreadTimestampCreated = onAnnouncementUnreadTimestampCreated;
-exports.onAnnouncementReplyUnreadTimestampCreated = onAnnouncementReplyUnreadTimestampCreated;
-exports.onEventMessageUnreadTimestampCreated = onEventMessageUnreadTimestampCreated;
-exports.onTeamMessageUnreadTimestampCreated = onTeamMessageUnreadTimestampCreated;
-exports.onSessionMessageUnreadTimestampCreated = onSessionMessageUnreadTimestampCreated;
-const { ensurePiscineSessionChatAcl } = require('./src/notifications/ensurePiscineSessionChatAcl');
-exports.ensurePiscineSessionChatAcl = ensurePiscineSessionChatAcl;
+exportFunctions(() => require('./src/notifications/onNewSessionMessage'), 'onNewSessionMessage');
+exportFunctions(
+  () => require('./src/notifications/onPiscineSessionChatAclWritten'),
+  'onPiscineSessionChatAclWritten',
+);
+exportFunctions(
+  () => require('./src/notifications/unreadTimestampReconciliationTriggers'),
+  'onAnnouncementUnreadTimestampCreated',
+  'onAnnouncementReplyUnreadTimestampCreated',
+  'onEventMessageUnreadTimestampCreated',
+  'onTeamMessageUnreadTimestampCreated',
+  'onSessionMessageUnreadTimestampCreated',
+);
+exportFunctions(
+  () => require('./src/notifications/ensurePiscineSessionChatAcl'),
+  'ensurePiscineSessionChatAcl',
+);
 
 // Push notifications for new team channel messages
-const { onNewTeamMessage } = require('./src/notifications/onNewTeamMessage');
-exports.onNewTeamMessage = onNewTeamMessage;
+exportFunctions(() => require('./src/notifications/onNewTeamMessage'), 'onNewTeamMessage');
 
 // Daily reminder for upcoming piscine sessions
-const { sessionReminder } = require('./src/notifications/sessionReminder');
-exports.sessionReminder = sessionReminder;
+exportFunctions(() => require('./src/notifications/sessionReminder'), 'sessionReminder');
 
 // Daily payment reminder draft for events 3 days away
-const { eventPaymentReminder } = require('./src/notifications/eventPaymentReminder');
-exports.eventPaymentReminder = eventPaymentReminder;
+exportFunctions(() => require('./src/notifications/eventPaymentReminder'), 'eventPaymentReminder');
 
 // Live refresh of payment_reminder draft when an inscription changes
 // (created / paid / unpaid / deleted). Keeps the CalyCompta banner up to date
 // in real time, without waiting for the daily 08:30 run.
-const { onInscriptionPaymentChange } = require('./src/notifications/onInscriptionPaymentChange');
-exports.onInscriptionPaymentChange = onInscriptionPaymentChange;
+exportFunctions(
+  () => require('./src/notifications/onInscriptionPaymentChange'),
+  'onInscriptionPaymentChange',
+);
 
 // Auto-mark a member as present on a paid dive event (event_category === 'plongee').
 // Fires when `paye` flips falsy → true on the inscription. Refunds are NOT auto-reverted.
-const { onInscriptionPaidMarkPresent } = require('./src/notifications/onInscriptionPaidMarkPresent');
-exports.onInscriptionPaidMarkPresent = onInscriptionPaidMarkPresent;
+exportFunctions(
+  () => require('./src/notifications/onInscriptionPaidMarkPresent'),
+  'onInscriptionPaidMarkPresent',
+);
 
 // Weekly cleanup for old chat messages and orphaned attachments
-const { cleanupOldMessages } = require('./src/maintenance/cleanupOldMessages');
-exports.cleanupOldMessages = cleanupOldMessages;
+exportFunctions(() => require('./src/maintenance/cleanupOldMessages'), 'cleanupOldMessages');
 
 // Push notification when a new outdoor event/dive is created
-const { onNewOperation } = require('./src/notifications/onNewOperation');
-exports.onNewOperation = onNewOperation;
+exportFunctions(() => require('./src/notifications/onNewOperation'), 'onNewOperation');
 
 // Push notification when a member self-declares a LIFRAS exercise from CalyMob
 // NOTE 2026-04-30: realtime push DISABLED via kill switch inside the function —
 // it spammed encadrants. Replaced by `dailyExerciseDeclarationDigest` below.
-const { onExerciceDeclared } = require('./src/notifications/onExerciceDeclared');
-exports.onExerciceDeclared = onExerciceDeclared;
+exportFunctions(() => require('./src/notifications/onExerciceDeclared'), 'onExerciceDeclared');
 
 // Daily 19:00 Europe/Brussels digest of pending self-declared LIFRAS exercises
-const {
-  dailyExerciseDeclarationDigest,
-} = require('./src/notifications/dailyExerciseDeclarationDigest');
-exports.dailyExerciseDeclarationDigest = dailyExerciseDeclarationDigest;
+exportFunctions(
+  () => require('./src/notifications/dailyExerciseDeclarationDigest'),
+  'dailyExerciseDeclarationDigest',
+);
 
 // Push notification when a member is assigned to a pool session task
-const { onPiscineTaskAssigned } = require('./src/notifications/onPiscineTaskAssigned');
-exports.onPiscineTaskAssigned = onPiscineTaskAssigned;
+exportFunctions(() => require('./src/notifications/onPiscineTaskAssigned'), 'onPiscineTaskAssigned');
 
 // =============================================================================
 // MEDICAL CERTIFICATE NOTIFICATIONS (Gen2)
 // =============================================================================
 
-exports.getMedicalCertificateUrl = require('./src/medical/getMedicalCertificateUrl').getMedicalCertificateUrl;
+exportFunctions(() => require('./src/medical/getMedicalCertificateUrl'), 'getMedicalCertificateUrl');
 
 // Push notification when medical certificate status changes (approved/rejected)
-const { onMedicalCertStatusChange, onMedicalCertCreated } = require('./src/notifications/onMedicalCertStatusChange');
-exports.onMedicalCertStatusChange = onMedicalCertStatusChange;
-exports.onMedicalCertCreated = onMedicalCertCreated;
+exportFunctions(
+  () => require('./src/notifications/onMedicalCertStatusChange'),
+  'onMedicalCertStatusChange',
+  'onMedicalCertCreated',
+);
 
 // =============================================================================
 // CARNET DE FORMATION — PROGRESSION (Gen2)
 // =============================================================================
 
 // Auto-validate LIFRAS exercise when observation result is 'acquis'
-const { onObservationAcquis } = require('./src/progression/onObservationAcquis');
-exports.onObservationAcquis = onObservationAcquis;
+exportFunctions(() => require('./src/progression/onObservationAcquis'), 'onObservationAcquis');
 
 // WP-08 — journalise chaque changement de plongeur_code dans brevet_history.
-const { onPlongeurCodeChanged } = require('./src/progression/onPlongeurCodeChanged');
-exports.onPlongeurCodeChanged = onPlongeurCodeChanged;
+exportFunctions(() => require('./src/progression/onPlongeurCodeChanged'), 'onPlongeurCodeChanged');
 
 // WP-09 — snapshot de formation matérialisé (members/{id}/formation_snapshot/current).
 // 5 triggers minces + cron de rattrapage 04:00 → rebuildSnapshot.
-const snapshotFns = require('./src/progression/rebuildFormationSnapshot');
-exports.onLogbookEntryWriteSnapshot = snapshotFns.onLogbookEntryWriteSnapshot;
-exports.onExerciseClaimWriteSnapshot = snapshotFns.onExerciseClaimWriteSnapshot;
-exports.onMemberObservationWriteSnapshot = snapshotFns.onMemberObservationWriteSnapshot;
-exports.onExercicesValidesWriteSnapshot = snapshotFns.onExercicesValidesWriteSnapshot;
-exports.onFormationGoalsWriteSnapshot = snapshotFns.onFormationGoalsWriteSnapshot;
-exports.onMemberFormationFieldsWriteSnapshot = snapshotFns.onMemberFormationFieldsWriteSnapshot;
-exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
+exportFunctions(
+  () => require('./src/progression/rebuildFormationSnapshot'),
+  'onLogbookEntryWriteSnapshot',
+  'onExerciseClaimWriteSnapshot',
+  'onMemberObservationWriteSnapshot',
+  'onExercicesValidesWriteSnapshot',
+  'onFormationGoalsWriteSnapshot',
+  'onMemberFormationFieldsWriteSnapshot',
+  'rebuildStaleSnapshots',
+);
 
 // WP-11 — notifie le chef d'école quand un élève change son brevet visé (D12).
-const { onTargetLevelChanged } = require('./src/progression/onTargetLevelChanged');
-exports.onTargetLevelChanged = onTargetLevelChanged;
+exportFunctions(() => require('./src/progression/onTargetLevelChanged'), 'onTargetLevelChanged');
 
 // WP-26 MS-A — surveillance hebdomadaire du MIL (mil.amb-lifras.be) + run manuel.
-const milSync = require('./src/mil_sync/milSync');
-exports.milSyncWeekly = milSync.milSyncWeekly;
-exports.runMilSyncNow = milSync.runMilSyncNow;
-exports.reviewMilProposal = milSync.reviewMilProposal;
-exports.milImpactPreview = milSync.milImpactPreview;
+exportFunctions(
+  () => require('./src/mil_sync/milSync'),
+  'milSyncWeekly',
+  'runMilSyncNow',
+  'reviewMilProposal',
+  'milImpactPreview',
+);
 
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)
 // =============================================================================
 
 // Creates a demande de remboursement when a member reduces their inscription
-exports.createInscriptionRefund = require('./src/inscription/createRefundClaim').createInscriptionRefund;
+exportFunctions(() => require('./src/inscription/createRefundClaim'), 'createInscriptionRefund');
 
 // Transactional event waitlist lifecycle (join, leave, organizer promotion).
-const eventWaitlist = require('./src/inscription/eventWaitlist');
-exports.joinEventWaitlist = eventWaitlist.joinEventWaitlist;
-exports.registerForEvent = eventWaitlist.registerForEvent;
-exports.addGuestToEvent = eventWaitlist.addGuestToEvent;
-exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
-exports.unregisterFromEvent = eventWaitlist.unregisterFromEvent;
-exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;
-exports.onEventTariffConfigurationWritten =
-  require('./src/inscription/onEventTariffConfigurationWritten').onEventTariffConfigurationWritten;
+exportFunctions(
+  () => require('./src/inscription/eventWaitlist'),
+  'joinEventWaitlist',
+  'registerForEvent',
+  'addGuestToEvent',
+  'leaveEventWaitlist',
+  'unregisterFromEvent',
+  'promoteEventWaitlistEntry',
+);
+exportFunctions(
+  () => require('./src/inscription/onEventTariffConfigurationWritten'),
+  'onEventTariffConfigurationWritten',
+);
 
 // =============================================================================
 // BOUTIQUE (Gen2)
 // =============================================================================
 
-const { createBoutiqueOrder } = require('./src/boutique/createOrder');
-exports.createBoutiqueOrder = createBoutiqueOrder;
+exportFunctions(
+  () => require('./src/boutique/createOrder'),
+  'createBoutiqueOrder',
+  'sendBoutiqueOrderPaymentEmail',
+);
+exportFunctions(() => require('./src/boutique/getOrderPayment'), 'getBoutiqueOrderPayment');
 
-const { sendBoutiqueOrderPaymentEmail } = require('./src/boutique/createOrder');
-exports.sendBoutiqueOrderPaymentEmail = sendBoutiqueOrderPaymentEmail;
-exports.getBoutiqueOrderPayment = require('./src/boutique/getOrderPayment').getBoutiqueOrderPayment;
+exportFunctions(() => require('./src/boutique/listOrders'), 'listBoutiqueOrders');
 
-const { listBoutiqueOrders } = require('./src/boutique/listOrders');
-exports.listBoutiqueOrders = listBoutiqueOrders;
+exportFunctions(() => require('./src/boutique/cancelOrder'), 'cancelBoutiqueOrder');
 
-const { cancelBoutiqueOrder } = require('./src/boutique/cancelOrder');
-exports.cancelBoutiqueOrder = cancelBoutiqueOrder;
+exportFunctions(() => require('./src/boutique/expireOrders'), 'expireBoutiqueOrders');
 
-const { expireBoutiqueOrders } = require('./src/boutique/expireOrders');
-exports.expireBoutiqueOrders = expireBoutiqueOrders;
+exportFunctions(() => require('./src/boutique/setGlobalAccess'), 'setBoutiqueGlobalAccess');
 
-const { setBoutiqueGlobalAccess } = require('./src/boutique/setGlobalAccess');
-exports.setBoutiqueGlobalAccess = setBoutiqueGlobalAccess;
-
-const { createCotisationPayment } = require('./src/cotisations/createPayment');
-exports.createCotisationPayment = createCotisationPayment;
+exportFunctions(() => require('./src/cotisations/createPayment'), 'createCotisationPayment');
 
 // =============================================================================
 // CARNET DE FORMATION — Phase 1 (Gen2)
@@ -322,119 +315,99 @@ exports.createCotisationPayment = createCotisationPayment;
 // swimmers receive no tasks and no pushes.
 // =============================================================================
 
-const { onPiscineAttendeeCreated } = require('./src/training/onPiscineAttendeeCreated');
-exports.onPiscineAttendeeCreated = onPiscineAttendeeCreated;
+exportFunctions(() => require('./src/training/onPiscineAttendeeCreated'), 'onPiscineAttendeeCreated');
 
-const { onOperationFinished } = require('./src/training/onOperationFinished');
-exports.onOperationFinished = onOperationFinished;
+exportFunctions(() => require('./src/training/onOperationFinished'), 'onOperationFinished');
 
-const {
-  onMemberCarnetPreferenceChanged,
-} = require('./src/training/onMemberCarnetPreferenceChanged');
-exports.onMemberCarnetPreferenceChanged = onMemberCarnetPreferenceChanged;
+exportFunctions(
+  () => require('./src/training/onMemberCarnetPreferenceChanged'),
+  'onMemberCarnetPreferenceChanged',
+);
 
 // Privacy-safe projections consumed by member-facing directory and
 // authorised operational status screens.
-const {
-  syncMemberProjections,
-} = require('./src/privacy/syncMemberProjections');
-exports.syncMemberProjections = syncMemberProjections;
+exportFunctions(() => require('./src/privacy/syncMemberProjections'), 'syncMemberProjections');
 
-const {
-  updateBirthdaySharing,
-} = require('./src/privacy/updateBirthdaySharing');
-exports.updateBirthdaySharing = updateBirthdaySharing;
+exportFunctions(() => require('./src/privacy/updateBirthdaySharing'), 'updateBirthdaySharing');
 
-const { processFormationTaskReminders } = require('./src/training/processFormationTaskReminders');
-exports.processFormationTaskReminders = processFormationTaskReminders;
+exportFunctions(
+  () => require('./src/training/processFormationTaskReminders'),
+  'processFormationTaskReminders',
+);
 
 // WP-14 filet 7 jours : tâche exercise_claim classique pour les drafts oubliés
-const { processStaleDraftClaims } = require('./src/training/processStaleDraftClaims');
-exports.processStaleDraftClaims = processStaleDraftClaims;
+exportFunctions(() => require('./src/training/processStaleDraftClaims'), 'processStaleDraftClaims');
 
 // Phase 2 — Claim → official observation promotion
-const { onClaimAccepted } = require('./src/training/onClaimAccepted');
-exports.onClaimAccepted = onClaimAccepted;
+exportFunctions(() => require('./src/training/onClaimAccepted'), 'onClaimAccepted');
 
 // 2026-05-14 — Audit blocker #1 + #4: spawn a formation_task on every new
 // reviewable exercise_claim so monitors / admins actually see the claim in
 // their inbox. Reads validation_mode + tries claim.monitor_id, club settings,
 // palanquée chef, club admin pool in order.
-const { onClaimSubmitted } = require('./src/training/onClaimSubmitted');
-exports.onClaimSubmitted = onClaimSubmitted;
+exportFunctions(() => require('./src/training/onClaimSubmitted'), 'onClaimSubmitted');
 
 // COM-084 — student-selected evaluation request and durable monitor decision.
 // Both callables validate ownership and monitor eligibility server-side.
-const {
-  requestExerciseEvaluation,
-  decideExerciseEvaluation,
-} = require('./src/training/evaluationRequests');
-exports.requestExerciseEvaluation = requestExerciseEvaluation;
-exports.decideExerciseEvaluation = decideExerciseEvaluation;
+exportFunctions(
+  () => require('./src/training/evaluationRequests'),
+  'requestExerciseEvaluation',
+  'decideExerciseEvaluation',
+);
 
 // WP-02 (chaîne de refus S1) — un refus n'est plus silencieux : onClaimRejected
 // crée une tâche 'claim_rejected' chez l'élève (raison + push immédiat) et
 // résout la tâche de validation parente ; onClaimResubmitted recrée une tâche
 // de validation quand l'élève re-soumet (rejected → submitted), car
 // onClaimSubmitted est create-only.
-const { onClaimRejected } = require('./src/training/onClaimRejected');
-exports.onClaimRejected = onClaimRejected;
-const { onClaimResubmitted } = require('./src/training/onClaimResubmitted');
-exports.onClaimResubmitted = onClaimResubmitted;
+exportFunctions(() => require('./src/training/onClaimRejected'), 'onClaimRejected');
+exportFunctions(() => require('./src/training/onClaimResubmitted'), 'onClaimResubmitted');
 
 // WP-05 complément — maintient une tâche buddy_confirmation agrégée par membre
 // (ouverte tant qu'il reste des logbook_dive_confirmations pending, done à 0).
-const { onBuddyConfirmationTask } = require('./src/training/onBuddyConfirmationTask');
-exports.onBuddyConfirmationTask = onBuddyConfirmationTask;
+exportFunctions(() => require('./src/training/onBuddyConfirmationTask'), 'onBuddyConfirmationTask');
 
 // 2026-05-14 — Audit blocker #2: materialise the verdict written by
 // MonitorObservationForm into a permanent member_observations doc. Today
 // this captures a theme-level verdict (acquis/en_progres/a_revoir); the
 // per-LIFRAS-code fan-out into exercices_valides waits on the form being
 // extended to capture per-code ticks.
-const {
-  onMonitorObservationCompleted,
-} = require('./src/training/onMonitorObservationCompleted');
-exports.onMonitorObservationCompleted = onMonitorObservationCompleted;
+exportFunctions(
+  () => require('./src/training/onMonitorObservationCompleted'),
+  'onMonitorObservationCompleted',
+);
 
 // Phase 4 — Palanquée planning → draft exercise_claims pre-fill
-const {
-  onPalanqueeSaved,
-  onOperationPalanqueeSaved,
-} = require('./src/training/onPalanqueeSaved');
-exports.onPalanqueeSaved = onPalanqueeSaved;
-exports.onOperationPalanqueeSaved = onOperationPalanqueeSaved;
+exportFunctions(
+  () => require('./src/training/onPalanqueeSaved'),
+  'onPalanqueeSaved',
+  'onOperationPalanqueeSaved',
+);
 
 // Phase A (v2.2) — Pool check-in completion propagation:
 // when a student submits the pool check-in task, mirror the chosen
 // group / outcome onto the attendee document so SessionParticipantsTab
 // can render the review view.
-const { onPoolCheckinCompleted } = require('./src/training/onPoolCheckinCompleted');
-exports.onPoolCheckinCompleted = onPoolCheckinCompleted;
+exportFunctions(() => require('./src/training/onPoolCheckinCompleted'), 'onPoolCheckinCompleted');
 
 // Phase A (v2.2) — Pool session close fan-out:
 // when the chef d'école closes a session, batch-create logbook entries
 // + monitor_observation tasks for each training attendee. Honour the
 // DRY_RUN_POOL_CLOSE env flag during initial rollout.
-const { onPoolSessionClosed } = require('./src/training/onPoolSessionClosed');
-exports.onPoolSessionClosed = onPoolSessionClosed;
+exportFunctions(() => require('./src/training/onPoolSessionClosed'), 'onPoolSessionClosed');
 
 // Phase A (v2.2) — Daily auto-close of stale pool sessions.
 // The "chef d'école closes the session" rule was removed from the design
 // after pilot 2026-05-14 — closes are now automatic at 04:00 Europe/Brussels
 // for any open session whose date is >18h in the past. The close itself
 // fires onPoolSessionClosed, which fans out logbook + monitor_observation.
-const { autoClosePoolSessions } = require('./src/training/autoClosePoolSessions');
-exports.autoClosePoolSessions = autoClosePoolSessions;
+exportFunctions(() => require('./src/training/autoClosePoolSessions'), 'autoClosePoolSessions');
 
 // Phase A follow-up (2026-05-14) — Re-route the open monitor_observation
 // task when a student corrects the pool entry group_level / group_number
 // from their carnet. Keeps the task in sync with whoever validates the
 // newly chosen group.
-const {
-  onLogbookEntryGroupChanged,
-} = require('./src/training/onLogbookEntryGroupChanged');
-exports.onLogbookEntryGroupChanged = onLogbookEntryGroupChanged;
+exportFunctions(() => require('./src/training/onLogbookEntryGroupChanged'), 'onLogbookEntryGroupChanged');
 
 // 2026-05-14 — Auto-assign unique per-member dive numbers.
 // `assignDiveNumber` runs on every new student_logbook_entries doc and
@@ -442,39 +415,45 @@ exports.onLogbookEntryGroupChanged = onLogbookEntryGroupChanged;
 // settings. `backfillMyDiveNumbers` is a callable Mon Carnet invokes the
 // first time it loads, to retroactively number any legacy entries that
 // were created before the trigger shipped.
-const {
-  assignDiveNumber,
-  backfillMyDiveNumbers,
-} = require('./src/training/assignDiveNumber');
-exports.assignDiveNumber = assignDiveNumber;
-exports.backfillMyDiveNumbers = backfillMyDiveNumbers;
+exportFunctions(
+  () => require('./src/training/assignDiveNumber'),
+  'assignDiveNumber',
+  'backfillMyDiveNumbers',
+);
 
 // Private reference-data lookup used by both CalyMob and CalyCompta.
 // It returns only a conservative coordinate match, never the source dataset.
-exports.resolveReferenceDiveSiteLocation = require('./src/referenceData/resolveReferenceDiveSiteLocation').resolveReferenceDiveSiteLocation;
-exports.confirmReferenceDiveSiteLocation = require('./src/referenceData/resolveReferenceDiveSiteLocation').confirmReferenceDiveSiteLocation;
-exports.listReferenceDiveSites = require('./src/referenceData/resolveReferenceDiveSiteLocation').listReferenceDiveSites;
-exports.previewDiveLocationMerge = require('./src/referenceData/mergeDiveLocations').previewDiveLocationMerge;
-exports.mergeDiveLocations = require('./src/referenceData/mergeDiveLocations').mergeDiveLocations;
-exports.deleteDiveLocationSafely = require('./src/referenceData/deleteDiveLocationSafely').deleteDiveLocationSafely;
-exports.previewDiveLocationReconciliation = require('./src/referenceData/previewDiveLocationReconciliation').previewDiveLocationReconciliation;
-exports.resolveCanonicalDiveLocation = require('./src/referenceData/resolveCanonicalDiveLocation').resolveCanonicalDiveLocation;
+exportFunctions(
+  () => require('./src/referenceData/resolveReferenceDiveSiteLocation'),
+  'resolveReferenceDiveSiteLocation',
+  'confirmReferenceDiveSiteLocation',
+  'listReferenceDiveSites',
+);
+exportFunctions(
+  () => require('./src/referenceData/mergeDiveLocations'),
+  'previewDiveLocationMerge',
+  'mergeDiveLocations',
+);
+exportFunctions(() => require('./src/referenceData/deleteDiveLocationSafely'), 'deleteDiveLocationSafely');
+exportFunctions(
+  () => require('./src/referenceData/previewDiveLocationReconciliation'),
+  'previewDiveLocationReconciliation',
+);
+exportFunctions(
+  () => require('./src/referenceData/resolveCanonicalDiveLocation'),
+  'resolveCanonicalDiveLocation',
+);
 
 // Buddy confirmation flow for Mon Carnet: when a diver adds Calypso members as
 // binômes, those members confirm the shared dive and copy/compare it.
-const {
-  onLogbookDiveBuddiesChanged,
-  respondToLogbookDiveConfirmation,
-} = require('./src/training/logbookDiveConfirmations');
-exports.onLogbookDiveBuddiesChanged = onLogbookDiveBuddiesChanged;
-exports.respondToLogbookDiveConfirmation = respondToLogbookDiveConfirmation;
+exportFunctions(
+  () => require('./src/training/logbookDiveConfirmations'),
+  'onLogbookDiveBuddiesChanged',
+  'respondToLogbookDiveConfirmation',
+);
 
 // Paper logbook OCR/AI import.
-const { analyzeLogbookPage } = require('./src/logbookOcr/analyzeLogbookPage');
-exports.analyzeLogbookPage = analyzeLogbookPage;
+exportFunctions(() => require('./src/logbookOcr/analyzeLogbookPage'), 'analyzeLogbookPage');
 
 // Free dictation AI extraction for new logbook entries.
-const {
-  analyzeLogbookDictation,
-} = require('./src/logbookDictation/analyzeLogbookDictation');
-exports.analyzeLogbookDictation = analyzeLogbookDictation;
+exportFunctions(() => require('./src/logbookDictation/analyzeLogbookDictation'), 'analyzeLogbookDictation');

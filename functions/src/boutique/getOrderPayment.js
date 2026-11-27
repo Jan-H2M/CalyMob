@@ -1,6 +1,5 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const QRCode = require('qrcode');
 const { REGION, assertBoutiqueAccess, getClubRef, mapErrorToHttps } = require('./shared');
 const { currentBoutiquePayment, assertCurrentPayment } = require('./paymentContext');
 
@@ -19,7 +18,9 @@ async function getBoutiqueOrderPaymentHandler(request, dependencies = {}) {
     const order = snapshot.data();
     if (order.buyer?.userId !== request.auth.uid) throw new HttpsError('permission-denied', 'Accès refusé.');
     const context = currentBoutiquePayment(order);
-    const qrCodeUrl = context.epcPayload ? await (dependencies.qrToDataURL || QRCode.toDataURL)(context.epcPayload) : null;
+    const qrCodeUrl = context.epcPayload
+      ? await (dependencies.qrToDataURL || require('qrcode').toDataURL)(context.epcPayload)
+      : null;
     const current = await ref.get();
     if (!current.exists || current.data().buyer?.userId !== request.auth.uid) throw new HttpsError('permission-denied', 'Accès refusé.');
     assertCurrentPayment(context, currentBoutiquePayment(current.data()));
