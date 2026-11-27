@@ -102,6 +102,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   final ExerciceSelectionSaveQueue _exerciceSaveQueue =
       ExerciceSelectionSaveQueue();
   bool _isLoadingExercices = false;
+  bool _isRegistering = false;
   ParticipantOperation? _userInscription;
   late final RegistrationRequestIdentity _registrationRequestIdentity;
   late final GuestRequestIdentity _guestRequestIdentity;
@@ -220,7 +221,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     });
   }
 
-  Future<EventRegistrationResult> _registerWithStableIdentity({
+  Future<EventRegistrationResult> _registerAndRefresh({
     required OperationProvider operationProvider,
     required String userId,
     required String userName,
@@ -236,8 +237,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       guests: guests,
     );
     final requestId = _registrationRequestIdentity.requestIdFor(fingerprint);
+    final EventRegistrationResult result;
     try {
-      final result = await operationProvider.registerToOperation(
+      result = await operationProvider.registerToOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
         userId: userId,
@@ -252,13 +254,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         guests: guests,
       );
       _registrationRequestIdentity.complete();
-      return result;
     } catch (error) {
       if (OperationService.isDefinitiveRegistrationFailure(error)) {
         _registrationRequestIdentity.complete();
       }
       rethrow;
     }
+
+    await Future.wait([
+      operationProvider.reloadParticipants(widget.clubId, widget.operationId),
+      _loadUserInscription(),
+    ]);
+    if (mounted) setState(() => _isRegistering = false);
+    return result;
   }
 
   @override
@@ -568,10 +576,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _handleRegister() async {
+    if (_isRegistering) return;
+    setState(() => _isRegistering = true);
     try {
       await _register();
     } catch (error) {
       _showRegistrationError(error);
+    } finally {
+      if (mounted && _isRegistering) {
+        setState(() => _isRegistering = false);
+      }
     }
   }
 
@@ -684,7 +698,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (confirmed != true || !mounted) return;
     }
 
-    final registrationResult = await _registerWithStableIdentity(
+    final registrationResult = await _registerAndRefresh(
       operationProvider: operationProvider,
       userId: userId,
       userName: userEmail,
@@ -692,10 +706,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       selectedSupplements: selectedSupplements,
       supplementTotal: supplementTotal,
     );
-    await operationProvider.reloadParticipants(
-        widget.clubId, widget.operationId);
-    if (!mounted) return;
-    await _loadUserInscription();
     if (!mounted) return;
     final payment = registrationPaymentInstruction(registrationResult);
 
@@ -898,7 +908,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     // Register the complete group in one transaction. If any guest is
     // invalid or capacity is insufficient, no registration is written.
-    final registrationResult = await _registerWithStableIdentity(
+    final registrationResult = await _registerAndRefresh(
       operationProvider: operationProvider,
       userId: userId,
       userName: userEmail,
@@ -907,10 +917,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       supplementTotal: selectedSupplements.isNotEmpty ? supplementTotal : null,
       guests: guestRequests,
     );
-    await operationProvider.reloadParticipants(
-        widget.clubId, widget.operationId);
-    if (!mounted) return;
-    await _loadUserInscription();
     if (!mounted) return;
     final payment = registrationPaymentInstruction(registrationResult);
 
@@ -2157,13 +2163,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             builder: (context, operationProvider, child) {
               final operation = operationProvider.selectedOperation;
 
-              if (operationProvider.isLoading || operation == null) {
+              if (operation == null ||
+                  (operationProvider.isLoading && !_isRegistering)) {
                 return const LoadingWidget(message: 'Chargement...');
               }
 
               final participantCount =
                   operationProvider.getParticipantCount(operation.id);
-              final isRegistered =
+              final isRegistered = !_isRegistering &&
                   operationProvider.isUserRegistered(operation.id);
               final isWaitlisted =
                   operationProvider.isUserWaitlisted(operation.id);
@@ -2201,11 +2208,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 inscriptionPrice = operation.prixMembre ?? 0.0;
               }
 
-              return Column(
+              final detail = Column(
                 children: [
                   Expanded(
                     child: RefreshIndicator(
                       onRefresh: () async {
+                        if (_isRegistering) return;
                         // Reload the operation identity as well as participants;
                         // a reassigned responsable must invalidate the cached
                         // directory profile and phone immediately.
@@ -2401,6 +2409,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   ),
                 ],
               );
+              return IgnorePointer(ignoring: _isRegistering, child: detail);
             },
           ),
         ),
@@ -4653,6 +4662,34 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     Operation? operation,
     ParticipantOperation? userInscription,
   }) {
+    if (_isRegistering) {
+      return TickerMode(
+        enabled: ModalRoute.isCurrentOf(context) ?? true,
+        child: Semantics(
+          liveRegion: true,
+          child: const SizedBox(
+            height: 50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'Inscription en cours…',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     if (operation?.statut == 'annule') {
       return SizedBox(
         width: double.infinity,

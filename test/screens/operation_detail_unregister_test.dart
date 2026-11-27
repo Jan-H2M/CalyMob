@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:calymob/models/operation.dart';
 import 'package:calymob/models/participant_operation.dart';
 import 'package:calymob/models/event_message.dart';
@@ -58,6 +60,8 @@ class _MockOperationProvider extends Mock implements OperationProvider {
     this.remainingInscriptionAfterUnregister,
     this.unregisterError,
     this.registrationError,
+    this.registrationResponse,
+    this.participantsRefresh,
     bool isRegistered = true,
   }) : _isRegistered = isRegistered;
 
@@ -65,12 +69,16 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   final ParticipantOperation? remainingInscriptionAfterUnregister;
   final Object? unregisterError;
   final Object? registrationError;
+  final Future<EventRegistrationResult>? registrationResponse;
+  final Future<void>? participantsRefresh;
   final unregisterCalls = <Map<String, dynamic>>[];
   int registrationCalls = 0;
   int waitlistCalls = 0;
   int submittedGuests = 0;
+  int selectCalls = 0;
   var reloadCalls = 0;
   bool _isRegistered;
+  bool _isSubmitting = false;
   var _isWaitlisted = false;
 
   @override
@@ -80,7 +88,7 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   List<ParticipantOperation> get selectedOperationParticipants => const [];
 
   @override
-  bool get isLoading => false;
+  bool get isLoading => _isSubmitting;
 
   @override
   int getParticipantCount(String operationId) => 1;
@@ -96,8 +104,10 @@ class _MockOperationProvider extends Mock implements OperationProvider {
     String clubId,
     String operationId,
     String userId,
-  ) async =>
-      true;
+  ) async {
+    selectCalls++;
+    return true;
+  }
 
   @override
   Future<EventRegistrationResult> registerToOperation({
@@ -115,7 +125,17 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   }) async {
     registrationCalls++;
     submittedGuests = guests.length;
-    throw registrationError!;
+    if (registrationError != null) throw registrationError!;
+    _isSubmitting = true;
+    notifyListeners();
+    try {
+      final result = await registrationResponse!;
+      _isRegistered = true;
+      return result;
+    } finally {
+      _isSubmitting = false;
+      notifyListeners();
+    }
   }
 
   @override
@@ -155,13 +175,16 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   @override
   Future<void> reloadParticipants(String clubId, String operationId) async {
     reloadCalls++;
+    await participantsRefresh;
   }
 }
 
 class _MockOperationService extends Mock implements OperationService {
-  _MockOperationService(this.loadedInscription);
+  _MockOperationService(this.loadedInscription, {this.registrationRefresh});
 
   final ParticipantOperation? loadedInscription;
+  final Future<ParticipantOperation?>? registrationRefresh;
+  int inscriptionReads = 0;
 
   @override
   String newRegistrationRequestId() => 'calymob_widget_test_request';
@@ -171,8 +194,13 @@ class _MockOperationService extends Mock implements OperationService {
     required String clubId,
     required String operationId,
     required String userId,
-  }) async =>
-      loadedInscription;
+  }) async {
+    inscriptionReads++;
+    if (inscriptionReads > 1 && registrationRefresh != null) {
+      return registrationRefresh!;
+    }
+    return loadedInscription;
+  }
 }
 
 class _MockProfileService extends Mock implements ProfileService {}
@@ -267,6 +295,9 @@ void main() {
       await tester.tap(action);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      if (!waitlist) {
+        expect(find.text('Inscription en cours…'), findsOneWidget);
+      }
       if (flow == 'guests') {
         final addGuest = find.text('Ajouter un invité');
         await tester.ensureVisible(addGuest);
@@ -287,6 +318,7 @@ void main() {
       }
 
       expect(operationProvider.registrationCalls, waitlist ? 0 : 1);
+      expect(find.text('Inscription en cours…'), findsNothing);
       expect(operationProvider.waitlistCalls, waitlist ? 1 : 0);
       expect(operationProvider.submittedGuests, flow == 'guests' ? 1 : 0);
       expect(
@@ -300,6 +332,121 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('shows registration progress until both refreshes finish',
+      (tester) async {
+    final now = DateTime.now();
+    final operation = Operation(
+      id: 'paid-event',
+      type: 'evenement',
+      titre: 'Sortie test',
+      montantPrevu: 40,
+      statut: 'ouvert',
+      dateDebut: now.add(const Duration(days: 7)),
+      createdAt: now,
+      updatedAt: now,
+    );
+    final registration = Completer<EventRegistrationResult>();
+    final participants = Completer<void>();
+    final inscription = Completer<ParticipantOperation?>();
+    final operationProvider = _MockOperationProvider(
+      operation,
+      isRegistered: false,
+      registrationResponse: registration.future,
+      participantsRefresh: participants.future,
+    );
+    final operationService = _MockOperationService(
+      null,
+      registrationRefresh: inscription.future,
+    );
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(
+          value: _MockAuthProvider(_MockUser()),
+        ),
+        ChangeNotifierProvider<EventMessageProvider>.value(
+          value: _MockEventMessageProvider(),
+        ),
+        ChangeNotifierProvider<MemberProvider>.value(
+          value: _MockMemberProvider(),
+        ),
+        ChangeNotifierProvider<OperationProvider>.value(
+          value: operationProvider,
+        ),
+      ],
+      child: MaterialApp(
+        home: OperationDetailScreen(
+          clubId: 'calypso',
+          operationId: operation.id,
+          operationService: operationService,
+          profileService: _MockProfileService(),
+          loadAuxiliaryProfileData: false,
+        ),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(operationService.inscriptionReads, 1);
+
+    final register = find.text("S'inscrire");
+    final progress = find.text('Inscription en cours…');
+    final payment = find.text('Acompte: 12.00 €');
+    await tester.tap(register);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(progress, findsOneWidget);
+    expect(operationProvider.registrationCalls, 0);
+
+    await tester
+        .tap(find.descendant(of: find.byType(Dialog), matching: register));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(progress, findsOneWidget);
+    expect(operationProvider.isLoading, isTrue);
+    expect(operationProvider.reloadCalls, 0);
+    expect(operationService.inscriptionReads, 1);
+    await tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh();
+    expect(operationProvider.selectCalls, 1);
+
+    registration.complete(const EventRegistrationResult(
+      status: 'pending_payment',
+      paymentRequired: true,
+      paymentDeferred: false,
+      inscriptionId: 'member-inscription',
+      guestInscriptionIds: [],
+      idempotent: false,
+      groupTotal: 40,
+      memberAmount: RegistrationAmountBreakdown(
+        base: 40,
+        supplements: 0,
+        total: 40,
+      ),
+      guestAmounts: [],
+      nextPayment: RegistrationNextPayment(
+        amount: 12,
+        installmentId: 'deposit',
+        installmentLabel: 'Acompte',
+      ),
+    ));
+    await tester.pump();
+    expect(operationProvider.reloadCalls, 1);
+    expect(operationService.inscriptionReads, 2);
+    expect(progress, findsOneWidget);
+
+    inscription.complete(null);
+    await tester.pump();
+    expect(progress, findsOneWidget);
+    expect(payment, findsNothing);
+
+    participants.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(progress, findsNothing);
+    expect(payment, findsOneWidget);
+  });
 
   testWidgets(
       'exact cancellation reloads and renders a remaining own inscription',
