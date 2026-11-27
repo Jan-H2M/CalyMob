@@ -8,6 +8,7 @@
  */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const QRCode = require('qrcode');
 const { hasGonflageRole } = require('../loans/materialLoanRoles');
 const { buildEmailRouting, logEmailHistoryAndCommunication } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
@@ -241,7 +242,6 @@ const sendMaterialLoanPaymentQrEmail = onCall(callableOptions, async (request) =
       reference: context.reference,
       clubName,
     });
-    const QRCode = require('qrcode');
     const qrDataUrl = await QRCode.toDataURL(context.epcPayload, {
       errorCorrectionLevel: 'M', type: 'image/png', width: 300, margin: 2,
     });
