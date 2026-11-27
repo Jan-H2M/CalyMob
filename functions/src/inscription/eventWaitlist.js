@@ -620,7 +620,7 @@ function guestRegistrationPayload({
   };
 }
 
-const registerForEvent = onCall({ region: REGION }, async request => {
+const registerForEvent = onCall({ region: REGION, minInstances: 1 }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
   const {

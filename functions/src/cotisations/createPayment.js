@@ -1,6 +1,5 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const QRCode = require('qrcode');
 const {
   REGION,
   buildDomainError,
@@ -429,6 +428,7 @@ exports.createCotisationPayment = onCall(
         amount,
         communication,
       });
+      const QRCode = require('qrcode');
       const qrDataUrl = await QRCode.toDataURL(epcPayload, {
         errorCorrectionLevel: 'M',
         margin: 2,

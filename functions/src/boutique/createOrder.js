@@ -1,8 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { randomUUID } = require('crypto');
-const QRCode = require('qrcode');
-const { escapeExpression } = require('handlebars');
 const { resolvePersonalizationColor } = require('./personalizationColors');
 const { currentBoutiquePayment, assertCurrentPayment } = require('./paymentContext');
 const {
@@ -402,6 +400,7 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }, depe
   const currentPayment = currentBoutiquePayment(order);
   {
     if (!currentPayment.requestId) throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Aucun nouveau virement à demander. Réception bancaire en attente.');
+    const QRCode = require('qrcode');
     const qrCodeUrl = await QRCode.toDataURL(currentPayment.epcPayload);
     const fresh = await orderRef.get();
     if (!fresh.exists) throw buildDomainError('ORDER_NOT_FOUND', 'Commande introuvable.');
@@ -419,6 +418,7 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }, depe
   const templateData = buildBoutiqueOrderTemplateData(order, emailSettings);
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const rendered = renderCommunicationTemplate(resolvedTemplate.template, templateData);
+  const { escapeExpression } = require('handlebars');
   const subject = currentPayment?.kind === 'supplement' ? `Complément de paiement — ${rendered.subject}` : rendered.subject;
   const notice = order.paymentPlan ? `<p><strong>Demande actuelle : ${formatAmount(currentPayment.amount)} uniquement.</strong> Total de la commande : ${formatAmount(currentPayment.orderTotal)}. Déjà reçu en banque : ${formatAmount(currentPayment.receivedAmount)}. Virement déclaré en cours, non reçu : ${formatAmount(currentPayment.reportedAmount)}.</p><p>Communication libre : <strong>${escapeExpression(currentPayment.communication)}</strong></p><p>${currentPayment.receivedAmount > 0 || currentPayment.reportedAmount > 0 ? 'Ne payez pas à nouveau le total. ' : ''}Les anciens e-mails et QR ne peuvent pas être rappelés. Avant de payer, consultez toujours la demande actuelle dans CalyMob → Mes commandes.</p>` : '';
   // An older/custom template must not omit the manual alternative to its QR.
@@ -540,7 +540,6 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
     const serverTimestamp = dependencies.serverTimestamp
       || (() => admin.firestore.FieldValue.serverTimestamp());
     const createUuid = dependencies.randomUUID || randomUUID;
-    const qrToDataURL = dependencies.qrToDataURL || QRCode.toDataURL;
     const accessCheck = dependencies.assertBoutiqueAccess || assertBoutiqueAccess;
     const bankSettingsResolver = dependencies.resolveClubBankSettings || resolveClubBankSettings;
     const orderEmailSender = dependencies.sendBoutiqueOrderEmail || sendBoutiqueOrderEmail;
@@ -781,6 +780,7 @@ async function createBoutiqueOrderHandler(request, dependencies = {}) {
           amount: total,
           communication: paymentCommunication,
         });
+        const qrToDataURL = dependencies.qrToDataURL || require('qrcode').toDataURL;
         const qrCodeUrl = await qrToDataURL(epcPayload);
 
         for (const cachedProduct of productCache.values()) {

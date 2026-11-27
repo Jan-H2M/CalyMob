@@ -1,6 +1,5 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const PDFDocument = require('pdfkit');
 const { hasGonflageRole } = require('./materialLoanRoles');
 const { buildEmailRouting, logEmailHistoryAndCommunication } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
@@ -89,6 +88,7 @@ async function buildHandoverReceiptPdf({ clubName, logoUrl, memberName, loan, lo
   const material = allLoanMaterial(loan);
   const number = loanNumberFor(loan, loanId);
   const chunks = [];
+  const PDFDocument = require('pdfkit');
   const doc = new PDFDocument({ size: 'A4', margins: { top: 45, bottom: 50, left: 50, right: 50 }, info: { Title: `Fiche de remise ${number}`, Author: clubName } });
   doc.on('data', (chunk) => chunks.push(chunk));
   const completed = new Promise((resolve, reject) => { doc.on('end', () => resolve(Buffer.concat(chunks))); doc.on('error', reject); });
