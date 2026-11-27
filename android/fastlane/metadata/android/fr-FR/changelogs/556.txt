@@ -1,0 +1,1 @@
+Inscription aux activités plus rapide et messages d'erreur plus clairs. Les organisateurs sont avertis si les tarifs d'une activité empêchent les membres de s'inscrire.
