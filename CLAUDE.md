@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Shared agent instructions
+
+Also follow `AGENTS.md` (shared with Codex), including the Calypso project-memory rules:
+
+@AGENTS.md
+
 ## Project Overview
 
 CalyMob is a Flutter mobile application (iOS/Android) for the Calypso diving club. It allows members to submit expense claims, view club operations/events, participate in discussions, and manage their profiles. The app shares a Firebase backend with a React web admin app (CalyCompta).
